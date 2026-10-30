@@ -9,7 +9,7 @@ Lifelong learning for language models, with learned inference abilities and buil
 Platypus is licensed under the [Apache License, Version 2.0](LICENSE).
 
 ```
-Copyright 2026 [COPYRIGHT HOLDER NAME]
+Copyright 2026 CHRISTIAN BIRD
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this project except in compliance with the License.
