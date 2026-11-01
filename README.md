@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg20y**.
+Current build: **cg20z**.
 
 ---
 
@@ -95,6 +95,8 @@ The slow network learns general skill, and only from real text or verified repla
 
 The previous rule-free build (cg20u) found 11 of 197 chains at the same scale.
 
+**The cg20y run (full size, three passes, sleep inference on).** Mean BPC 1.704, 1.455 and 1.368 after passes 1, 2 and 3; forgetting +0.058 at the end (+0.039 without Wikipedia, see below). Inference stayed exact throughout: two-hop 0.99 and three-hop 1.00 with the store, changed facts 1.00 with nothing stale, 128 of 128 cited sources containing the true chain, and every unknown subject abstained. The store costs +0.004 BPC on ordinary text. Consolidation was kept in every phase except DM Mathematics, and never harmed old domains. Routing was right on 25 of 29 visits. Two errors came from choosing the slot trained one visit earlier; one of them trained USPTO text into Wikipedia's slot, which explains Wikipedia's +0.171 forgetting. cg20z blocks that choice. CLS probes show the inferred facts still live only in the store: switching the store off drops them to 0.02–0.04 for old and recent conclusions alike.
+
 **Continual learning (full size, ten Pile domains).** With dream rehearsal and curvature-aware steps the model reached 1.17 bits per character (BPC) by its third pass, with forgetting of 0.03. In the strict closed loop (no real text after the first pass):
 
 | Second pass | BPC | Forgetting |
@@ -105,7 +107,17 @@ The previous rule-free build (cg20u) found 11 of 197 chains at the same scale.
 
 Verified replay recovered 98% of the gap, with no domain labels. The cg20x run (with sleep inference on) ended at 1.371 BPC, with forgetting of −0.011, +0.075 and +0.064 after passes 1, 2 and 3. Label-free routing was right on 25 of 29 visits; the errors were between the closest pairs of domains (Gutenberg and Wikipedia, GitHub and StackExchange).
 
-**Local tests behind cg20y (five-domain harness).**
+**Local tests behind cg20z (five-domain harness).**
+
+| Test | Result |
+|---|---|
+| Staging v2 (commit a conclusion only when its premises are read again) | 35/35 planted chains, accuracy 1.00; 85% of pooled conclusions are real planted links, against about 70% without it |
+| Staging v1 (evidence fading 0.8 per sleep, bar of about 25 bits) | nothing ever passed the bar; 5/35 chains |
+| Salience in place of rarity (two versions) | cleaner conclusions, but planted recall fell to 9–16 of 35 |
+| Symmetry of links (both directions strong) | recall kept, precision unchanged on its own |
+| Routing: "never the slot trained at the last visit", replayed on the cg20y log | fixes visits 14 and 22, changes no other decision |
+
+**Local tests behind cg20y.**
 
 | Test | Result |
 |---|---|
@@ -144,10 +156,10 @@ Platypus is a single Python script designed to run on one GPU (for example in Go
 
 ```bash
 pip install torch datasets scipy
-python threshold_lean_stagec9_7cg20y_conduit.py
+python threshold_lean_stagec9_7cg20z_conduit.py
 ```
 
-In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg20y_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
+In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg20z_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
 
 A full run streams ten domains over three passes and takes about four to five hours on a single modern GPU.
 
@@ -157,7 +169,7 @@ Options are set through the `LAB_OVR` environment variable as JSON, on top of th
 
 ```bash
 LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "seed": 1}' \
-  python threshold_lean_stagec9_7cg20y_conduit.py
+  python threshold_lean_stagec9_7cg20z_conduit.py
 ```
 
 Two environment switches:
@@ -186,6 +198,9 @@ Useful options:
 | `pu_cons_lr`, `pu_cons_steps` | Consolidation rate (multiplier on the training rate) and steps per phase |
 | `pu_cons_brake` | Rolls back consolidation if it harms old domains by more than this many BPC |
 | `infer_drift_clamp`, `infer_proto_strong` | Routing: drift clamped at zero; strong-prototype rule |
+| `infer_proto_recency` | Routing: 2 = no rule may pick the slot trained at the previous visit (default) |
+| `inf_stage` | Staging buffer: 2 = commit a conclusion only when its premises are read again (default) |
+| `inf_salience`, `inf_sym`, `inf_mutual`, `inf_splicemix`, `inf_bench` | Off by default, for local experiments: salience, symmetry, mutual compression, bridge-free mixing, and the Re-DocRED real-text benchmark |
 
 The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of the script.
 
@@ -198,7 +213,8 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 - **IDENTIFIER MEMORY**, **PARAPHRASED** and **RULE LAYER** lines for the identifier memory and the paraphrase rules
 - **REAL-TEXT CONCLUSIONS**: a sample of conclusions involving no planted name, with their source sentences, for judging precision on real text
 - **inference TIMING**: wall time of each sleep and of its linking step
-- **[consolidation]**: gap recovered per phase, and **ROLLED BACK** when the brake undoes a harmful phase
+- **STAGING**: candidates proposed, waiting, and passing the bar each sleep
+- **[consolidation]**: gap recovered per phase (summary as a median), and **ROLLED BACK** when the brake undoes a harmful phase
 - **CLS PROBES** and **DUAL PATHWAY** at the end: lesion by age, partial cues, schema test, and recall from damaged names by each pathway
 
 ## Project status
@@ -207,7 +223,7 @@ This is **research code**. It is bulky: it carries options, readouts and experim
 
 Known limits:
 
-- Inference has been tested on planted facts about invented people. Precision on conclusions drawn from real text has not been measured yet; cg20y prints samples to start doing so.
+- Inference has been tested at scale on planted facts about invented people. On natural text, a first local benchmark (Re-DocRED Wikipedia paragraphs with gold relations) found that word-level linking cannot chain facts stated only once: two single reads never reach the linking threshold. Facts must recur, or links must be found another way (bridge-free mixing and latent "splice" dreams are under test).
 - Natural prose is harder than templated sentences: about 0.77 two-hop recall in local tests.
 - Pronouns, descriptions and nested clauses are not resolved, so chains through "he" or "she" are not found.
 - Inferred facts stay in the fast memory. Replaying them into the weights did not transfer arbitrary facts at any safe rate in local tests. That is consistent with complementary-learning-systems theory, where specifics stay in the hippocampus and the cortex absorbs shared structure, but it means the weights alone do not recall inferred facts.
