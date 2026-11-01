@@ -17,7 +17,7 @@
 # WHAT THIS FILE IS
 #   The full-size (GPU) build of Platypus, a byte-level continual-learning language model. It reads ten Pile domains
 #   one after another over several passes and is evaluated on how much it keeps, how much it learns and what it can
-#   infer. Build: cg20u. The run configuration and a full change history are in NAME and LAB_OVR near the end.
+#   infer. Build: cg20y. The run configuration and a full change history are in NAME and LAB_OVR near the end.
 #
 # WHAT IT DOES
 #   * Continual learning without stored data: domains are learned in sequence; old domains are protected by
@@ -274,6 +274,7 @@ class Config:
                                     #   revisit, the loss jump only half; the loss jump flagged every new domain)
     infer_margin=0.6
     infer_delta_rep=0.6
+    infer_drift_fix=0               # cg20x ROUTING FIX: slot gaps corrected for trunk drift, measured on each slot's own dream-bank rows (see route_fix)
     infer_proto_gap=0.0             # cg14d: >0 = with the gap rule, a clear prototype overrides only if ITS slot's BPC is within this many bits of that slot's
                                     #   own reference. All 4 overrides so far: correct ones (Gutenberg) +0.013 / +0.088 / +0.102, the wrong one (cg14 visit 14:
                                     #   PubMed -> USPTO's slot, the gap rule had picked PubMed's own slot at -0.022) +0.417 -> 0.25
@@ -1731,12 +1732,15 @@ def infer_slot_rep(model,cfg,get,t_true,vi):
         S.append(0); L.append((vi,t_true,0,'new',None)); TM.setdefault(t_true,0)
         print(f"  [routing] visit {vi}: first context -> slot 0 (true {_lab(cfg,t_true)})"); return 0,[]
     b_=[get() for _ in range(cfg.infer_batches)]; xs=[a for a,_ in b_]; ys=[c for _,c in b_]
-    sc={}; ds={}; BK=model.__dict__.get('_bank',{}); dev=model.embed.weight.device
+    sc={}; ds={}; BK=model.__dict__.get('_bank',{}); dev=model.embed.weight.device; DR_={}
     for s_ in S:
         bp_,m_=_slot_score(model,xs,ys,s_); sc[s_]=bp_
         if s_ in BK:                                                      # FRESH PROTOTYPE: the slot's own dream-bank rows read NOW (a stored
             Xb_=BK[s_][:16,:xs[0].shape[1]].long().to(dev)                 #   prototype goes stale as the trunk drifts: cg9 CPU check, the
-            _,pm_=_slot_score(model,[Xb_],[torch.zeros_like(Xb_)],s_)      #   newest slot was always nearest)
+            _,pm_=_slot_score(model,[Xb_],[torch.zeros_like(Xb_)],s_)
+            if int(getattr(cfg,'infer_drift_fix',0)) and s_ in model.__dict__.get('_bank_ref',{}):   # cg20x: drift = BPC on own bank rows now - then
+                Xf_=BK[s_][:16].long().to(dev); bb_,_=_slot_score(model,[Xf_[:,:-1]],[Xf_[:,1:]],s_); DR_[s_]=bb_-model.__dict__['_bank_ref'][s_]
+                if int(getattr(cfg,'infer_drift_clamp',0)): DR_[s_]=max(0.0,DR_[s_])   # cg20y: a slot that IMPROVED gets no bonus (drift >= 0)      #   newest slot was always nearest)
             ds[s_]=float(1-F.cosine_similarity(m_,pm_,dim=0))
         else: ds[s_]=float('inf')
     cand=min(sc,key=sc.get); rnear=min(ds,key=ds.get)                     # candidate = lowest BPC; the representation must agree
@@ -1744,11 +1748,19 @@ def infer_slot_rep(model,cfg,get,t_true,vi):
     second=sorted(ds.values())[1] if len(ds)>1 else float('inf')
     if len(S)>=len(PILE_DOMAINS) and float(cfg.infer_gap_eps)>0 and all(s_ in R for s_ in S):   # cg13 GAP RULE (slots full): among slots within
         lo_=min(sc.values()); nr_={s_:sc[s_]-R[s_] for s_ in S if sc[s_]<=lo_+float(cfg.infer_gap_eps)}   #   infer_gap_eps of the lowest BPC, the one
-        s_=min(nr_,key=nr_.get); kind='revisit (slots full, smallest gap to own reference)'             #   fitting the text best RELATIVE TO ITS OWN
+        s_=min(nr_,key=nr_.get); kind='revisit (slots full, smallest gap to own reference)'
+        if DR_:                                                               # cg20x: gaps relative to what each slot can still do now
+            old_={'s':s_}; nr_={k_:v_-DR_.get(k_,0.0) for k_,v_ in nr_.items()}; s_=min(nr_,key=nr_.get)
+            if s_!=old_['s']: kind='revisit (slots full, smallest DRIFT-CORRECTED gap)'             #   fitting the text best RELATIVE TO ITS OWN
         if (ds.get(rnear,float('inf'))<=cfg.infer_margin*second and (sc[rnear]-lo_)<float(cfg.infer_proto_guard) and rnear!=s_   #   reference (recency-biased slots
-                and (float(cfg.infer_proto_gap)<=0 or (sc[rnear]-R.get(rnear,sc[rnear]))<=float(cfg.infer_proto_gap))):   # cg14d: the prototype's slot must fit its
+                and (float(cfg.infer_proto_gap)<=0 or (sc[rnear]-R.get(rnear,sc[rnear])-DR_.get(rnear,0.0))<=float(cfg.infer_proto_gap))):   # cg14d: the prototype's slot must fit its
             s_=rnear; kind='revisit (slots full, prototype clear)'                                     #   score low BPC on everything); clear prototype
-        gap=sc[s_]-R.get(s_,sc[s_])                                           #   override kept; replayed on cg9 / cg10 routing: 10/10 and 10/10
+        ps_=float(getattr(cfg,'infer_proto_strong',0.0))
+        if ps_>0 and second<float('inf') and ds.get(rnear,float('inf'))*ps_<=second and (sc[rnear]-lo_)<float(getattr(cfg,'infer_proto_strong_guard',0.25)) and rnear!=s_:
+            s_=rnear; kind='revisit (slots full, STRONG prototype)'             # cg20y: a prototype 3x nearer than the next wins within 0.25 bits (cg20x GPU replay: fixes visit 16, changes nothing else)
+        gap=sc[s_]-R.get(s_,sc[s_])-DR_.get(s_,0.0)                           #   override kept; replayed on cg9 / cg10 routing: 10/10 and 10/10
+        if DR_: kind+=f" [old rule: slot {old_['s']}; drift "+' '.join(f"s{k_}:{v_:+.3f}" for k_,v_ in sorted(DR_.items()))+"]"
+
     elif len(S)>=len(PILE_DOMAINS) and not (rep_ok and loss_ok):           # cg10 SLOTS FULL: the lowest-BPC slot is biased towards the slot trained
         lo2_=sorted(sc,key=sc.get)[:2]                                    #   most recently (cg9: Gutenberg -> FreeLaw, Github -> StackExchange,
         clear_=ds[rnear]<=cfg.infer_margin*second and (sc[rnear]-sc[cand])<cfg.infer_delta                         #   the fresh prototype was right both times): follow the prototype when
@@ -7469,7 +7481,12 @@ class _UnitMatch:
 def _u_rare(w_):
     """'all' mode (the word-level inference layer): ANY word of 3+ letters whose window frequency so far is at most the rarity limit
     (relational-word demotion: a word seen mostly in the RELATION slot of fact records, rarely as an argument, is not an argument)"""
-    if len(w_)<3 or _UNITS['df'].get(w_,0)>_UNITS['mx']: return False
+    if len(w_)<3: return False
+    if _UNITS.get('ent_on'):                                                    # ENTITIES BY COMPRESSION (inf_ent_mdl): judged by the bits they save, not by rarity
+        if w_ in _UNITS['ent']: pass
+        elif w_ in _UNITS['entno']: return False
+        elif _UNITS['df'].get(w_,0)>_UNITS['mx']: return False                 #   (not yet judged: rarity only proposes it)
+    elif _UNITS['df'].get(w_,0)>_UNITS['mx']: return False
     if _UNITS.get('rdem'):
         c_=_UNITS['slotc'].get(w_)
         if c_ and c_[1]>=3 and c_[1]>2*c_[0]: return False
@@ -7498,8 +7515,16 @@ class _UnitTrip:
                 sh_=_RDR.get('cb',set())                                        #   scheme's record replaces the base reading of the same pair when only it
                 for a_,r_,c_,sid_ in _rdr_records(b_):                          #   uses a shared relation (cleft: 'It is B that A r' -> not 'B that A')
                     k_=frozenset((a_,c_)); m0_=bs_.get(k_)
+                    if _RDR.get('v2') and (r_ not in sh_ or (m0_ is not None and (m0_.group(2).endswith(b' '+r_) or m0_.group(2)==r_))): continue   # v2: per-record code; no truncation
                     if sid_ in _RDR['acc'] and (m0_ is None or (m0_.group(2) not in sh_ and r_ in sh_ and not getattr(m0_,'_rdr',0))):
                         m1_=_UnitMatch((b_,a_,r_,c_),((0,len(b_)),)*4); m1_._rdr=1; bs_[k_]=m1_
+            if _RDR.get('km') and 'seg' in _RDR['acc']:                         # READER v3: core relations with their modifiers stripped
+                for a_,core_,c_,mods_ in _rdr_seg(b_,_RDR.get('cn',{}),_RDR['km']):
+                    if any(b'mod:'+m_ in _RDR.get('drop',()) for m_ in mods_):
+                        bs_.pop(frozenset((a_,c_)),None); continue              #   a modifier that states no current fact: no record at all
+                    k_=frozenset((a_,c_)); m0_=bs_.get(k_)
+                    if m0_ is None or m0_.group(2) not in _RDR.get('cb',()):
+                        m1_=_UnitMatch((b_,a_,core_,c_),((0,len(b_)),)*4); m1_._rdr=1; m1_._mods=mods_; bs_[k_]=m1_
             yield from bs_.values()
             return
         yield from s._lex(b_)
@@ -7565,6 +7590,34 @@ def _rdr_records(b_):
                         break
                     rel_.append(t_)
     return out_
+def _rdr_seg(b_,cn_,km_):
+    """READER v3 - CORE + MODIFIERS: between two consecutive rare words, the span is split into prefix | core | suffix, with at most one interior
+    gap of 1-2 words; the core must be a codebook relation; only KNOWN modifiers (km_: seen around >= 3 different cores) may be stripped
+    (punctuation is free). Best split = most bits for the core minus 0.5 bit per stripped modifier. Returns (a, core, b, modifiers) records;
+    with km_ None, returns every candidate split (for learning which modifiers are general)."""
+    out_=[]
+    for p_ in [q_ for q_ in _INF_SENT.split(b_) if q_]:
+        tk_=[m_.group(0) for m_ in _RTOK.finditer(p_)]; rr_=[k_ for k_,t_ in enumerate(tk_) if _rdr_word(t_) and _u_rare(t_)]
+        for x_,y_ in zip(rr_,rr_[1:]):
+            a_,c_=tk_[x_],tk_[y_]; mid_=tk_[x_+1:y_]; L_=len(mid_)
+            if a_==c_ or not 2<=L_<=10: continue
+            best_=None; cands_=[]
+            for i_ in range(L_):
+                for j_ in range(i_+1,L_+1):
+                    for g0_,g1_ in [(None,None)]+[(k_,k_+g_) for k_ in range(i_+1,j_-1) for g_ in (1,2) if k_+g_<j_]:
+                        cw_=mid_[i_:j_] if g0_ is None else mid_[i_:g0_]+mid_[g1_:j_]
+                        if not cw_ or not all(_rdr_word(t_) for t_ in cw_): continue
+                        core_=b' '.join(cw_)
+                        if core_ not in cn_: continue
+                        mods_=[m_ for m_ in (b' '.join(t_ for t_ in mid_[:i_] if _rdr_word(t_)),b' '.join(mid_[g0_:g1_]) if g0_ is not None else b'',b' '.join(t_ for t_ in mid_[j_:] if _rdr_word(t_))) if m_]
+                        if not mods_: continue                                  # nothing stripped: the base reading already says this
+                        if km_ is None: cands_.append((core_,mods_)); continue
+                        if any(m_ not in km_ for m_ in mods_): continue
+                        sc_=math.log2(1+cn_[core_])-0.5*len(mods_)
+                        if best_ is None or sc_>best_[0]: best_=(sc_,core_,tuple(mods_))
+            if km_ is None: out_.append((a_,c_,cands_))
+            elif best_ is not None and best_[0]>0: out_.append((a_,best_[1],c_,best_[2]))
+    return out_
 def _rdr_update(cfg,S_):
     """score every proposal scheme on the stored sentences; keep those that pay for themselves (two-part code, bits)"""
     if not _RDR.get('on'): return ''
@@ -7582,22 +7635,113 @@ def _rdr_update(cfg,S_):
         g_=len(rs0_)*(cf_*math.log2(max(cf_,1e-9)/max(c0_,1e-3))) - float(getattr(cfg,'inf_reader_cost',16.0))   # bits: KL of the conflict rate from the base rate
         if cf_>=0.5 and g_>0: dr_.add(px_); dseg_.append(f"'{px_.decode('latin-1')}' {len(rs0_)} records, conflict {cf_:.2f} (base {c0_:.2f}), {g_:+.0f} bits")
     _RDR['drop']=dr_
+    if int(getattr(cfg,'inf_reader_recur',0)):                                 # RECURRING CODEBOOK: a relation counts only through argument pairs read from >= 2
+        pc_={}                                                                  #   stored sentences (the seen-twice rule, applied to relations: junk readings of
+        for it_ in its_:                                                        #   ordinary text rarely link the same pair twice)
+            for m_ in _UnitTrip()._base(it_['s']): k0_=(m_.group(1),m_.group(2),m_.group(3)); pc_[k0_]=pc_.get(k0_,0)+1
+        Cb_={}
+        for (a0_,r0_,c0b_),n0_ in pc_.items():
+            if n0_>=2: Cb_.setdefault(r0_,set()).add((a0_,c0b_))
     al_=[x_ for it_ in its_ for x_ in _rdr_records(it_['s'])]; At_={}
     for a_,r_,c_,sid_ in al_: At_.setdefault(r_,set()).add((a_,c_))           # attestations OUTSIDE the base construction
     Cn_={r_:len(v_) for r_,v_ in Cb_.items() if len(v_)>=2 and r_ in At_}       # CODEBOOK: a relation that recurs (>= 2 pairs) AND in more than one construction
     R_={}; bk_=set(frozenset((a_,c_)) for r_,v_ in Cb_.items() if r_ in Cn_ for a_,c_ in v_)
+    v2_=bool(_RDR.get('v2')); br0_={}
+    if v2_:
+        for r_,v_ in Cb_.items():
+            for a_,c_ in v_: br0_.setdefault(frozenset((a_,c_)),set()).add(r_)
     for a_,r_,c_,sid_ in al_:
         if frozenset((a_,c_)) in bk_: continue                                   # nothing new: the base scheme already reads this pair with a codebook relation
+        if v2_ and any(b0_.endswith(b' '+r_) for b0_ in br0_.get(frozenset((a_,c_)),())): continue   # v2: a truncation of the base reading is not a new reading
         R_.setdefault(sid_,set()).add((a_,r_,c_))
+    fam_={}
+    for sid_ in R_: fam_[sid_.split(':')[0]]=fam_.get(sid_.split(':')[0],0)+1
+    if not v2_: fam_={}
+    km_=set(); mseg_=''
+    if int(getattr(cfg,'inf_reader',0))>=3:                                     # READER v3: which modifiers are GENERAL (seen around >= 3 different cores)
+        Mc_={}
+        for it_ in its_:
+            for a_,c_,cs_ in _rdr_seg(it_['s'],Cn_,None):
+                for core_,mods_ in cs_:
+                    for m_ in mods_: Mc_.setdefault(m_,set()).add(core_)
+        km_=set(m_ for m_,v_ in Mc_.items() if len(v_)>=int(getattr(cfg,'inf_reader_kmod',3)))
+        Ms_={}
+        for it_ in its_:
+            for a_,core_,c_,mods_ in _rdr_seg(it_['s'],Cn_,km_):
+                if frozenset((a_,c_)) in bk_: continue
+                R_.setdefault('seg',set()).add((a_,core_,c_))
+                for m_ in mods_: Ms_.setdefault(m_,set()).add((a_,core_,c_))
+        for m_,rs0_ in Ms_.items():                                             # a MODIFIER whose records contradict current facts far more than chance
+            if len(rs0_)<int(getattr(cfg,'inf_reader_dmin',4)): continue        #   does not state a current fact ('used to', 'no longer', 'not')
+            cf_=sum(1 for a_,r_,c_ in rs0_ if len(Ob_.get((a_,r_),set())|{c_})>=2)/len(rs0_)
+            g_=len(rs0_)*(cf_*math.log2(max(cf_,1e-9)/max(c0_,1e-3)))-float(getattr(cfg,'inf_reader_cost',16.0))
+            if cf_>=0.5 and g_>0: dr_.add(b'mod:'+m_); dseg_.append(f"modifier '{m_.decode('latin-1')}' {len(rs0_)} records, conflict {cf_:.2f}, {g_:+.0f} bits")
+        mseg_=f" | MODIFIERS: {len(km_)} general (e.g. "+", ".join(repr(m_.decode('latin-1')) for m_ in sorted(km_,key=lambda m_: -len(Mc_[m_]))[:8])+")"
+        fam_=fam_ if v2_ else {}; fam_['seg']=1
     mc_=float(getattr(cfg,'inf_reader_cost',16.0)); nw_=float(getattr(cfg,'inf_reader_newrel',4.0)); acc_=set(); seg_=[]
     for sid_,rs_ in R_.items():
         kn_=[r_ for r_ in rs_ if r_[1] in Cn_]
-        g_=sum(math.log2(1+Cn_[r_[1]]) for r_ in kn_)-nw_*(len(rs_)-len(kn_))-mc_
+        mc1_=(math.log2(1+fam_[sid_.split(':')[0]])+2.0) if v2_ else mc_          # v2: model cost = bits to name the scheme within its family
+        g_=sum(math.log2(1+Cn_[r_[1]]) for r_ in kn_)-(0.0 if v2_ else nw_*(len(rs_)-len(kn_)))-mc1_   # v2: records with a new relation are simply not used
         if g_>0: acc_.add(sid_)
         seg_.append((g_,f"{sid_} {len(rs_)} records, {len(kn_)/max(1,len(rs_)):.2f} known relation, {g_:+.0f} bits{' KEPT' if g_>0 else ''}"))
-    _RDR['acc']=acc_; _RDR['cb']=set(Cn_); _RDR['gain']={x_.split(' ')[0]:g_ for g_,x_ in seg_}
+    if v2_ and dr_:                                                             # v2: RETROACTIVE - records already made in a context now known to state no fact
+        it0_=S_['it']; nfr_=0; ncf_=0; bad_=set()
+        for f_ in S_.get('facts',[]):
+            if f_.get('freed') or f_.get('derived'): continue
+            i0_=f_.get('i')
+            if isinstance(i0_,int) and i0_<len(it0_):
+                b0_=it0_[i0_]['s']; j0_=b0_.find(f_['A'].encode('latin-1'))
+                if j0_>=0 and _rdr_prefix(b0_,j0_) in dr_: f_['freed']=True; nfr_+=1; bad_.add((f_['A'],f_['B'])); it0_[i0_]['sup']=True
+        for c_ in S_.get('conc',[]):
+            if not c_.get('freed') and any(isinstance(i_,int) and i_<len(it0_) and it0_[i_].get('sup') for i_ in c_.get('src',())): c_['freed']=True; ncf_+=1
+        if nfr_ or ncf_: dseg_.append(f"withdrawn: {nfr_} fact records, {ncf_} conclusions")
+    _RDR['acc']=acc_; _RDR['cb']=set(Cn_); _RDR['cn']=dict(Cn_); _RDR['km']=km_; _RDR['gain']={x_.split(' ')[0]:g_ for g_,x_ in seg_}
     seg_=[x_ for _,x_ in sorted(seg_,key=lambda z_: -z_[0])]
-    return f"  [inference MDL READER] contexts that state no fact: {len(dr_)} kept"+(" ("+"; ".join(dseg_[:4])+")" if dseg_ else "")+f" | {len(acc_)} of {len(R_)} proposal schemes kept (codebook {len(Cn_)} relations seen in more than one construction, of {len(Cb_)} base readings) | "+" | ".join(seg_[:10])
+    return (f"  [inference MDL READER v3]{mseg_}" if mseg_ else "")+f"  [inference MDL READER] contexts that state no fact: {len(dr_)} kept"+(" ("+"; ".join(dseg_[:4])+")" if dseg_ else "")+f" | {len(acc_)} of {len(R_)} proposal schemes kept (codebook {len(Cn_)} relations seen in more than one construction, of {len(Cb_)} base readings) | "+" | ".join(seg_[:10])
+def _ent_ok(n_,df_,mx_):
+    """argument test used by linking and fact records: compression-judged entities when inf_ent_mdl is on, else the rarity limit"""
+    return _u_rare(n_) if _UNITS.get('ent_on') else df_.get(n_,0)<=mx_
+def _ent_update(cfg,S_):
+    """ENTITIES BY COMPRESSION: every content word in a clause is a candidate argument; a candidate X is an entity when treating it as a node
+    SAVES BITS on the candidate records (X, words between, Y): leave-one-out code of the partner given X and the relation, against the partner
+    given the relation alone, minus the cost of naming X. Function words predict nothing (gain ~0); a one-off word has no held-out evidence
+    (gain 0); a name with recurring specific partners gains - at ANY frequency. Re-judged every sleep on the recent stored sentences."""
+    its_=[it_ for it_ in S_['it'] if it_.get('k')!='inf' and not it_.get('sup') and not it_.get('gone')][-int(getattr(cfg,'inf_ent_n',20000)):]
+    n_={}; nr_={}; nry_={}
+    for it_ in its_:
+        for cl_ in _re_inf.finditer(rb'[^.,;:!?()"]+',it_['s']):
+            ws_=_UWORD.findall(cl_.group(0))
+            for i_ in range(len(ws_)):
+                if len(ws_[i_])<3 or not ws_[i_][:1].isalpha(): continue
+                for j_ in range(i_+2,min(len(ws_),i_+8)):
+                    if len(ws_[j_])<3 or not ws_[j_][:1].isalpha() or ws_[j_]==ws_[i_]: continue
+                    r_=b' '.join(ws_[i_+1:j_]); k_=(ws_[i_],r_,ws_[j_]); n_[k_]=n_.get(k_,0)+1
+    for (x_,r_,y_),c_ in n_.items():
+        nr_[r_]=nr_.get(r_,0)+c_; nry_[(r_,y_,1)]=nry_.get((r_,y_,1),0)+c_; nry_[(r_,x_,0)]=nry_.get((r_,x_,0),0)+c_
+    nxr_={}; ny_={}; nt_=0
+    for (x_,r_,y_),c_ in n_.items():
+        nxr_[(x_,r_,0)]=nxr_.get((x_,r_,0),0)+c_; nxr_[(y_,r_,1)]=nxr_.get((y_,r_,1),0)+c_
+        ny_[(y_,1)]=ny_.get((y_,1),0)+c_; ny_[(x_,0)]=ny_.get((x_,0),0)+c_; nt_+=c_
+    g_={}; a_=1.0                                                               # leave-one-out at BOTH levels: the partner given the relation (baseline) and
+    for (x_,r_,y_),c_ in n_.items():                                            #   given the relation AND X; X earns only what it adds beyond the relation
+        g_.setdefault(x_,0.0); g_.setdefault(y_,0.0)
+        if c_<2: continue                                                       #   no held-out evidence: saves nothing
+        for X_,Y_,role_ in ((x_,y_,0),(y_,x_,1)):                                #   X as subject (predicts the object) and as object (predicts the subject)
+            pu_=(ny_[(Y_,1-role_)]+0.5)/(nt_+0.5*len(ny_))
+            pr_=(nry_[(r_,Y_,1-role_)]-1+a_*pu_)/(nr_[r_]-1+a_)
+            pl_=(c_-1+a_*pr_)/(nxr_[(X_,r_,role_)]-1+a_)
+            g_[X_]+=c_*math.log2(max(pl_,1e-12)/max(pr_,1e-12))
+    cst_=float(getattr(cfg,'inf_ent_cost',16.0))
+    bpr_=float(getattr(cfg,'inf_ent_bpr',0.0)); nrec_={}
+    if bpr_>0:                                                                  # optional: bits saved PER RECORD (specificity), not only in total
+        for (x_,r_,y_),c_ in n_.items(): nrec_[x_]=nrec_.get(x_,0)+c_; nrec_[y_]=nrec_.get(y_,0)+c_
+    E_=set(w_ for w_,v_ in g_.items() if v_>=cst_ and (bpr_<=0 or v_/max(1,nrec_.get(w_,1))>=bpr_)); N_=set(g_)-E_
+    _UNITS['ent']=E_; _UNITS['entno']=N_; _UNITS['ent_on']=True; _UNITS['entgain']=g_
+    hi_=sorted(E_,key=lambda w_: -_UNITS['df'].get(w_,0))[:8]
+    return (f"  [inference ENTITIES BY COMPRESSION] {len(g_)} candidates judged on {len(its_)} sentences, {len(E_)} entities (save >= {cst_:.0f} bits), {len(N_)} rejected | "
+            f"most frequent entities: "+", ".join(f"{w_.decode('latin-1')} (df {_UNITS['df'].get(w_,0)}, {g_[w_]:.0f} bits)" for w_ in hi_)
+            +" | most frequent rejected: "+", ".join(f"{w_.decode('latin-1')} ({g_[w_]:.0f} bits)" for w_ in sorted(N_,key=lambda w_: -_UNITS['df'].get(w_,0))[:6]))
 def _units_on(cfg): return int(getattr(cfg,'inf_units',0))>0
 @torch.no_grad()
 def _units_update(model,cfg,X,S_):
@@ -7665,6 +7809,31 @@ def inf_probes(cfg):
                 B2_,C2_=nm(),nm(); c_['upd']={'type':'true','B2':B2_,'C2':C2_,'new':[(c_['doms'][0],t0_.format(a=A_,b=B2_)),(c_['doms'][1],t1_.format(a=B2_,b=C2_))]}
             else:                                                               #   NOISE: one single contradicting sentence 'A r0 B3'; the old fact stays
                 B3_=nm(); c_['upd']={'type':'noise','B3':B3_,'new':[(c_['doms'][0],t0_.format(a=A_,b=B3_))]}
+    kf_=float(getattr(cfg,'inf_probe_known',0.0))
+    if kf_>0 and not cfg.inf_probe_file:                                        # KNOWN-WORD PROBES: the chain ends in a real place name the trunk already knows
+        KP_=['Lisbon','Porto','Seville','Valencia','Bilbao','Lyon','Toulouse','Marseille','Bordeaux','Nantes','Geneva','Zurich','Basel','Vienna','Salzburg',
+             'Prague','Krakow','Warsaw','Gdansk','Munich','Hamburg','Dresden','Leipzig','Cologne','Bremen','Antwerp','Ghent','Bruges','Utrecht','Leiden',
+             'Bergen','Oslo','Uppsala','Malmo','Aarhus','Turku','Tallinn','Riga','Vilnius','Dublin','Cork','Galway','Glasgow','Leeds','York','Bristol',
+             'Oxford','Cambridge','Florence','Venice','Verona','Naples','Turin','Genoa','Bologna','Athens','Sofia','Zagreb','Ljubljana','Budapest']
+        rsk_=np.random.RandomState(int(cfg.seed)+8080); rsk_.shuffle(KP_); kk_=0; kn0_=[]
+        for c_ in ch:
+            if len(c_['names'])!=3 or c_.get('upd') or c_.get('var') or rsk_.rand()>=kf_ or kk_>=len(KP_): continue
+            C0_,C1_=c_['names'][2],KP_[kk_]; kk_+=1; c_['names'][2]=C1_; c_['known']=True; kn0_.append(C1_)
+            c_['facts']=[(d_,t_.replace(C0_,C1_)) for d_,t_ in c_['facts']]
+        _INF['known_c']=kn0_
+    vf_=float(getattr(cfg,'inf_probe_variant',0.0))
+    if vf_>0 and not cfg.inf_probe_file:                                        # VARIANT BRIDGES: 'Galbriqui ... ' in one fact, 'Galbriqu ...' in the other -
+        rsv_=np.random.RandomState(int(cfg.seed)+7070)                          #   an exact-name linker cannot chain them; a fuzzy one can
+        for c_ in ch:
+            if len(c_['names'])!=3 or c_.get('upd') or rsv_.rand()>=vf_: continue
+            B_=c_['names'][1]; V_=B_[:-1] if len(B_)>=6 else B_+'a'
+            if V_ in used: continue
+            used.add(V_); c_['var']=V_; d1_,s1_=c_['facts'][1]; d0_,s0_=c_['facts'][0]
+            kt_=int(getattr(cfg,'inf_probe_variant_k',0)); kc_=int(getattr(cfg,'inf_probe_variant_ctx',0))
+            if kt_>0: c_['vtypo']=[(d1_,s1_.replace(B_,V_))]*kt_                 #   RARE TYPO: the fact keeps its spelling; the typo appears k times
+            else:
+                c_['facts'][1]=(d1_,s1_.replace(B_,V_))
+                if kc_>0: c_['vtypo']=[(d0_,s0_.replace(B_,V_))]*kc_             #   SHARED CONTEXT: the variant is also linked to A (k times)
     pf_=float(getattr(cfg,'inf_para_frac',0.0))
     if pf_>0:                                                                   # PARAPHRASE PROBES: facts stated in the usual wording, the paraphrase, or BOTH
         PP_={_inf_phrase(t_):_INF_PARA[_inf_phrase(t_)] for t_ in _INF_REL}; rsq_=np.random.RandomState(int(cfg.seed)+4040); ck_=int(getattr(cfg,'inf_comp_k',2))
@@ -7681,13 +7850,18 @@ def inf_probes(cfg):
                 X_=nm(); u1_=rsq_.rand(); ph_=r1_ if u1_<0.6 else PP_[r1_]
                 c_.setdefault('extra',[]).append((c_['doms'][0],f"{c_['names'][0]} {ph_} {X_}."))
                 if u1_<0.3: c_['extra'].append((c_['doms'][0],f"{c_['names'][0]} {PP_[r1_]} {X_}."))
+    hf_=float(getattr(cfg,'inf_plant_hot',0.0))
+    if hf_>0:                                                                   # FREQUENT-ENTITY PROBES: these chains are planted inf_plant_hot_mult times as often,
+        rsh_=np.random.RandomState(int(cfg.seed)+6060)                          #   so their names exceed the rarity limit (like 'London' in real text)
+        for c_ in ch:
+            if not c_.get('upd') and rsh_.rand()<hf_: c_['hot']=True
     if int(getattr(cfg,'inf_prose',0)) and not cfg.inf_probe_file:           # NATURAL-PROSE PROBES: the same facts, written as varied natural sentences
         _inf_prose(ch,cfg)
     _INF['probes']=ch
     print(f"  [inference] {len(ch)} probe chains ({sum(len(c_['rels'])==3 for c_ in ch)} three-hop){' from '+cfg.inf_probe_file if cfg.inf_probe_file else ' (templated, invented names)'}"
           f", {sum(len(c_['facts']) for c_ in ch)} fact sentences, each planted x{cfg.inf_plant_k} per pass into its domain's text")
     return ch
-_PROSE_STYLES=('template','clause','fronted','cleft','apposition','pronoun','tail')
+_PROSE_STYLES=('template','clause','fronted','cleft','apposition','pronoun','tail','modifier')
 def _inf_prose(ch,cfg):
     """rewrite each probe fact (chains without belief-revision updates) in ONE natural-prose style, chosen per fact; the chain keeps its ground truth.
     styles: template (unchanged) | clause ('A, who r B, spent ...') | fronted ('In those years A r B, or so ...') | cleft ('It is B that A r.': object first)
@@ -7713,6 +7887,13 @@ def _inf_prose(ch,cfg):
             elif st_=='apposition': s1_=f"{a_} {r_} {b_}, {apps_[rs_.randint(len(apps_))]}."
             elif st_=='pronoun': s1_=f"{a_} arrived early that day. Later, {'she' if rs_.rand()<0.5 else 'he'} {r_} {b_}."
             elif st_=='tail': s1_=f"{a_} {r_} {b_} and then {tails_[rs_.randint(len(tails_))]}."
+            elif st_=='modifier':                                               # prefix / interior adverb / between-suffix (1-2 of them)
+                w_=r_.split(' '); u_=rs_.rand(); pre_=["apparently","by all accounts","it seems","still"]; adv_=["closely","directly","mostly","really"]; suf_=["none other than","a certain","the well known"]
+                if u_<0.33: w_=[pre_[rs_.randint(4)]]+w_
+                elif u_<0.66: w_=w_[:1]+[adv_[rs_.randint(4)]]+w_[1:]
+                else: w_=w_+[suf_[rs_.randint(3)]]
+                if rs_.rand()<0.4: w_=[pre_[rs_.randint(4)]]+w_ if u_>=0.33 else w_+[suf_[rs_.randint(3)]]
+                s1_=f"{a_} {' '.join(w_)} {b_}."
             else: s1_=s0_
             c_['facts'][j_]=(dd_,s1_)
         if neg_>0 and rs_.rand()<neg_:
@@ -7725,9 +7906,11 @@ def inf_plant(raw,cfg,d,p):
         u_=c_.get('upd') if int(p)>=1 else None
         for j_,(dd_,s_) in enumerate(c_['facts']):
             if u_ and u_['type']=='true' and j_==0: continue                   # the old fact is no longer true
-            if dd_==int(d): fs_.append(s_)
+            if dd_==int(d): fs_.extend([s_]*(int(getattr(cfg,'inf_plant_hot_mult',1)) if c_.get('hot') else 1))
         for dd_,s_ in c_.get('extra',[]):
             if dd_==int(d): fs_.append(s_)
+        for dd_,s_ in c_.get('vtypo',[]):
+            if dd_==int(d): once_.append(s_)
         if u_:
             for dd_,s_ in u_['new']:
                 if dd_==int(d): (fs_ if u_['type']=='true' else once_).append(s_)
@@ -7775,14 +7958,19 @@ def inf_store_add(model,cfg,X,dom,mask=None):
         w2_=_re_inf.sub(rb'^[A-Za-z]*',b'',w_[1:] if mask is not None else w_)   # a word cut by the window start is not a name
         w2_=_re_inf.sub(rb'[A-Za-z]*$',b'',w2_)                                       #   nor one cut by the window end
         w2_=_re_inf.sub(rb'[A-Za-z]*\x00+[A-Za-z]*',b'. ',w2_)                       # blanked (unverified) runs: hard sentence breaks, adjacent word fragments dropped
-        pv_=None
-        for s_ in _INF_SENT.split(w2_):
+        pv_=None; ss_=_INF_SENT.split(w2_)
+        if int(getattr(cfg,'inf_drop_cut',0)) and len(ss_)>1:                   # CUT FRAGMENTS: the window's first and last pieces are sentences cut by the window
+            ss_=ss_[1:] if not w2_[:1].isupper() else ss_                       #   ('Anrisul is a partner ' with its object cut off): never stored
+            if ss_ and not _re_inf.search(rb'[.!?]["\')]?\s*$',ss_[-1]): ss_=ss_[:-1]
+        for s_ in ss_:
             ns_=_INF_NAME.findall(s_)
             if _RDR.get('on') and len(set(ns_))==1 and pv_ is not None and len(pv_)+len(s_)<300:   # MDL READER: a one-name sentence is stored with the
                 s0_=s_; s_=pv_+b' '+s_; ns_=_INF_NAME.findall(s_); pv_=s0_           #   sentence before it (a pronoun scheme may read it)
             else: pv_=s_ if ns_ else None
             if len(set(ns_))<2 or len(s_)>300: continue
-            if len(S_['it'])>=cap_: continue
+            if S_.get('nlive',len(S_['it']))>=cap_:
+                if not int(getattr(cfg,'inf_store_roll',0)) or not _inf_store_evict(cfg,S_,model): continue   # ROLLING STORE: evict old unreferenced sentences
+            S_['nlive']=S_.get('nlive',len(S_['it']))+1
             i_=len(S_['it']); S_['it'].append({'s':s_,'d':int(dom),'k':'real' if mask is None else 'ver','dep':0,'v':int(model.__dict__.get('_visit',0))}); S_['new'].append(i_)
             if _UNITS.get('all') and _UNITS.get('rdem'):                        # slot statistics: how often each word is an ARGUMENT vs inside a RELATION
                 for m4_ in _INF_TRIP.finditer(s_):
@@ -7792,6 +7980,31 @@ def inf_store_add(model,cfg,X,dom,mask=None):
                 m3_=_INF_TRIP.search(s_)
                 if m3_: S_.setdefault('rel',{}).setdefault((m3_.group(1),m3_.group(2)),{}).setdefault(m3_.group(3),[]).append(i_)
             for n_ in set(ns_): S_['idx'].setdefault(n_,[]).append(i_)
+def _inf_store_evict(cfg,S_,model):
+    """ROLLING SENTENCE STORE: when full, the oldest 10% of sentences from earlier visits that no live fact record, conclusion or re-entered
+    conclusion depends on are emptied (their index entries removed). Evidence that was never used makes room for new evidence."""
+    vis_=int(model.__dict__.get('_visit',0)); keep_=set()
+    for f_ in S_.get('facts',[]):
+        if not f_.get('freed') and isinstance(f_.get('i'),int): keep_.add(f_['i'])
+    for c_ in S_.get('conc',[]):
+        if not c_.get('freed'): keep_.update(i_ for i_ in c_.get('src',()) if isinstance(i_,int))
+    nt_=max(1,int(0.1*S_.get('nlive',len(S_['it'])))); ev_=[]
+    for i_,it_ in enumerate(S_['it']):
+        if len(ev_)>=nt_: break
+        if it_.get('gone') or it_.get('k')=='inf' or i_ in keep_ or it_.get('v',vis_)>=vis_: continue
+        ev_.append(i_)
+    if not ev_: return False
+    E_=set(ev_); nm_=set()
+    for i_ in ev_:
+        it_=S_['it'][i_]; nm_.update(_INF_NAME.findall(it_['s'])); it_['s']=b''; it_['gone']=True
+    for n_ in nm_:
+        l_=S_['idx'].get(n_)
+        if l_ is not None:
+            l2_=[i_ for i_ in l_ if i_ not in E_]
+            if l2_: S_['idx'][n_]=l2_
+            else: S_['idx'].pop(n_,None)
+    S_['nlive']=S_.get('nlive',len(S_['it']))-len(ev_); S_['nevict']=S_.get('nevict',0)+len(ev_)
+    return True
 def _inf_rel(s_,a_,b_):
     """relation phrase if the sentence reads '<a> <1-6 lowercase words> <b>' (subject-first), else None"""
     w0_=rb'[^\s.,;:!?()"]+' if _UNITS.get('on') else rb'[a-z]+'
@@ -7801,14 +8014,388 @@ def _inf_rel(s_,a_,b_):
         for a2_,r2_,c2_,sid_ in _rdr_records(s_):
             if sid_ in _RDR['acc'] and a2_==a_ and c2_==b_: return r2_.decode('latin-1')
     return None
+# ---- LINK MEMORY (inf_graph 2): links are not kept as a list. Every link read (a, b) is written into an associative matrix memory between sparse random
+#      entity codes (k signed units of D); writes ACCUMULATE, so querying with b returns each partner with a strength equal to how often the link was read
+#      (a count sketch: crosstalk ~ sqrt(load), small against k*k); a slow decay fades links that are never read again. Linking during sleep is a QUERY:
+#      recall a bridge's partners, propose A-C for partner pairs, promote into the fast store when the value in bits clears the threshold.
+_LM={'M':None}
+def _lm_init(cfg):
+    if _LM['M'] is None:
+        D_=int(getattr(cfg,'inf_lm_dim',4096)); _LM.update(M=np.zeros((D_,D_),np.float32),D=D_,k=int(getattr(cfg,'inf_lm_k',16)),codes={},names=[],idx=[],sgn=[],nw=0,
+                                                       fz=float(getattr(cfg,'inf_lm_fuzzy',0.0)),kn=int(getattr(cfg,'inf_lm_kn',48)))
+def _lm_raw(n_):
+    """(units, signed weights) of a name's code, not registered. inf_lm_fuzzy a > 0: the exact random code plus a CHARACTER-TRIGRAM code of
+    weight a (lower-cased, padded): near-spellings share most trigram units, so a damaged or variant name recalls partly; total energy k"""
+    import zlib as _zl
+    r_=np.random.RandomState(_zl.crc32(n_)&0x7fffffff); ix_=r_.choice(_LM['D'],_LM['k'],replace=False).astype(np.int64); sg_=r_.choice([-1.0,1.0],_LM['k']).astype(np.float32)
+    a_=_LM.get('fz',0.0)
+    if a_<=0: return ix_,sg_
+    w_=b'#'+n_.lower()+b'#'; tg_=sorted(set(w_[i_:i_+3] for i_ in range(len(w_)-2))); m_=max(1,_LM['kn']//max(1,len(tg_)))
+    ui_=[]; us_=[]
+    for t_ in tg_:
+        rt_=np.random.RandomState(_zl.crc32(b'tri:'+t_)&0x7fffffff); ui_.extend(rt_.choice(_LM['D'],m_,replace=False).tolist()); us_.extend(rt_.choice([-1.0,1.0],m_).tolist())
+    ui_=np.array(ui_[:_LM['kn']]+[0]*max(0,_LM['kn']-len(ui_)),np.int64); us_=np.array(us_[:_LM['kn']]+[0.0]*max(0,_LM['kn']-len(us_)),np.float32)
+    nz_=max(1,int((us_!=0).sum())); us_*=a_*math.sqrt(_LM['k']/nz_)
+    return np.concatenate([ix_,ui_]),np.concatenate([sg_,us_])/math.sqrt(1.0+a_*a_)
+def _lm_code(n_):
+    c_=_LM['codes'].get(n_)
+    if c_ is None:
+        ix_,sg_=_lm_raw(n_)
+        c_=(ix_,sg_,len(_LM['names'])); _LM['codes'][n_]=c_; _LM['names'].append(n_); _LM['idx'].append(ix_); _LM['sgn'].append(sg_); _LM['arr']=None
+    return c_
+def _lev(a_,b_):
+    """edit distance of two byte strings"""
+    p0_=list(range(len(b_)+1))
+    for i_,x_ in enumerate(a_,1):
+        c0_=[i_]
+        for j_,y_ in enumerate(b_,1): c0_.append(min(p0_[j_]+1,c0_[j_-1]+1,p0_[j_-1]+(x_!=y_)))
+        p0_=c0_
+    return p0_[-1]
+def _lm_sim(a_,b_):
+    """code overlap of two names (1.0 = same name): exact part 0 for different names, trigram part ~ shared trigrams"""
+    ia_,sa_=_LM['codes'][a_][:2] if a_ in _LM['codes'] else _lm_raw(a_); ib_,sb_=_LM['codes'][b_][:2] if b_ in _LM['codes'] else _lm_raw(b_)
+    va_=np.zeros(_LM['D'],np.float32); np.add.at(va_,ia_,sa_); return float(va_[ib_]@sb_)/_LM['k']
+def _lm_write(a_,c_,w_=1.0):
+    ia_,sa_,_=_lm_code(a_); ic_,sc_,_=_lm_code(c_); M_=_LM['M']
+    if _LM.get('fz',0.0)>0: np.add.at(M_,(ia_[:,None],ic_[None,:]),w_*np.outer(sa_,sc_)); np.add.at(M_,(ic_[:,None],ia_[None,:]),w_*np.outer(sc_,sa_))   # (units may repeat)
+    else: M_[np.ix_(ia_,ic_)]+=w_*np.outer(sa_,sc_); M_[np.ix_(ic_,ia_)]+=w_*np.outer(sc_,sa_)
+    _LM['nw']+=1
+def _lm_pair(a_,c_):
+    ia_,sa_,_=_lm_code(a_); ic_,sc_,_=_lm_code(c_); return float(sa_@_LM['M'][np.ix_(ia_,ic_)]@sc_)/(_LM['k']**2)
+def _lm_partners(b_):
+    """strength of every known entity as a partner of b_ (one query: k rows of the memory, then each entity's k units)"""
+    if _LM.get('arr') is None: _LM['arr']=(np.stack(_LM['idx']),np.stack(_LM['sgn']))
+    I_,S0_=_LM['arr']; ib_,sb_,_=_lm_code(b_)
+    if _LM.get('arr') is None or I_.shape[0]!=len(_LM['names']): _LM['arr']=(np.stack(_LM['idx']),np.stack(_LM['sgn'])); I_,S0_=_LM['arr']
+    v_=sb_@_LM['M'][ib_,:]; return (v_[I_]*S0_).sum(1)/(_LM['k']**2)
 def inf_infer(model,cfg):
     """bridge-centred chaining over the store; returns this sleep's NEW conclusions"""
     S_=_inf_store(model); df_=S_['df']; mx_=int(cfg.inf_df); new_=[]; st_={'bridges':0,'hub':0,'prop':0}
-    lw_=S_.get('lw') if S_.get('strict') else None; ok_=lambda n_: df_.get(n_,0)<=mx_ and (lw_ is None or n_.lower() not in lw_)
+    rf_=int(getattr(cfg,'inf_conc_refresh',0)) and _UNITS.get('all'); nrt_=0
+    gr_=int(getattr(cfg,'inf_graph',0)) if _UNITS.get('all') else 0; G_=S_.setdefault('graph',{}) if gr_==1 else None; vis_=int(model.__dict__.get('_visit',0)); ngn_=0; ngu_=0
+    cmap_={(min(c_['A'],c_['C']).encode('latin-1','replace'),max(c_['A'],c_['C']).encode('latin-1','replace')):c_ for c_ in S_['conc'] if not c_.get('freed') and isinstance(c_.get('A'),str) and isinstance(c_.get('C'),str)} if rf_ else {}
+    lw_=S_.get('lw') if S_.get('strict') else None; ok_=lambda n_: _ent_ok(n_,df_,mx_) and (lw_ is None or n_.lower() not in lw_)
     br_=set(n_ for i_ in S_['new'] for n_ in _INF_NAME.findall(S_['it'][i_]['s']) if ok_(n_))
-    if str(getattr(cfg,'inf_bridge_order','any'))=='rare': br_=sorted(br_,key=lambda n_: (df_.get(n_,0),n_))   # cg20i: rarest bridges first (the budget goes to rare links)
+    if str(getattr(cfg,'inf_bridge_order','any'))=='rare': br_=sorted(br_,key=lambda n_: (df_.get(n_,0),n_))
+    if int(getattr(cfg,'inf_bridge_facts',0)) and _UNITS.get('all'):           # BRIDGES WITH RECORDED FACTS FIRST: bridges that are arguments of recorded (recurring)
+        fa_={}                                                                  #   facts are linked first, most facts first; one-off rare words in ordinary text
+        for f_ in S_.get('facts',[]):                                           #   no longer use up the linking budget before them
+            if not f_.get('freed'):
+                for n_ in (f_['A'],f_['B']): fa_[n_.encode('latin-1')]=fa_.get(n_.encode('latin-1'),0)+1
+        br_=sorted(br_,key=lambda n_: (-fa_.get(n_,0),df_.get(n_,0),n_))
+    if int(getattr(cfg,'inf_lm_side',0)) and gr_ not in (2,4):                  # DUAL PATHWAY: the overlapping link memory learns beside the exact store
+        _lm_init(cfg); _LM['M']*=float(getattr(cfg,'inf_lm_decay',0.97)); nsw_=0
+        for i_ in S_.get('lmw',[]):
+            it_=S_['it'][i_]
+            if it_.get('sup') and not it_.get('lmu'):
+                for a_,c_ in it_.get('lml',()): _lm_write(a_,c_,-1.0)
+                it_['lmu']=True
+        for i_ in S_['new']:
+            it_=S_['it'][i_]
+            if it_.get('k')=='inf' or it_.get('sup'): continue
+            for m_ in _INF_TRIP.finditer(it_['s']):
+                a_,c_=m_.group(1),m_.group(3)
+                if a_!=c_ and ok_(a_) and ok_(c_):
+                    _lm_write(a_,c_,1.0); nsw_+=1; it_.setdefault('lml',[]).append((a_,c_)); S_.setdefault('lmw',[]).append(i_) if len(it_['lml'])==1 else None
+        for c_ in S_['conc']:                                                   #   conclusions enter it as strong links (and leave when freed)
+            if not c_.get('freed') and not c_.get('lms') and isinstance(c_.get('A'),str): _lm_write(c_['A'].encode(),c_['C'].encode(),9.0); c_['lms']=True
+            elif c_.get('freed') and c_.get('lms'): _lm_write(c_['A'].encode(),c_['C'].encode(),-9.0); c_['lms']=False
+        S_['lmside']=f"{len(_LM['names'])} entities, {nsw_} links this sleep"
+    if gr_==3:                                                                  # ONE-SCAN SALIENCE: links kept as a sparse weighted adjacency W (exact counts, decay,
+        import scipy.sparse as _sp                                              #   retraction); every two-step path strength at once as S = W'W', with W' = f(W)
+        W_=S_.setdefault('W1',{}); ix0_=S_.setdefault('W1ix',{}); osst_={'w':0,'un':0}   #   damped by each bridge's fan-out; the most salient links are the top
+        dec_=float(getattr(cfg,'inf_lm_decay',0.97))                            #   entries of S, ranked by GAIN x NEED (Mattar & Daw), in one pass - no enumeration
+        for k0_ in list(W_):
+            W_[k0_]*=dec_
+            if W_[k0_]<0.05: del W_[k0_]
+        AL_=S_.setdefault('alias',{}); cn_=lambda n_: AL_.get(n_,n_); er_=int(getattr(cfg,'inf_ent_resolve',0)); erst_={'m':0,'f':0,'mdl':0,'fan':0,'est':0,'ex':[]}
+        if er_:
+            vt0_={}
+            for q_ in inf_probes(cfg):
+                if q_.get('var'): vt0_[q_['var'].encode('latin-1')]=q_['names'][1].encode('latin-1')
+            fW_={}
+            for (a0_,c0_) in W_: fW_[a0_]=fW_.get(a0_,0)+1; fW_[c0_]=fW_.get(c0_,0)+1
+            nn_=set(); PW_={}
+            for (a0_,c0_) in W_: PW_.setdefault(a0_,set()).add(c0_); PW_.setdefault(c0_,set()).add(a0_)
+            for i_ in S_['new']:
+                it_=S_['it'][i_]
+                if it_.get('k')=='inf' or it_.get('sup'): continue
+                for m_ in _INF_TRIP.finditer(it_['s']):
+                    a1_,c1_=m_.group(1),m_.group(3)
+                    if ok_(a1_) and ok_(c1_) and a1_!=c1_: PW_.setdefault(a1_,set()).add(cn_(c1_)); PW_.setdefault(c1_,set()).add(cn_(a1_))
+                    for n_ in (a1_,c1_):
+                        if ok_(n_) and n_ not in AL_: nn_.add(n_)
+            al0_=set(fW_)|nn_; DX_={}
+            for n_ in al0_:
+                if n_ in AL_: continue
+                l_=n_.lower()
+                for k_ in {l_}|{l_[:j_]+l_[j_+1:] for j_ in range(len(l_))}: DX_.setdefault(k_,set()).add(n_)
+            nb_=math.log2(max(2,len(al0_))); mf0_=int(cfg.inf_maxfan); df0_=S_['df']
+            for V_ in sorted(nn_):
+                if V_ in AL_: continue
+                l_=V_.lower(); cs_=set()
+                for k_ in {l_}|{l_[:j_]+l_[j_+1:] for j_ in range(len(l_))}: cs_|=DX_.get(k_,set())
+                cs_={B_ for B_ in cs_ if B_!=V_ and B_ not in AL_ and _lev(l_,B_.lower())<=1}
+                if not cs_: continue
+                B_=max(cs_,key=lambda b_: (df0_.get(b_,0),fW_.get(b_,0),b_))
+                if (df0_.get(B_,0),fW_.get(B_,0),B_)<(df0_.get(V_,0),fW_.get(V_,0),V_): B_,V_=V_,B_   #   the more frequent spelling is canonical
+                l_=V_.lower()
+                if (min(B_,V_),max(B_,V_)) in S_.setdefault('ersep',set()): continue
+                eb_=_lev(l_,B_.lower())*math.log2(27.0*max(len(B_),len(V_)))+(1.0 if B_!=V_ and B_.lower()==l_ else 0.0)
+                sp9_=False
+                if er_>=2:                                                      # v2: (a) TYPO - per occurrence, coding V as B plus an edit beats V's own
+                    sh_=len((PW_.get(V_,set())|{cn_(x_) for x_ in PW_.get(V_,set())})&PW_.get(B_,set()))   #   code only if B is ~2^edit-bits times more frequent;
+                    ty_=eb_<math.log2((df0_.get(B_,0)+1.0)/(df0_.get(V_,0)+1.0))                         #   (b) SAME ENTITY - the two share a partner and the
+                    if not (ty_ or (sh_>=1 and eb_<nb_)): erst_['mdl']+=1; continue                       #   edit is cheaper than a new name
+                    erst_['why']=erst_.get('why',{}); k9_='typo' if ty_ else 'shared partner'; erst_['why'][k9_]=erst_['why'].get(k9_,0)+1; sp9_=not ty_
+                elif eb_>=nb_: erst_['mdl']+=1; continue                        #   MDL: an edit must be cheaper than a new name
+                if fW_.get(V_,0)>=2 and fW_.get(B_,0)>=2 and not sp9_: erst_['est']+=1; S_['ersep'].add((min(B_,V_),max(B_,V_))); continue   #   both established: distinct
+                if fW_.get(V_,0)+fW_.get(B_,0)>mf0_: erst_['fan']+=1; S_['ersep'].add((min(B_,V_),max(B_,V_))); continue      #   would make a hub
+                AL_[V_]=cn_(B_); erst_['m']+=1
+                for v2_,b2_ in list(AL_.items()):
+                    if b2_==V_: AL_[v2_]=AL_[V_]                                   #   (keep aliases pointing at the canonical name)
+                tr_=(vt0_.get(V_)==B_ or vt0_.get(B_)==V_); erst_['f']+=int(not tr_)
+                if len(erst_['ex'])<4: erst_['ex'].append(f"{V_.decode('latin-1','replace')}->{B_.decode('latin-1','replace')}{'' if tr_ else ' (not planted)'}")
+            if erst_['m']:                                                      #   re-key the link table to the canonical names
+                for k0_ in [k_ for k_ in W_ if k_[0] in AL_ or k_[1] in AL_]:
+                    w0_=W_.pop(k0_); a0_,c0_=cn_(k0_[0]),cn_(k0_[1])
+                    if a0_!=c0_: k1_=(min(a0_,c0_),max(a0_,c0_)); W_[k1_]=W_.get(k1_,0.0)+w0_
+            S_['ergrp']={}
+            for v_,b_ in AL_.items(): S_['ergrp'].setdefault(b_,[]).append(v_)
+            ST_=S_.setdefault('erstat',[0,0]); ST_[0]+=erst_['m']; ST_[1]+=erst_['f']
+            osst_['er']=(f" | ENTITY RESOLUTION: {erst_['m']} merged this sleep ({erst_['f']} not a planted variant; total {ST_[0]}, {ST_[1]} not planted), refused: MDL {erst_['mdl']}, "
+                         f"both established {erst_['est']}, would make a hub {erst_['fan']}"+(f" | merged because: {erst_.get('why')}" if erst_.get('why') else "")+(f" | e.g. {', '.join(erst_['ex'])}" if erst_['ex'] else ""))
+        for i_ in S_['new']:
+            it_=S_['it'][i_]
+            if it_.get('k')=='inf' or it_.get('sup'): continue
+            for m_ in _INF_TRIP.finditer(it_['s']):
+                a_,c_=cn_(m_.group(1)),cn_(m_.group(3))
+                if a_!=c_ and ok_(a_) and ok_(c_):
+                    k0_=(min(a_,c_),max(a_,c_)); W_[k0_]=W_.get(k0_,0.0)+1.0; osst_['w']+=1; it_.setdefault('w1l',[]).append(k0_); S_.setdefault('w1w',[]).append(i_) if len(it_['w1l'])==1 else None
+        dr0_=frozenset(_RDR.get('drop',()) or ()) if _RDR.get('on') else frozenset()
+        if dr0_!=S_.get('w1drop',frozenset()):                                   # cg20x: the reader learned new no-fact contexts (negation, hedges):
+            S_['w1drop']=dr0_; osst_['rd']=0                                    #   re-read every sentence that wrote links and take back the links
+            for i_ in S_.get('w1w',[]):                                         #   it no longer states (W must not count 'A is not B' as an A-B link)
+                it_=S_['it'][i_]
+                if it_.get('w1u') or not it_.get('w1l'): continue
+                now_=set((min(cn_(m_.group(1)),cn_(m_.group(3))),max(cn_(m_.group(1)),cn_(m_.group(3)))) for m_ in _INF_TRIP.finditer(it_['s']))
+                kp_=[]
+                for k0_ in it_['w1l']:
+                    if k0_ in now_: kp_.append(k0_)
+                    elif k0_ in W_: W_[k0_]=max(0.0,W_[k0_]-1.0); osst_['rd']+=1
+                it_['w1l']=kp_
+        for i_ in S_.get('w1w',[]):                                              #   retraction: superseded sentences leave W at once
+            it_=S_['it'][i_]
+            if it_.get('sup') and not it_.get('w1u'):
+                for k0_ in it_.get('w1l',()):
+                    if k0_ in W_: W_[k0_]=max(0.0,W_[k0_]-1.0); osst_['un']+=1
+                it_['w1u']=True
+        for c_ in S_.get('conc',[]):                                           # cg20x: a withdrawn or evicted conclusion gives back its strong link
+            if c_.get('freed') and c_.get('w9'):
+                a9_,c9_=c_['A'].encode(),c_['C'].encode(); k0_=(min(a9_,c9_),max(a9_,c9_))
+                if k0_ in W_: W_[k0_]=max(0.0,W_[k0_]-9.0)
+                c_['w9']=False; osst_['un']+=1
+        ents_=sorted(set(x_ for k0_ in W_ for x_ in k0_)); eid_={e_:j_ for j_,e_ in enumerate(ents_)}; n0_=len(ents_)
+        if n0_>2:
+            r0_=[];c0_=[];v0_=[]
+            for (a_,c_),w_ in W_.items(): ia0_,ic0_=eid_[a_],eid_[c_]; r0_+= [ia0_,ic0_]; c0_+=[ic0_,ia0_]; v0_+=[w_,w_]
+            Wm_=_sp.csr_matrix((np.array(v0_,np.float32),(np.array(r0_),np.array(c0_))),shape=(n0_,n0_))
+            fan_=np.asarray((Wm_>0.5).sum(1)).ravel().astype(np.float32)
+            Wf_=Wm_.copy(); Wf_.data=np.log2(1.0+Wf_.data)                      #   f(w) = bits of a link read w times
+            dmp_=_sp.diags((fan_<=int(cfg.inf_maxfan)*4)/np.sqrt(np.maximum(1.0,fan_-1.0)))   #   hub damping: a bridge's paths share its specificity
+                                                                                #   (cg20x: hubs past 4x the fan limit leave the product - bounds S at GPU scale)
+            Sm_=(Wf_@dmp_@dmp_@Wf_).tocoo()                                     #   S[A,C] = sum over bridges B of f(w_AB) f(w_BC) / (fan_B - 1)
+            mf_=int(cfg.inf_maxfan); th_=float(getattr(cfg,'inf_graph_theta',1.585)); need_={}
+            for i_ in S_['new']:
+                for n_ in set(_INF_NAME.findall(S_['it'][i_]['s'])): need_[n_]=need_.get(n_,0)+1
+            cand_=[]
+            for a0_,c0b_,v1_ in zip(Sm_.row,Sm_.col,Sm_.data):
+                if a0_>=c0b_ or v1_<th_: continue                               #   upper triangle; value below the threshold
+                A,C=ents_[a0_],ents_[c0b_]
+                if (min(A,C),max(A,C)) in W_ or (min(A,C),max(A,C)) in S_['pairs']: continue   #   already directly linked / already concluded
+                nd_=1.0+math.log2(1.0+need_.get(A,0)+need_.get(C,0))
+                cand_.append((float(v1_)*nd_,float(v1_),a0_,c0b_))
+            cand_.sort(reverse=True); osst_['cand']=len(cand_); osst_['pro']=0; osst_['nosrc']=0
+            for pri_,v1_,a0_,c0b_ in cand_[:int(cfg.inf_budget)]:
+                A,C=ents_[a0_],ents_[c0b_]
+                ra_=Wm_.getrow(a0_); rc_=Wm_.getrow(c0b_); com_=set(ra_.indices)&set(rc_.indices)
+                if not com_: continue
+                bb_=max(com_,key=lambda j_: min(ra_[0,j_],rc_[0,j_])/max(1.0,fan_[j_]-1.0)); B=ents_[bb_]   #   the best bridge (for the citation)
+                if fan_[bb_]>mf_*4: continue
+                gx_=lambda X_: set(j_ for g_ in [X_]+S_.get('ergrp',{}).get(X_,[]) for j_ in S_['idx'].get(g_,[]))   #   (all spellings of a resolved entity)
+                ab_=sorted(gx_(A)&gx_(B)); bc_=sorted(gx_(B)&gx_(C))
+                pr0_=[(u_,w0_) for u_ in ab_[-8:] for w0_ in bc_[-8:] if u_!=w0_ and not (S_['it'][u_].get('v')==S_['it'][w0_].get('v') and S_['it'][u_]['d']==S_['it'][w0_]['d'])]
+                if not pr0_: osst_['nosrc']+=1; continue
+                ia_,ic_=pr0_[-1]
+                if (S_['it'][ia_]['dep']+S_['it'][ic_]['dep'])>1: continue
+                sa0_,sc0_=S_['it'][ia_]['s'],S_['it'][ic_]['s']
+                sp_=lambda X_,t_: next((g_ for g_ in [X_]+S_.get('ergrp',{}).get(X_,[]) if g_ in t_),X_)   #   the spelling used in that sentence
+                r1_=_inf_rel(sa0_,sp_(A,sa0_),sp_(B,sa0_)); r2_=_inf_rel(sc0_,sp_(B,sc0_),sp_(C,sc0_))
+                if r1_ is None or r2_ is None:
+                    r1b_=_inf_rel(sc0_,sp_(C,sc0_),sp_(B,sc0_)); r2b_=_inf_rel(sa0_,sp_(B,sa0_),sp_(A,sa0_))
+                    if r1b_ is not None and r2b_ is not None: A,C,r1_,r2_,ia_,ic_=C,A,r1b_,r2b_,ic_,ia_
+                typed_=(r1_ is not None and r2_ is not None)
+                sent_=(f"{A.decode()} {r1_} someone who {r2_} {C.decode()}." if typed_ else f"So {A.decode()} is connected to {C.decode()}.")
+                new_.append({'A':A.decode(),'B':B.decode(),'C':C.decode(),'r':(r1_,r2_),'typed':typed_,'s':sent_,'src':(ia_,ic_),'d':S_['it'][ia_]['d'],
+                             'dep':1+S_['it'][ia_]['dep']+S_['it'][ic_]['dep'],'gain':v1_,'pri':pri_,'fanpen':0.0,'onescan':True,'w9':bool(int(getattr(cfg,'inf_conc_reenter',0)))})
+                S_['pairs'].add((min(A,C),max(A,C))); osst_['pro']+=1; st_['prop']+=1
+                if int(getattr(cfg,'inf_conc_reenter',0)): k0_=(min(A,C),max(A,C)); W_[k0_]=W_.get(k0_,0.0)+9.0   #   a promoted conclusion is a strong link
+            t2o_,t3o_=_inf_truth(cfg); wt_=sum(1 for p0_,v1_,a0_,c0b_ in cand_ if (ents_[a0_].decode('latin-1','replace'),ents_[c0b_].decode('latin-1','replace')) in t2o_|t3o_)
+            st_['graph']=(f"  [inference ONE-SCAN SALIENCE] W: {n0_} entities, {len(W_)} links ({osst_['w']} read this sleep, {osst_['un']} retracted) | S = W'W' gives {Sm_.nnz} two-step paths in one product, "
+                          f"{osst_['cand']} new above {th_:.2f} (true probe chains among them {wt_}) | PROMOTED {osst_['pro']} by gain x need, no citable sources {osst_['nosrc']}"
+                          +(f" | re-read after new no-fact contexts: {osst_['rd']} links taken back" if 'rd' in osst_ else "")+osst_.get('er',''))
+        br_=[]
+    if gr_==4:                                                                  # FUZZY LINK MEMORY + ONE-SCAN READOUT
+        _lm_init(cfg); fst_={'w':0,'q':0,'hub':0,'cand':0,'pro':0,'nosrc':0,'merge':0,'fmerge':0}; th_=float(getattr(cfg,'inf_graph_theta',1.585)); tau_=float(getattr(cfg,'inf_lm_tau',0.6))
+        _LM['M']*=float(getattr(cfg,'inf_lm_decay',0.97))
+        for i_ in S_.get('lmw',[]):                                             #   retraction (superseded sentences leave the memory)
+            it_=S_['it'][i_]
+            if it_.get('sup') and not it_.get('lmu'):
+                for a_,c_ in it_.get('lml',()): _lm_write(a_,c_,-1.0)
+                it_['lmu']=True
+        for i_ in S_['new']:
+            it_=S_['it'][i_]
+            if it_.get('k')=='inf' or it_.get('sup'): continue
+            for m_ in _INF_TRIP.finditer(it_['s']):
+                a_,c_=m_.group(1),m_.group(3)
+                if a_!=c_ and ok_(a_) and ok_(c_):
+                    _lm_write(a_,c_,1.0); fst_['w']+=1; it_.setdefault('lml',[]).append((a_,c_)); S_.setdefault('lmw',[]).append(i_) if len(it_['lml'])==1 else None
+        nm_=_LM['names']; mf_=int(cfg.inf_maxfan); mg_=float(getattr(cfg,'inf_lm_merge',0.0)); vt_={}
+        for c_ in inf_probes(cfg):
+            if c_.get('var'): vt_[c_['names'][1].encode('latin-1')]=c_['var'].encode('latin-1')
+        if _LM.get('arr') is None or _LM['arr'][0].shape[0]!=len(nm_): _LM['arr']=(np.stack(_LM['idx']),np.stack(_LM['sgn'])) if nm_ else None
+        if mg_>0 and nm_:                                                       #   all code overlaps in one sparse product (trigram units only)
+            import scipy.sparse as _sp
+            I_,S0_=_LM['arr']; Cs_=_sp.csr_matrix((S0_.ravel(),(np.repeat(np.arange(len(nm_)),I_.shape[1]),I_.ravel())),shape=(len(nm_),_LM['D'])); Cs_.sum_duplicates()
+        need_={}
+        for i_ in S_['new']:
+            for n_ in set(_INF_NAME.findall(S_['it'][i_]['s'])): need_[n_]=need_.get(n_,0)+1
+        P_={}; via_={}
+        for B in list(br_)[:int(getattr(cfg,'inf_lm_q',3000))]:
+            if B not in _LM['codes']: continue
+            grp_=[B]
+            if mg_>0:                                                           #   MERGE: the bridge's near-spellings stand with it
+                sm_=np.asarray((Cs_@Cs_[_LM['codes'][B][2]].T).todense()).ravel()/_LM['k']
+                for j_ in np.nonzero(sm_>=mg_)[0]:
+                    if nm_[j_]==B: continue
+                    if int(getattr(cfg,'inf_lm_merge_mdl',0)):
+                        V_=nm_[j_]
+                        if (min(B,V_),max(B,V_)) in S_.setdefault('lmsep',set()): fst_['sepd']=fst_.get('sepd',0)+1; continue
+                        eb_=_lev(B.lower(),V_.lower())*math.log2(27.0*max(len(B),len(V_)))   #   bits to code V as an edit of B
+                        if eb_>=math.log2(max(2,len(nm_))): fst_['mdlno']=fst_.get('mdlno',0)+1; continue   #   vs bits to name it as its own entity
+                    grp_.append(nm_[j_]); fst_['merge']+=1; fst_['fmerge']+=int(not (vt_.get(B)==nm_[j_] or vt_.get(nm_[j_])==B))
+            sc_=sum(_lm_partners(g_) for g_ in grp_); fst_['q']+=1
+            for g_ in grp_: sc_[_LM['codes'][g_][2]]=0.0
+            pi_=np.nonzero(sc_>=tau_)[0]
+            if len(grp_)>1 and len(pi_)>mf_ and int(getattr(cfg,'inf_lm_merge_mdl',0)):
+                for g_ in grp_[1:]: S_.setdefault('lmsep',set()).add((min(B,g_),max(B,g_)))   #   COLLISION: separate this pair for good
+            if len(grp_)>1 and len(pi_)>mf_ and (int(getattr(cfg,'inf_lm_merge_fan',0)) or int(getattr(cfg,'inf_lm_merge_mdl',0))):   #   a merge that turns the bridge into a hub is undone (it costs
+                fst_['unm']=fst_.get('unm',0)+1; fst_['merge']-=len(grp_)-1                #   the specificity it was meant to add)
+                fst_['fmerge']-=sum(1 for g_ in grp_[1:] if not (vt_.get(B)==g_ or vt_.get(g_)==B)); grp_=[B]
+                sc_=_lm_partners(B).copy(); sc_[_LM['codes'][B][2]]=0.0; pi_=np.nonzero(sc_>=tau_)[0]
+            if len(pi_)<2: continue
+            if len(pi_)>mf_: fst_['hub']+=1; continue
+            dm_=1.0/max(1.0,len(pi_)-1.0)
+            for x_ in range(len(pi_)):
+                for y_ in range(x_+1,len(pi_)):
+                    A,C=nm_[pi_[x_]],nm_[pi_[y_]]
+                    if A in grp_ or C in grp_ or _lm_sim(A,C)>=(mg_ if mg_>0 else 0.5): continue   #   (no chain between two spellings of one name)
+                    k0_=(min(A,C),max(A,C)); v1_=math.log2(1+float(sc_[pi_[x_]]))*math.log2(1+float(sc_[pi_[y_]]))*dm_
+                    P_[k0_]=P_.get(k0_,0.0)+v1_
+                    if v1_>=via_.get(k0_,(0,None))[0]: via_[k0_]=(v1_,grp_)
+        cand_=[]
+        for k0_,v1_ in P_.items():
+            if v1_<th_ or k0_ in S_['pairs'] or _lm_pair(k0_[0],k0_[1])>=tau_: continue
+            cand_.append((v1_*(1.0+math.log2(1.0+need_.get(k0_[0],0)+need_.get(k0_[1],0))),v1_,k0_))
+        cand_.sort(reverse=True); fst_['cand']=len(cand_)
+        for pri_,v1_,(A,C) in cand_[:int(cfg.inf_budget)]:
+            grp_=via_[(A,C)][1]; B=grp_[0]
+            ix0_=lambda X_,Y_: sorted(set(S_['idx'].get(X_,[]))&set(j_ for g_ in Y_ for j_ in S_['idx'].get(g_,[])))
+            ab_=ix0_(A,grp_); bc_=ix0_(C,grp_)
+            pr0_=[(u_,w0_) for u_ in ab_[-8:] for w0_ in bc_[-8:] if u_!=w0_ and not (S_['it'][u_].get('v')==S_['it'][w0_].get('v') and S_['it'][u_]['d']==S_['it'][w0_]['d'])]
+            if not pr0_: fst_['nosrc']+=1; continue
+            ia_,ic_=pr0_[-1]
+            if (S_['it'][ia_]['dep']+S_['it'][ic_]['dep'])>1: continue
+            sa0_,sc0_=S_['it'][ia_]['s'],S_['it'][ic_]['s']
+            Ba_=next((g_ for g_ in grp_ if g_ in sa0_),B); Bc_=next((g_ for g_ in grp_ if g_ in sc0_),B)
+            r1_=_inf_rel(sa0_,A,Ba_); r2_=_inf_rel(sc0_,Bc_,C)
+            if r1_ is None or r2_ is None:
+                r1b_=_inf_rel(sc0_,C,Bc_); r2b_=_inf_rel(sa0_,Ba_,A)
+                if r1b_ is not None and r2b_ is not None: A,C,r1_,r2_,ia_,ic_=C,A,r1b_,r2b_,ic_,ia_
+            typed_=(r1_ is not None and r2_ is not None)
+            sent_=(f"{A.decode()} {r1_} someone who {r2_} {C.decode()}." if typed_ else f"So {A.decode()} is connected to {C.decode()}.")
+            new_.append({'A':A.decode(),'B':B.decode(),'C':C.decode(),'r':(r1_,r2_),'typed':typed_,'s':sent_,'src':(ia_,ic_),'d':S_['it'][ia_]['d'],
+                         'dep':1+S_['it'][ia_]['dep']+S_['it'][ic_]['dep'],'gain':v1_,'pri':pri_,'fanpen':0.0,'lm':True,'fuzzy':len(grp_)>1})
+            S_['pairs'].add((min(A,C),max(A,C))); fst_['pro']+=1; st_['prop']+=1
+            if int(getattr(cfg,'inf_conc_reenter',0)): _lm_write(A,C,9.0)
+        t2m_,t3m_=_inf_truth(cfg); wt_=sum(1 for _,_,(a0_,c0_) in cand_ if (a0_.decode('latin-1','replace'),c0_.decode('latin-1','replace')) in t2m_|t3m_)
+        st_['graph']=(f"  [inference FUZZY LINK MEMORY] {len(nm_)} entities, {fst_['w']} links written this sleep, codes: exact"+(f" + spelling (weight {_LM['fz']:.2f})" if _LM.get('fz',0)>0 else "")+
+                      f" | queries {fst_['q']}, hubs {fst_['hub']}, bridge merges {fst_['merge']} (not a planted variant: {fst_['fmerge']}; undone as hub-making {fst_.get('unm',0)}; refused by MDL {fst_.get('mdlno',0)}; separated pairs {len(S_.get('lmsep',()))}) | {fst_['cand']} new pairs above {th_:.2f} (true probe chains {wt_}), "
+                      f"PROMOTED {fst_['pro']} by gain x need, no citable sources {fst_['nosrc']}")
+        br_=[]
+    if gr_==2:                                                                  # LINK MEMORY: write this visit's links, then link by querying the memory
+        _lm_init(cfg); lmst_={'w':0,'q':0,'hub':0,'cand':0,'pro':0,'nosrc':0,'dir':0}; th_=float(getattr(cfg,'inf_graph_theta',1.585)); tau_=float(getattr(cfg,'inf_lm_tau',0.6))
+        _LM['M']*=float(getattr(cfg,'inf_lm_decay',0.97))                      #   links never read again fade
+        nun_=0
+        if int(getattr(cfg,'inf_lm_retract',0)):                               # RETRACTION: a sentence the grounding audit superseded is subtracted from the
+            for i_ in S_.get('lmw',[]):                                         #   memory (the old link stops being recalled at once, not after slow decay)
+                it_=S_['it'][i_]
+                if it_.get('sup') and not it_.get('lmu'):
+                    for a_,c_ in it_.get('lml',()): _lm_write(a_,c_,-1.0); nun_+=1
+                    it_['lmu']=True
+        lmst_['un']=nun_
+        for i_ in S_['new']:
+            it_=S_['it'][i_]
+            if it_.get('k')=='inf' or it_.get('sup'): continue
+            for m_ in _INF_TRIP.finditer(it_['s']):
+                a_,c_=m_.group(1),m_.group(3)
+                if a_!=c_ and ok_(a_) and ok_(c_):
+                    _lm_write(a_,c_,1.0); lmst_['w']+=1
+                    if int(getattr(cfg,'inf_lm_retract',0)): it_.setdefault('lml',[]).append((a_,c_)); S_.setdefault('lmw',[]).append(i_) if len(it_['lml'])==1 else None
+        nm_=_LM['names']; nq_=int(getattr(cfg,'inf_lm_q',3000)); mf_=int(cfg.inf_maxfan)
+        for B in list(br_)[:nq_]:
+            if B not in _LM['codes']: continue
+            sc_=_lm_partners(B); lmst_['q']+=1; ib0_=_LM['codes'][B][2]; sc_[ib0_]=0.0
+            pi_=np.nonzero(sc_>=max(tau_,float(getattr(cfg,'inf_lm_rel',0.35))*float(sc_.max())))[0]   #   (relative cut: a strong link leaks onto entities sharing its units)
+            if len(pi_)<2: continue
+            if len(pi_)>mf_: lmst_['hub']+=1; continue                          #   a hub: too many partners to link through
+            pi_=pi_[np.argsort(-sc_[pi_])]; f0_=len(pi_)
+            for x_ in range(len(pi_)):
+                for y_ in range(x_+1,len(pi_)):
+                    A,C=nm_[pi_[x_]],nm_[pi_[y_]]; key_=(min(A,C),max(A,C)); lmst_['cand']+=1
+                    if key_ in S_['pairs']: continue
+                    if _lm_pair(A,C)>=tau_: S_['pairs'].add(key_); lmst_['dir']+=1; continue   #   already directly linked
+                    val_=math.log2(1+min(float(sc_[pi_[x_]]),float(sc_[pi_[y_]])))-math.log2(max(1,f0_*(f0_-1)/2))
+                    if val_<th_ or len(new_)>=int(cfg.inf_budget): continue
+                    ab_=sorted(set(S_['idx'].get(A,[]))&set(S_['idx'].get(B,[]))); bc_=sorted(set(S_['idx'].get(B,[]))&set(S_['idx'].get(C,[])))
+                    pr_=[(u_,w0_) for u_ in ab_[-8:] for w0_ in bc_[-8:] if u_!=w0_ and not (S_['it'][u_].get('v')==S_['it'][w0_].get('v') and S_['it'][u_]['d']==S_['it'][w0_]['d'])]
+                    if not pr_: lmst_['nosrc']+=1; continue                     #   sources to cite, from more than one passage
+                    ia_,ic_=pr_[-1]
+                    if (S_['it'][ia_]['dep']+S_['it'][ic_]['dep'])>1: continue
+                    sa0_,sc0_=S_['it'][ia_]['s'],S_['it'][ic_]['s']; r1_=_inf_rel(sa0_,A,B); r2_=_inf_rel(sc0_,B,C)
+                    if r1_ is None or r2_ is None:
+                        r1b_=_inf_rel(sc0_,C,B); r2b_=_inf_rel(sa0_,B,A)
+                        if r1b_ is not None and r2b_ is not None: A,C,r1_,r2_,ia_,ic_=C,A,r1b_,r2b_,ic_,ia_
+                    typed_=(r1_ is not None and r2_ is not None)
+                    sent_=(f"{A.decode()} {r1_} someone who {r2_} {C.decode()}." if typed_ else f"So {A.decode()} is connected to {C.decode()}.")
+                    new_.append({'A':A.decode(),'B':B.decode(),'C':C.decode(),'r':(r1_,r2_),'typed':typed_,'s':sent_,'src':(ia_,ic_),'d':S_['it'][ia_]['d'],
+                                 'dep':1+S_['it'][ia_]['dep']+S_['it'][ic_]['dep'],'gain':val_,'fanpen':math.log2(max(1,f0_*(f0_-1)/2)),'lm':True})
+                    S_['pairs'].add(key_); lmst_['pro']+=1; st_['prop']+=1
+                    if int(getattr(cfg,'inf_conc_reenter',0)): _lm_write(A,C,9.0)   #   a promoted conclusion is a strong link (three-hop through it)
+        t2m_,t3m_=_inf_truth(cfg); rc_=0; nc_=0
+        for q_ in inf_probes(cfg):
+            n0_=[n_.encode('latin-1') for n_ in q_['names'][:3]]
+            if all(n_ in _LM['codes'] for n_ in n0_):
+                nc_+=1; rc_+=int(_lm_pair(n0_[0],n0_[1])>=tau_ and _lm_pair(n0_[1],n0_[2])>=tau_)
+        rs0_=np.random.RandomState(vis_); nz_=[]
+        if len(nm_)>50:
+            for _ in range(200): u0_,u1_=rs0_.randint(len(nm_),size=2); nz_.append(abs(_lm_pair(nm_[u0_],nm_[u1_])))
+        st_['graph']=(f"  [inference LINK MEMORY] {_LM['D']}x{_LM['D']} memory, {_LM['k']} units per entity, {len(nm_)} entities, {_LM['nw']} links written ({lmst_['w']} this sleep) | "
+                      f"retracted {lmst_.get('un',0)} | queries {lmst_['q']}, hubs {lmst_['hub']}, partner pairs {lmst_['cand']}, already linked {lmst_['dir']}, no citable sources {lmst_['nosrc']}, PROMOTED {lmst_['pro']} (threshold {th_:.2f} bits) | "
+                      f"probe chains with both links recalled {rc_}/{nc_} | crosstalk (random pairs) mean {np.mean(nz_) if nz_ else float('nan'):.3f}, 99th pct {np.percentile(nz_,99) if nz_ else float('nan'):.3f} (a link read once = 1.0)")
+        br_=[]   # cg20i: rarest bridges first (the budget goes to rare links)
     for B in br_:
-        part={}
+        part={}; prel_={}
         slots_=_UNITS.get('all') and int(getattr(cfg,'inf_link_slots',0))
         for i_ in S_['idx'].get(B,[]):
             it_=S_['it'][i_]
@@ -7824,20 +8411,35 @@ def inf_infer(model,cfg):
                     a5_,c5_=m5_.group(1),m5_.group(3)
                     if B in (a5_,c5_):
                         A=c5_ if a5_==B else a5_
-                        if A!=B and ok_(A): part.setdefault(A,[]).append(i_)
+                        if A!=B and ok_(A): part.setdefault(A,[]).append(i_); prel_.setdefault(A,m5_.group(2))
                 continue
             for A in set(_INF_NAME.findall(it_['s'])):
                 if A!=B and ok_(A): part.setdefault(A,[]).append(i_)
         st_['bridges']+=1
-        if len(part)>int(cfg.inf_maxfan): st_['hub']+=1; continue
+        hr_=int(getattr(cfg,'inf_hub_rel',0)) and _UNITS.get('all'); rcn_={}
+        if hr_:                                                                 # HUBS PER RELATION: 'London' is a fine bridge for 'born in' if that relation's partners stay few
+            for A_ in part: rcn_[prel_.get(A_,b'')]=rcn_.get(prel_.get(A_,b''),0)+1
+            if all(v_>int(cfg.inf_maxfan) for v_ in rcn_.values()): st_['hub']+=1; continue
+        elif len(part)>int(cfg.inf_maxfan): st_['hub']+=1; continue
         ks_=sorted(part)
+        if hr_: ks_=[A_ for A_ in ks_ if rcn_.get(prel_.get(A_,b''),0)<=int(cfg.inf_maxfan)]
         for x_ in range(len(ks_)):
             for y_ in range(x_+1,len(ks_)):
                 A,C=ks_[x_],ks_[y_]; ia_=part[A][0]; ic_=part[C][0]
                 if ia_==ic_ or (S_['it'][ia_]['dep']+S_['it'][ic_]['dep'])>1: continue   # different sentences; never inferred + inferred
                 key_=(min(A,C),max(A,C))
-                if key_ in S_['pairs']: continue
+                if key_ in S_['pairs']:
+                    if rf_:                                                     # RE-ENCOUNTER: the same link reached through another bridge is an independent route
+                        c0_=cmap_.get(key_)
+                        if c0_ is not None and c0_.get('B')!=B.decode('latin-1') and B.decode('latin-1') not in c0_.setdefault('routes',set()): c0_['routes'].add(B.decode('latin-1')); nrt_+=1
+                    continue
                 if set(S_['idx'].get(A,[]))&set(S_['idx'].get(C,[])): S_['pairs'].add(key_); continue   # already directly linked: nothing to infer
+                if gr_==1:                                                      # LINK GRAPH: every candidate link is kept (no store writes, no cost to predictions);
+                    e_=G_.get(key_)                                             #   it is promoted into the store later only if its value clears the threshold
+                    if e_ is None: e_=G_[key_]={'A':A,'B':B,'C':C,'ia':ia_,'ic':ic_,'routes':set(),'v0':vis_,'fan':len(part)}; ngn_+=1
+                    else: ngu_+=1
+                    e_['routes'].add(B); e_['v']=vis_; e_['fan']=min(e_['fan'],len(part))
+                    continue
                 if _UNITS.get('all') and min(len(part[A])+(9 if int(getattr(cfg,'inf_conc_reenter',0)) and S_['it'][ia_].get('k')=='inf' else 0),
                                              len(part[C])+(9 if int(getattr(cfg,'inf_conc_reenter',0)) and S_['it'][ic_].get('k')=='inf' else 0))<int(getattr(cfg,'inf_conc_minsup',0)): continue   # BOTH source facts must recur (a stored conclusion already passed this test)
                 S_['pairs'].add(key_)                                           #   (not marked as tried: the link is reconsidered once its support grows)
@@ -7858,22 +8460,69 @@ def inf_infer(model,cfg):
                     sup_=math.log2(1+min(len(part[A])+(9 if re_ and S_['it'][ia_].get('k')=='inf' else 0),len(part[C])+(9 if re_ and S_['it'][ic_].get('k')=='inf' else 0)))   #   repeated, independent observation of BOTH source facts
                     gain_=(sup_ if str(getattr(cfg,'inf_pool_gain','support'))=='support' else gain_+sup_)-math.log2(max(1,f0_*(f0_-1)/2))   # (rarity is already a filter: not counted twice)
                 new_.append({'A':A.decode(),'B':B.decode(),'C':C.decode(),'r':(r1_,r2_),'typed':typed_,'s':sent_,'src':(ia_,ic_),'d':S_['it'][ia_]['d'],
-                             'dep':1+S_['it'][ia_]['dep']+S_['it'][ic_]['dep'],'gain':gain_})
+                             'dep':1+S_['it'][ia_]['dep']+S_['it'][ic_]['dep'],'gain':gain_,'fanpen':math.log2(max(1,f0_*(f0_-1)/2))})
                 st_['prop']+=1
                 if len(new_)>=int(cfg.inf_budget): break
             if len(new_)>=int(cfg.inf_budget): break
         if len(new_)>=int(cfg.inf_budget): break
+    if gr_==1:                                                                  # PROMOTION: a graph link enters the store when its value in bits clears the threshold
+        ix_=S_['idx']; th_=float(getattr(cfg,'inf_graph_theta',1.585)); ttl_=int(getattr(cfg,'inf_graph_ttl',8)); npr_=0; ndel_=0
+        re_=int(getattr(cfg,'inf_conc_reenter',0)); t2g_,t3g_=_inf_truth(cfg); tg_=set()
+        for k_,e_ in list(G_.items()):
+            if e_.get('promoted'): continue
+            if vis_-e_.get('v',vis_)>ttl_: del G_[k_]; ndel_+=1; continue      #   links never met again fade out of the graph
+            A,B,C,ia_,ic_=e_['A'],e_['B'],e_['C'],e_['ia'],e_['ic']
+            if ia_>=len(S_['it']) or ic_>=len(S_['it']) or S_['it'][ia_].get('gone') or S_['it'][ic_].get('gone'): continue
+            sa_=len(set(ix_.get(A,[]))&set(ix_.get(B,[])))+(9 if re_ and S_['it'][ia_].get('k')=='inf' else 0)
+            sc_=len(set(ix_.get(B,[]))&set(ix_.get(C,[])))+(9 if re_ and S_['it'][ic_].get('k')=='inf' else 0)
+            f0_=e_['fan']; val_=math.log2(1+min(sa_,sc_))+math.log2(len(e_['routes']))-math.log2(max(1,f0_*(f0_-1)/2)); e_['val']=val_
+            if (A.decode('latin-1','replace'),C.decode('latin-1','replace')) in t2g_|t3g_: tg_.add(k_)
+            if val_<th_ or len(new_)>=int(cfg.inf_budget): continue
+            it_a_,it_c_=S_['it'][ia_],S_['it'][ic_]
+            if it_a_.get('v')==it_c_.get('v') and it_a_['d']==it_c_['d']: continue   #   evidence from one passage is not promoted
+            sa0_,sc0_=it_a_['s'],it_c_['s']
+            r1_=_inf_rel(sa0_,A,B); r2_=_inf_rel(sc0_,B,C)
+            if r1_ is None or r2_ is None:
+                r1b_=_inf_rel(sc0_,C,B); r2b_=_inf_rel(sa0_,B,A)
+                if r1b_ is not None and r2b_ is not None: A,C,r1_,r2_,ia_,ic_=C,A,r1b_,r2b_,ic_,ia_
+            typed_=(r1_ is not None and r2_ is not None)
+            sent_=(f"{A.decode()} {r1_} someone who {r2_} {C.decode()}." if typed_ else f"So {A.decode()} is connected to {C.decode()}.")
+            new_.append({'A':A.decode(),'B':B.decode(),'C':C.decode(),'r':(r1_,r2_),'typed':typed_,'s':sent_,'src':(ia_,ic_),'d':S_['it'][ia_]['d'],
+                         'dep':1+S_['it'][ia_]['dep']+S_['it'][ic_]['dep'],'gain':val_,'fanpen':math.log2(max(1,f0_*(f0_-1)/2)),'graph':True})
+            S_['pairs'].add(k_); e_['promoted']=True; npr_+=1; st_['prop']+=1
+        cap0_=int(getattr(cfg,'inf_graph_cap',300000))
+        if len(G_)>cap0_:                                                       #   bounded: the oldest, least valuable unpromoted links go first
+            for k_ in sorted([k_ for k_,e_ in G_.items() if not e_.get('promoted')],key=lambda k_: (G_[k_].get('v',0),G_[k_].get('val',0.0)))[:len(G_)-cap0_]: del G_[k_]; ndel_+=1
+        nlive_=sum(1 for e_ in G_.values() if not e_.get('promoted'))
+        st_['graph']=(f"  [inference LINK GRAPH] {len(G_)} links ({nlive_} waiting, {len(G_)-nlive_} promoted) | this sleep: {ngn_} new, {ngu_} met again, {npr_} promoted "
+                      f"(threshold {th_:.2f} bits), {ndel_} faded | true probe chains in the graph waiting {sum(1 for k_ in tg_ if not G_.get(k_,{}).get('promoted'))}")
+    nst_=0
+    if rf_:                                                                     # RE-ENCOUNTER STRENGTHENING: each sleep a live conclusion's support is recounted from
+        ix_=S_['idx']; tg_=int(cfg.inf_target)                                  #   the evidence now stored (both source links) plus its independent routes; its value
+        for c_ in S_['conc']:                                                   #   in the pool follows, and when the evidence grew it is rehearsed again (spaced)
+            if c_.get('freed'): continue
+            if not (isinstance(c_.get('A'),str) and isinstance(c_.get('B'),str) and isinstance(c_.get('C'),str)): continue
+            A_,B_,C_=(c_['A'].encode('latin-1','replace'),c_['B'].encode('latin-1','replace'),c_['C'].encode('latin-1','replace'))
+            sa_=len(set(ix_.get(A_,[]))&set(ix_.get(B_,[]))); sc_=len(set(ix_.get(B_,[]))&set(ix_.get(C_,[])))
+            sr_=c_.get('src',(None,None))
+            if int(getattr(cfg,'inf_conc_reenter',0)):
+                if isinstance(sr_[0],int) and sr_[0]<len(S_['it']) and S_['it'][sr_[0]].get('k')=='inf': sa_+=9
+                if isinstance(sr_[1],int) and sr_[1]<len(S_['it']) and S_['it'][sr_[1]].get('k')=='inf': sc_+=9
+            su_=math.log2(1+min(sa_,sc_))+math.log2(1+len(c_.get('routes',())))
+            c_['gain']=su_-c_.get('fanpen',0.0)
+            if su_>c_.get('sup_last',su_)+1e-9: c_['n']=max(0,c_.get('n',0)-tg_//3); c_['refresh']=c_.get('refresh',0)+1; nst_+=1
+            c_['sup_last']=su_
     cap_=int(getattr(cfg,'inf_pool',0))
     if cap_>0:                                                                  # THE POOL (rule-free inference layer): links compete on bits saved
         P_=[c_ for c_ in S_['conc'] if not c_.get('freed')]+new_; rel_=float(getattr(cfg,'inf_pool_rel',0.0)); ev_=0; dr_=0
-        if rel_>0 and len(P_)>=8:
+        if rel_>0 and len(P_)>=8 and not (int(getattr(cfg,'inf_pool_room',0)) and len(P_)<=cap_):   # POOL ROOM: the going rate only applies when links compete for room
             md_=float(np.median([c_.get('gain',0.0) for c_ in P_]))
             for c_ in P_:
                 if c_.get('gain',0.0)<rel_*md_ and md_>0: c_['freed']=True; c_['evicted']='below going rate'; dr_+=1
         P_=sorted([c_ for c_ in P_ if not c_.get('freed')],key=lambda c_: -c_.get('gain',0.0))
         for c_ in P_[cap_:]: c_['freed']=True; c_['evicted']='pool full'; ev_+=1
         new_=[c_ for c_ in new_ if not c_.get('freed')]
-        st_['pool']=f"pool {min(len(P_),cap_)}/{cap_}, {ev_} evicted (worst), {dr_} dropped (below {rel_:.2f} x going rate)"
+        st_['pool']=f"pool {min(len(P_),cap_)}/{cap_}, {ev_} evicted (worst), {dr_} dropped (below {rel_:.2f} x going rate)"+(f", RE-ENCOUNTER: {nst_} strengthened and rehearsed, {nrt_} new independent routes" if rf_ else "")
     for c_ in new_:                                                             # conclusions re-enter the store (one more hop allowed)
         i_=len(S_['it']); S_['it'].append({'s':f"So {c_['A']} is connected to {c_['C']}.".encode(),'d':c_['d'],'k':'inf','dep':c_['dep']-1})
         for n_ in (c_['A'].encode(),c_['C'].encode()): S_['idx'].setdefault(n_,[]).append(i_)
@@ -8079,13 +8728,24 @@ def _inf_eval1(model,cfg,S_,tag):
     if _INF.get('corr') and int(getattr(cfg,'inf_eval_hard',0)): print("  [inference eval | store activity] mean max |logit correction| per probe position: "+" | ".join(f"{k_} {v_:.3f}" for k_,v_ in act_.items()),flush=True)
     return res
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
+    """timing wrapper: wall time of the whole sleep and of the linking step"""
+    t0_=__import__('time').time(); _INF['t_link']=0.0
+    try: return _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot)
+    finally:
+        if int(getattr(cfg,'inf_timing',0)):
+            tt_=__import__('time').time()-t0_; print(f"  [inference TIMING] sleep {tt_:.1f}s: linking (one-scan / bridges) {_INF.get('t_link',0.0):.1f}s, everything else (facts, REM, store writes, audit, replay, readouts) {tt_-_INF.get('t_link',0.0):.1f}s",flush=True)
+def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
     """after a visit: infer on the store, verify, consolidate the conclusions (planted alone into kept verified windows), report"""
     _inf_sync(cfg,'sleep start')
     if int(getattr(cfg,'inf_sofl',0)): _inf_sofl(model,cfg,t,ts,vals,olds_,S_slot)
     S_=_inf_store(model); nid_=list(S_['new']); vis0_=int(model.__dict__.get('_visit',0)); ord_=str(getattr(cfg,'inf_sleep_order','nrem'))
+    if _units_on(cfg) and int(getattr(cfg,'inf_ent_mdl',0)):
+        el_=_ent_update(cfg,_inf_store(model))
+        if el_: print(el_,flush=True)
     if _units_on(cfg) and int(getattr(cfg,'inf_reader',0)):
-        _RDR['on']=True; rl_=_rdr_update(cfg,_inf_store(model))
+        _RDR['on']=True; _RDR['v2']=int(getattr(cfg,'inf_reader',0))>=2; rl_=_rdr_update(cfg,_inf_store(model))   # (3 = v2 + core/modifier split)
         if rl_: print(rl_,flush=True)
+    _tl0_=__import__('time').time()
     if int(getattr(cfg,'inf_disc',1)): new_,st_=inf_infer(model,cfg)
     else: new_,st_=[],{'bridges':0,'hub':0,'prop':0}; S_['new']=[]                 # sleep-order test: no co-occurrence discovery (REM links instead)
     t2_,t3_=_inf_truth(cfg)
@@ -8102,8 +8762,19 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     allc_=S_['conc']; found2_=len(set(frozenset((c_['A'],c_['C'])) for c_ in allc_ if (c_['A'],c_['C']) in t2_)); found3_=len(set(frozenset((c_['A'],c_['C'])) for c_ in allc_ if (c_['A'],c_['C']) in t3_))
     print(f"  [inference] {_lab(cfg,t)}: store {len(S_['it'])} sentences from {S_['nwin']} windows | bridges {st_['bridges']} ({st_['hub']} hubs abstained) | "
           f"{len(new_)} new conclusions ({sum(c_['typed'] for c_ in new_)} typed, {sum(c_['dep']>1 for c_ in new_)} three-hop) | probe-related: {len(pt_)} TRUE, {len(pw_)} wrong | "
-          f"probe chains found so far: two-hop {found2_}/{len(t2_)//2}, three-hop {found3_}/{len(t3_)//2}"+(f" | {st_['pool']}" if st_.get('pool') else ''),flush=True)
+          f"probe chains found so far: two-hop {found2_}/{len(t2_)//2}, three-hop {found3_}/{len(t3_)//2}"+(f" | store {S_.get('nlive',len(S_['it']))} live sentences, {S_.get('nevict',0)} evicted" if S_.get('nevict') else '')+(f" | {st_['pool']}" if st_.get('pool') else ''),flush=True)
+    _INF['t_link']=__import__('time').time()-_tl0_
     if new_: print("    e.g. "+" || ".join(c_['s'] for c_ in new_[:3]),flush=True)
+    nrs_=int(getattr(cfg,'inf_real_sample',0))
+    if nrs_ and new_:                                                           # REAL-TEXT CONCLUSIONS: a random sample of this sleep's conclusions that involve
+        rl_=[c_ for c_ in new_ if c_['A'] not in pn_ and c_['C'] not in pn_]       #   no probe name, with their two source sentences, for grading by hand
+        rsr_=np.random.RandomState(int(model.__dict__.get('_visit',0))+77); pk_=[rl_[int(i_)] for i_ in rsr_.choice(len(rl_),min(nrs_,len(rl_)),replace=False)] if rl_ else []
+        print(f"  [inference REAL-TEXT CONCLUSIONS] {len(rl_)} of {len(new_)} new conclusions involve no probe name; sample of {len(pk_)}:",flush=True)
+        for c_ in pk_:
+            try: s1_=S_['it'][c_['src'][0]]['s'][:150]; s2_=S_['it'][c_['src'][1]]['s'][:150]
+            except Exception: s1_=s2_=b''
+            print(f"    REAL: {c_['s']} | via {c_['B']} | sources: {s1_!r} || {s2_!r}",flush=True)
+    if st_.get('graph'): print(st_['graph'],flush=True)
     if _units_on(cfg) and _UNITS.get('all'):
         pnb_=set(n_.encode() for n_ in pn_); df0_=S_['df']; mx0_=int(cfg.inf_df)
         rare_=sum(1 for w_,c0_ in df0_.items() if c0_<=mx0_ and len(w_)>=3); pool_=[c_ for c_ in S_['conc'] if not c_.get('freed')]
@@ -8144,17 +8815,66 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         sv4_=_carry_save(); suh4_=_uh_save(model); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=d_
         try: return model(X_[:,:-1],d_).float()
         finally: _carry_load(sv4_); _uh_load(model,suh4_); _XDG['cur']=sc_
-    if str(getattr(cfg,'inf_cons','w'))=='mem': return _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,kc_,ka_,filler,fwd,rs_,dev_,b0_,o0_,nb_)
+    cm_=str(getattr(cfg,'inf_cons','w'))
+    if cm_ in ('mem','both'):
+        r0_=_inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,kc_,ka_,filler,fwd,rs_,dev_,b0_,o0_,nb_)
+        if cm_=='mem' or not allc_: return r0_
+        # CONCLUSION REPLAY INTO THE TRUNK (inf_cons 'both'): the hippocampus (fast store) keeps answering; in the same sleep the trunk is taught
+        #   the stored conclusions with the store SWITCHED OFF (else the store already answers and the trunk gets no gradient), at a gentle rate,
+        #   with KL anchors on kept verified text and a BRAKE (old domains or the visited domain worse by more than inf_cons_brake: rolled back)
+        for g_ in op_.param_groups: g_['lr']=float(cfg.lr)*float(getattr(cfg,'inf_cons_wlr',0.01))
+        nb_=int(cfg.pu_cons_eval) or 4; _INFM['force']=False
+        bB0_=bpc(model,vals[t],ts,n=nb_); oB0_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
+        wc_=int(getattr(cfg,'inf_cons_wcap',0)) or int(cfg.inf_target)
+        SNP_=[p_.detach().clone() for p_ in PA_]; pool_=[c_ for c_ in allc_ if not c_.get('freed') and c_.get('wn',0)<wc_] or [c_ for c_ in allc_ if not c_.get('freed')]
+        if not pool_: _INFM.pop('force',None); return r0_
+        wtr_=model.training
+        # (2) RETENTION: two-hop from the WEIGHTS (store off) on a fixed sample of replayed conclusions - before this sleep's replay (= what the
+        #     last sleep's replay left after a visit of training), right after it, and kept separately for chains ending in a KNOWN word
+        def _rr(sm_):
+            if not sm_: return float('nan')
+            v0_=float(np.mean([_inf_score1(model,cfg,f"So {a_} is connected to ",cd_,sl_,False)==0 for a_,cd_,sl_ in sm_])); _INFM['force']=False   # (score1 pops the store switch)
+            return v0_
+        RS_=model.__dict__.get('_crep_smp') or []
+        r_prev_=_rr(RS_)
+        lv_=[c_ for c_ in allc_ if not c_.get('freed') and isinstance(c_.get('C'),str)]; Cp_=[c_['C'] for c_ in lv_]
+        sm0_=[]
+        for i_ in rs_.choice(len(lv_),min(24,len(lv_)),replace=False) if lv_ else []:
+            c_=lv_[int(i_)]; o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
+            if len(o_)>=4: sm0_.append((c_['A'],[c_['C']]+o_[:9],int(S_slot(c_['d']))))
+        r_pre_=_rr(sm0_)
     model.train()
-    for st in range(int(cfg.inf_steps)):
+    for st in range(int(cfg.inf_steps) if cm_!='both' else int(getattr(cfg,'inf_cons_wsteps',60))):
         loss_=0.0; grp_={}
         for c_ in [pool_[i_] for i_ in rs_.choice(len(pool_),kc_)]:
-            c_['n']=c_.get('n',0)+1
+            c_['n' if cm_!='both' else 'wn']=c_.get('n' if cm_!='both' else 'wn',0)+1
             w_=bytearray(filler(c_['d'])[:Lr_]); w_+=b' '*(Lr_-len(w_)); u_=rs_.rand(); sn_=c_['s'] if (c_['typed'] and u_<0.5) else (f"So {c_['A']} is connected to {c_['C']}." if rs_.rand()<0.5 else f"So {c_['C']} is connected to {c_['A']}.")
+            q0_=0
+            if cm_=='both' and rs_.rand()<float(getattr(cfg,'inf_cons_pattern',0.0)) and isinstance(c_.get('src'),tuple):   # RELATION PATTERN with fresh names
+                fr_=[]
+                while len(fr_)<3:
+                    n0_=''.join(rs_.choice(_INF_SYL,rs_.randint(2,4))); n0_=n0_[0].upper()+n0_[1:]
+                    if 5<=len(n0_)<=10 and any(x_ in n0_ for x_ in 'qxz') and n0_ not in fr_: fr_.append(n0_)
+                def sub_(t_):
+                    for o1_,n1_ in zip((c_['A'],c_['B'],c_['C']),fr_): t_=t_.replace(o1_,'\x00'+n1_+'\x01')
+                    return t_.replace('\x00','').replace('\x01','')
+                try: p1_=sub_(S_['it'][c_['src'][0]]['s'].decode('latin-1').strip()); p2_=sub_(S_['it'][c_['src'][1]]['s'].decode('latin-1').strip())
+                except Exception: p1_=p2_=''
+                if p1_ and p2_:
+                    cc_=f"So {fr_[0]} is connected to {fr_[2]}."; pre_=' '+p1_[-80:]+' '+p2_[-80:]+' '; sn_=pre_[1:]+cc_; q0_=len(pre_.encode('latin-1'))
+                    model.__dict__['_npat']=model.__dict__.get('_npat',0)+1
             it_=(' '+sn_+' ').encode('latin-1')[:Lr_-8]; o_=rs_.randint(4,max(5,Lr_-len(it_)-4)); w_[o_:o_+len(it_)]=it_; w_=w_[:Lr_]
-            mk_=torch.zeros(Lr_-1); mk_[max(0,o_):o_+len(it_)-1]=1.0                   # targets = the conclusion's bytes only
+            mk_=torch.zeros(Lr_-1); mk_[max(0,o_+max(0,q0_-1)):o_+len(it_)-1]=1.0       # targets = the conclusion's bytes only (pattern rows: after the premises)
             grp_.setdefault(int(S_slot(c_['d'])),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_))
+        OF_=[f_ for f_ in S_.get('facts',[]) if not f_.get('freed') and int(f_.get('d',-1))!=int(t)] if (cm_=='both' and float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0) else []
         for _ in range(ka_):                                                    # ANCHORS: kept verified windows (closed loop) or recent windows
+            if OF_ and rs_.rand()<float(getattr(cfg,'inf_cons_anchor_facts',0.0)):   # OLD MEMORIES AS TARGETS (CLS interleaving): an old domain's recorded fact,
+                f_=OF_[rs_.randint(len(OF_))]                                    #   replayed as a target to fit, instead of a pull back to the old predictions
+                w_=bytearray(filler(f_['d'])[:Lr_]); w_+=b' '*(Lr_-len(w_)); it_=(' '+f_['s']+' ').encode('latin-1','replace')[:Lr_-8]
+                o_=rs_.randint(4,max(5,Lr_-len(it_)-4)); w_[o_:o_+len(it_)]=it_; w_=w_[:Lr_]; q1_=len((' '+f_['A']+' '+f_['r']+' ').encode('latin-1','replace'))
+                mk_=torch.zeros(Lr_-1); mk_[max(0,o_+q1_-1):o_+len(it_)-1]=1.0
+                grp_.setdefault(int(S_slot(f_['d'])),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_)); model.__dict__['_noldf']=model.__dict__.get('_noldf',0)+1
+                continue
             if ring_:
                 w0_,dd_=ring_[rs_.randint(len(ring_))]; o0_=rs_.randint(max(1,len(w0_)-Lr_+1)); xa_=torch.tensor(list(w0_[o0_:o0_+Lr_]),dtype=torch.long); da_=int(S_slot(dd_))
             else:
@@ -8174,6 +8894,21 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         op_.zero_grad(set_to_none=True); loss_.backward(); op_.step(); ls_.append(float(loss_)); _ng_zero(model)
         for p_ in PA_: p_.grad=None
     b1_=bpc(model,vals[t],ts,n=nb_); o1_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
+    if cm_=='both':
+        bk_=float(getattr(cfg,'inf_cons_brake',0.005)); dO_=(o1_-oB0_) if olds_ else 0.0; dB_=b1_-bB0_; rb_=(dO_>bk_ or dB_>bk_)   # (o0_ is reused by the anchor loop)
+        model.eval(); r_post_=_rr(sm0_); model.__dict__['_crep_smp']=sm0_
+        KN_=set(_INF.get('known_c',()))
+        rk_=_rr([z_ for z_ in sm0_ if z_[1][0] in KN_]) if KN_ else float('nan'); ri_=_rr([z_ for z_ in sm0_ if z_[1][0] not in KN_]) if KN_ else float('nan')
+        print(f"  [inference REPLAY RETENTION] two-hop from the weights (store off), 10 candidates: last sleep's sample now {r_prev_:.2f} (after a visit of training) | "
+              f"this sleep's sample before replay {r_pre_:.2f} -> right after {r_post_:.2f} (n {len(sm0_)})"+(f" | after replay: chains ending in a KNOWN word {rk_:.2f}, invented {ri_:.2f}" if KN_ else "")+
+              (" | (replay then rolled back)" if rb_ else ""),flush=True)
+        if rb_:
+            with torch.no_grad():
+                for p_,q_ in zip(PA_,SNP_): p_.copy_(q_)
+        A_=model.__dict__.setdefault('_crep',[0,0]); A_[0]+=int(not rb_); A_[1]+=1
+        print(f"  [inference CONCLUSION REPLAY INTO THE TRUNK] {len(ls_)} steps at lr x{float(getattr(cfg,'inf_cons_wlr',0.01))} (store off) on {len(pool_)} conclusions ({kc_} rows/step"+(f", relation-pattern rows with fresh names so far {model.__dict__.get('_npat',0)}" if float(getattr(cfg,'inf_cons_pattern',0.0))>0 else "")+(f", old-domain fact rows as targets so far {model.__dict__.get('_noldf',0)}" if float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0 else "")+f") + {ka_} anchor rows/step | "
+              f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}",flush=True)
+        _INFM.pop('force',None); model.train(wtr_); return r0_
     print(f"  [inference sleep] {int(cfg.inf_steps)} steps at lr x{cfg.inf_lr} on {len(pool_)} conclusions ({kc_} rows/step) + {ka_} kept verified rows/step | "
           f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | held-out BPC visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}",flush=True)
     if int(cfg.inf_eval_every)>0 and (int(model.__dict__.get('_visit',0))+1)%int(cfg.inf_eval_every)==0: inf_eval(model,cfg,S_,f"visit {int(model.__dict__.get('_visit',0))+1}")
@@ -8200,6 +8935,23 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
         for n_ in ((c_['A'],c_['B']) if c_.get('fact') else ((c_['A'],c_['B'],c_['C']) if float(getattr(cfg,'inf_mem_src',0.0))>0 else (c_['A'],c_['C']))):
             if n_.encode('latin-1') not in PN_: _INFM['names'].setdefault(n_.encode('latin-1'),int(_zl.crc32(n_.encode('latin-1'))))
     ainfo_=_inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_)
+    gm_=int(getattr(cfg,'inf_gist',0))
+    if gm_:                                                                     # GIST FIRST: what the trunk (the cortex, store OFF) already predicts needs no hippocampal
+        tau_=float(getattr(cfg,'inf_gist_tau',1.0)); pool0_=[c_ for c_ in allc_ if not c_.get('freed')]+[f_ for f_ in S_.get('facts',[]) if not f_.get('freed')]
+        todo_=sorted(pool0_,key=lambda c_: c_.get('gchk',-1))[:int(getattr(cfg,'inf_gist_n',192))]   #   copy; the store keeps what the cortex does NOT predict
+        vis1_=int(model.__dict__.get('_visit',0)); nb_g=[]
+        for c_ in todo_:
+            ans_=c_.get('C') or c_.get('B'); s0_=c_.get('s','')
+            if not ans_ or ans_ not in s0_: continue
+            ctx_=s0_[:s0_.rfind(ans_)]
+            try: lp_=_inf_lp(model,cfg,ctx_,[ans_],int(S_slot(c_['d'])),False)[0]
+            except Exception: continue
+            b_=-lp_/math.log(2)/max(1,len(ans_)+1); c_['tbits']=b_; c_['gchk']=vis1_; nb_g.append(b_)
+            if gm_>=2: c_['gist']=bool(b_<tau_)                                 #   (inf_gist 2: gate the writes; 1: only measure)
+        kn_=[c_ for c_ in pool0_ if 'tbits' in c_]
+        print(f"  [inference GIST FIRST] trunk alone (store off) on {len(kn_)} stored items: already predicts {np.mean([c_['tbits']<tau_ for c_ in kn_]) if kn_ else float('nan'):.2f} of them "
+              f"(< {tau_:.1f} bits/byte; conclusions {np.mean([c_['tbits']<tau_ for c_ in kn_ if not c_.get('fact')]) if any(not c_.get('fact') for c_ in kn_) else float('nan'):.2f}, facts {np.mean([c_['tbits']<tau_ for c_ in kn_ if c_.get('fact')]) if any(c_.get('fact') for c_ in kn_) else float('nan'):.2f}), "
+              f"median {np.median([c_['tbits'] for c_ in kn_]) if kn_ else float('nan'):.2f} bits/byte"+(f" | GATED: {sum(1 for c_ in pool0_ if c_.get('gist'))} items left to the cortex (no store writes)" if gm_>=2 else ""),flush=True)
     if int(getattr(cfg,'inf_evict_fade',0)):                                    # EVICTION FADE: a conclusion pushed out of the pool (or dropped below the going rate)
         nfd_=0                                                                  #   is erased from the store too, not just left to linger as a false memory
         for c_ in allc_:
@@ -8221,15 +8973,19 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     for st in range(int(cfg.inf_steps)):
         grp_={}
         fxs_=int(getattr(cfg,'inf_mem_fxsep',0))                               # SEPARATE WRITE BUDGETS: conclusions keep their own rows; recorded facts get fxs_ rows of their own
-        live_=([c0_ for c0_ in allc_ if not c0_.get('freed')] or list(allc_))+([] if fxs_ else [f0_ for f0_ in FX_ if not f0_.get('freed')])       # sleep-order test: NREM also replays this visit's recorded facts
-        fl_=[f0_ for f0_ in FX_ if not f0_.get('freed')] if fxs_ else []
+        live_=([c0_ for c0_ in allc_ if not c0_.get('freed') and not c0_.get('gist')] or [c0_ for c0_ in allc_ if not c0_.get('freed')] or list(allc_))+([] if fxs_ else [f0_ for f0_ in FX_ if not f0_.get('freed')])       # sleep-order test: NREM also replays this visit's recorded facts
+        fl_=[f0_ for f0_ in FX_ if not f0_.get('freed') and not f0_.get('gist')] if fxs_ else []
         if not live_ and not fl_: break
         if int(getattr(cfg,'inf_mem_prio',0)):                                  # cg20i: conclusions below the exposure target are written first
             lo_=[c0_ for c0_ in live_ if c0_.get('n',0)<int(cfg.inf_target)]; live_=lo_ or live_
             if int(getattr(cfg,'inf_mem_prio',0))>=2:                              # cg20j: RARE LINKS FIRST - the rarest-named conclusions take the write budget
                 dfm_=S_['df']; live_=sorted(live_,key=lambda c0_: dfm_.get(c0_['A'].encode('latin-1'),0)+dfm_.get(c0_.get('C',c0_['B']).encode('latin-1'),0))[:max(4*kc_,256)]
         sf_=float(getattr(cfg,'inf_mem_src',0.0)); add_=str(getattr(cfg,'inf_mem_src_mode','split'))=='add'
-        sel_=[(live_[i_],'c' if add_ else None) for i_ in rs_.choice(len(live_),kc_)] if live_ else []
+        if int(getattr(cfg,'inf_replay_gumbel',0)) and live_:                   # GUMBEL TOP-k: replay rows sampled in proportion to priority (gain x need) in one pass
+            lp_=np.log(np.array([max(0.05,float(c0_.get('pri',c0_.get('gain',1.0)) or 1.0)) for c0_ in live_]))
+            gk_=lp_-np.log(-np.log(rs_.uniform(1e-9,1.0,size=(kc_,len(live_)))))
+            sel_=[(live_[int(i_)],'c' if add_ else None) for i_ in gk_.argmax(1)]
+        else: sel_=[(live_[i_],'c' if add_ else None) for i_ in rs_.choice(len(live_),kc_)] if live_ else []
         if add_ and sf_>0 and live_: sel_+=[(live_[i_],'s') for i_ in rs_.choice(len(live_),max(1,int(round(kc_*sf_))))]   # one-hop facts IN ADDITION to the conclusion rows
         if fl_:                                                                 #   NREM replay by salience: under-written facts first, derived (rule) facts, then the most repeated
             lo_=[f0_ for f0_ in fl_ if f0_.get('n',0)<int(cfg.inf_target)] or fl_
@@ -8348,6 +9104,159 @@ def inf_final_bpc(model,cfg,vals,S_):
     finally: _INFM.pop('force',None)
     print(f"  [inference final BPC] store OFF (weights only) {np.mean(r_[False]):.3f} | store ON {np.mean(r_[True]):.3f} | direct cost of the store {np.mean(r_[True])-np.mean(r_[False]):+.3f} | per domain off/on "
           +" ".join(f"{a_:.3f}/{b_:.3f}" for a_,b_ in zip(r_[False],r_[True]))+f" | store used in BPC during training: {_INFM.get('bpc_on',True)}",flush=True)
+    if int(getattr(cfg,'inf_cls_probe',0)):
+        try: _inf_cls_probe(model,cfg)
+        except Exception as e_: print(f"  [CLS PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
+    if _INF.get('known_c'):
+        try:                                                                    # END OF RUN: weights-only two-hop, known-word vs invented chain ends
+            ch_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('upd')]; rsx_=np.random.RandomState(5151); sl_=lambda c_: int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0]))
+            out_=[]
+            for nm0_,grp_ in (('known-word ends',[c_ for c_ in ch_ if c_.get('known')]),('invented ends',[c_ for c_ in ch_ if not c_.get('known')])):
+                Cs0_=[c_['names'][2] for c_ in grp_]; a_={True:[],False:[]}
+                for c_ in grp_:
+                    o_=[x_ for x_ in Cs0_ if x_!=c_['names'][2]]; rsx_.shuffle(o_); cd_=[c_['names'][2]]+o_[:9]
+                    for st0_ in (False,True): a_[st0_].append(_inf_score1(model,cfg,f"So {c_['names'][0]} is connected to ",cd_,sl_(c_),st0_)==0)
+                out_.append(f"{nm0_} (n {len(grp_)}): weights only {np.mean(a_[False]) if a_[False] else float('nan'):.2f}, with the store {np.mean(a_[True]) if a_[True] else float('nan'):.2f}")
+            print("  [inference KNOWN-WORD PROBES | END OF RUN] two-hop, candidates from the same kind (chance 0.10): "+" | ".join(out_),flush=True)
+        except Exception as e_: print(f"  [inference KNOWN-WORD PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
+    if int(getattr(cfg,'inf_dual_probe',0)) and _LM.get('M') is not None:
+        try: _inf_dual_probe(model,cfg)
+        except Exception as e_: print(f"  [inference DUAL PATHWAY] failed: {type(e_).__name__}: {e_}",flush=True)
+    if int(getattr(cfg,'inf_lm_probe',0)):
+        try: _inf_lm_probe(model,cfg)
+        except Exception as e_: print(f"  [inference CLS PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
+def _inf_dual_probe(model,cfg):
+    """DUAL PATHWAY ARBITRATION. Two-hop questions 'So A is connected to' on chains the system concluded, cue intact or damaged. EXACT pathway:
+    the model with the fast store (exact byte keys) - a distribution over 10 candidates from its log-probs. OVERLAPPING pathway: the link memory
+    (spelling-aware codes) - strengths of the candidates as partners of the cue (direct, plus by path through its strongest partners), turned
+    into a distribution. DUAL: (i) product of the two distributions; (ii) whichever pathway is more confident (higher top probability)."""
+    S0_=_inf_store(model); rs_=np.random.RandomState(9191); bt_=float(getattr(cfg,'inf_dual_beta',4.0))
+    cm_={frozenset((c_['A'],c_['C'])) for c_ in S0_['conc'] if not c_.get('freed')}
+    ch_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('upd') and frozenset((c_['names'][0],c_['names'][2])) in cm_][:40]
+    if len(ch_)<4: print(f"  [inference DUAL PATHWAY] only {len(ch_)} concluded chains",flush=True); return
+    Cs_=[c_['names'][2] for c_ in ch_]; slot_=lambda c_: int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0]))
+    I_,S0a_=np.stack(_LM['idx']),np.stack(_LM['sgn'])
+    def part(n_):
+        if n_ in _LM['codes']: return _lm_partners(n_)
+        ix_,sg_=_lm_raw(n_); v_=sg_@_LM['M'][ix_,:]; return (v_[I_]*S0a_).sum(1)/(_LM['k']**2)
+    def sm(v_): v_=np.asarray(v_,np.float64); v_=v_-v_.max(); e_=np.exp(v_); return e_/e_.sum()
+    dmg_={'intact':lambda n_: n_,'last letter dropped':lambda n_: n_[:-1],'inner letters swapped':lambda n_: n_[:1]+n_[2:3]+n_[1:2]+n_[3:] if len(n_)>3 else n_,'lower-cased':lambda n_: n_.lower()}
+    seg_=[]
+    for k_,f_ in dmg_.items():
+        r_={'exact':[],'overlap':[],'product':[],'confident':[],'recognised':[]}; ch0_=[]; nrec_=0
+        for c_ in ch_:
+            o_=[x_ for x_ in Cs_ if x_!=c_['names'][2]]; rs_.shuffle(o_); cd_=[c_['names'][2]]+o_[:9]; A_=f_(c_['names'][0])
+            lp_=_inf_lp(model,cfg,f"So {A_} is connected to ",cd_,slot_(c_),True); pe_=sm(lp_)
+            sc_=part(A_.encode('latin-1')); top_=np.argsort(-sc_)[:3]
+            ov_=[]
+            for x_ in cd_:
+                xb_=x_.encode('latin-1')
+                if xb_ not in _LM['codes']: ov_.append(0.0); continue
+                j_=_LM['codes'][xb_][2]; ov_.append(float(sc_[j_])/9.0+sum(max(0.0,float(sc_[t_]))*float(part(_LM['names'][t_])[j_]) for t_ in top_ if t_!=j_)/9.0)
+            po_=sm(bt_*np.array(ov_)); pp_=pe_*po_; pp_=pp_/pp_.sum()
+            r_['exact'].append(int(np.argmax(pe_)==0)); r_['overlap'].append(int(np.argmax(po_)==0)); r_['product'].append(int(np.argmax(pp_)==0))
+            ce_=pe_ if pe_.max()>=po_.max() else po_; r_['confident'].append(int(np.argmax(ce_)==0)); ch0_.append(pe_.max()>=po_.max())
+            rc_=A_.encode('latin-1') in _INFM.get('names',{}); nrec_+=int(rc_)                   # RECOGNITION gate: the cue is a name the exact store
+            r_['recognised'].append(int(np.argmax(pe_ if rc_ else po_)==0))                        #   knows -> exact recall; unknown -> completion
+        seg_.append(f"{k_}: exact {np.mean(r_['exact']):.2f}, overlapping {np.mean(r_['overlap']):.2f}, DUAL product {np.mean(r_['product']):.2f}, DUAL more-confident {np.mean(r_['confident']):.2f} (exact chosen {np.mean(ch0_):.2f}), DUAL recognition-gated {np.mean(r_['recognised']):.2f} (cue recognised {nrec_/max(1,len(ch_)):.2f})")
+    print(f"  [inference DUAL PATHWAY | two-hop, {len(ch_)} concluded chains, 10 candidates, chance 0.10] "+" | ".join(seg_),flush=True)
+def _inf_lm_probe(model,cfg):
+    """FUZZY RECALL PROBES on the link memory. For two-hop chains A-B-C whose names it holds: (1) one-hop: rank the true partner B among 10
+    candidate bridges by memory strength from the cue A; (2) two-hop: rank C among 10 candidates - direct (a promoted conclusion link) and by
+    path (strongest partners of the cue, then their partners). Cues: intact and damaged (last letter dropped, inner letters swapped, lower-cased).
+    Damaged cues are coded on the fly (not added). Also: VARIANT-BRIDGE chains found as conclusions vs ordinary chains."""
+    ch_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('upd') and all(n_.encode('latin-1') in _LM.get('codes',{}) for n_ in c_['names'])] if _LM.get('M') is not None else []
+    if ch_: _inf_lm_recall(ch_)
+    _inf_variant_readout(model,cfg)
+def _inf_lm_recall(ch_):
+    rs_=np.random.RandomState(4242); Bs_=[c_['names'][1].encode('latin-1') for c_ in ch_]; Cs_=[c_['names'][2].encode('latin-1') for c_ in ch_]
+    I_,S0_=np.stack(_LM['idx']),np.stack(_LM['sgn'])
+    def part(n_):
+        if n_ in _LM['codes']: return _lm_partners(n_)
+        ix_,sg_=_lm_raw(n_); v_=sg_@_LM['M'][ix_,:]; return (v_[I_]*S0_).sum(1)/(_LM['k']**2)
+    def rank1(sc_,true_,pool_):
+        o_=[x_ for x_ in pool_ if x_!=true_]; rs_.shuffle(o_); cd_=[true_]+o_[:9]
+        v_=[sc_[_LM['codes'][x_][2]] for x_ in cd_]; return int(np.argmax(v_)==0)
+    dmg_={'intact':lambda n_: n_,'last letter dropped':lambda n_: n_[:-1],'inner letters swapped':lambda n_: n_[:1]+n_[2:3]+n_[1:2]+n_[3:] if len(n_)>3 else n_,'lower-cased':lambda n_: n_.lower()}
+    seg_=[]
+    for k_,f_ in dmg_.items():
+        h1_=[];h2d_=[];h2p_=[]
+        for c_,B_,C_ in zip(ch_,Bs_,Cs_):
+            A_=f_(c_['names'][0].encode('latin-1')); sc_=part(A_)
+            h1_.append(rank1(sc_,B_,Bs_)); h2d_.append(rank1(sc_,C_,Cs_))
+            top_=np.argsort(-sc_)[:3]; pth_=sum(max(0.0,float(sc_[j_]))*part(_LM['names'][j_]) for j_ in top_)
+            h2p_.append(rank1(pth_,C_,Cs_) if not isinstance(pth_,float) else 0)
+        seg_.append(f"{k_}: one-hop {np.mean(h1_):.2f}, two-hop direct {np.mean(h2d_):.2f}, two-hop by path {np.mean(h2p_):.2f}")
+    print(f"  [inference FUZZY RECALL | link memory, codes exact"+(f" + spelling {_LM['fz']:.2f}" if _LM.get('fz',0)>0 else " only")+f"] {len(ch_)} chains, chance 0.10 | "+" | ".join(seg_),flush=True)
+def _inf_variant_readout(model,cfg):
+    S0s_=_inf_store(model); cm_=set(frozenset((c_['A'],c_['C'])) for c_ in S0s_['conc'] if not c_.get('freed'))
+    va_=[c_ for c_ in inf_probes(cfg) if c_.get('var')]; no_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('var') and not c_.get('upd')]
+    if va_:
+        fv_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in va_]); fn_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in no_]) if no_ else float('nan')
+        print(f"  [inference VARIANT BRIDGES] chains whose bridge is spelled differently in its two facts: concluded {fv_:.2f} (n {len(va_)}) | ordinary two-hop chains concluded {fn_:.2f} (n {len(no_)})",flush=True)
+def _inf_cls_probe(model,cfg):
+    """END-OF-RUN CLS PROBES. (1) LESION BY AGE: two-hop with the store ON vs OFF for chains concluded early vs late (complementary learning
+    predicts older memories survive the lesion better once consolidation works). (2) PARTIAL CUES: two-hop with the store when the subject's
+    name is damaged (last letter dropped, inner letters swapped, lower-cased). (3) SCHEMA TEST: a few gradient steps on the one-hop facts of
+    brand-new chains (weights copied and restored afterwards): how fast the trunk absorbs new facts, and whether it then chains them."""
+    S0_=_inf_store(model); ch_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('upd')]; rs_=np.random.RandomState(777)
+    slot_=lambda c_: int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0]))
+    Cs_=[c_['names'][2] for c_ in ch_]
+    def cands(c_):
+        o_=[x_ for x_ in Cs_ if x_!=c_['names'][2]]; rs_.shuffle(o_); return [c_['names'][2]]+o_[:9]
+    def acc(items,store_):
+        if not items: return float('nan')
+        return float(np.mean([_inf_score1(model,cfg,pr_,cd_,sl_,store_)==0 for pr_,cd_,sl_ in items]))
+    cm_={(c_['A'],c_['C']):c_ for c_ in S0_['conc'] if not c_.get('freed')}
+    found_=[(c_,cm_.get((c_['names'][0],c_['names'][2])) or cm_.get((c_['names'][2],c_['names'][0]))) for c_ in ch_]
+    found_=[(c_,k_) for c_,k_ in found_ if k_ is not None]
+    if len(found_)>=4:
+        md_=float(np.median([k_.get('v',0) for _,k_ in found_])); grp_={'OLDER':[],'RECENT':[]}
+        for c_,k_ in found_: grp_['OLDER' if k_.get('v',0)<=md_ else 'RECENT'].append((f"So {c_['names'][0]} is connected to ",cands(c_),slot_(c_)))
+        seg_=[f"{g_} (n {len(it_)}): store ON {acc(it_,True):.2f}, store OFF (lesion) {acc(it_,False):.2f}" for g_,it_ in grp_.items()]
+        print(f"  [inference CLS PROBES | LESION BY AGE] two-hop on chains the system concluded, split at conclusion visit {md_:.0f}: "+" | ".join(seg_),flush=True)
+    dmg_={'intact':lambda n_: n_,'last letter dropped':lambda n_: n_[:-1],'inner letters swapped':lambda n_: n_[0]+n_[2]+n_[1]+n_[3:] if len(n_)>3 else n_,'lower-cased':lambda n_: n_.lower()}
+    pc_=[]
+    for k0_,f_ in dmg_.items():
+        it_=[(f"So {f_(c_['names'][0])} is connected to ",cands(c_),slot_(c_)) for c_,_ in found_[:40]]
+        pc_.append(f"{k0_} {acc(it_,True):.2f}")
+    print(f"  [inference CLS PROBES | PARTIAL CUES] two-hop with the store, subject name damaged (n {min(40,len(found_))} found chains): "+" | ".join(pc_),flush=True)
+    # (3) schema test on brand-new chains
+    used_=set(n_ for c_ in inf_probes(cfg) for n_ in c_['names']); nw_=[]
+    def nm():
+        while True:
+            n_=''.join(rs_.choice(_INF_SYL,rs_.randint(2,4))); n_=n_[0].upper()+n_[1:]
+            if 5<=len(n_)<=10 and any(x_ in n_.lower() for x_ in 'qxz') and n_ not in used_: used_.add(n_); return n_
+    for _ in range(16):
+        A_,B_,C_=nm(),nm(),nm(); t0_,t1_=_INF_REL[rs_.randint(len(_INF_REL))],_INF_REL[rs_.randint(len(_INF_REL))]
+        nw_.append((A_,B_,C_,t0_.format(a=A_,b=B_),t1_.format(a=B_,b=C_)))
+    sl0_=int(model.__dict__.get('_t2s',{}).get(0,0)); Cn_=[c_[2] for c_ in nw_]; Bn_=[c_[1] for c_ in nw_]
+    def candn(x_,pool_):
+        o_=[y_ for y_ in pool_ if y_!=x_]; rs_.shuffle(o_); return [x_]+o_[:9]
+    def accn(two_):
+        it_=[(f"So {a_} is connected to ",candn(c_,Cn_),sl0_) if two_ else (f"{f0_.rsplit(' ',1)[0]} ",candn(b_,Bn_),sl0_) for a_,b_,c_,f0_,f1_ in nw_]
+        return acc(it_,False)
+    b1_,b2_=accn(False),accn(True)
+    sd_={k_:v_.detach().clone() for k_,v_ in model.state_dict().items()}; dev_=model.embed.weight.device; was_=model.training
+    opt_=torch.optim.Adam([q_ for q_ in model.parameters() if q_.requires_grad],lr=float(getattr(cfg,'inf_cls_lr',3e-4))); K_=int(getattr(cfg,'inf_cls_steps',30))
+    txt_=[f0_ for _,_,_,f0_,_ in nw_]+[f1_ for *_,f1_ in nw_]
+    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl0_; _INFM['force']=False
+    try:
+        model.train()
+        for st_ in range(K_):
+            bt_=[txt_[i_] for i_ in rs_.choice(len(txt_),min(16,len(txt_)),replace=False)]; L0_=max(len(t_) for t_ in bt_)+1
+            X_=torch.full((len(bt_),L0_),32,dtype=torch.long,device=dev_)
+            for j_,t_ in enumerate(bt_): X_[j_,:len(t_)]=torch.tensor(list(t_.encode('latin-1')),device=dev_)
+            lg_=model(X_[:,:-1],sl0_); loss_=F.cross_entropy(lg_.float().reshape(-1,lg_.shape[-1]),X_[:,1:].reshape(-1))
+            opt_.zero_grad(); loss_.backward(); opt_.step()
+        model.eval(); a1_,a2_=accn(False),accn(True)
+    finally:
+        _carry_load(sv4_); _XDG['cur']=sc_; _INFM.pop('force',None)
+        with torch.no_grad(): model.load_state_dict(sd_)
+        model.train(was_); del opt_
+        try: _ng_zero(model)
+        except Exception: pass
+    print(f"  [inference CLS PROBES | SCHEMA TEST] 16 brand-new chains, store off, weights only: before learning one-hop {b1_:.2f} two-hop {b2_:.2f} -> after {K_} steps on their one-hop facts: one-hop {a1_:.2f} two-hop {a2_:.2f} (weights restored)",flush=True)
 
 def _inf_conc_row(c_,Lr_,filler,rs_,fa_):
     """a conclusion row (as the store writes): the sentence alone at the start (share fa_) or planted in same-domain filler; mask = its bytes"""
@@ -8538,7 +9447,7 @@ _INF_FUNC={w_.encode() for w_ in 'and or of the a an von van der den de du des d
 def _inf_facts(cfg,S_,nid_,vis0_):
     """EPISODIC FACT RECORDS (sleep-order test): this visit's salient one-hop facts 'A r B' (seen >= inf_rem_minrep times, rare names)"""
     F_=S_.setdefault('facts',[]); K_=S_.setdefault('fkey',{}); cnt_={}; first_={}; df_=S_['df']; mx_=int(cfg.inf_df); lw_=S_.get('lw') if S_.get('strict') else None
-    ok_=lambda n_: df_.get(n_,0)<=mx_ and (lw_ is None or n_.lower() not in lw_)
+    ok_=lambda n_: _ent_ok(n_,df_,mx_) and (lw_ is None or n_.lower() not in lw_)
     for i_ in nid_:
         for m_ in _INF_TRIP.finditer(S_['it'][i_]['s']):
             a_,r_,b_=m_.group(1),m_.group(2),m_.group(3)
@@ -8546,6 +9455,15 @@ def _inf_facts(cfg,S_,nid_,vis0_):
             if int(getattr(cfg,'inf_rem_stop',0)) and set(r_.split())<=_INF_FUNC: continue   # 'Konrad von Wordship', 'Chaloner and Carley': no relation word
             k_=(a_.decode('latin-1'),r_.decode('latin-1'),b_.decode('latin-1')); cnt_[k_]=cnt_.get(k_,0)+1; first_.setdefault(k_,i_)
     mr_=int(getattr(cfg,'inf_rem_minrep',3)); nw_=0; cap_=int(getattr(cfg,'inf_rem_fact_cap',0))
+    if int(getattr(cfg,'inf_rem_cumul',0)):                                     # CUMULATIVE: a fact stated once per visit is recorded when it has been read
+        pd_=S_.setdefault('fpend',{})                                           #   inf_rem_minrep times in all (sparse exposure: facts seen 1-2 times a visit)
+        for k_,c_ in list(cnt_.items()):
+            if k_ in K_: continue
+            c0_=pd_.get(k_,0)+c_
+            if c0_>=mr_: cnt_[k_]=c0_; pd_.pop(k_,None)
+            else: pd_[k_]=c0_
+        if len(pd_)>400000:                                                     #   (bounded: the pending counts of the oldest half are forgotten)
+            for k_ in list(pd_)[:len(pd_)//2]: pd_.pop(k_,None)
     ks_=[k_ for k_,c_ in cnt_.items() if c_>=mr_ and k_ not in K_]
     if cap_>0 and len(ks_)>cap_:                                                # PRIORITY = LENGTH / SPREAD: long, rarely shared names first
         ks_=sorted(ks_,key=lambda k_: -(len(k_[0])+len(k_[2]))/(df_.get(k_[0].encode('latin-1'),1)+df_.get(k_[2].encode('latin-1'),1)))[:cap_]
@@ -8908,10 +9826,10 @@ def _inf_hyp(model,cfg,S_,nid_,st_):
     """TWO-TIER STORE: LOOSE hypothesis generation (rarity threshold x inf_hyp_df_mult, fan-out x inf_hyp_fan_mult) into an unverified tier
     that never touches predictions; a hypothesis is PROMOTED to a conclusion only with independent support: two different bridges"""
     H_=S_.setdefault('hyp',{}); df_=S_['df']; mx_=int(cfg.inf_df)*float(getattr(cfg,'inf_hyp_df_mult',2.0)); fan_=int(cfg.inf_maxfan)*float(getattr(cfg,'inf_hyp_fan_mult',3.0))
-    lw_=S_.get('lw') if S_.get('strict') else None; ok_=lambda n_: df_.get(n_,0)<=mx_ and (lw_ is None or n_.lower() not in lw_)
+    lw_=S_.get('lw') if S_.get('strict') else None; ok_=lambda n_: _ent_ok(n_,df_,mx_) and (lw_ is None or n_.lower() not in lw_)
     done_={frozenset((c_['A'],c_['C'])) for c_ in S_['conc']}; br_=set(n_ for i_ in nid_ if i_<len(S_['it']) for n_ in _INF_NAME.findall(S_['it'][i_]['s']) if ok_(n_)); nh0_=len(H_)
     for B in br_:
-        part={}
+        part={}; prel_={}
         for i_ in S_['idx'].get(B,[]):
             it_=S_['it'][i_]
             if it_['dep']>0 or it_.get('k')=='inf' or it_.get('sup'): continue   # hypotheses come from real / verified, current sentences only
@@ -9009,6 +9927,14 @@ def _inf_abstain_sources(S_,cr_,tag):
             fan_=len(set(n_ for i_ in ix_.get(B_,[]) for n_ in _INF_NAME.findall(S_['it'][i_]['s']))-{B_})
             dd_.append(f"{A_.decode()}-{B_.decode()}-{C_.decode()}: df {df0_.get(A_,0)}/{df0_.get(B_,0)}/{df0_.get(C_,0)}, bridge rare {int(bool(_INF_NAME.fullmatch(B_)))}, sentences A+B {ab_} B+C {bc_}, fact records A-B {fab_} B-C {fbc_}, bridge partners {fan_}, pair tried {int((min(r_[4],r_[6]),max(r_[4],r_[6])) in S_.get('pairs',set()) or (min(A_,C_),max(A_,C_)) in S_.get('pairs',set()))}")
         if dd_: print(f"  [inference DISCOVERY DETAIL | {tag}] "+" || ".join(dd_),flush=True)
+        hp_={c_['names'][0]:bool(c_.get('hot')) for c_ in (_INF.get('probes') or [])}
+        if any(hp_.values()):                                                   # FREQUENT ENTITIES: two-hop on chains whose names are frequent vs ordinary
+            hb_={True:[0,0,0],False:[0,0,0]}
+            for r_ in cr_:
+                h0_=hp_.get(r_[4])
+                if h0_ is None: continue
+                hb_[h0_][0]+=1; hb_[h0_][1]+=int(r_[0]); hb_[h0_][2]+=int(frozenset((r_[4],r_[6])) in cm_)
+            print(f"  [inference FREQUENT ENTITIES | {tag}] two-hop (n, right, chain found): frequent names {hb_[True][0]}: {hb_[True][1]/max(1,hb_[True][0]):.2f}, {hb_[True][2]/max(1,hb_[True][0]):.2f} | ordinary names {hb_[False][0]}: {hb_[False][1]/max(1,hb_[False][0]):.2f}, {hb_[False][2]/max(1,hb_[False][0]):.2f}",flush=True)
         print(f"  [inference TWO-HOP GAP | {tag}] "+' | '.join(f"{k_} {v_} (e.g. {exs_[k_]})" for k_,v_ in sorted(cat_.items())),flush=True)
     ex_=[];ver_=0;nc_=0
     for r_ in cr_:
@@ -10341,7 +11267,11 @@ def run(cfg):
                 print("  [context carry] carried memory at the visit end, mean |S| per row-head: "+' '.join(f"{float(v_.norm(dim=(1,2)).mean()):.2f}" for k_,v_ in _CARRY['st'].items() if not isinstance(k_,tuple)))
             model.__dict__['_s0_train']=None
             if int(cfg.lm_rank)>=0 and float(model.__dict__.get('_real_w',1.0))==0.0: lora_merge(model, cfg, olds, ts)   # REM-like DREAM MERGE
-            if cfg.dream_bank and cfg.dream and vi<len(schedule)-1: bank_refresh(model, cfg, ts)   # the domain's dreams (v9h: not after the final visit - never read)
+            if cfg.dream_bank and cfg.dream and vi<len(schedule)-1:
+                bank_refresh(model, cfg, ts)
+                if int(getattr(cfg,'infer_drift_fix',0)) and ts in model.__dict__.get('_bank',{}):   # cg20x: drift reference for routing
+                    Xr_=model.__dict__['_bank'][ts][:16].long().to(model.embed.weight.device)
+                    model.__dict__.setdefault('_bank_ref',{})[ts]=_slot_score(model,[Xr_[:,:-1]],[Xr_[:,1:]],ts)[0]   # the domain's dreams (v9h: not after the final visit - never read)
             if float(cfg.sem_share)>0 and cfg.sem_tgt=='student': sem_rescore(model, cfg, ts)
             if cfg.slot_mem and cfg.slot_mem_reenc>0: smem_reencode(model, cfg, ts)   # SLOT MEMORY RE-ENCODING
         object.__setattr__(model,'_live_dom',None)
@@ -10716,18 +11646,21 @@ if __name__=="__main__":
     cfg=Config(); cfg.seed=0
     for k,v in ALLPILE_CONFIG.items(): setattr(cfg,k,v)
     import json as _json                                             # OVERRIDES: LAB_OVR='{"key": value, ...}' (e.g. the replay check below)
-    _OVR=os.environ.get('LAB_OVR','{"n_passes": 3, "steps_per_task": 400, "recon_w": 0.25, "recon_rows": 8, "recon_mark": true, "cd_seg": 8, "recon_diag": false, "real_w_pass": [1.0, 0.0, 0.0], "self_dream_nreal": false, "vp_nreal": false, "cd_w": 1.0, "cd_rows": 16, "cd_chain": 0, "cd_tries": 2, "cd_fixed": true, "cd_inexact_w": 0.0, "cd_par": true, "cd_eps_floor": 0.0001, "cd_temp": 0.7, "cd_ngp_frozen": true, "cd_fac": true, "cd_lr": -1, "cd_gen_chunk": 1024, "cd_inc": true, "cd_greedy": false, "cd_skip_real": true, "cd_recon_w": 0.0, "cd_recon_rows": 8, "cd_fok": true, "cd_fok_far": 0.005, "cd_fok_chk": 0.05, "cd_fok_min": 20000, "cd_fok_1try": 0.9, "cd_runs": true, "cd_run_skip": 7, "rs_sel": true, "rs_frac": 0.5, "rs_pool": 4, "cd_runs_mask": true, "cd_run_excl": 0, "cd_prof": false, "cd_prof_calls": [50, 1650], "cd_mis32": true, "cd_gen_chunk1": 2048, "cd_nosync": true, "cd_reuse": 1, "cd_repair": true, "cd_repair_n": 1, "cd_partial": true, "cd_first_block": true, "cd_floor_lo": 0.25, "cd_floor_hi": 0.4, "cd_floor_every": 4, "pass_shuffle": true, "cd_runs_any": true, "noise_diag": 0, "profile_visit": 0, "head_select_eval": [], "cd_graph": true, "cd_slot": true, "kf_dream": 1.0, "kf_drop_a": false, "cd_graph_rows": 512, "bank_tgt_chunk_big": 128, "dstep": true, "cdet_log": true, "samp_graph": true, "infer_ctx": true, "infer_rep": true, "seed": 1, "share_mode": "kl", "dream_temp_bpc": 0.0, "dream_temp_low": 1.0, "cd_hint_frac": 0.03, "cd_hint_piece": 3, "cd_hint_adapt": 1.25, "cd_hint_min": 0.02, "cd_hint_max": 0.08, "infer_gap_eps": 0.1, "infer_proto_guard": 0.15, "infer_tiebreak": false, "pu_k": 512, "infer_delta_new": 0.16, "infer_proto_gap": 0.25, "cd_evid_w": 0.5, "cd_sig_every": 4, "cd_bytes_all": true, "dream_batch": 32, "nrem_res": 256, "nrem_mix": 0.5, "nrem_mix_sel": "rand", "nrem_own_sel": "rand", "nrem_retire": -1, "nrem_tgt": "bytes", "pu_cons_steps": 100, "pu_cons_lr": 0.3, "pu_cons_rows": 16, "pu_cons_anchor": 0.25, "pu_cons_retire": 0.25, "pu_cons_cap": 128, "pu_cons_eval": 4, "trace_lesion": [], "trace_lesion_pass": 2, "inf_on": true, "inf_probes": 150, "inf_plant_k": 6, "inf_steps": 200, "inf_rows": 32, "inf_rowlen": 256, "inf_lr": 0.1, "inf_mix": 0.5, "inf_df": 40, "inf_maxfan": 6, "inf_budget": 2000, "inf_eval_every": 1, "inf_cons": "mem", "inf_mem_key": "nameb", "inf_mem_beta": 0.5, "inf_mem_iters": 20, "inf_mem_dxb": 262144, "inf_mem_src": 0.5, "inf_mem_src_mode": "add", "inf_mem_prio": 1, "inf_probe_rare": 1, "inf_mem_maint": 200, "inf_audit": 1, "inf_upd_frac": 0.3, "inf_xfer": "none", "inf_eval_ctx2": 1, "inf_splice": 1, "inf_splice_every": 2, "inf_sleep_order": "nrem_rem", "inf_sleep_cycles": 1, "inf_rem_n": 200, "inf_rem_probe_frac": 0.25, "inf_rem_minrep": 1, "inf_rem_stop": 1, "inf_rem_all": 1, "inf_rem_fact_cap": 3000, "inf_eval_qtime": 1, "inf_qt_n": 40, "inf_qt_every": 5, "inf_mem_gate": 3.0, "inf_audit_rule": "recent", "inf_audit_cascade": 1, "inf_audit_debug": 1, "inf_eval_qtime3": 1, "inf_qt_comp": 2, "inf_audit_minrep": 2, "inf_idmem": 1, "inf_id_dim": 4096, "inf_rules": 1, "inf_para_frac": 0.5, "inf_comp_k": 2, "pu_cons_brake": 0.005, "inf_mem_anchor_named": 0.5, "inf_bridge_order": "rare", "inf_name_strict": 1, "inf_eval_ctx": 1, "inf_eval_hard": 1, "inf_rulefree": 0}')
+    _OVR=os.environ.get('LAB_OVR','{"n_passes": 3, "steps_per_task": 400, "recon_w": 0.25, "recon_rows": 8, "recon_mark": true, "cd_seg": 8, "recon_diag": false, "real_w_pass": [1.0, 0.0, 0.0], "self_dream_nreal": false, "vp_nreal": false, "cd_w": 1.0, "cd_rows": 16, "cd_chain": 0, "cd_tries": 2, "cd_fixed": true, "cd_inexact_w": 0.0, "cd_par": true, "cd_eps_floor": 0.0001, "cd_temp": 0.7, "cd_ngp_frozen": true, "cd_fac": true, "cd_lr": -1, "cd_gen_chunk": 1024, "cd_inc": true, "cd_greedy": false, "cd_skip_real": true, "cd_recon_w": 0.0, "cd_recon_rows": 8, "cd_fok": true, "cd_fok_far": 0.005, "cd_fok_chk": 0.05, "cd_fok_min": 20000, "cd_fok_1try": 0.9, "cd_runs": true, "cd_run_skip": 7, "rs_sel": true, "rs_frac": 0.5, "rs_pool": 4, "cd_runs_mask": true, "cd_run_excl": 0, "cd_prof": false, "cd_prof_calls": [50, 1650], "cd_mis32": true, "cd_gen_chunk1": 2048, "cd_nosync": true, "cd_reuse": 1, "cd_repair": true, "cd_repair_n": 1, "cd_partial": true, "cd_first_block": true, "cd_floor_lo": 0.25, "cd_floor_hi": 0.4, "cd_floor_every": 4, "pass_shuffle": true, "cd_runs_any": true, "noise_diag": 0, "profile_visit": 0, "head_select_eval": [], "cd_graph": true, "cd_slot": true, "kf_dream": 1.0, "kf_drop_a": false, "cd_graph_rows": 512, "bank_tgt_chunk_big": 128, "dstep": true, "cdet_log": true, "samp_graph": true, "infer_ctx": true, "infer_rep": true, "seed": 1, "share_mode": "kl", "dream_temp_bpc": 0.0, "dream_temp_low": 1.0, "cd_hint_frac": 0.03, "cd_hint_piece": 3, "cd_hint_adapt": 1.25, "cd_hint_min": 0.02, "cd_hint_max": 0.08, "infer_gap_eps": 0.1, "infer_proto_guard": 0.15, "infer_tiebreak": false, "pu_k": 512, "infer_delta_new": 0.16, "infer_proto_gap": 0.25, "cd_evid_w": 0.5, "cd_sig_every": 4, "cd_bytes_all": true, "dream_batch": 32, "nrem_res": 256, "nrem_mix": 0.5, "nrem_mix_sel": "rand", "nrem_own_sel": "rand", "nrem_retire": -1, "nrem_tgt": "bytes", "pu_cons_steps": 50, "pu_cons_lr": 0.01, "pu_cons_rows": 16, "pu_cons_anchor": 0.25, "pu_cons_retire": 0.25, "pu_cons_cap": 128, "pu_cons_eval": 4, "trace_lesion": [], "trace_lesion_pass": 2, "inf_on": true, "inf_probes": 150, "inf_plant_k": 30, "inf_steps": 200, "inf_rows": 32, "inf_rowlen": 256, "inf_lr": 0.1, "inf_mix": 0.5, "inf_df": 40, "inf_maxfan": 6, "inf_budget": 2000, "inf_eval_every": 1, "inf_cons": "mem", "inf_mem_key": "nameb", "inf_mem_beta": 0.5, "inf_mem_iters": 20, "inf_mem_dxb": 262144, "inf_mem_src": 0.5, "inf_mem_src_mode": "add", "inf_mem_prio": 1, "inf_probe_rare": 1, "inf_mem_maint": 200, "inf_audit": 1, "inf_upd_frac": 0.3, "inf_xfer": "none", "inf_eval_ctx2": 1, "inf_splice": 0, "inf_splice_every": 2, "inf_sleep_order": "nrem_rem", "inf_sleep_cycles": 1, "inf_rem_n": 200, "inf_rem_probe_frac": 0.25, "inf_rem_minrep": 1, "inf_rem_stop": 1, "inf_rem_all": 1, "inf_rem_fact_cap": 3000, "inf_eval_qtime": 1, "inf_qt_n": 40, "inf_qt_every": 5, "inf_mem_gate": 3.0, "inf_audit_rule": "recent", "inf_audit_cascade": 1, "inf_audit_debug": 1, "inf_eval_qtime3": 1, "inf_qt_comp": 2, "inf_audit_minrep": 2, "inf_idmem": 1, "inf_id_dim": 4096, "inf_rules": 1, "inf_para_frac": 0.5, "inf_comp_k": 2, "pu_cons_brake": 0.005, "inf_mem_anchor_named": 0.5, "inf_bridge_order": "rare", "inf_name_strict": 1, "inf_eval_ctx": 1, "inf_eval_hard": 1, "inf_rulefree": 1, "inf_cls_probe": 1, "inf_lm_side": 1, "inf_lm_fuzzy": 1.0, "inf_dual_probe": 1, "inf_real_sample": 8, "inf_timing": 1, "infer_drift_clamp": 1, "infer_proto_strong": 3.0}')
     for k,v in _json.loads(_OVR).items(): setattr(cfg,k,tuple(v) if isinstance(v,list) else v)
     if os.environ.get('PLATYPUS_RULEFREE','')=='1': cfg.inf_rulefree=1
+    cfg.infer_drift_fix=0 if os.environ.get('PLATYPUS_ROUTEFIX','')=='0' else 1   # cg20x routing fix on by default; PLATYPUS_ROUTEFIX=0 restores the old rule
+    if os.environ.get('PLATYPUS_RULEFREE','')=='0': cfg.inf_rulefree=0        # cg20w: rule-free is the default; PLATYPUS_RULEFREE=0 runs the rules setup
     if int(getattr(cfg,'inf_rulefree',0)):                                   # cg20t RULE-FREE INFERENCE: no relation list, no name pattern
         _rf_={"inf_units": 1, "inf_units_mode": "all", "inf_name_strict": 0, "inf_rem_stop": 0, "inf_units_ctx": 8, "inf_units_every": 1, "inf_units_rows": 64,
               "inf_units_warm": 300, "inf_pool": 1000, "inf_pool_rel": 0.5, "inf_link_slots": 1, "inf_relword_demote": 1, "inf_mem_fxsep": 16, "inf_bank_first": 1,
-              "inf_bank_span": 10, "inf_rem_minrep": 2, "inf_conc_minsup": 2, "inf_conc_reenter": 1, "inf_evict_fade": 1}
+              "inf_bank_span": 10, "inf_rem_minrep": 2, "inf_conc_minsup": 2, "inf_conc_reenter": 1, "inf_evict_fade": 1, "inf_store_roll": 1, "inf_rem_cumul": 1, "inf_bridge_facts": 1, "inf_drop_cut": 1, "inf_pool_room": 1, "inf_gap_debug": 1,
+              "inf_graph": 3, "inf_graph_theta": 1.585, "inf_replay_gumbel": 1, "inf_conc_refresh": 1}
         _ok_=_json.loads(_OVR)
         for k,v in _rf_.items():
             if k not in _ok_ or k in ('inf_name_strict','inf_rem_stop','inf_rem_minrep'): setattr(cfg,k,v)
-        print("  [cg20u] RULE-FREE inference preset on: "+", ".join(f"{k}={getattr(cfg,k)}" for k in _rf_),flush=True)
-    NAME='STAGE C CONDUIT cg20: cg19 (no lesion) + cg20u = cg20t + THREE-HOP IN RULE-FREE MODE (a stored conclusion counts as well-supported evidence when it is chained again; local three-hop 0.00 -> 0.44-0.56, paraphrase two-hop 0.57 -> 0.74) + EVICTION FADE (conclusions pushed out of the pool are erased from the store; real false memories 10 -> 6) + readout fixes (the new chain of an updated fact is not a false memory) + diagnostics (TWO-HOP GAP, DISCOVERY DETAIL, FALSE-MEMORY) + untested switches inf_reader (MDL reader) and inf_prose (natural-prose probes), both off; cg20t = cg20s + RULE-FREE SWITCH (inf_rulefree 1, or environment PLATYPUS_RULEFREE=1: no relation list - entities and relations found from word statistics, links kept in a 1000-link pool that pays for itself, plus four store fixes from local tests: the FIRST stored word in a sentence holds the store bank (stable as counts drift; the rarest-word bank collapsed two-hop recall mid-run), the bank closes 10 words after it opens, a fact must recur at least twice in a visit to be recorded, and both source facts of a conclusion must recur before it is written; separate write budgets for conclusions and NREM fact replay; local tests: two-hop 0.77 with every backed answer right, changed facts two-hop 1.00, store cost +0.008 BPC, forgetting -0.018) + diagnostics inf_fm_debug, inf_gap_debug; cg20s = cg20r + FOUR GPU FIXES: (1) belief revision at GPU exposure (recency rule needs 2 repeats, not 3; facts are seen 1-2 times) (2) identifier memory 4096 dimensions (1024 overloaded with 3000 facts) (3) RULE LAYER for paraphrase: rules phrase p => phrase q proposed from the fact records, kept only if they save bits on held-out evidence and reach half the going rate, applied when confident (derived facts replayed into the store; question-time paraphrases rewritten), with PARAPHRASE PROBES (facts stated in either or both wordings, competing relations per subject) and a PARAPHRASED one-hop readout (4) CONSOLIDATION BRAKE (a private-into-shared phase that makes old domains or its own domain worse by more than 0.005 BPC is rolled back) + IDENTIFIER MEMORY readout; cg20r = cg20q + FIX: NREM fact replay skips facts the grounding audit superseded (cg20q kept writing the old fact back into the store, so updated facts stayed stale); cg20q = cg20p + STRICT STORE GATE 3.0 (a store correction applies only where its largest logit is at least 3; cut the store cost about 60 pct locally with no recall loss) + RECENCY RULE IN THE GROUNDING AUDIT (for a single-valued relation the most recently stated object wins if it is repeated, at least a quarter of the old count; the old ratio rule left near-ties unresolved forever) + CASCADING RETRACTION (conclusions built on a retracted conclusion are retracted too) + REVISION EVIDENCE readout + MULTI-HOP QUESTION-TIME readout (depth 2 to 5, working memory and identifier lookups, decoys, paraphrased questions, competing relations); cg20p = cg20o + DRIFT-FREE STORE KEY (fixed random code of the last 8 bytes picks the units, the name picks the bank; no trunk features) + NREM FACT REPLAY (each visit up to 3000 one-hop facts, ranked by length over spread, written into the store) + REM LINKING WRITTEN (bridge recalled from the store, bridge-specific check, grounded in recorded facts, any grounded candidate; fixed lookup domain) + QUESTION-TIME CHAINING WITH A WORKING MEMORY readout (prompt facts written into a scratch store, two lookups, new chains and decoys) - skill transfer removed; cg20o = cg20n + SPLICE-AND-APPRAISE readout (true links vs false recombinations: raw confidence, specificity, path check by two own lookups, store lookups, oracle bridge) + SHADOW REM RECOMBINATION after the store writes (bridge recalled from memory, bridge-specific check, grounded in recorded facts; counted only, nothing written); cg20n = cg20m + GENTLE SKILL TRANSFER (worked examples from verified conclusions, lr x0.01, BPC brake; every second chain held out) + SHARPER IN-CONTEXT TEST (distractor fact last, both orders, in-context names as candidates, broken-bridge decoy); cg20m = cg20l + STORE MAINTENANCE (rewrite stored conclusions no longer recalled as the trunk drifts) + GROUNDING AUDIT with changing facts (30 pct of two-hop chains change in pass 2); cg20l = cg20k with the n-gram sparse-gradient FIX (cg19 bug: consolidation accumulated them -> GPU crash) and exposure-first store writes (rare-links-first starved probe conclusions); cg20k = cg20j + ANSWER-OR-ABSTAIN and SHOW-SOURCES readouts + calibration; cg20j = cg20i + guarded fast-store indexing (fix for the cuda illegal-address crash) + RARE LINKS FIRST in store writes + probe names with q/x/z; OFFLINE INFERENCE IN SLEEP (rarest bridges first, budget 2000, strict names: no non-ASCII neighbours, no capitalised common words; one-hop source facts ADDED to the store conclusion writes; unconsolidated conclusions written first; do-no-harm anchors aimed at text with stored names; in-context chaining probes), conclusions consolidated into a NAME-INDEXED FAST STORE (sparse delta-rule logit corrector, weights untouched; inf_cons w restores weight consolidation) (150 planted probe chains, sentence store of real/VERIFIED bytes, bridge-centred chaining with hub abstention, typed conclusions, three-hop via stored conclusions, conclusions consolidated alone into kept verified windows) | cg19: cg17e + PRIVATE-INTO-SHARED CONSOLIDATION on verified windows after every closed-loop visit (100 steps, 0.3x lr, 25% old-domain anchors) + TRACE-LEVEL RETIREMENT (KL < 0.25 x start) + CAPACITY CAP 128 windows per domain + TRACE LESION of Wikipedia and USPTO in pass 3 | '+NAME+' | overrides '+_OVR
+        print("  [cg20x] RULE-FREE inference preset on: "+", ".join(f"{k}={getattr(cfg,k)}" for k in _rf_),flush=True)
+    NAME='STAGE C CONDUIT cg20: cg19 (no lesion) + cg20y = cg20x + CONSOLIDATION AT 0.01x LR AND 50 STEPS (private-into-shared; 0.3x was rolled back in every GPU phase; locally 0.01x x 50 steps recovered 32-38 pct of the gap within the brake, 100 steps 11 pct, 200 steps 0) + DUAL PATHWAY RECALL readout (an overlapping link memory with spelling-aware codes learns beside the exact store; at the end two-hop questions with intact and damaged names are answered by exact recall, pattern completion and a RECOGNITION GATE: exact when the cue is a known name, completion otherwise; local: intact 1.00, damaged 0.44-0.69 vs 0.00) + ROUTING: drift clamped at zero (a slot that improved gets no bonus) and a STRONG PROTOTYPE rule (3x nearer than the next wins within 0.25 bits; replayed on the cg20x GPU routing log it fixes visit 16 and changes nothing else) + CLS PROBES at the end (lesion by age, partial cues, schema test) + REAL-TEXT CONCLUSIONS sample each sleep (non-probe conclusions with sources, for grading) + SLEEP TIMING + splice-and-appraise readout off; cg20x = cg20w + ONE-SCAN SALIENCE (links kept as one sparse weighted table W with decay and retraction; every two-step path scored at once as S = W W with log-count links and hub damping; new links promoted by gain x need) + GUMBEL REPLAY (store rows drawn in proportion to priority in one pass) + RE-ENCOUNTER STRENGTHENING (a conclusion seen again gets its support recounted and is rehearsed) + ROUTING FIX (each slot gap is corrected for trunk drift measured on that slot own dream-bank rows; the old rule choice is logged; PLATYPUS_ROUTEFIX=0 restores it) + untested switch inf_cls_probe (CLS probes at the end of the run), off; cg20w = cg20v + FACTS PLANTED 30x PER PASS (was 6x: a visit reads only about 20 pct of the text of a domain and later passes are closed loop, so each fact was read about once and the seen-twice rule could never fire for most facts) + RULE-FREE ON BY DEFAULT (PLATYPUS_RULEFREE=0 runs the rules setup) + untested switches inf_conc_refresh (re-encounter strengthening) and inf_reader 3 (core relation + learned modifiers), both off; cg20v = cg20u + FIVE GPU-SCALE FIXES for rule-free mode (the cg20u GPU run: the sentence store filled at visit 7 and froze, 11 of 197 chains found): (1) ROLLING SENTENCE STORE (when full, the oldest 10 pct of sentences from earlier visits that no live fact or conclusion depends on are emptied) (2) SEEN-TWICE ACROSS VISITS (a fact read once in each of two visits is recorded) (3) BRIDGES WITH RECORDED FACTS FIRST (one-off rare words no longer use up the linking budget) (4) CUT FRAGMENTS DROPPED (sentences cut by the window edge are not stored) (5) POOL ROOM (the going-rate cut-off applies only when links compete for room; seed 1 lost 10 of 35 questions to it with the pool far from full) + TWO-HOP GAP and DISCOVERY DETAIL readouts on; cg20u = cg20t + THREE-HOP IN RULE-FREE MODE (a stored conclusion counts as well-supported evidence when it is chained again; local three-hop 0.00 -> 0.44-0.56, paraphrase two-hop 0.57 -> 0.74) + EVICTION FADE (conclusions pushed out of the pool are erased from the store; real false memories 10 -> 6) + readout fixes (the new chain of an updated fact is not a false memory) + diagnostics (TWO-HOP GAP, DISCOVERY DETAIL, FALSE-MEMORY) + untested switches inf_reader (MDL reader) and inf_prose (natural-prose probes), both off; cg20t = cg20s + RULE-FREE SWITCH (inf_rulefree 1, or environment PLATYPUS_RULEFREE=1: no relation list - entities and relations found from word statistics, links kept in a 1000-link pool that pays for itself, plus four store fixes from local tests: the FIRST stored word in a sentence holds the store bank (stable as counts drift; the rarest-word bank collapsed two-hop recall mid-run), the bank closes 10 words after it opens, a fact must recur at least twice in a visit to be recorded, and both source facts of a conclusion must recur before it is written; separate write budgets for conclusions and NREM fact replay; local tests: two-hop 0.77 with every backed answer right, changed facts two-hop 1.00, store cost +0.008 BPC, forgetting -0.018) + diagnostics inf_fm_debug, inf_gap_debug; cg20s = cg20r + FOUR GPU FIXES: (1) belief revision at GPU exposure (recency rule needs 2 repeats, not 3; facts are seen 1-2 times) (2) identifier memory 4096 dimensions (1024 overloaded with 3000 facts) (3) RULE LAYER for paraphrase: rules phrase p => phrase q proposed from the fact records, kept only if they save bits on held-out evidence and reach half the going rate, applied when confident (derived facts replayed into the store; question-time paraphrases rewritten), with PARAPHRASE PROBES (facts stated in either or both wordings, competing relations per subject) and a PARAPHRASED one-hop readout (4) CONSOLIDATION BRAKE (a private-into-shared phase that makes old domains or its own domain worse by more than 0.005 BPC is rolled back) + IDENTIFIER MEMORY readout; cg20r = cg20q + FIX: NREM fact replay skips facts the grounding audit superseded (cg20q kept writing the old fact back into the store, so updated facts stayed stale); cg20q = cg20p + STRICT STORE GATE 3.0 (a store correction applies only where its largest logit is at least 3; cut the store cost about 60 pct locally with no recall loss) + RECENCY RULE IN THE GROUNDING AUDIT (for a single-valued relation the most recently stated object wins if it is repeated, at least a quarter of the old count; the old ratio rule left near-ties unresolved forever) + CASCADING RETRACTION (conclusions built on a retracted conclusion are retracted too) + REVISION EVIDENCE readout + MULTI-HOP QUESTION-TIME readout (depth 2 to 5, working memory and identifier lookups, decoys, paraphrased questions, competing relations); cg20p = cg20o + DRIFT-FREE STORE KEY (fixed random code of the last 8 bytes picks the units, the name picks the bank; no trunk features) + NREM FACT REPLAY (each visit up to 3000 one-hop facts, ranked by length over spread, written into the store) + REM LINKING WRITTEN (bridge recalled from the store, bridge-specific check, grounded in recorded facts, any grounded candidate; fixed lookup domain) + QUESTION-TIME CHAINING WITH A WORKING MEMORY readout (prompt facts written into a scratch store, two lookups, new chains and decoys) - skill transfer removed; cg20o = cg20n + SPLICE-AND-APPRAISE readout (true links vs false recombinations: raw confidence, specificity, path check by two own lookups, store lookups, oracle bridge) + SHADOW REM RECOMBINATION after the store writes (bridge recalled from memory, bridge-specific check, grounded in recorded facts; counted only, nothing written); cg20n = cg20m + GENTLE SKILL TRANSFER (worked examples from verified conclusions, lr x0.01, BPC brake; every second chain held out) + SHARPER IN-CONTEXT TEST (distractor fact last, both orders, in-context names as candidates, broken-bridge decoy); cg20m = cg20l + STORE MAINTENANCE (rewrite stored conclusions no longer recalled as the trunk drifts) + GROUNDING AUDIT with changing facts (30 pct of two-hop chains change in pass 2); cg20l = cg20k with the n-gram sparse-gradient FIX (cg19 bug: consolidation accumulated them -> GPU crash) and exposure-first store writes (rare-links-first starved probe conclusions); cg20k = cg20j + ANSWER-OR-ABSTAIN and SHOW-SOURCES readouts + calibration; cg20j = cg20i + guarded fast-store indexing (fix for the cuda illegal-address crash) + RARE LINKS FIRST in store writes + probe names with q/x/z; OFFLINE INFERENCE IN SLEEP (rarest bridges first, budget 2000, strict names: no non-ASCII neighbours, no capitalised common words; one-hop source facts ADDED to the store conclusion writes; unconsolidated conclusions written first; do-no-harm anchors aimed at text with stored names; in-context chaining probes), conclusions consolidated into a NAME-INDEXED FAST STORE (sparse delta-rule logit corrector, weights untouched; inf_cons w restores weight consolidation) (150 planted probe chains, sentence store of real/VERIFIED bytes, bridge-centred chaining with hub abstention, typed conclusions, three-hop via stored conclusions, conclusions consolidated alone into kept verified windows) | cg19: cg17e + PRIVATE-INTO-SHARED CONSOLIDATION on verified windows after every closed-loop visit (100 steps, 0.3x lr, 25% old-domain anchors) + TRACE-LEVEL RETIREMENT (KL < 0.25 x start) + CAPACITY CAP 128 windows per domain + TRACE LESION of Wikipedia and USPTO in pass 3 | '+NAME+' | overrides '+_OVR
     print(f"\n################ {NAME} | seed {cfg.seed} ################")
     r=run(cfg)
     print("\n==================== SUMMARY ====================")

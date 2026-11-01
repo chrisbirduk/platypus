@@ -2,9 +2,11 @@
 
 **A language model that learns without forgetting and thinks in its sleep.**
 
-Platypus is a 171-million-parameter byte-level language model that learns ten text domains one after another without forgetting earlier ones. After its first look at the data it learns only from what it can verify, and while it "sleeps" it links facts it met in different places into new conclusions. It needs no domain labels, no stored training data and no hand-written language rules. Its memory and sleep cycle also work when attached to a frozen GPT-2.
+Platypus is a 171-million-parameter byte-level language model that learns ten text domains one after another without forgetting earlier ones. After its first look at the data it learns only from what it can verify, and while it "sleeps" it links facts it met in different places into new conclusions, checks them against their sources and keeps only the ones that hold up. It needs no domain labels, no stored training data and, in its default rule-free mode, no hand-written language rules: entities and relations are found from word statistics, and links are kept only if they pay for themselves in compression. Its memory and sleep cycle also work when attached to a frozen GPT-2.
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
+
+Current build: **cg20y**.
 
 ---
 
@@ -40,9 +42,11 @@ Platypus targets four long-standing problems with language models:
 
 - **Continual learning without stored data.** Domains are learned in sequence. Old domains are protected by rehearsing the model's own dreams (stored self-generated windows with their top-32 predictions), by curvature-aware (Fisher-whitened) updates, and by small per-domain capacity.
 - **A strict closed loop.** After the first pass the model sees no real text again. It learns only from replays of its memory traces that it can verify exactly against what it originally read.
-- **Label-free routing.** The domain is never given. The model recognises returning domains by how well it predicts them.
-- **Inference in sleep.** After each visit it links facts met in different places, replays salient facts (NREM-like), proposes links from memory and keeps only grounded ones (REM-like), revises beliefs and retracts conclusions that depended on superseded facts.
+- **Label-free routing.** The domain is never given. The model recognises returning domains by how well it predicts them, corrected for how far each domain's slot has drifted since it was last trained.
+- **Rule-free inference in sleep.** After each visit it links facts met in different places. All links live in one sparse table, and every possible two-step link is scored at once (one-scan salience) and promoted by gain × need. It replays salient memories (NREM-like), proposes links from memory and keeps only grounded ones (REM-like), strengthens conclusions it meets again, revises beliefs and retracts conclusions that depended on superseded facts.
 - **A fast memory that can abstain.** Conclusions live in an entity-banked, delta-rule logit corrector outside the weights. It is silent for entities it has never seen, so the model can say "I don't know", and it costs almost nothing on ordinary text.
+- **Two recall pathways, as in the hippocampus.** Beside the exact store, an overlapping link memory with spelling-aware codes completes damaged cues. A recognition gate uses exact recall when the cue is a known name and pattern completion when it is not.
+- **Consolidation of shared structure.** After closed-loop visits, what a domain's private units learned is distilled into the shared weights, at a gentle rate and under a brake that rolls back any phase that harms old domains.
 - **An identifier memory for exact chains.** Verified facts are bound into a vector-symbolic memory, so multi-step chains need no round trip through text, and broken chains are declined.
 - **Rules that pay for themselves.** Equivalences between relation phrases ("answers to" and "reports to") are discovered from the text and kept only if they compress held-out evidence (minimum description length), so paraphrased questions can be answered.
 - **Works as a plug-in.** The store and sleep cycle have been attached to a frozen GPT-2 without changing a weight.
@@ -51,7 +55,7 @@ Platypus targets four long-standing problems with language models:
 
 ```
              BY DAY                                         BY NIGHT
- real text ──► slow network ──► next-byte          dream rehearsal ─► verified replay ─► linking
+ real text ──► slow network ──► next-byte          dream rehearsal ─► verified replay ─► one-scan linking
  (one domain,   (171M params,    prediction ◄──┐                                        & revision
   no labels)     general skill)                 │                                           │
                                                 └──── corrects ◄──── fast memory ◄──────────┘
@@ -69,12 +73,27 @@ The slow network learns general skill, and only from real text or verified repla
 | Dream rehearsal plus Fisher-whitened steps | Sequential Bayesian learning under a Laplace approximation: dreams supply the old likelihood, curvature supplies the precision. |
 | Learn only from verified replay | Self-training is a fixed-point iteration that converges on its own errors. A truth gate removed 100 of 100 false attractors in a synthetic test. |
 | Delta-rule fast memory | Writes are error-driven, so known facts cost nothing; unknown entities have no code, so abstention is exact; a confidence gate keeps the cost on ordinary text near zero. |
-| Linking by specificity | Links are scored by pointwise mutual information, not raw probability, and high-fan-out bridges abstain. |
+| One-scan salience | Every two-step path is scored at once as a sparse product S = W′W′, with log-count links and hub damping, then ranked by gain × need, instead of splicing and checking candidates one at a time. |
+| Links that pay their way | Links compete for a fixed pool. The promotion bar rises only when the pool is full, and links pushed out are erased from the store. |
 | Recency rule for belief revision | Exponentially decaying supports keep a constant ratio, so ratio tests stall. The most recent repeated statement wins, and retraction cascades through dependants. |
-| Entities from surprise | A word becomes an entity when the model finds its completion surprising, measured against the model as it is now. |
+| Exact and overlapping recall | Separation keeps links precise and completion recovers partial cues. A recognition gate chooses between them, as familiarity is thought to do in the brain. |
+| Gentle, braked consolidation | Shared structure is cheap to move into the weights and arbitrary bindings are costly, so consolidation runs at 1/100 of the training rate and is rolled back if it harms old domains. |
 | Rules by MDL | A rule is kept only if its two-part code saves bits on held-out evidence, judged against the going rate of the rules already paying their way. |
 
 ## Results
+
+**Rule-free inference at full size (cg20x, ten Pile domains, three passes, planted fact chains).** No relation list and no name patterns:
+
+| | Result |
+|---|---|
+| Two-hop chains found | 129 of 130 by the end (197 of 197, and 47 of 47 three-hop, by visit 11) |
+| One-, two- and three-hop recall with the fast memory | 1.00 / 1.00 / 1.00 |
+| Changed facts, one- and two-hop | 1.00 / 1.00, no stale answers (0.45 at visit 15, 1.00 from visit 20) |
+| Questions in an unseen wording | 0.91 |
+| Answers backed by a stored conclusion | 129 of 129 correct, each citing the true chain |
+| Store cost on ordinary text | none measurable |
+
+The previous rule-free build (cg20u) found 11 of 197 chains at the same scale.
 
 **Continual learning (full size, ten Pile domains).** With dream rehearsal and curvature-aware steps the model reached 1.17 bits per character (BPC) by its third pass, with forgetting of 0.03. In the strict closed loop (no real text after the first pass):
 
@@ -84,9 +103,16 @@ The slow network learns general skill, and only from real text or verified repla
 | Learns only from verified replays | 1.474 | 0.049 |
 | Reads real text again (upper bound) | 1.468 | 0.044 |
 
-Verified replay recovered 98% of the gap, with no domain labels.
+Verified replay recovered 98% of the gap, with no domain labels. The cg20x run (with sleep inference on) ended at 1.371 BPC, with forgetting of −0.011, +0.075 and +0.064 after passes 1, 2 and 3. Label-free routing was right on 25 of 29 visits; the errors were between the closest pairs of domains (Gutenberg and Wikipedia, GitHub and StackExchange).
 
-**Inference in sleep (five-domain harness, planted fact chains).** Two-step recall reached 0.91 with forgetting of 0.014, against 0.30 recall and 0.206 forgetting when conclusions were written into the weights. Store cost on ordinary text is 0.004–0.006 BPC. Belief revision took stale two-step answers from 40% to zero.
+**Local tests behind cg20y (five-domain harness).**
+
+| Test | Result |
+|---|---|
+| Consolidation, 0.01× rate, 50 steps | 32–38% of the private units' advantage moved into the shared weights per phase, within the brake (0% at 0.3×; 11% at 100 steps; 0% at 200) |
+| Two-hop recall with intact names: exact store / recognition gate | 1.00 / 1.00 |
+| Two-hop recall with damaged names (dropped letter, swapped letters, lower case): exact store / recognition gate | 0.00 / 0.44–0.69 |
+| Routing: strong-prototype rule replayed on the cg20x routing log | fixes 1 of the 4 errors, changes no other decision |
 
 **Paraphrase rule layer.** Questions in a wording never seen in the evidence scored 0.93 (0.41 with the rule layer off). All 12 true rules were found and a correlated decoy relation was rejected.
 
@@ -111,69 +137,90 @@ Platypus is a single Python script designed to run on one GPU (for example in Go
 - Python 3.10+
 - PyTorch with CUDA
 - `datasets` (Hugging Face), for streaming `monology/pile-uncopyrighted`
+- `scipy` (sparse matrices for one-scan linking)
 - Optional: `flash-linear-attention` for the fast Triton kernels. The script tries to install them and falls back to a pure PyTorch solve if they are unavailable.
 
 **Run**
 
 ```bash
-pip install torch datasets
-python threshold_lean_stagec9_7cg20s_conduit.py
+pip install torch datasets scipy
+python threshold_lean_stagec9_7cg20y_conduit.py
 ```
 
-In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg20s_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
+In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg20y_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
 
-A full run streams ten domains over several passes and takes several hours on a single modern GPU.
+A full run streams ten domains over three passes and takes about four to five hours on a single modern GPU.
 
 ## Configuration
 
 Options are set through the `LAB_OVR` environment variable as JSON, on top of the `Config` defaults. Anything you pass overrides the built-in run configuration.
 
 ```bash
-LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "inf_rules": 1, "seed": 1}' \
-  python threshold_lean_stagec9_7cg20s_conduit.py
+LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "seed": 1}' \
+  python threshold_lean_stagec9_7cg20y_conduit.py
 ```
 
-Useful switches:
+Two environment switches:
+
+| Variable | Meaning |
+|---|---|
+| `PLATYPUS_RULEFREE=0` | Run the rules setup (relation list and name pattern) instead of the default rule-free mode |
+| `PLATYPUS_ROUTEFIX=0` | Turn off the drift-corrected routing and use the original rule |
+
+Useful options:
 
 | Option | Meaning |
 |---|---|
 | `n_passes`, `steps_per_task` | Passes over the domain sequence, and training steps per visit |
 | `seed` | Random seed |
 | `inf_on` | Sleep-time inference and the fast memory |
+| `inf_graph` | Linker: 3 = one-scan salience (default in rule-free mode) |
+| `inf_replay_gumbel`, `inf_conc_refresh` | Priority-proportional replay; strengthening of conclusions met again |
 | `inf_mem_gate` | Confidence gate for applying fast-memory corrections |
 | `inf_audit_rule`, `inf_audit_cascade` | Belief revision rule and cascading retraction |
 | `inf_idmem`, `inf_id_dim` | Identifier memory and its dimension |
 | `inf_rules`, `inf_para_frac` | Paraphrase rule layer, and the fraction of probes given a second wording |
+| `inf_lm_side`, `inf_lm_fuzzy`, `inf_dual_probe` | Overlapping link memory beside the store, spelling-aware codes, and the dual-pathway readout |
+| `inf_cls_probe` | End-of-run CLS probes |
+| `inf_real_sample`, `inf_timing` | Real-text conclusion samples per sleep; sleep timing |
+| `pu_cons_lr`, `pu_cons_steps` | Consolidation rate (multiplier on the training rate) and steps per phase |
 | `pu_cons_brake` | Rolls back consolidation if it harms old domains by more than this many BPC |
+| `infer_drift_clamp`, `infer_proto_strong` | Routing: drift clamped at zero; strong-prototype rule |
 
 The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of the script.
 
 ## Reading the logs
 
 - Per-visit **BPC** and **forgetting** for every domain seen so far
-- **Routing**: which slot each visit was assigned to
+- **Routing**: the slot each visit was assigned to, with the original rule's choice and each slot's drift shown alongside
+- **ONE-SCAN SALIENCE**: links in the table, two-step paths scored and links promoted each sleep
 - **Inference readouts**: one-, two- and three-hop recall from the weights and with the store; answer-or-abstain; sources; updated facts; store cost on ordinary text
 - **IDENTIFIER MEMORY**, **PARAPHRASED** and **RULE LAYER** lines for the identifier memory and the paraphrase rules
-- **ROLLED BACK** when the consolidation brake undoes a harmful consolidation step
+- **REAL-TEXT CONCLUSIONS**: a sample of conclusions involving no planted name, with their source sentences, for judging precision on real text
+- **inference TIMING**: wall time of each sleep and of its linking step
+- **[consolidation]**: gap recovered per phase, and **ROLLED BACK** when the brake undoes a harmful phase
+- **CLS PROBES** and **DUAL PATHWAY** at the end: lesion by age, partial cues, schema test, and recall from damaged names by each pathway
 
 ## Project status
 
-This is **research code**. It is bulky: it carries options, readouts and experiment paths from many iterations that are switched off in the current configuration. It needs a cleanup (dead options removed, modules split, tests added) and further optimisation (evaluation frequency, store writes, data loading and generation speed) before wider use.
+This is **research code**. It is bulky: it carries options, readouts and experiment paths from many iterations that are switched off in the current configuration. It needs a cleanup (dead options removed, modules split, tests added) and further optimisation before wider use.
 
 Known limits:
 
-- Inference has been tested on templated facts about invented people, not on natural text about real entities.
-- The paraphrase layer handles relation wording; pronouns, descriptions and nested clauses are not handled yet.
-- Word-level rule discovery with no relation list currently finds 33–40 of 58 planted chains, against 57 of 58 when relations are given. Work on this is ongoing.
-- Inferred knowledge stays in the fast memory; moving it into the weights has not worked yet.
+- Inference has been tested on planted facts about invented people. Precision on conclusions drawn from real text has not been measured yet; cg20y prints samples to start doing so.
+- Natural prose is harder than templated sentences: about 0.77 two-hop recall in local tests.
+- Pronouns, descriptions and nested clauses are not resolved, so chains through "he" or "she" are not found.
+- Inferred facts stay in the fast memory. Replaying them into the weights did not transfer arbitrary facts at any safe rate in local tests. That is consistent with complementary-learning-systems theory, where specifics stay in the hippocampus and the cortex absorbs shared structure, but it means the weights alone do not recall inferred facts.
+- Forgetting at full size rises in later passes, and routing confuses the most similar domains.
 - There is no fine-tuning baseline and no benchmark result yet.
 
 ## Roadmap
 
-1. **Learned reader.** Attach the memory and sleep cycle to a pretrained model that reads sentences into fact records, verified against their sources.
-2. **References.** Resolve pronouns and descriptions as rules that must pay for themselves.
-3. **Meaning on links.** Carry negation, hedging and time on each relation, so past and negated facts are not asserted as current.
-4. **Real text and benchmarks.** MQuAKE for multi-step edits, two-hop question sets, and a fine-tuning baseline on the same facts.
+1. **Real text.** Measure the precision of conclusions drawn from real text, and test on multi-hop question sets and MQuAKE for multi-step edits.
+2. **Consolidating structure.** Move relation regularities (which relations chain, which are single-valued, paraphrase rules) into the weights, and show they become independent of the store over time.
+3. **Stable domains at scale.** Protect slots from drift, to cut routing errors and later-pass forgetting; test learning rates that follow novelty and consolidation that stops itself at the brake.
+4. **References and meaning.** Resolve pronouns and descriptions as rules that must pay for themselves; carry negation, hedging and time on each relation.
+5. **Entity resolution.** Merge spelling variants only when the evidence supports it: rare typos of a common name, or variants that share context.
 
 ## Contributing
 
