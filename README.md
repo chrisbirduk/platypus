@@ -99,13 +99,13 @@ The slow network learns general skill, and only from real text or verified repla
 | NREM dreams (`jepa-name`) related to a gold fact or chain | 11 of 40 and 13 of 37 (ArXiv, PubMed), against 1–2 of 128 for random pairs |
 | REM dreams (`cortex-jepa-name`) related | 12 of 30 at PubMed (40%), 7 accepted, against 3 of 128 for the earlier REM matcher and 1 of 128 for random |
 | Dreams about the same entity, later domains | NREM 47–71%, REM 8 of 31, 14 of 16, 11 of 12, 7 of 11; random pairs never |
-| JEPA held-out partner retrieval on real text | 0.57–0.80 at its second and third training sleeps, 0.84–1.00 from the fourth (chance 0.06–0.10) |
+| JEPA held-out partner retrieval | first training sleep (the only clean measurement so far): all linked pairs 0.34–0.41 (chance 0.06), real-text pairs 0.10–0.20 (chance 0.10). Later sleeps reported 0.8–1.0 on real text, but those were inflated: the held-out split was re-drawn every sleep while the heads persisted, so most held-out pairs had been trained on before. Fixed in cg26g/h (a permanent held-out set) |
 | The dream judge | known links pass 3 of 5 (+2 bits) early and 16 of 16 (+5 to +6 bits) later; random pairs 1–4 of 128 |
 | REM fact inference | no accepted grounded fact scored wrong (about 150 in one run); 177–183 of 197 two-hop chains found |
 | Replay into the weights | kept every sleep at ×0.0033; old domains +0.01 to +0.03 per sleep while their BPC kept improving |
 | GPU memory | peak 52–57 GB of 95 (during daytime training); sleep 19–51 GB |
 
-Within the name pool the JEPA's ranking so far matches a TF-IDF ranking on names, so most of the gain comes from the name index. cg26f trains the JEPA against name-sharing alternatives to test whether it can add more. Whether these dreams beat random dreams on two-hop recall and forgetting is not yet tested (the random-dream control is next).
+Within the name pool the JEPA's ranking so far matches a TF-IDF ranking on names, so most of the gain comes from the name index, and the clean first-sleep evidence for the JEPA generalising on real text is weak. cg26f trains the JEPA against name-sharing alternatives to test whether it can add more. Whether these dreams beat random dreams on two-hop recall and forgetting is not yet tested (the random-dream control is next).
 
 **Dreams and consolidation at full size (cg21b–cg25, ten Pile domains, seed 1).**
 
@@ -173,7 +173,7 @@ Verified replay recovered 98% of the gap, with no domain labels. The cg20x run (
 | Trunk replay of conclusions vs none (small model) | no replay forgets least (−0.018 vs −0.004); dreams only dilute the harm of templated rows |
 | JEPA dream selector, first training sleep | held-out partner found 0.06 → 0.81 (chance 0.06) |
 | New dream sources (cg26b, cg26c) | forgetting and final BPC unchanged (−0.011 / 2.059 and −0.011 / 2.070, against −0.009 / 2.061 for cg25) |
-| JEPA hard negatives (3–5 held-out choices) | JEPA 1.00, 0.67, 0.80 against TF-IDF names 0.33, 0.33, 0.60 |
+| JEPA hard negatives (3–5 held-out choices, before the held-out fix) | JEPA 1.00, 0.67, 0.80 against TF-IDF names 0.33, 0.33, 0.60: tiny samples, and possibly inflated by the same held-out leak |
 | Strong SIGReg on the trunk (weight 10) | effective rank 6 → 10 over seven sleeps, top direction 37% → 25%, no harm; no retrieval gain yet |
 | Activation centring; gentle SIGReg on the trunk | no measurable effect |
 
@@ -300,6 +300,7 @@ Known limits:
 - Natural prose is harder than templated sentences: about 0.77 two-hop recall in local tests.
 - Pronouns, descriptions and nested clauses are not resolved, so chains through "he" or "she" are not found.
 - Consolidation into the weights works at full size but slowly: replay at doses the brake accepts adds only a little two-hop recall per sleep, though what it adds survives later training. Protection against forgetting during replay is not yet reliable from one visit to the next, and the small local model shows no transfer at all.
+- The JEPA selector's held-out retrieval figures from cg26b–cg26f were inflated by a leak (the held-out split was re-drawn each sleep while the heads persisted). Clean evidence so far: about 5× chance on linked pairs at the first training sleep, little above chance on real-text pairs. cg26g/h use a permanent held-out set.
 - Dreams chosen by the JEPA within the name index are far more often related than random ones, but they are not yet shown to give more two-hop recall or less forgetting than random dreams; the control run is pending. Within the name pool the JEPA's ranking so far matches a simple TF-IDF ranking.
 - At the replay dose the brake accepts (×0.0033), later sleeps no longer raise two-hop recall measurably, and transfer kept from earlier sleeps decays in some visits.
 - The trunk's passage codes are strongly anisotropic; latent readouts and the JEPA head work around this, but the trunk itself is unchanged.
