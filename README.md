@@ -2,11 +2,11 @@
 
 **A language model that learns without forgetting and thinks in its sleep.**
 
-Platypus is a 171-million-parameter byte-level language model that learns ten text domains one after another without forgetting earlier ones. After its first look at the data it learns only from what it can verify, and while it "sleeps" it links facts it met in different places into new conclusions, checks them against their sources and keeps only the ones that hold up. It needs no domain labels, no stored training data and, in its default rule-free mode, no hand-written language rules: entities and relations are found from word statistics, and links are kept only if they pay for themselves in compression. Its memory and sleep cycle also work when attached to a frozen GPT-2.
+Platypus is a 171-million-parameter byte-level language model that learns ten text domains one after another without forgetting earlier ones. After its first look at the data it learns only from what it can verify, and while it "sleeps" it links facts it met in different places into new conclusions, checks them against their sources and keeps only the ones that hold up. It then dreams: it splices memories together, judges each dream by whether the two halves make each other easier to predict, and consolidates what passes into its weights under a brake that protects old knowledge. It needs no domain labels, no stored training data and, in its default rule-free mode, no hand-written language rules: entities and relations are found from word statistics, and links are kept only if they pay for themselves in compression. Its memory and sleep cycle also work when attached to a frozen GPT-2.
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg20z**.
+Current build: **cg26**.
 
 ---
 
@@ -46,6 +46,8 @@ Platypus targets four long-standing problems with language models:
 - **Rule-free inference in sleep.** After each visit it links facts met in different places. All links live in one sparse table, and every possible two-step link is scored at once (one-scan salience) and promoted by gain × need. It replays salient memories (NREM-like), proposes links from memory and keeps only grounded ones (REM-like), strengthens conclusions it meets again, revises beliefs and retracts conclusions that depended on superseded facts.
 - **A fast memory that can abstain.** Conclusions live in an entity-banked, delta-rule logit corrector outside the weights. It is silent for entities it has never seen, so the model can say "I don't know", and it costs almost nothing on ordinary text.
 - **Two recall pathways, as in the hippocampus.** Beside the exact store, an overlapping link memory with spelling-aware codes completes damaged cues. A recognition gate uses exact recall when the cue is a known name and pattern completion when it is not.
+- **Dreams, judged by the model itself.** NREM-like dreams splice two stored sentences; REM-like dreams pair a recent memory (the cue) with a trace of older knowledge, chosen neither too close nor too far from the cue and different from each other. A dream is kept only if each half makes the other cheaper for the model to predict than random text does. In the latest build a trained JEPA chooses what to dream.
+- **Systems consolidation into the weights.** Verified conclusions and accepted dreams are replayed into the trunk, with the update steered away from what old domains rely on (their Fisher factors), a brake that rolls back any harmful sleep, and a dose that retries lower and climbs back when it can.
 - **Consolidation of shared structure.** After closed-loop visits, what a domain's private units learned is distilled into the shared weights, at a gentle rate and under a brake that rolls back any phase that harms old domains.
 - **An identifier memory for exact chains.** Verified facts are bound into a vector-symbolic memory, so multi-step chains need no round trip through text, and broken chains are declined.
 - **Rules that pay for themselves.** Equivalences between relation phrases ("answers to" and "reports to") are discovered from the text and kept only if they compress held-out evidence (minimum description length), so paraphrased questions can be answered.
@@ -57,9 +59,13 @@ Platypus targets four long-standing problems with language models:
              BY DAY                                         BY NIGHT
  real text ──► slow network ──► next-byte          dream rehearsal ─► verified replay ─► one-scan linking
  (one domain,   (171M params,    prediction ◄──┐                                        & revision
-  no labels)     general skill)                 │                                           │
-                                                └──── corrects ◄──── fast memory ◄──────────┘
-                                                                  (facts by entity, silent when unsure)
+  no labels)     general skill)      ▲          │                                           │
+                                     │          └──── corrects ◄──── fast memory ◄──────────┘
+                                     │                           (facts by entity, silent when unsure)
+                                     │                                      │
+                                     └── protected, braked replay ◄── dreams (NREM splices, REM cue x trace)
+                                         of verified conclusions        chosen by JEPA, kept only if each half
+                                                                        makes the other easier to predict
 ```
 
 The slow network learns general skill, and only from real text or verified replay. The fast memory holds facts. Sleep connects the two by doing inference offline.
@@ -79,8 +85,25 @@ The slow network learns general skill, and only from real text or verified repla
 | Exact and overlapping recall | Separation keeps links precise and completion recovers partial cues. A recognition gate chooses between them, as familiarity is thought to do in the brain. |
 | Gentle, braked consolidation | Shared structure is cheap to move into the weights and arbitrary bindings are costly, so consolidation runs at 1/100 of the training rate and is rolled back if it harms old domains. |
 | Rules by MDL | A rule is kept only if its two-part code saves bits on held-out evidence, judged against the going rate of the rules already paying their way. |
+| Dreams judged by mutual compression | Two passages belong together if each makes the other cheaper to predict than chance text does. The model needs no outside verifier; the bar is set by what random pairs achieve in the same sleep. |
+| Protected, adaptive replay | Replay buys recall in the weights at a price in forgetting. Steering each update by the old domains' Fisher factors, braking, retrying lower and climbing back keeps the price inside a budget. |
+| JEPA as the dream selector | A joint-embedding predictive model (encoder head, EMA target, predictor, SIGReg) learns from links the system has verified itself, then predicts which memories belong together. Its closed-form relative (spectral word codes from the platonic-representation result) seeds the splice proposals. |
 
 ## Results
+
+**Dreams and consolidation at full size (cg21b–cg25, ten Pile domains, seed 1).**
+
+| | Result |
+|---|---|
+| Two-hop recall from the weights after a sleep of replay | rose at every sleep, e.g. 0.12 → 0.38, 0.07 → 0.21, 0.08 → 0.29 (store switched off) |
+| Price in forgetting (plain replay, one visit) | ×0.03: +0.40 two-hop for +0.158 old-domain BPC; ×0.01: +0.20 for +0.064; ×0.0033: +0.13 for +0.022 |
+| Kept replay | old domains unharmed, at best improved (−0.027) |
+| Does it last? | after a full visit of training: 0.20 → 0.20, 0.14 → 0.14, 0.12 → 0.12 (cg24), 0.25 → 0.12 (cg21c) |
+| Splice test | known links pass 13–16 of 16 (+4 to +9 bits), random pairs 0–7 of 128 |
+| Protected replay | 70% less old-domain damage at one paired visit, no difference at another: not yet consistent |
+| Latent consolidation (tried on a copy) | costlier than byte replay (+0.03 to +0.09 BPC) and no two-hop gain |
+
+Transfer of inferred two-hop facts into the weights, lasting across visits, is the first evidence of systems consolidation in Platypus. The numbers are small per sleep and come from one seed. Accepted dreams were mostly unrelated pairs until the name filters of cg25–cg26.
 
 **Rule-free inference at full size (cg20x, ten Pile domains, three passes, planted fact chains).** No relation list and no name patterns:
 
@@ -126,6 +149,15 @@ Verified replay recovered 98% of the gap, with no domain labels. The cg20x run (
 | Two-hop recall with damaged names (dropped letter, swapped letters, lower case): exact store / recognition gate | 0.00 / 0.44–0.69 |
 | Routing: strong-prototype rule replayed on the cg20x routing log | fixes 1 of the 4 errors, changes no other decision |
 
+**Local tests behind cg21–cg26 (five-domain harness and offline).**
+
+| Test | Result |
+|---|---|
+| Link detection on Re-DocRED real text (chain premises found in 6,000 proposals, two seeds) | hybrid TF-IDF + spectral 405 / 411, spectral 376 / 377, TF-IDF 339 / 359, random 2 / 3 |
+| Trunk replay of conclusions vs none (small model) | no replay forgets least (−0.018 vs −0.004); dreams only dilute the harm of templated rows |
+| JEPA dream selector, first training sleep | held-out partner found 0.06 → 0.81 (chance 0.06) |
+| Activation centring; gentle SIGReg on the trunk | no measurable effect |
+
 **Paraphrase rule layer.** Questions in a wording never seen in the evidence scored 0.93 (0.41 with the rule layer off). All 12 true rules were found and a correlated decoy relation was rejected.
 
 **Frozen GPT-2 (124M) plus Platypus.** 30 candidate answers per question (chance 0.03):
@@ -156,10 +188,10 @@ Platypus is a single Python script designed to run on one GPU (for example in Go
 
 ```bash
 pip install torch datasets scipy
-python threshold_lean_stagec9_7cg20z_conduit.py
+python threshold_lean_stagec9_7cg26_conduit.py
 ```
 
-In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg20z_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
+In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg26_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
 
 A full run streams ten domains over three passes and takes about four to five hours on a single modern GPU.
 
@@ -169,7 +201,7 @@ Options are set through the `LAB_OVR` environment variable as JSON, on top of th
 
 ```bash
 LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "seed": 1}' \
-  python threshold_lean_stagec9_7cg20z_conduit.py
+  python threshold_lean_stagec9_7cg26_conduit.py
 ```
 
 Two environment switches:
@@ -178,6 +210,7 @@ Two environment switches:
 |---|---|
 | `PLATYPUS_RULEFREE=0` | Run the rules setup (relation list and name pattern) instead of the default rule-free mode |
 | `PLATYPUS_ROUTEFIX=0` | Turn off the drift-corrected routing and use the original rule |
+| `PLATYPUS_DREAMS` | `both` (default: NREM and REM dreams), `nrem`, `rem`, `jepa` (dream only what the JEPA selector chose), `random` (control: random pairs), `0` (no dreams, no trunk replay) |
 
 Useful options:
 
@@ -200,7 +233,14 @@ Useful options:
 | `infer_drift_clamp`, `infer_proto_strong` | Routing: drift clamped at zero; strong-prototype rule |
 | `infer_proto_recency` | Routing: 2 = no rule may pick the slot trained at the previous visit (default) |
 | `inf_stage` | Staging buffer: 2 = commit a conclusion only when its premises are read again (default) |
-| `inf_salience`, `inf_sym`, `inf_mutual`, `inf_splicemix`, `inf_bench` | Off by default, for local experiments: salience, symmetry, mutual compression, bridge-free mixing, and the Re-DocRED real-text benchmark |
+| `inf_cons`, `inf_cons_wlr`, `inf_cons_wlr_max`, `inf_cons_retry`, `inf_cons_minpool` | Trunk replay of conclusions and dreams: starting rate, ceiling, retries after a rollback, minimum pool |
+| `inf_cons_protect`, `inf_cons_adapt`, `inf_cons_brake` | Fisher-steered (protected) replay; adaptive dose; the brake |
+| `inf_splicemix`, `inf_mix_hybrid`, `inf_mix_sharename`, `inf_mix_nameidx`, `inf_mix_null_q` | Splice dreams: proposer, shared-name requirement, name-indexed pool, chance bar |
+| `inf_mix_cortex`, `inf_mix_cxsrc`, `inf_mix_cxsel` | REM dreams: traces per cue, trace source (`bank`, `familiar`, `both`), selection (`top`, `band`, `mmr`) |
+| `inf_jd`, `inf_jd_pool`, `inf_jd_drop`, `inf_jd_sigreg` | JEPA dream selector: on/off, pooling, top directions removed, SIGReg weight |
+| `inf_jepa_probe`, `inf_jepa_geom`, `inf_jepa_next`, `inf_jepa_shadow`, `inf_jepa_consol`, `inf_jepa_every` | Latent readouts (no effect on training) and how often they run |
+| `inf_bench`, `inf_ceiling`, `inf_ceiling2` | Re-DocRED real-text benchmark (`embedded` in the GPU file); composition ceiling tests |
+| `inf_salience`, `inf_sym`, `inf_mutual`, `inf_iso` | Off by default, for experiments: salience, symmetry, mutual compression, SIGReg on the trunk |
 
 The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of the script.
 
@@ -216,6 +256,12 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 - **STAGING**: candidates proposed, waiting, and passing the bar each sleep
 - **[consolidation]**: gap recovered per phase (summary as a median), and **ROLLED BACK** when the brake undoes a harmful phase
 - **CLS PROBES** and **DUAL PATHWAY** at the end: lesion by age, partial cues, schema test, and recall from damaged names by each pathway
+- **CONCLUSION REPLAY INTO THE TRUNK**: dose, cost to the visited and old domains, KEPT or ROLLED BACK, retries, protection
+- **REPLAY RETENTION**: two-hop from the weights before and right after replay, and the previous sleep's sample after a visit of training
+- **MIXING**: the splice test check (known links vs random pairs), proposals and acceptances by source, how many are related (planted chains and Re-DocRED gold), example pairs and cortical traces
+- **JEPA DREAMS | TRAIN**: linked pairs, loss, code rank and held-out partner retrieval of the dream selector
+- **LATENT READOUT**: geometry, next-span retrieval, views, shadow JEPA and latent consolidation
+- **CEILING LONG**: composition learning curve, in and out of distribution, in the weights and in context
 
 ## Project status
 
@@ -226,17 +272,21 @@ Known limits:
 - Inference has been tested at scale on planted facts about invented people. On natural text, a first local benchmark (Re-DocRED Wikipedia paragraphs with gold relations) found that word-level linking cannot chain facts stated only once: two single reads never reach the linking threshold. Facts must recur, or links must be found another way (bridge-free mixing and latent "splice" dreams are under test).
 - Natural prose is harder than templated sentences: about 0.77 two-hop recall in local tests.
 - Pronouns, descriptions and nested clauses are not resolved, so chains through "he" or "she" are not found.
-- Inferred facts stay in the fast memory. Replaying them into the weights did not transfer arbitrary facts at any safe rate in local tests. That is consistent with complementary-learning-systems theory, where specifics stay in the hippocampus and the cortex absorbs shared structure, but it means the weights alone do not recall inferred facts.
+- Consolidation into the weights works at full size but slowly: replay at doses the brake accepts adds only a little two-hop recall per sleep, though what it adds survives later training. Protection against forgetting during replay is not yet reliable from one visit to the next, and the small local model shows no transfer at all.
+- Dream selection is not yet shown to beat random dreams. Until the name filters, accepted dreams were mostly pairs of the same genre (two biographies) or garbled dream-bank traces. The JEPA selector (cg26) is the current attempt.
+- The trunk's passage codes are strongly anisotropic; latent readouts and the JEPA head work around this, but the trunk itself is unchanged.
 - Forgetting at full size rises in later passes, and routing confuses the most similar domains.
 - There is no fine-tuning baseline and no benchmark result yet.
 
 ## Roadmap
 
-1. **Real text.** Measure the precision of conclusions drawn from real text, and test on multi-hop question sets and MQuAKE for multi-step edits.
-2. **Consolidating structure.** Move relation regularities (which relations chain, which are single-valued, paraphrase rules) into the weights, and show they become independent of the store over time.
-3. **Stable domains at scale.** Protect slots from drift, to cut routing errors and later-pass forgetting; test learning rates that follow novelty and consolidation that stops itself at the brake.
-4. **References and meaning.** Resolve pronouns and descriptions as rules that must pay for themselves; carry negation, hedging and time on each relation.
-5. **Entity resolution.** Merge spelling variants only when the evidence supports it: rare typos of a common name, or variants that share context.
+1. **Dreams that beat random.** Run the JEPA selector against a random-dream control on the same build; show related pairs accepted and lasting transfer from them.
+2. **Free the fast store.** Release conclusions the weights now recall, and test the temporal gradient (older memories surviving without the store).
+3. **Real text.** Measure the precision of conclusions drawn from real text, and test on multi-hop question sets and MQuAKE for multi-step edits.
+4. **Consolidating structure.** Move relation regularities (which relations chain, which are single-valued, paraphrase rules) into the weights, and show they become independent of the store over time.
+5. **Stable domains at scale.** Protect slots from drift, to cut routing errors and later-pass forgetting; test learning rates that follow novelty and consolidation that stops itself at the brake.
+6. **References and meaning.** Resolve pronouns and descriptions as rules that must pay for themselves; carry negation, hedging and time on each relation.
+7. **Entity resolution.** Merge spelling variants only when the evidence supports it: rare typos of a common name, or variants that share context.
 
 ## Contributing
 
