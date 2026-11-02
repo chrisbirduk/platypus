@@ -17,7 +17,7 @@
 # WHAT THIS FILE IS
 #   The full-size (GPU) build of Platypus, a byte-level continual-learning language model. It reads ten Pile domains
 #   one after another over several passes and is evaluated on how much it keeps, how much it learns and what it can
-#   infer. Build: cg26f. The run configuration and a full change history are in NAME and LAB_OVR near the end.
+#   infer. Build: cg26h. The run configuration and a full change history are in NAME and LAB_OVR near the end.
 #
 # WHAT IT DOES
 #   * Continual learning without stored data: domains are learned in sequence; old domains are protected by
@@ -1112,12 +1112,14 @@ def kf_store(model,d):
     if not cur_: return
     D_=model.__dict__.setdefault('_kf_dom',{}).setdefault(d,{})
     for k_,e_ in cur_.items():
-        if e_['G'] is None or e_['nG']==0: continue
-        A_=(e_['A']/e_['nA']) if e_['A'] is not None else None; G_=e_['G']/e_['nG']
+        if e_['G'] is None or e_['nG']==0 or not bool((e_['G']!=0).any()): continue   # FIX (review): skip all-zero G (closed-loop visits)
+        A_=(e_['A']/e_['nA']) if e_['A'] is not None else None; G_=e_['G']/e_['nG']; ok9_=True
         if k_ in D_:                                                    # revisit: average with the stored factors
             G_=0.5*(D_[k_][1]+G_); A_=(0.5*(D_[k_][0]+A_)) if (A_ is not None and D_[k_][0] is not None) else A_
         D_[k_]=(A_,G_)
-    nv_=model.__dict__.setdefault('_kf_nv',{}); nv_[d]=nv_.get(d,0)+1
+    nv_=model.__dict__.setdefault('_kf_nv',{})
+    if any(e_['G'] is not None and e_['nG']>0 and bool((e_['G']!=0).any()) for e_ in cur_.values()): nv_[d]=nv_.get(d,0)+1   # FIX (review): only visits with evidence
+    else: return
     tr_=lambda X: float(X.diagonal().sum() if X.dim()==2 else X.sum())
     if cur_:                                                               # FLATNESS proxy: sum over weights of tr(A) tr(G) on this visit's real rows
         fl_=sum(tr_(e_['A']/e_['nA'])*tr_(e_['G']/e_['nG']) for e_ in cur_.values() if e_['G'] is not None and e_['nG']>0 and e_['A'] is not None and e_['nA']>0)
@@ -1760,7 +1762,8 @@ def infer_slot_rep(model,cfg,get,t_true,vi):
         if ps_>0 and second<float('inf') and ds.get(rnear,float('inf'))*ps_<=second and (sc[rnear]-lo_)<float(getattr(cfg,'infer_proto_strong_guard',0.25)) and rnear!=s_ and rnear!=lst_:
             s_=rnear; kind='revisit (slots full, STRONG prototype)'             # cg20y: a prototype 3x nearer than the next wins within 0.25 bits (cg20x GPU replay: fixes visit 16, changes nothing else)
         lr_=L[-1][2] if (L and int(getattr(cfg,'infer_proto_recency',0))>=2) else None   # cg20z (2): NO rule may pick the slot trained at the previous visit - no domain
-        if lr_ is not None and s_==lr_ and len(sc)>1:                          #   is visited twice running, and the fresh slot reads close to anything (cg20y GPU: visits
+        rp9_=bool(lr_ is not None and rnear==lr_ and ps_>0 and second<float('inf') and ds.get(rnear,float('inf'))*ps_<=second)   # FIX (review): a STRONG prototype for the last slot
+        if lr_ is not None and s_==lr_ and len(sc)>1 and not rp9_:            #   is a genuine repeat (shuffled passes: a domain can follow itself) | no domain is visited twice running, and the fresh slot reads close to anything (cg20y GPU: visits
             alt_={k_:v_ for k_,v_ in nr_.items() if k_!=lr_}                    #   14 and 22, the only times the choice equalled the last slot, were both wrong)
             s_=min(alt_,key=alt_.get) if alt_ else (rnear if rnear!=lr_ else min((k_ for k_ in sc if k_!=lr_),key=sc.get))
             kind='revisit (slots full, not the slot trained at the last visit)'
@@ -1821,7 +1824,8 @@ def ngp_step(model,cfg,lr):
     O=model.__dict__.get('_ngp_opt')
     if O is not None:
         for g_ in O.param_groups: g_['lr']=lr*cfg.ngram_lr_mult
-        O.step(); O.zero_grad(set_to_none=True)
+        if float(model.__dict__.get('_real_w',1.0))>0 or not getattr(cfg,'cd_ngp_frozen',False): O.step()   # FIX (review): closed loop, frozen tables - no momentum drift
+        O.zero_grad(set_to_none=True)
     O4=model.__dict__.get('_ngo_opt')
     if O4 is not None:
         for g_ in O4.param_groups: g_['lr']=lr*cfg.ngram_lr_mult*cfg.ngo_lr_mult
@@ -5258,8 +5262,9 @@ def bpc_inferred(model, get, domain, ncand, mode, cfg, n=15):
             L.append(float(-lp.gather(-1,y.unsqueeze(-1)).mean())); A.append(float((post.argmax(0)==domain).float().mean()))
     model.train(); return float(np.mean(L))/LOG2, float(np.mean(A))
 
-def bpc(model,get,domain,n=15):
+def bpc(model,get,domain,n=15,skip=0):
     if hasattr(get,'reset'): get.reset()
+    for _ in range(int(skip)): get()                                    # FIX (review): skip=k evaluates on batches after the first k (brakes off the reported batches)
     dd=domain_delta(model,domain) if (getattr(model,'_spec',None) and domain!=getattr(model,'_live_dom',None)) else {}
     apply_delta(model,dd,+1)
     model.eval(); L=[]
@@ -5700,7 +5705,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         # REAL step: recompute grads, gate with the (updated) meta, step
         if (cfg.borrow_w>0 and cfg.borrow_mode=='grad' and n_old>0 and step%cfg.borrow_check==0 and getattr(model,'_dsq',None)
                 and getattr(model,'_teach',None) is not None and (not cfg.borrow_first or model.__dict__.get('_first_visit',True))):
-            borrow_align(model,cfg,olds,dom_id,x,y)
+            if float(model.__dict__.get('_real_w',1.0))>0:                    # FIX (review): borrow_align uses the REAL batch's gradient - only in real-text passes;
+                borrow_align(model,cfg,olds,dom_id,x,y); model.__dict__.setdefault('_borrow_by',{})[dom_id]=model.__dict__['_borrow_g'].clone()
+            elif dom_id in model.__dict__.get('_borrow_by',{}): model.__dict__['_borrow_g']=model.__dict__['_borrow_by'][dom_id].clone()   #   closed loop: weights of the slot's last real-text visit
+            elif model.__dict__.get('_borrow_g') is not None: model.__dict__['_borrow_g'].zero_()
         opt.zero_grad()
         model.__dict__.pop('_ng_touch',None)                          # lazy n-gram optimiser: rows touched by THIS step only
         _tmark(model,cfg,step,'prep')
@@ -6097,7 +6105,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 if GKp_ and GKp_[0]>0: print(f"    [KL gate] {GKp_[0]} calls | overlap with the surprise selection {GKp_[1]/GKp_[0]:.2f} | share of the KL signal the surprise selection would keep {GKp_[2]/GKp_[0]:.2f}")
                 if GSp_ and GSp_[0]>0: print(f"    [diversity gate] {GSp_[0]} calls | overlap with the surprise selection {GSp_[1]/GSp_[0]:.2f} | gradient energy kept: diversity {GSp_[2]/GSp_[0]:.2f}, surprise would keep {GSp_[3]/GSp_[0]:.2f}")
                 EVp_=model.__dict__.pop('_evid',None)
-                if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{', all positions' if cfg.cd_evid_all else ''})")
+                if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{', all positions' if cfg.cd_evid_all else ''})"+(' - INACTIVE: with cd_bytes_all the conduit trains next-byte targets on the verified bytes, the blend is not used' if (getattr(cfg,'cd_bytes_all',False) and float(getattr(cfg,'cd_bytes_w',1.0))>=1.0) else ''))   # FIX (review): readout said it trains
                 if st_: k_=max(1,st_[1]); print(f"    [conduit replay] KL {st_[0]/k_:.4f} | exact segments {st_[2]/k_:.2f} | tries/segment {st_[3]/k_:.2f} | true byte fidelity {st_[4]/k_:.2f} (diagnostic) | exactness test agrees with truth {st_[6]/k_:.3f} | eps {st_[5]/k_:.1e} over {st_[1]} steps"
                                +(f" | replay training on exact replays {st_[7]/max(1,st_[8])/LOG2:.4f} BPC ({int(st_[8])} steps)" if len(st_)>8 and st_[8] else "")+_rs_msg())
                 if _HINT['calls']:                                                 # cg12b hints
@@ -7462,11 +7470,11 @@ def _head_fwd_m(s,x):
     return z_
 Head.forward=_head_fwd_m
 _bpc_w0=bpc
-def bpc(model,get,domain,n=15):
+def bpc(model,get,domain,n=15,skip=0):
     """evaluation with the fast store active (cg20h); identical to the original when no store exists"""
-    if _INFM['M'] is None: return _bpc_w0(model,get,domain,n)
+    if _INFM['M'] is None: return _bpc_w0(model,get,domain,n,skip)
     sv_=_INFM['on']; _INFM['on']=bool(_INFM['bpc_on'])
-    try: return _bpc_w0(model,get,domain,n)
+    try: return _bpc_w0(model,get,domain,n,skip)
     finally: _INFM['on']=sv_
 _INF_REL=["{a} works with {b}.","{a} lives near {b}.","{a} reports to {b}.","{a} is a partner of {b}.","{a} trained under {b}.","{a} is linked to {b}."]
 _INF_SYL=['ka','to','mi','ra','ve','lo','du','sen','tar','bel','nor','qui','fa','zo','pel','dra','mon','ris','tev','gal','hun','cor','vin','sal','bri','ed','an','ul','or','is']
@@ -8200,9 +8208,15 @@ def inf_infer(model,cfg):
         import scipy.sparse as _sp                                              #   retraction); every two-step path strength at once as S = W'W', with W' = f(W)
         W_=S_.setdefault('W1',{}); ix0_=S_.setdefault('W1ix',{}); osst_={'w':0,'un':0}; NW_={}   # NW_: links READ this sleep (staging v2: new support)   #   damped by each bridge's fan-out; the most salient links are the top
         dec_=float(getattr(cfg,'inf_lm_decay',0.97))                            #   entries of S, ranked by GAIN x NEED (Mattar & Daw), in one pass - no enumeration
+        WV_=S_.setdefault('W1v',{}); vw_=int(model.__dict__.get('_visit',0)); gw_=int(getattr(cfg,'inf_graph_window',0)); ngw_=0
+        if gw_>0:                                                                   # a LIVE conclusion keeps its strong link in the window (the window bounds read links;
+            for c_ in S_.get('conc',[]):                                            #   a conclusion leaves the graph when it is freed or deleted, as before)
+                if c_.get('w9') and not c_.get('freed') and isinstance(c_.get('A'),str): a9_,c9_=c_['A'].encode(),c_['C'].encode(); WV_[(min(a9_,c9_),max(a9_,c9_))]=vw_
         for k0_ in list(W_):
             W_[k0_]*=dec_
-            if W_[k0_]<0.05: del W_[k0_]
+            if W_[k0_]<0.05: del W_[k0_]; WV_.pop(k0_,None); continue
+            if gw_>0 and vw_-WV_.setdefault(k0_,vw_)>=gw_: del W_[k0_]; WV_.pop(k0_,None); ngw_+=1   # cg26h SLIDING WINDOW: links not read in the last gw_ visits leave the graph
+        if gw_>0: osst_['gw']=ngw_
         AL_=S_.setdefault('alias',{}); cn_=lambda n_: AL_.get(n_,n_); er_=int(getattr(cfg,'inf_ent_resolve',0)); erst_={'m':0,'f':0,'mdl':0,'fan':0,'est':0,'ex':[]}
         if er_:
             vt0_={}
@@ -8254,7 +8268,7 @@ def inf_infer(model,cfg):
             if erst_['m']:                                                      #   re-key the link table to the canonical names
                 for k0_ in [k_ for k_ in W_ if k_[0] in AL_ or k_[1] in AL_]:
                     w0_=W_.pop(k0_); a0_,c0_=cn_(k0_[0]),cn_(k0_[1])
-                    if a0_!=c0_: k1_=(min(a0_,c0_),max(a0_,c0_)); W_[k1_]=W_.get(k1_,0.0)+w0_
+                    if a0_!=c0_: k1_=(min(a0_,c0_),max(a0_,c0_)); W_[k1_]=W_.get(k1_,0.0)+w0_; WV_[k1_]=max(WV_.get(k1_,vw_),WV_.pop(k0_,vw_))
             S_['ergrp']={}
             for v_,b_ in AL_.items(): S_['ergrp'].setdefault(b_,[]).append(v_)
             ST_=S_.setdefault('erstat',[0,0]); ST_[0]+=erst_['m']; ST_[1]+=erst_['f']
@@ -8268,7 +8282,7 @@ def inf_infer(model,cfg):
                 if a_!=c_ and ok_(a_) and ok_(c_):
                     k0_=(min(a_,c_),max(a_,c_))
                     rl0_=m_.group(2).lower(); S_.setdefault('relp',{}).setdefault(rl0_,set()).add(k0_); S_.setdefault('W1rel',{}).setdefault(k0_,set()).add(rl0_)   # (relation of each link)
-                    W_[k0_]=W_.get(k0_,0.0)+1.0; NW_[k0_]=NW_.get(k0_,0)+1; osst_['w']+=1; it_.setdefault('w1l',[]).append(k0_); S_.setdefault('w1w',[]).append(i_) if len(it_['w1l'])==1 else None
+                    W_[k0_]=W_.get(k0_,0.0)+1.0; WV_[k0_]=vw_; NW_[k0_]=NW_.get(k0_,0)+1; osst_['w']+=1; it_.setdefault('w1l',[]).append(k0_); S_.setdefault('w1w',[]).append(i_) if len(it_['w1l'])==1 else None
         dr0_=frozenset(_RDR.get('drop',()) or ()) if _RDR.get('on') else frozenset()
         if dr0_!=S_.get('w1drop',frozenset()):                                   # cg20x: the reader learned new no-fact contexts (negation, hedges):
             S_['w1drop']=dr0_; osst_['rd']=0                                    #   re-read every sentence that wrote links and take back the links
@@ -8422,7 +8436,7 @@ def inf_infer(model,cfg):
                 S_['pairs'].add((min(A,C),max(A,C))); osst_['pro']+=1; st_['prop']+=1
                 if int(getattr(cfg,'inf_conc_reenter',0)): k0_=(min(A,C),max(A,C)); W_[k0_]=W_.get(k0_,0.0)+9.0   #   a promoted conclusion is a strong link
             t2o_,t3o_=_inf_truth(cfg); wt_=sum(1 for p0_,v1_,a0_,c0b_ in cand_ if (ents_[a0_].decode('latin-1','replace'),ents_[c0b_].decode('latin-1','replace')) in t2o_|t3o_)
-            st_['graph']=(f"  [inference ONE-SCAN SALIENCE] W: {n0_} entities, {len(W_)} links ({osst_['w']} read this sleep, {osst_['un']} retracted) | S = W'W' gives {Sm_.nnz} two-step paths in one product, "
+            st_['graph']=(f"  [inference ONE-SCAN SALIENCE] W: {n0_} entities, {len(W_)} links"+(f" (sliding window {gw_} visits: {osst_.get('gw',0)} links aged out)" if gw_>0 else "")+f" ({osst_['w']} read this sleep, {osst_['un']} retracted) | S = W'W' gives {Sm_.nnz} two-step paths in one product, "
                           f"{osst_['cand']} new above {th_:.2f} (true probe chains among them {wt_}) | PROMOTED {osst_['pro']} by gain x need, no citable sources {osst_['nosrc']}"
                           +(f" | re-read after new no-fact contexts: {osst_['rd']} links taken back" if 'rd' in osst_ else "")+osst_.get('er','')+osst_.get('stage','')+(lambda l_: f" | MUTUAL COMPRESSION: {len(l_)} checked, rejected {osst_.get('mgrej',0)} (< {float(getattr(cfg,'inf_mutual_bits',8.0)):.0f} bits) | median bits saved: probe-true {np.median([g_ for g_,t_ in l_ if t_]) if any(t_ for _,t_ in l_) else float('nan'):.1f}, others {np.median([g_ for g_,t_ in l_ if not t_]) if any(not t_ for _,t_ in l_) else float('nan'):.1f}" if l_ else "")(osst_.get('mgl',[]))+(f" | SELECTION: corroboration (bridges 1/2/3+) {osst_.get('corh',{})}, rejected single-route {osst_.get('correj',0)}, trunk judge passed {osst_.get('plok',0)} rejected {osst_.get('plrej',0)}" if (int(getattr(cfg,'inf_corrob',0)) or int(getattr(cfg,'inf_plaus',0))) else "")+(f" | RELATION FILTER: {osst_['relf'][0]} of {osst_['relf'][1]} links dropped (no relation phrase seen with >= {rmp_} pairs; {osst_['relf'][2]} phrases qualify)" if 'relf' in osst_ else ""))
         br_=[]
@@ -8708,11 +8722,15 @@ def inf_infer(model,cfg):
         i_=len(S_['it']); S_['it'].append({'s':f"So {c_['A']} is connected to {c_['C']}.".encode(),'d':c_['d'],'k':'inf','dep':c_['dep']-1})
         for n_ in (c_['A'].encode(),c_['C'].encode()): S_['idx'].setdefault(n_,[]).append(i_)
     S_['new']=[]; S_['conc']+=new_; return new_,st_
-def _inf_truth(cfg):
-    """probe ground truth: set of true (A,C) pairs at 2 and 3 hops"""
-    t2=set(); t3=set()                                                          # 'connected to' is symmetric: both orders count
+def _inf_truth(cfg,current=True):
+    """probe ground truth: set of true (A,C) pairs at 2 and 3 hops. FIX (review): current=True follows CHANGED facts - once the domain of a
+    true update has been revisited (its new fact planted), the true pair is (A, C2) and the old (A, C) is stale; current=False keeps the
+    original pairs (for readouts that classify stale beliefs themselves)"""
+    t2=set(); t3=set(); rv_=_INF.get('revis',set()) if current else set()      # 'connected to' is symmetric: both orders count
     for c_ in inf_probes(cfg):
-        n_=c_['names']; t2|={(n_[0],n_[2]),(n_[2],n_[0])}
+        n_=c_['names']; u_=c_.get('upd') or {}
+        if len(n_)==3 and u_.get('type')=='true' and int(c_['doms'][0]) in rv_: t2|={(n_[0],u_['C2']),(u_['C2'],n_[0])}; continue
+        t2|={(n_[0],n_[2]),(n_[2],n_[0])}
         if len(n_)>3: t2|={(n_[1],n_[3]),(n_[3],n_[1])}; t3|={(n_[0],n_[3]),(n_[3],n_[0])}
     return t2,t3
 @torch.no_grad()
@@ -8872,7 +8890,7 @@ def _inf_eval1(model,cfg,S_,tag):
                         q_=[r_ for r_ in rr_ if r_[3]==sl]; hh_+=[int(h_==0) for h_ in score([r_[1] for r_ in q_],[r_[2] for r_ in q_],sl)]
                     res_tg_[nm0_]=(float(np.mean(hh_)) if hh_ else float('nan'),len(hh_))
                 print(f"  [inference temporal gradient | {tag}] two-hop recall FROM THE WEIGHTS ALONE (store off) by conclusion age (split at visit {cut_}): "+" | ".join(f"{k_} {v_[0]:.2f} (n {v_[1]})" for k_,v_ in res_tg_.items())+" | CLS predicts OLDER > RECENT once transfer works",flush=True)
-        tt_=_inf_truth(cfg); up_={(c0_['names'][0],c0_['upd']['C2']) for c0_ in inf_probes(cfg) if c0_.get('upd',{}).get('type')=='true'}   # FIX: the NEW chain of an
+        tt_=_inf_truth(cfg,current=False); up_={(c0_['names'][0],c0_['upd']['C2']) for c0_ in inf_probes(cfg) if c0_.get('upd',{}).get('type')=='true'}   # FIX: the NEW chain of an
         wr_=[c_ for c_ in S_['conc'] if (c_['A'],c_['C']) not in tt_[0]|tt_[1]|up_ and any(c_['A']==q_['names'][0] for q_ in ch_)]   #   updated fact is not a false memory
         fm_=float('nan')
         if wr_:
@@ -8908,6 +8926,193 @@ def _inf_eval1(model,cfg,S_,tag):
         _inf_abstain_sources(S_,cr_ok_,tag)
     if _INF.get('corr') and int(getattr(cfg,'inf_eval_hard',0)): print("  [inference eval | store activity] mean max |logit correction| per probe position: "+" | ".join(f"{k_} {v_:.3f}" for k_,v_ in act_.items()),flush=True)
     return res
+def _inf_lps(model,cfg,prompt_,cands_,slot_,store_):
+    """cg26g: summed log-probability of each candidate completion (as _inf_score1, which returns only the argmax)"""
+    seqs=[(prompt_+c_+'.').encode('latin-1')[-max(int(cfg.seq_len),_SCORE_LEN['n']):] for c_ in cands_]; L_=max(len(s_) for s_ in seqs); dev_=model.embed.weight.device
+    X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
+    for j_,s_ in enumerate(seqs): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
+    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=slot_; f0_=_INFM.get('force','__none__'); _INFM['force']=bool(store_); was_=model.training; model.eval()
+    try:
+        with torch.no_grad(): lp_=F.log_softmax(model(X_[:,:-1],slot_).float(),-1)
+    finally:
+        _carry_load(sv4_); _XDG['cur']=sc_; model.train(was_)
+        if f0_=='__none__': _INFM.pop('force',None)
+        else: _INFM['force']=f0_
+    n0_=[len(s_)-len((c_+'.').encode()) for s_,c_ in zip(seqs,cands_)]
+    return np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+def _cls_measure(model,cfg,S_slot):
+    """cg26g CLS MEASUREMENT, every sleep whatever the dream mode (so the no-replay and random-dream controls report the same numbers):
+    TEMPORAL GRADIENT on an unbiased random sample - two-hop with the store OFF vs ON by age of the conclusion (visits since first seen);
+    STORE HANDOVER - conclusions tracked across sleeps; one answered with the store off, with a margin, at 3 sleeps running is RELEASED
+    (inf_release: erased from the fast store at the next store write, kept in trunk replay); a released one that fails store-off at 2 sleeps
+    running is RESTORED (written back) - a small form of reconsolidation"""
+    if not int(getattr(cfg,'inf_tgrad',0)): return
+    S_=_inf_store(model)
+    if int(getattr(cfg,'inf_delete',0)) and S_.get('conc'):                    # cg26h PURGE: a deleted conclusion whose side links (link graph, LM side) have been given back
+        n0_=len(S_['conc']); S_['conc']=[c_ for c_ in S_['conc'] if not (c_.get('deleted') is not None and not c_.get('lms') and not c_.get('w9'))]   #   leaves the store
+        if n0_>len(S_['conc']): st0_=S_.setdefault('_relstat',{'rel':0,'res':0}); st0_['purg']=st0_.get('purg',0)+n0_-len(S_['conc'])
+    allc_=S_.get('conc',[]); lv_=[c_ for c_ in allc_ if not c_.get('freed') and isinstance(c_.get('C'),str)]
+    if len(lv_)<5: return
+    vis_=int(model.__dict__.get('_visit',0)); rs_=np.random.RandomState(5151+vis_); Cp_=[c_['C'] for c_ in lv_]; mg_=float(getattr(cfg,'inf_release_margin',1.0))
+    for c_ in lv_: c_.setdefault('bv',vis_)
+    def sc_(c_,on_):
+        o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
+        if len(o_)<4: return None
+        lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),on_)
+        return bool(int(np.argmax(lp_))==0), float(lp_[0]-np.max(lp_[1:]))
+    bk_={'this visit':[],'1 back':[],'2-3 back':[],'4+ back':[]}
+    for c_ in lv_:
+        a_=vis_-int(c_['bv']); bk_['this visit' if a_<=0 else '1 back' if a_==1 else '2-3 back' if a_<=3 else '4+ back'].append(c_)
+    nk_=int(getattr(cfg,'inf_tgrad_n',24))//(2 if model.__dict__.get('_mem_tight') else 1); out_=[]; seen_={}; obs9_={}
+    for k_,L_ in bk_.items():
+        ch_=[L_[int(i_)] for i_ in rs_.choice(len(L_),min(len(L_),nk_),replace=False)] if L_ else []; off_=[];on_=[]
+        for c_ in ch_:
+            r0_=sc_(c_,False); r1_=sc_(c_,True)
+            if r0_ is None: continue
+            off_.append(r0_[0]); on_.append(r1_[0]); seen_[id(c_)]=r0_; obs9_[id(c_)]=(c_,r0_)
+            if not int(getattr(cfg,'inf_release_test',0)):                      # FIX (review): every test this sleep enters the conclusion's history
+                H0_=c_.setdefault('so',[])
+                if not H0_ or H0_[-1][0]!=vis_: H0_.append((vis_,bool(r0_[0] and r0_[1]>=mg_),r0_[1]))
+        mo_=np.mean(off_) if off_ else float('nan'); mn_=np.mean(on_) if on_ else float('nan')
+        out_.append(f"{k_} (n {len(off_)} of {len(L_)}): off {mo_:.2f} / on {mn_:.2f} (store dependence {mn_-mo_:+.2f})")
+    print("  [inference CLS | TEMPORAL GRADIENT] two-hop from the weights (store OFF) / with the store (ON), by age of the conclusion (random sample): "+" | ".join(out_),flush=True)
+    TT_=int(getattr(cfg,'inf_tgrad_track',64)); lt_=lambda c_: c_['so'][-1][0] if c_.get('so') else -1   # FIX (review): tracking rotates - released ones by oldest test
+    rel_=sorted([c_ for c_ in lv_ if c_.get('released')],key=lt_)[:max(1,TT_//2)]                         #   (so all can be restored), candidates on a passing run
+    cand_=[c_ for c_ in lv_ if not c_.get('released') and c_.get('so') and c_['so'][-1][1] and c_['so'][-1][0]>=vis_-1]   #   continue every sleep, the rest
+    rest_=sorted([c_ for c_ in lv_ if not c_.get('released') and id(c_) not in {id(x_) for x_ in cand_}],key=lt_)   #   by staleness (never-tested
+    trk_=rel_+cand_[:max(0,TT_-len(rel_))]; trk_+=rest_[:max(0,TT_-len(trk_))]                                   #   and failed ones are re-tested)
+    nrel_=0; nres_=0; rok_=[]; nhl_=0; ndc_=0
+    th9_=model.__dict__.get('_hl_th'); cal9_=S_.get('_hl_cal',[])[-2:]; df9_=S_.get('df',{}); mtb9_=float(model.__dict__.get('_hl_mtb',2.0)); hz_=float(getattr(cfg,'inf_release_horizon',10.0))
+    hlc_=bool(int(getattr(cfg,'inf_release_hl',0)) and th9_ is not None and len(cal9_)==2 and all(n0_>=10 and m0_<k0_ for _,m0_,k0_,n0_ in cal9_))   # cg26h: decay model calibrated
+    G9_=int(getattr(cfg,'inf_delete_grace',2)); dl_on_=bool(int(getattr(cfg,'inf_delete',0)) and int(getattr(cfg,'inf_release',0)))
+    for c_ in trk_:
+        tst_=int(getattr(cfg,'inf_release_test',0))                            # (local test only: judge with the store ON, so the release / restore path runs)
+        r0_=sc_(c_,True) if tst_ else (seen_.get(id(c_)) or sc_(c_,False))
+        if r0_ is None: continue
+        if not tst_: obs9_.setdefault(id(c_),(c_,r0_))
+        H_=c_.setdefault('so',[])
+        if not H_ or H_[-1][0]!=vis_: H_.append((vis_,bool(r0_[0] and r0_[1]>=mg_),r0_[1]))
+        if c_.get('released'):
+            rok_.append(H_[-1][1])
+            if len(H_)>=2 and not H_[-1][1] and not H_[-2][1] and H_[-2][0]>=c_.get('relv',vis_) and int(getattr(cfg,'inf_release',0)): c_['restore_pending']=True; nres_+=1
+            elif dl_on_:                                                        # cg26h DELETE AFTER A GRACE PERIOD: released, then answered store-off with the margin at
+                Hp_=[h_ for h_ in H_ if h_[0]>c_.get('relv',vis_)]              #   G consecutive sleeps after the release -> the record is deleted (the weights hold it alone)
+                if len(Hp_)>=G9_ and all(h_[1] for h_ in Hp_[-G9_:]) and [h_[0] for h_ in Hp_[-G9_:]]==list(range(vis_-G9_+1,vis_+1)): c_['del_now']=True; ndc_+=1
+        elif hlc_:                                                              # cg26h RELEASE TIMED BY FORGETTING: once the decay model beats a constant rate out of sample at
+            if H_[-1][0]==vis_ and H_[-1][1] and float(2.0**(torch.tensor(_hl_x(c_,vis_+1,df9_,mtb9_))@th9_))>=hz_:   #   the last 2 sleeps, a conclusion is released when its
+                c_.setdefault('hflag',vis_); nhl_+=1                            #   predicted half-life passes the horizon and its latest test passed with the margin
+                if int(getattr(cfg,'inf_release',0)) and not c_.get('rel_pending'): c_['rel_pending']=True; nrel_+=1   #   (until it is calibrated, the fixed rule below decides)
+        elif (lambda k_: len(H_)>=k_ and all(h_[1] for h_ in H_[-k_:]) and [h_[0] for h_ in H_[-k_:]]==list(range(vis_-k_+1,vis_+1)))(2 if (int(getattr(cfg,'inf_schema_fast',0)) and c_.get('tbits',9.0)<float(getattr(cfg,'inf_gist_tau',1.0))) else 3):   # cg26g: schema fit -> 2 sleeps
+            c_.setdefault('hflag',vis_)
+            if int(getattr(cfg,'inf_release',0)) and not c_.get('rel_pending'): c_['rel_pending']=True; nrel_+=1
+    if dl_on_:
+        st9_=S_.setdefault('_relstat',{'rel':0,'res':0}); GH_=S_.setdefault('ghost',[])
+        for c_ in lv_:                                                          # the deletion: freed (leaves trunk replay, its source sentences become evictable, its side links
+            if c_.pop('del_now',False):                                         #   are given back at the next inference pass; the fast-store entry was erased at release),
+                c_['freed']=True; c_['faded']=True; c_['deleted']=vis_; c_['evicted']='deleted after release'; st9_['dele']=st9_.get('dele',0)+1   #   and the record itself is purged
+                GH_.append({'A':c_['A'],'C':c_['C'],'d':c_['d'],'delv':vis_,'lt':-1}) #   once those side links are gone; a compact ghost (A, C, domain) stays for the readout only
+        del GH_[:-4000]; gr_={}
+        for g_ in sorted(GH_,key=lambda g_: g_['lt'])[:int(getattr(cfg,'inf_ghost_n',32))]:
+            if g_['delv']>=vis_: continue                                       # GHOST READOUT: deleted conclusions, store off - still answered from the weights alone?
+            o_=[x_ for x_ in Cp_ if x_!=g_['C']]; rs_.shuffle(o_)
+            if len(o_)<4: continue
+            lp_=_inf_lps(model,cfg,f"So {g_['A']} is connected to ",[g_['C']]+o_[:9],int(S_slot(g_['d'])),False); g_['lt']=vis_; a9_=vis_-g_['delv']
+            gr_.setdefault('1' if a9_<=1 else '2-3' if a9_<=3 else '4+',[]).append(float(int(np.argmax(lp_))==0))
+        print(f"  [inference CLS | DELETED] {ndc_} released conclusions deleted this sleep ({st9_.get('dele',0)} so far, {st9_.get('purg',0)} records purged; grace {G9_} passing sleeps after release) | "
+              f"ghosts re-tested store-off {sum(len(v_) for v_ in gr_.values())}, still answered by visits since deletion: "+(", ".join(f"{k_} back {np.mean(v_):.2f} (n {len(v_)})" for k_,v_ in sorted(gr_.items())) or "none yet"),flush=True)
+    if int(getattr(cfg,'inf_release_hl',0)):
+        print("  [inference CLS | RELEASE TIMING] "+(f"decay model calibrated (beat a constant rate out of sample at the last 2 sleeps): {nhl_} conclusions with a predicted half-life of {hz_:.0f}+ visits marked for release"
+              if hlc_ else "decay model not calibrated yet (needs to beat a constant rate out of sample at 2 sleeps running): the fixed rule (consecutive passing sleeps) decides"),flush=True)
+    if int(getattr(cfg,'inf_hl',0)):
+        try: _hl_model(model,cfg,S_,obs9_,vis_)
+        except Exception as e9_: print(f"  [inference DECAY MODEL] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+    st_=S_.setdefault('_relstat',{'rel':0,'res':0})
+    print(f"  [inference CLS | STORE HANDOVER] tracked {len(trk_)} conclusions | released so far {st_['rel']} of {len(lv_)} live (re-tested now {len(rok_)}, still answered store-off {np.mean(rok_) if rok_ else float('nan'):.2f}),"
+          f" restored so far {st_['res']} | this sleep: {nrel_} to release, {nres_} to restore (applied at the next store write)"+("" if int(getattr(cfg,'inf_release',0)) else " | readout only: release off"),flush=True)
+def _tbytes(o_,seen_,acc_,dep_=0):
+    """cg26h: bytes of the tensors reachable from o_ (dicts, lists, tuples, sets, modules), by device; shared tensors counted once"""
+    if dep_>4: return
+    if torch.is_tensor(o_):
+        k_=o_.untyped_storage().data_ptr() if o_.numel() else id(o_)
+        if k_ in seen_: return
+        seen_.add(k_); acc_['cuda' if o_.is_cuda else 'cpu']+=o_.numel()*o_.element_size(); return
+    if isinstance(o_,torch.nn.Module):
+        for t_ in list(o_.parameters())+list(o_.buffers()): _tbytes(t_,seen_,acc_,dep_+1)
+        return
+    if isinstance(o_,dict): it_=list(o_.values())
+    elif isinstance(o_,(list,tuple,set)): it_=list(o_)
+    else: return
+    if len(it_)>20000: it_=it_[:20000]                                          # (big containers of plain data: tensors, if any, sit at the front)
+    for v_ in it_:
+        if torch.is_tensor(v_) or isinstance(v_,(dict,list,tuple,set,torch.nn.Module)): _tbytes(v_,seen_,acc_,dep_+1)
+def _mem_ledger(model,cfg):
+    """cg26h MEMORY LEDGER (readout): what holds memory and what grows. GPU and CPU tensor bytes by owner (model parameters, each long-lived
+    entry of the model's state, module-level stores); counts of the sleep structures (sentence store, index, facts, conclusions, link graph,
+    word counts, fast-store names); host memory; change since the last ledger. Untracked GPU memory = allocated minus everything counted
+    (optimiser state and working buffers)."""
+    if not int(getattr(cfg,'inf_ledger',0)): return
+    G_=1/2**30; seen_=set(); own_={}
+    def add_(k_,o_):
+        a_={'cuda':0,'cpu':0}; _tbytes(o_,seen_,a_); own_[k_]=a_
+    add_('model weights',model)
+    for k_,v_ in list(model.__dict__.items()):
+        if k_ in ('_modules','_parameters','_buffers') or k_.startswith('__'): continue
+        if torch.is_tensor(v_) or isinstance(v_,(dict,list,tuple,set,torch.nn.Module)): add_('model.'+k_,v_)
+    for k_,v_ in list(globals().items()):
+        if k_.startswith('_') and k_[1:2].isupper() and isinstance(v_,dict): add_(k_,v_)          # module-level stores (_INFM, _LM, ...)
+    S_=_inf_store(model); it_=S_.get('it',[])
+    cnt_={'store sentences':len(it_),'store live':sum(1 for x_ in it_[-400000:] if not x_.get('gone')),'name index':len(S_.get('idx',{})),'facts':len(S_.get('facts',[])),
+          'conclusions':len(S_.get('conc',[])),'conclusions freed':sum(1 for c_ in S_.get('conc',[]) if c_.get('freed')),'link graph links':len(S_.get('W1',{})),'link graph entities':len({x_ for k_ in list(S_.get('W1',{}).keys())[:400000] if isinstance(k_,tuple) for x_ in k_}),
+          'word counts':len(S_.get('df',{})),'evidence record':len(S_.get('rel',{})),'fact pairs':len(S_.get('fpair',{})),'known pairs':len(S_.get('pairs',())),'fast-store names':len(_INFM.get('names',{}) or {})}
+    try: rss_=int([l_ for l_ in open('/proc/self/status') if l_.startswith('VmRSS')][0].split()[1])/2**20
+    except Exception: rss_=float('nan')
+    pv_=model.__dict__.get('_ledger_prev') or {}; dl_=lambda k_,v_: (f" ({v_-pv_[k_]:+.2f})" if isinstance(v_,float) else f" ({v_-pv_[k_]:+d})") if k_ in pv_ else ""
+    gp_=sorted(((k_,a_['cuda']*G_) for k_,a_ in own_.items() if a_['cuda']>0),key=lambda z_: -z_[1])[:10]
+    cp_=sorted(((k_,a_['cpu']*G_) for k_,a_ in own_.items() if a_['cpu']>0),key=lambda z_: -z_[1])[:6]
+    al_=torch.cuda.memory_allocated()*G_ if torch.cuda.is_available() else float('nan'); tr_=sum(a_['cuda'] for a_ in own_.values())*G_
+    cur_={**{('gpu '+k_):v_ for k_,v_ in gp_},**{('cpu '+k_):v_ for k_,v_ in cp_},**cnt_,'host GB':rss_,'gpu untracked':al_-tr_ if al_==al_ else float('nan')}
+    print("  [inference MEMORY LEDGER] GPU (GB): "+", ".join(f"{k_} {v_:.2f}{dl_('gpu '+k_,v_)}" for k_,v_ in gp_)+(f" | untracked (optimiser, buffers) {al_-tr_:.2f}{dl_('gpu untracked',al_-tr_)}" if al_==al_ else ""),flush=True)
+    print("  [inference MEMORY LEDGER] CPU tensors (GB): "+", ".join(f"{k_} {v_:.2f}{dl_('cpu '+k_,v_)}" for k_,v_ in cp_)+f" | host process {rss_:.1f} GB{dl_('host GB',rss_)}",flush=True)
+    print("  [inference MEMORY LEDGER] counts: "+", ".join(f"{k_} {v_}{dl_(k_,v_)}" for k_,v_ in cnt_.items()),flush=True)
+    model.__dict__['_ledger_prev']=cur_
+_HL_FEAT=('bias','log kept replays','log mean spacing','trunk bits (information)','previous margin','log name frequency')
+def _hl_x(c_,vis_,df_,mtb_):
+    """cg26h: decay-model features of a conclusion as seen at visit vis_ (the fit in _hl_model and release timing share them)"""
+    rv_=c_.get('rv',[]); sp_=float(np.mean(np.diff(rv_))) if len(rv_)>=2 else 0.0
+    pm_=[h_[2] for h_ in c_.get('so',[]) if h_[0]<vis_]; pm_=pm_[-1] if pm_ else 0.0
+    an_=c_['A'].encode('latin-1','replace') if isinstance(c_['A'],str) else c_['A']
+    return [1.0,math.log2(1+c_.get('nk',0)),math.log2(1+sp_),float(c_.get('tbits',mtb_)),float(np.clip(pm_,-5,5))/5,math.log2(1+df_.get(an_,0))/10]
+def _hl_model(model,cfg,S_,obs9_,vis_):
+    """cg26h DECAY MODEL (log only - nothing acts on it yet): store-off recall of a conclusion d visits after its last KEPT replay is modelled as
+    p = 2^(-d / h), half-life h = 2^(theta . x), x = (1, log kept replays, log mean spacing of replays, trunk bits per byte (its information for
+    the trunk), margin at the previous test, log frequency of its subject name). Fitted online, pooled over conclusions (half-life regression).
+    Each sleep the previous fit predicts this sleep's tests first (out of sample), against a constant-rate baseline."""
+    df_=S_.get('df',{}); rows_=[]
+    tb0_=[c_['tbits'] for c_,_ in obs9_.values() if 'tbits' in c_]; mtb_=float(np.median(tb0_)) if tb0_ else 2.0
+    for c_,r_ in obs9_.values():
+        d_=vis_-int(c_.get('lr',c_.get('bv',vis_)))
+        if d_<=0: continue
+        rows_.append((_hl_x(c_,vis_,df_,mtb_),float(d_),float(bool(r_[0]))))
+    D_=S_.setdefault('_hl_obs',[]); th_=model.__dict__.get('_hl_th'); oos_=''
+    def pr_(th9_,R_):
+        X_=torch.tensor([x_ for x_,_,_ in R_]); dd_=torch.tensor([d_ for _,d_,_ in R_])
+        return torch.exp(-math.log(2)*dd_*torch.pow(2.0,-(X_@th9_))).clamp(1e-4,1-1e-4)
+    bce_=lambda p_,y_: float(-(y_*torch.log(p_)+(1-y_)*torch.log(1-p_)).mean())
+    if th_ is not None and rows_ and D_:
+        y_=torch.tensor([y9_ for _,_,y9_ in rows_]); p1_=pr_(th_,rows_); b0_=float(np.clip(np.mean([y9_ for _,_,y9_ in D_]),1e-3,1-1e-3))
+        lm9_,lc9_=bce_(p1_,y_),bce_(torch.full_like(y_,b0_),y_); S_.setdefault('_hl_cal',[]).append((vis_,lm9_,lc9_,len(rows_))); del S_['_hl_cal'][:-50]   # calibration record for release timing
+        oos_=(f" | OUT OF SAMPLE on this sleep (n {len(rows_)}): log-loss model {lm9_:.3f} vs constant {lc9_:.3f}, "
+              f"predicted recall {float(p1_.mean()):.2f} vs observed {float(y_.mean()):.2f}")
+    D_.extend(rows_); del D_[:-5000]
+    if len(D_)<30: print(f"  [inference DECAY MODEL] {len(D_)} observations so far (need 30) | this sleep {len(rows_)}"+oos_,flush=True); return
+    th9_=(th_.clone() if th_ is not None else torch.tensor([2.0,0,0,0,0,0])).requires_grad_(True); op9_=torch.optim.Adam([th9_],lr=0.05); y_=torch.tensor([y9_ for _,_,y9_ in D_])
+    with torch.enable_grad():
+        for _ in range(300):
+            p_=pr_(th9_,D_); l_=-(y_*torch.log(p_)+(1-y_)*torch.log(1-p_)).mean()+1e-3*(th9_[1:]**2).sum(); op9_.zero_grad(); l_.backward(); op9_.step()
+    th9_=th9_.detach(); model.__dict__['_hl_th']=th9_; model.__dict__['_hl_mtb']=mtb_
+    Xm_=torch.tensor([x_ for x_,_,_ in D_]).mean(0); hm_=float(torch.pow(2.0,Xm_@th9_))
+    print(f"  [inference DECAY MODEL] (log only) {len(D_)} observations (this sleep {len(rows_)}) | half-life at the mean conclusion {hm_:.1f} visits | theta: "
+          +", ".join(f"{n_} {float(v_):+.2f}" for n_,v_ in zip(_HL_FEAT,th9_))+" (positive = longer half-life)"+oos_,flush=True)
 def _snapcpu(model):
     """cg26d: a restore-only weight snapshot kept in CPU memory (frees one model's worth of GPU memory at peak; load_state_dict copies it back)"""
     return {k_:(v_.detach().to('cpu',copy=True) if v_.is_cuda else v_.detach().clone()) for k_,v_ in model.state_dict().items()}
@@ -8922,12 +9127,31 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb()
     try: torch.cuda.reset_peak_memory_stats() if gd_ is not None else None
     except Exception: pass
-    try: return _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot)
+    try:
+        r9_=_inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot)
+        try: _cls_measure(model,cfg,S_slot)
+        except Exception as e9_: print(f"  [inference CLS] measurement unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        return r9_
     finally:
         gs_=_gpu_gb()
         try:
             if gs_ is not None: torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
         except Exception: pass
+        try: _mem_ledger(model,cfg)
+        except Exception as e9_: print(f"  [inference MEMORY LEDGER] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        gq_=float(getattr(cfg,'inf_mem_guard',0.0))
+        if gs_ is not None and gq_>0:                                           # cg26h MEMORY GUARD: if the peak of the visit or the sleep passed gq_ of the device, the next
+            try:                                                                #   sleeps run lean - latent readouts skipped, CLS samples halved, rebuildable caches dropped
+                tot_=torch.cuda.get_device_properties(0).total_memory/2**30; pk_=max(gd_[0],gs_[0])
+                if pk_>gq_*tot_:
+                    model.__dict__['_mem_tight']=2; dr_=[k_ for k_ in ('_SCcur','_jepaLin','_jepaP') if model.__dict__.pop(k_,None) is not None]; torch.cuda.empty_cache()
+                    print(f"  [inference MEMORY GUARD] peak {pk_:.1f} GB > {gq_:.0%} of {tot_:.0f} GB: next 2 sleeps lean (latent readouts off, CLS samples halved); caches dropped: {', '.join(dr_) or 'none'}",flush=True)
+                elif model.__dict__.get('_mem_tight'): model.__dict__['_mem_tight']-=1
+            except Exception: pass
+        tb_=float(getattr(cfg,'inf_sleep_budget',0.0)); tt9_=__import__('time').time()-t0_
+        if tb_>0:                                                               # cg26h SLEEP TIME BUDGET: a sleep longer than tb_ seconds skips the optional readouts next time
+            if tt9_>tb_: model.__dict__['_skip_ro']=1; print(f"  [inference SLEEP BUDGET] sleep took {tt9_:.0f}s > {tb_:.0f}s: optional readouts skipped at the next sleep",flush=True)
+            else: model.__dict__.pop('_skip_ro',None)
         if gs_ is not None: print(f"  [inference GPU MEMORY] peak during the visit before this sleep {gd_[0]:.2f} GB | peak during this sleep {gs_[0]:.2f} GB | reserved {gs_[1]:.2f} GB"
                                   f" (then cache released: {torch.cuda.memory_reserved()/2**30:.2f} GB) | device total {torch.cuda.get_device_properties(0).total_memory/2**30:.1f} GB",flush=True)
         if int(getattr(cfg,'inf_timing',0)):
@@ -8935,6 +9159,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
 def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
     """after a visit: infer on the store, verify, consolidate the conclusions (planted alone into kept verified windows), report"""
     _inf_sync(cfg,'sleep start'); model.__dict__['_jx_vo']=(vals,olds_,t)
+    if not model.__dict__.get('_first_visit',True): _INF.setdefault('revis',set()).add(int(t))   # (readout truth only: which domains were revisited)
     if int(getattr(cfg,'inf_sofl',0)): _inf_sofl(model,cfg,t,ts,vals,olds_,S_slot)
     S_=_inf_store(model); nid_=list(S_['new']); vis0_=int(model.__dict__.get('_visit',0)); ord_=str(getattr(cfg,'inf_sleep_order','nrem'))
     if _units_on(cfg) and int(getattr(cfg,'inf_ent_mdl',0)):
@@ -8990,7 +9215,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
         try: _inf_isotropy(model,cfg,S_,ts)
         except Exception as e_:
             import traceback as _tb; print(f"  [inference ISOTROPY (SIGReg on the trunk)] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
-    if (int(getattr(cfg,'inf_jepa',0)) or int(getattr(cfg,'inf_jepa_probe',0))) and (int(getattr(cfg,'inf_jepa',0)) or int(model.__dict__.get('_visit',0))%max(1,int(getattr(cfg,'inf_jepa_every',1)))==0):
+    if not model.__dict__.get('_mem_tight') and not model.__dict__.get('_skip_ro') and (int(getattr(cfg,'inf_jepa',0)) or int(getattr(cfg,'inf_jepa_probe',0))) and (int(getattr(cfg,'inf_jepa',0)) or int(model.__dict__.get('_visit',0))%max(1,int(getattr(cfg,'inf_jepa_every',1)))==0):
         try: _inf_jepa(model,cfg,S_,ts)                                         # (cg25: the readout-only probe every inf_jepa_every sleeps - sleep time)
         except Exception as e_:
             import traceback as _tb; print(f"  [inference LATENT SPLICE DREAMS] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-600:]!r}",flush=True)          # (inf_splicemix: NOT inf_mix, which is the conclusion-row share)
@@ -9054,10 +9279,12 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
         for g_ in op_.param_groups: g_['lr']=float(cfg.lr)*wm_
         nmx0_=model.__dict__.get('_nmixd',0)
         nb_=int(cfg.pu_cons_eval) or 4; _INFM['force']=False
-        bB0_=bpc(model,vals[t],ts,n=nb_); oB0_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
+        sk9_=int(getattr(cfg,'brake_eval_skip',0))                             # FIX (review): the brake decides on batches the reported metrics do not use
+        bB0_=bpc(model,vals[t],ts,n=nb_,skip=sk9_); oBl_=[bpc(model,vals[d_],s_,n=nb_,skip=sk9_) for d_,s_ in olds_]; oB0_=float(np.mean(oBl_)) if olds_ else float('nan')
         wc_=int(getattr(cfg,'inf_cons_wcap',0)) or int(cfg.inf_target)
         SNP_=[(p_.detach().to('cpu',copy=True) if p_.is_cuda else p_.detach().clone()) for p_ in PA_];   # cg26d: rollback snapshot in CPU memory
         pool_=[c_ for c_ in allc_ if not c_.get('freed') and c_.get('wn',0)<wc_] or [c_ for c_ in allc_ if not c_.get('freed')]
+        if int(getattr(cfg,'inf_cons_spaced',0)): pool_=[c_ for c_ in allc_ if not c_.get('freed')]   # cg26h SPACED REPLAY: no lifetime cap (cg26e: early conclusions got ~34 rows in one sleep, then never again)
         if not pool_: _INFM.pop('force',None); return r0_
         mp_=int(getattr(cfg,'inf_cons_minpool',0)); nmx_=len(S_.get('mixtxt') or [])
         if mp_>0 and len(pool_)+nmx_<mp_:                                       # cg21c: too few distinct rows -> a sleep of replay memorises them (cg21b GPU visit 1:
@@ -9078,42 +9305,38 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             c_=lv_[int(i_)]; o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
             if len(o_)>=4: sm0_.append((c_['A'],[c_['C']]+o_[:9],int(S_slot(c_['d']))))
         r_pre_=_rr(sm0_)
-        if int(getattr(cfg,'inf_tgrad',0)) and lv_:                             # cg26f CLS READOUTS (nothing changes): TEMPORAL GRADIENT - two-hop with the store OFF vs ON,
-            try:                                                                #   grouped by how many visits ago each conclusion was first replayed (systems consolidation
-                vis9_=int(model.__dict__.get('_visit',0)); rs9_=np.random.RandomState(5151+vis9_)   #   predicts older -> less store-dependent); and STORE HANDOVER - conclusions
-                for c_ in lv_: c_.setdefault('bv',vis9_)                        #   answered from the weights alone at two sleeps running would be released from the store;
-                def one9_(c_,on_):                                              #   do earlier such candidates still answer store-off now?
-                    o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs9_.shuffle(o_)
-                    if len(o_)<4: return None
-                    r_=_inf_score1(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),on_)==0; _INFM['force']=False; return bool(r_)
-                bk9_={'this visit':[],'1 back':[],'2-3 back':[],'4+ back':[]}
-                for c_ in lv_:
-                    a9_=vis9_-int(c_['bv']); bk9_['this visit' if a9_<=0 else '1 back' if a9_==1 else '2-3 back' if a9_<=3 else '4+ back'].append(c_)
-                nk9_=int(getattr(cfg,'inf_tgrad_n',16)); out9_=[]; hc9_=[c_ for c_ in lv_ if c_.get('hflag') is not None]; seen9_=set()
-                smp9_=[]
-                for k9_,L9_ in bk9_.items():
-                    pr9_=[c_ for c_ in L9_ if c_.get('so')]; rest9_=[c_ for c_ in L9_ if not c_.get('so')]   # re-test conclusions with a history first (handover needs it)
-                    ch9_=pr9_[:nk9_//2]+[rest9_[int(i_)] for i_ in rs9_.choice(len(rest9_),min(len(rest9_),nk9_-min(len(pr9_),nk9_//2)),replace=False)] if (pr9_ or rest9_) else []
-                    off9_=[];on9_=[]
-                    for c_ in ch9_:
-                        f9_=one9_(c_,False); n9_=one9_(c_,True)
-                        if f9_ is None: continue
-                        off9_.append(f9_); on9_.append(n9_); c_.setdefault('so',[]).append((vis9_,f9_)); seen9_.add(id(c_))
-                        if c_.get('hflag') is None and len(c_['so'])>=2 and c_['so'][-1][1] and c_['so'][-2][1] and c_['so'][-1][0]!=c_['so'][-2][0]: c_['hflag']=vis9_
-                    out9_.append(f"{k9_} (n {len(off9_)} of {len(L9_)}): off {np.mean(off9_) if off9_ else float('nan'):.2f} / on {np.mean(on9_) if on9_ else float('nan'):.2f}")
-                print("  [inference CLS | TEMPORAL GRADIENT] two-hop from the weights (store OFF) / with the store (ON), by age of the conclusion: "+" | ".join(out9_),flush=True)
-                hf9_=[c_ for c_ in lv_ if c_.get('hflag') is not None]; old9_=[c_ for c_ in hf9_ if c_['hflag']<vis9_ and id(c_) in seen9_]
-                st9_=[c_['so'][-1][1] for c_ in old9_]
-                print(f"  [inference CLS | STORE HANDOVER] (readout; nothing is released) {len(hf9_)} conclusions so far answered from the weights alone at two sleeps running"
-                      f" ({sum(1 for c_ in hf9_ if c_['hflag']==vis9_)} new this sleep) | flagged at an earlier sleep and re-tested now: {len(old9_)}, still answered store-off {np.mean(st9_) if st9_ else float('nan'):.2f}",flush=True)
-            except Exception as e9_: print(f"  [inference CLS] temporal gradient unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     NRT_=int(getattr(cfg,'inf_cons_retry',0)) if cm_=='both' else 0         # cg21c: retries at a lower rate after a rollback (GPU: x0.03 rolled back 10/10)
+    pw9_=None
+    if cm_=='both' and int(getattr(cfg,'inf_cons_need',0)) and pool_:          # cg26g REPLAY BY NEED AND SCHEMA FIT (sampling weights only): a conclusion the weights failed
+        tau9_=float(getattr(cfg,'inf_gist_tau',1.0)); w9_=[]; nn9_={'fail':0,'ok':0,'fit':0,'misfit':0}   #   store-off at its last test is replayed more (x2), one they
+        for c_ in pool_:                                                        #   answered less (x0.5); one the trunk already predicts well (schema-consistent, store
+            w_=1.0; h_=c_.get('so'); vv9_=int(model.__dict__.get('_visit',0))      #   off < tau bits/byte: Tse et al. 2007) needs fewer replays (x0.5), a misfit more (x1.5)
+            if h_ and h_[-1][0]>=vv9_-2: w_*=0.5 if h_[-1][1] else 2.0; nn9_['ok' if h_[-1][1] else 'fail']+=1   # FIX (review): only a recent test counts
+            if 'tbits' in c_: w_*=0.5 if c_['tbits']<tau9_ else 1.5; nn9_['fit' if c_['tbits']<tau9_ else 'misfit']+=1
+            w9_.append(w_)
+        pw9_=np.array(w9_)/np.sum(w9_)
+        print(f"  [inference REPLAY BY NEED] {len(pool_)} conclusions: last store-off test failed {nn9_['fail']} (x2) / passed {nn9_['ok']} (x0.5) | trunk already predicts (schema fit) {nn9_['fit']} (x0.5) / misfit {nn9_['misfit']} (x1.5) | weight max/min {pw9_.max()/max(pw9_.min(),1e-12):.1f}",flush=True)
+    cap9_=int(getattr(cfg,'inf_cons_cap_sleep',0)) if int(getattr(cfg,'inf_cons_spaced',0)) else 0; cnt9_={}
+    if cm_=='both' and cap9_>0:
+        for c_ in pool_: c_['ws']=0
+    ap9_=None; akp9_=None                                                       # cg26h TARGETED ANCHORS. Local test: the window ring holds only the CURRENT domain's recent
+    if cm_=='both' and int(getattr(cfg,'inf_cons_anchor_target',0)) and kept_:   #   windows, so anchors never covered old domains; half the anchors now come from the kept
+        dm9_=model.__dict__.get('_odmg',{}); kd9_=[int(e_['d']) for e_ in kept_]  #   verified windows of the OLD slots (reservoir and bank), weighted by the damage each
+        mu9_=np.mean([max(0.0,v_) for v_ in dm9_.values()]) if dm9_ else 0.0     #   slot took at the last replays
+        akp9_=np.array([1.0+(2.0*max(0.0,dm9_.get(x_,0.0))/mu9_ if mu9_>0 else 0.0) for x_ in kd9_]); akp9_=akp9_/akp9_.sum()
+        print(f"  [inference ANCHORS TARGETED] half the anchors from {len(kept_)} kept old-slot windows ({len(set(kd9_))} slots) | damage by slot at the last replays: "
+              +(", ".join(f"s{k_} {v_:+.4f}" for k_,v_ in sorted(dm9_.items())) or "none yet")+f" | weight max/min {akp9_.max()/max(akp9_.min(),1e-12):.1f}",flush=True)
     for att_ in range(1+NRT_):
         model.train()
         for st in range(int(cfg.inf_steps) if cm_!='both' else int(getattr(cfg,'inf_cons_wsteps',60))):
             loss_=0.0; grp_={}
-            for c_ in [pool_[i_] for i_ in rs_.choice(len(pool_),kc_)]:
+            ps9_=pw9_
+            if cap9_>0:                                                         # per-sleep cap: a conclusion gives at most cap9_ rows per sleep (spacing across sleeps)
+                mk9_=np.array([1.0 if c_.get('ws',0)<cap9_ else 0.0 for c_ in pool_]); b9_=(pw9_ if pw9_ is not None else np.ones(len(pool_)))*mk9_
+                ps9_=b9_/b9_.sum() if b9_.sum()>0 else pw9_
+            for c_ in [pool_[i_] for i_ in rs_.choice(len(pool_),kc_,p=ps9_)]:
                 c_['n' if cm_!='both' else 'wn']=c_.get('n' if cm_!='both' else 'wn',0)+1
+                if cap9_>0: c_['ws']=c_.get('ws',0)+1; cnt9_[id(c_)]=(c_,cnt9_.get(id(c_),(c_,0))[1]+1)
                 w_=bytearray(filler(c_['d'])[:Lr_]); w_+=b' '*(Lr_-len(w_)); u_=rs_.rand(); sn_=c_['s'] if (c_['typed'] and u_<0.5) else (f"So {c_['A']} is connected to {c_['C']}." if rs_.rand()<0.5 else f"So {c_['C']} is connected to {c_['A']}.")
                 q0_=0
                 if cm_=='both' and int(getattr(cfg,'inf_cons_vary',0)):              # VARIED RESTATEMENTS ('dreaming' many phrasings): models absorb a fact far better from
@@ -9171,10 +9394,10 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                     mk_=torch.zeros(Lr_-1); mk_[max(0,o_+q1_-1):o_+len(it_)-1]=1.0
                     grp_.setdefault(int(S_slot(f_['d'])),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_)); model.__dict__['_noldf']=model.__dict__.get('_noldf',0)+1
                     continue
-                if ring_:
+                if ring_ and not (akp9_ is not None and rs_.rand()<0.5):
                     w0_,dd_=ring_[rs_.randint(len(ring_))]; o0_=rs_.randint(max(1,len(w0_)-Lr_+1)); xa_=torch.tensor(list(w0_[o0_:o0_+Lr_]),dtype=torch.long); da_=int(S_slot(dd_))
                 else:
-                    e_=kept_[rs_.randint(len(kept_))]; xa_=e_['x'].to('cpu',torch.long)[:Lr_]; da_=int(e_['d'])
+                    e_=kept_[int(rs_.choice(len(kept_),p=akp9_)) if akp9_ is not None else rs_.randint(len(kept_))]; xa_=e_['x'].to('cpu',torch.long)[:Lr_]; da_=int(e_['d'])
                 if xa_.numel()<Lr_: xa_=torch.cat([xa_,torch.full((Lr_-xa_.numel(),),32,dtype=torch.long)])
                 grp_.setdefault(da_,[]).append((xa_,None))
             for d_,rows_ in grp_.items():
@@ -9203,7 +9426,10 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             else: op_.step()
             ls_.append(float(loss_)); _ng_zero(model)
             for p_ in PA_: p_.grad=None
-        b1_=bpc(model,vals[t],ts,n=nb_); o1_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
+        b1_=bpc(model,vals[t],ts,n=nb_,skip=sk9_); o1l_=[bpc(model,vals[d_],s_,n=nb_,skip=sk9_) for d_,s_ in olds_]; o1_=float(np.mean(o1l_)) if olds_ else float('nan')
+        if cm_=='both' and olds_:                                               # per-slot damage of this attempt (EMA), for targeted anchors
+            dm9_=model.__dict__.setdefault('_odmg',{})
+            for (d9_,s9_),a9_,b9_ in zip(olds_,oBl_,o1l_): dm9_[int(s9_)]=0.5*dm9_.get(int(s9_),b9_-a9_)+0.5*(b9_-a9_)
         if cm_=='both':
             bk_=float(getattr(cfg,'inf_cons_brake',0.005)); dO_=(o1_-oB0_) if olds_ else 0.0; dB_=b1_-bB0_; rb_=(dO_>bk_ or dB_>bk_)   # (o0_ is reused by the anchor loop)
             model.eval(); r_post_=_rr(sm0_); model.__dict__['_crep_smp']=sm0_
@@ -9222,6 +9448,14 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             PI9_=model.__dict__.pop('_protinfo',None); pt9_=(f" | PROTECTED {PI9_[0]} block matrices, update kept {PI9_[1]/max(1,PI9_[2]):.2f} cosine to Adam's" if PI9_ else "")
             print(f"  [inference CONCLUSION REPLAY INTO THE TRUNK] {len(ls_)} steps at lr x{op_.param_groups[0]['lr']/float(cfg.lr):.4f} (store off){(' [retry '+str(att_)+']') if att_ else ''} on {len(pool_)} conclusions ({kc_} rows/step"+(f", relation-pattern rows with fresh names so far {model.__dict__.get('_npat',0)} (too long, skipped {model.__dict__.get('_npat_skip',0)})" if float(getattr(cfg,'inf_cons_pattern',0.0))>0 else "")+(f", SPLICED-PREMISE dream rows so far {model.__dict__.get('_nsplice',0)} (attended-span compact {model.__dict__.get('_ncompact',0)}; too long to fit whole, skipped {model.__dict__.get('_nsplice_skip',0)})" if float(getattr(cfg,'inf_cons_splice',0.0))>0 else "")+(f", self-confirmed REM rows so far {model.__dict__.get('_nrg',0)}" if float(getattr(cfg,'inf_remgen_dream',0.0))>0 else "")+(f", mixed-pair (attended-span) dream rows so far {model.__dict__.get('_nmixd',0)}" if float(getattr(cfg,'inf_mix_dream',0.0))>0 else "")+(f", old-domain fact rows as targets so far {model.__dict__.get('_noldf',0)}" if float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0 else "")+(f", varied restatements so far {model.__dict__.get('_nvary',0)}" if int(getattr(cfg,'inf_cons_vary',0)) else "")+f") + {ka_} anchor rows/step | "
                   f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}"+pt9_,flush=True)
+            if cap9_>0:                                                         # cg26h: only KEPT rows count as replays (cg26e counted rolled-back rows towards the cap too)
+                if not rb_:
+                    vk9_=int(model.__dict__.get('_visit',0))
+                    for c_,k9_ in cnt9_.values(): c_['nk']=c_.get('nk',0)+1; c_['wk']=c_.get('wk',0)+k9_; c_['lr']=vk9_; c_.setdefault('rv',[]).append(vk9_)
+                    print(f"  [inference SPACED REPLAY] {len(cnt9_)} of {len(pool_)} conclusions replayed this sleep (at most {cap9_} rows each) | kept replays per conclusion: median {np.median([c_.get('nk',0) for c_ in pool_]):.0f}, never {sum(1 for c_ in pool_ if not c_.get('nk'))}",flush=True)
+                else:
+                    for c_,_ in cnt9_.values(): c_['ws']=0
+                cnt9_={}
             if rb_ and att_<NRT_:                                                   # cg21c: rolled back -> retry from the same snapshot at a lower rate
                 for g_ in op_.param_groups: g_['lr']=g_['lr']/float(getattr(cfg,'inf_cons_retry_div',3.0))
                 op_.state.clear(); ls_=[]; A_[1]-=1; model.__dict__['_nmixd']=nmx0_; continue
@@ -9275,9 +9509,24 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             if c_.get('freed') and not c_.get('faded') and not (c_.get('retracted') or c_.get('pruned') or c_.get('uncertain')):
                 _inf_conc_fade(c_,S_slot,Lr_,filler,feats,dev_,beta_); c_['faded']=True; nfd_+=1
         if nfd_: print(f"  [inference EVICTION FADE] {nfd_} evicted conclusions erased from the store",flush=True)
+    if int(getattr(cfg,'inf_release',0)):                                       # cg26g STORE HANDOVER: release = erase from the fast store (fade) and stop rewriting it
+        nr_=0; nb_r=0; st_=S_.setdefault('_relstat',{'rel':0,'res':0}); vis2_=int(model.__dict__.get('_visit',0))   #   (it stays in trunk replay); restore = write it back first
+        Cq_=[x_['C'] for x_ in allc_ if not x_.get('freed') and isinstance(x_.get('C'),str)]; rq_=np.random.RandomState(6161+vis2_); ncx_=0
+        for c_ in allc_:
+            if c_.get('rel_pending') and not c_.get('released') and not c_.get('freed'):
+                o_=[x_ for x_ in Cq_ if x_!=c_['C']]; rq_.shuffle(o_); ok_=False   # FIX (review): re-tested NOW, after the visit of training since the decision
+                if len(o_)>=4:
+                    lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),False); ok_=bool(int(np.argmax(lp_))==0 and lp_[0]-np.max(lp_[1:])>=float(getattr(cfg,'inf_release_margin',1.0)))
+                c_.pop('rel_pending',None)
+                if not ok_: ncx_+=1; continue
+                _inf_conc_fade(c_,S_slot,Lr_,filler,feats,dev_,beta_); c_['released']=True; c_['gist']=True; c_['relv']=vis2_; nr_+=1
+            elif c_.get('restore_pending') and c_.get('released'):
+                c_['released']=False; c_['gist']=False; c_['n']=0; c_.pop('restore_pending',None); c_.pop('rel_pending',None); c_['so']=[]; nb_r+=1
+        st_['rel']+=nr_; st_['res']+=nb_r
+        if nr_ or nb_r or ncx_: print(f"  [inference CLS | RELEASE] {nr_} conclusions released (erased from the fast store, kept in trunk replay), {nb_r} restored (written back first), {ncx_} pending releases cancelled (failed the re-test)",flush=True)
     nmt_=int(getattr(cfg,'inf_mem_maint',0))
     if nmt_>0 and _INFM.get('mu') is not None:                                  # STORE MAINTENANCE: the trunk keeps learning, so the store's keys drift;
-        old_=[c_ for c_ in allc_ if not c_.get('freed') and c_.get('n',0)>0]       #   stored conclusions it no longer recalls are rewritten first
+        old_=[c_ for c_ in allc_ if not c_.get('freed') and not c_.get('released') and c_.get('n',0)>0]   # FIX (review): released ones are erased on purpose       #   stored conclusions it no longer recalls are rewritten first
         nm_=[n_.decode('latin-1') for n_ in _INFM['names']]; fail_=0; ck_=[]
         if old_ and len(nm_)>=25:
             for c_ in [old_[i_] for i_ in rs_.choice(len(old_),min(len(old_),nmt_),replace=False)]:
@@ -9290,7 +9539,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     for st in range(int(cfg.inf_steps)):
         grp_={}
         fxs_=int(getattr(cfg,'inf_mem_fxsep',0))                               # SEPARATE WRITE BUDGETS: conclusions keep their own rows; recorded facts get fxs_ rows of their own
-        live_=([c0_ for c0_ in allc_ if not c0_.get('freed') and not c0_.get('gist')] or [c0_ for c0_ in allc_ if not c0_.get('freed')] or list(allc_))+([] if fxs_ else [f0_ for f0_ in FX_ if not f0_.get('freed')])       # sleep-order test: NREM also replays this visit's recorded facts
+        live_=([c0_ for c0_ in allc_ if not c0_.get('freed') and not c0_.get('gist')] or [c0_ for c0_ in allc_ if not c0_.get('freed') and not c0_.get('released')])+([] if fxs_ else [f0_ for f0_ in FX_ if not f0_.get('freed')])       # sleep-order test: NREM also replays this visit's recorded facts
         fl_=[f0_ for f0_ in FX_ if not f0_.get('freed') and not f0_.get('gist')] if fxs_ else []
         if not live_ and not fl_: break
         if int(getattr(cfg,'inf_mem_prio',0)):                                  # cg20i: conclusions below the exposure target are written first
@@ -9349,7 +9598,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             if mk_.sum()>0: rc_.append(float(-(q_.gather(-1,Y_.reshape(-1,1)).squeeze(-1).clamp(min=1e-9).log()*mk_).sum()/mk_.sum()/math.log(2)))
             if nz_.sum()>0: ra_.append(float(((q_*(q_.clamp(min=1e-9).log()-p0_.clamp(min=1e-9).log())).sum(-1)*nz_).sum()/nz_.sum()))
             wn_+=1
-        if REMk_ and remd_<REMk_ and (st+1)%max(1,int(cfg.inf_steps)//REMk_)==0:   # NREM chunk done -> a REM episode (cycles: its links are written by the next chunk)
+        if REMk_ and remd_<REMk_ and (st+1)%max(1,int(cfg.inf_steps)//(REMk_+1))==0:   # FIX (review): was //REMk_, so one cycle fired at the LAST step   # NREM chunk done -> a REM episode (cycles: its links are written by the next chunk)
             remd_+=1; _inf_rem(model,cfg,S_,S_slot,max(1,int(getattr(cfg,'inf_rem_n',48))//REMk_),f"NREM -> REM, cycle {remd_}/{REMk_}")
     nh_=int(getattr(cfg,'inf_prune_harm',0))
     if nh_>0 and rn_:                                                           # HARM-BASED PRUNING: each stored name's measured effect on recent REAL text
@@ -9870,7 +10119,7 @@ def _spec_codes(model,cfg,S_):
     observations of one scene); with whitened codes the JEPA optimum is the top eigenvectors of the normalised co-occurrence operator
     T = D^-1/2 C D^-1/2 (no training). Eigenvectors at eigenvalue ~1 (one per disconnected piece) are dropped. Returns (word->row, codes)."""
     import scipy.sparse as _sp, scipy.sparse.linalg as _sla
-    it_=S_['it']; ids_=[i_ for i_ in range(max(0,len(it_)-int(getattr(cfg,'inf_spec_docs',20000))),len(it_)) if it_[i_].get('k')=='real']
+    it_=S_['it']; ids_=[i_ for i_ in range(max(0,len(it_)-int(getattr(cfg,'inf_spec_docs',20000))),len(it_)) if it_[i_].get('k')=='real' or (it_[i_].get('k')=='ver' and int(getattr(cfg,'inf_mix_revisit',0)))]   # cg26g: revisits write 'ver' sentences
     if len(ids_)<500: return None
     docs_=[set(w_.group(0) for w_ in _UWORD.finditer(it_[i_]['s']) if len(w_.group(0))>=3) for i_ in ids_]
     df_={}
@@ -10034,6 +10283,14 @@ def _inf_mix(model,cfg,S_,ts):
                                     if float(sjn_[a_,j_])>float('-inf'): P_.append((q_,int(C_[j_]),'jepa-name')); nh7_+=1
                             model.__dict__['_jdname']=(int(Mk7_.any(1).sum()),len(Q_),nh7_)
                 except Exception as e8_: print(f"  [inference MIXING] JEPA proposer unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
+            if int(getattr(cfg,'inf_mix_seq',0)):                                # cg26g SEQUENCE REPLAY (first step): the cue with the sentence stored right after it (else right
+                okq_=lambda j_: 0<=j_<len(it_) and not it_[j_].get('gone') and not it_[j_].get('sup') and it_[j_].get('k') in ('real','ver') and len(it_[j_]['s'])>=ml9_   #   before) in
+                nsq_=0                                                          #   the same visit and domain - episodes in order, judged by the same test
+                for q_ in Q_:
+                    for j_ in (q_+1,q_-1):
+                        if okq_(j_) and it_[j_].get('v')==it_[q_].get('v') and it_[j_]['d']==it_[q_]['d'] and it_[j_]['s'].strip()!=it_[q_]['s'].strip():
+                            P_.append((q_,j_,'sequence')); nsq_+=1; break
+                model.__dict__['_seqn']=nsq_
         except Exception as e_: print(f"  [inference MIXING] neighbour proposer unavailable ({type(e_).__name__}: {e_}) - random mixing only",flush=True)
     kx_=int(getattr(cfg,'inf_mix_cortex',0))
     try: _cx_ok=kx_>0 and isinstance(model.__dict__.get('_bank',{}),dict)
@@ -10046,7 +10303,15 @@ def _inf_mix(model,cfg,S_,ts):
               rm9_=[i_ for i_ in old_ if it_[i_].get('v',-9)<=vn_-2]               #   predicts WELL, i.e. old material the cortex has absorbed; local dream-bank generations
               rm9_=[rm9_[int(i_)] for i_ in rs_.choice(len(rm9_),min(600,len(rm9_)),replace=False)] if rm9_ else []   #   were incoherent at this model size)
               if rm9_:
-                  bb9_=_inf_cond_bytes(model,cfg,[(b'',it_[i_]['s']) for i_ in rm9_],int(ts)); bp9_=np.array([float(x_[1].mean()) if len(x_[1]) else 9.0 for x_ in bb9_])
+                  t2s9_=model.__dict__.get('_t2s',{})
+                  def bps9_(ids_):                                              # FIX (review): each remote sentence scored through ITS OWN slot (was the current one,
+                      out_=np.full(len(ids_),9.0); g_={}                        #   so 'familiar' favoured the current domain)
+                      for k_,i_ in enumerate(ids_): g_.setdefault(int(t2s9_.get(it_[i_]['d'],it_[i_]['d'])),[]).append(k_)
+                      for sl_,ks_ in g_.items():
+                          bb_=_inf_cond_bytes(model,cfg,[(b'',it_[ids_[k_]]['s']) for k_ in ks_],sl_)
+                          for k_,x_ in zip(ks_,bb_): out_[k_]=float(x_[1].mean()) if len(x_[1]) else 9.0
+                      return out_
+                  bp9_=bps9_(rm9_)
                   for i_ in [rm9_[j_] for j_ in np.argsort(bp9_)[:max(1,len(rm9_)//2)]]: CX_.append((it_[i_]['s'],int(it_[i_]['d']),'fam'))
                   if int(getattr(cfg,'inf_mix_cxname',0)):                      # cg26c NAME-INDEXED REM TRACES: remote sentences that share a rare name with some cue, kept
                       try:                                                      #   if the trunk predicts them at least as well as the median familiar sample (familiar =
@@ -10056,7 +10321,7 @@ def _inf_mix(model,cfg,S_,ts):
                           hit6_=[i_ for i_ in old_ if it_[i_].get('v',-9)<=vn_-2 and it_[i_]['s'] not in have6_ and nms6_(it_[i_]['s'])&qn6_][-int(getattr(cfg,'inf_mix_cxname_max',300)):]
                           nk6_=0
                           if hit6_:
-                              bb6_=_inf_cond_bytes(model,cfg,[(b'',it_[i_]['s']) for i_ in hit6_],int(ts)); bp6_=np.array([float(x_[1].mean()) if len(x_[1]) else 9.0 for x_ in bb6_])
+                              bp6_=bps9_(hit6_)
                               thr6_=float(np.median(bp9_))
                               for i_,b6_ in zip(hit6_,bp6_):
                                   if b6_<=thr6_: CX_.append((it_[i_]['s'],int(it_[i_]['d']),'fam')); nk6_+=1
@@ -10127,6 +10392,20 @@ def _inf_mix(model,cfg,S_,ts):
           model.__dict__['_cxinfo']=(len(CX_),len(BK9_))
       except Exception as e9_: print(f"  [inference MIXING] cortex fragments unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True); P_=[p_ for p_ in P_ if p_[2]!='cortex']
     nd0_=len(P_); P_=[p_ for p_ in P_ if T_(p_[0]).strip()!=T_(p_[1]).strip()]   # cg26e: never pair a sentence with an identical copy (pass-1 text vs pass-2 replay)
+    jq_=float(getattr(cfg,'inf_mix_neardup',0.0))
+    if jq_>0:                                                                   # cg26g NEAR-DUPLICATES: pairs sharing more than jq_ of their character 4-grams are dropped
+        def g4_(t_): t_=t_.lower(); return {t_[k_:k_+4] for k_ in range(max(1,len(t_)-3))}   #   (cg26e GPU, EuroParl revisit: repetitive replays, copying +15.4 bits/pair,
+        G4_={}                                                                  #   bar 15.7 bits, 0/16 known links passed, 224 accepted)
+        def gg_(i_):
+            if i_ not in G4_: G4_[i_]=g4_(T_(i_))
+            return G4_[i_]
+        nk_=[]; nnd_=0
+        for p_ in P_:
+            if p_[2]=='control+': nk_.append(p_); continue
+            a_,b_=gg_(p_[0]),gg_(p_[1])
+            if a_ and b_ and len(a_&b_)/max(1,min(len(a_),len(b_)))>jq_: nnd_+=1; continue
+            nk_.append(p_)
+        P_=nk_; model.__dict__['_neardup']=nnd_
     if len(P_)<nd0_: model.__dict__['_dupdrop']=nd0_-len(P_)
     pc_=[c_ for c_ in S_.get('conc',[]) if isinstance(c_.get('src'),tuple) and not c_.get('freed')]   # POSITIVE CONTROL: the two premises of committed conclusions
     for c_ in [pc_[int(i_)] for i_ in rs_.choice(len(pc_),min(16,len(pc_)),replace=False)] if pc_ else []:   #   (known linked pairs) go through the SAME test;
@@ -10173,7 +10452,14 @@ def _inf_mix(model,cfg,S_,ts):
         S_.setdefault('mixtxt',[]).extend((T_(a_),T_(b_),D_(a_),'random-dream') for a_,b_ in rp9_[:nr9_]); del S_['mixtxt'][:-2000]
     else:
         nd9_=set(x_ for x_ in str(getattr(cfg,'inf_mix_nodream_src','') or '').split(',') if x_)   # cg22: sources scored but never dreamed (e.g. the latent proposer)
-        S_.setdefault('mixtxt',[]).extend((T_(a_),T_(b_),D_(a_),src_) for a_,b_,src_,_,_ in acc_ if (not ds9_ or src_ in ds9_.split(',')) and src_ not in nd9_); del S_['mixtxt'][:-2000]   # texts of accepted pairs (cortex fragments too)
+        dd9_=[(a_,b_,src_) for a_,b_,src_,_,_ in acc_ if (not ds9_ or src_ in ds9_.split(',')) and src_ not in nd9_]
+        qc9_=float(getattr(cfg,'inf_mix_seq_cap',0.0))
+        if qc9_>0:                                                              # cg26h SEQUENCE CAP: neighbouring sentences pass the test easily (cg26h GPU visit 1: 17 of 31
+            sq9_=[z_ for z_ in dd9_ if z_[2]=='sequence']; ot9_=[z_ for z_ in dd9_ if z_[2]!='sequence']   #   accepted, 17 of 19 dreams) - at most qc9_ x the other dreams (min 2)
+            kq9_=max(2,int(qc9_*len(ot9_)))
+            if len(sq9_)>kq9_: rs_.shuffle(sq9_); print(f"  [inference MIXING | SEQUENCE CAP] {len(sq9_)} accepted sequence pairs, {kq9_} dreamed (at most {qc9_:.0%} of the {len(ot9_)} other dreams, min 2)",flush=True); sq9_=sq9_[:kq9_]
+            dd9_=ot9_+sq9_
+        S_.setdefault('mixtxt',[]).extend((T_(a_),T_(b_),D_(a_),src_) for a_,b_,src_ in dd9_); del S_['mixtxt'][:-2000]   # texts of accepted pairs (cortex fragments too)
     # ---- readout: are the accepted pairs related? (benchmark gold and planted chains), against every pair tested
     def rel_(a_,b_):
         sa_,sb_=T_(a_),T_(b_); out_=None
@@ -10213,6 +10499,10 @@ def _inf_mix(model,cfg,S_,ts):
     bc9_=model.__dict__.pop('_benchcue',None); jn9_=model.__dict__.pop('_jdname',None); cn9_=model.__dict__.pop('_cxname',None); cj9_=model.__dict__.pop('_cxjn',None)
     if bc9_ or jn9_: print("  [inference MIXING | CG26B]"+(f" benchmark cues {bc9_[0]} (of {bc9_[1]} eligible sentences with 2+ gold entities)" if bc9_ else "")
                            +(f" | jepa-name: {jn9_[0]} of {jn9_[1]} cues have a name-sharing candidate, {jn9_[2]} pairs proposed" if jn9_ else ""),flush=True)
+    sq9_=model.__dict__.pop('_seqn',None)
+    if sq9_ is not None: print(f"  [inference MIXING | SEQUENCE] {sq9_} cues paired with the sentence stored next to them (same visit and domain)",flush=True)
+    ndp9_=model.__dict__.pop('_neardup',None)
+    if ndp9_: print(f"  [inference MIXING | NEAR-DUPLICATES] {ndp9_} proposed pairs dropped (more than {float(getattr(cfg,'inf_mix_neardup',0.0)):.0%} of character 4-grams shared)",flush=True)
     if cn9_ or cj9_: print("  [inference MIXING | REM NAME INDEX]"+(f" {cn9_[0]} cue names, {cn9_[1]} remote sentences share one, {cn9_[2]} familiar enough to join the cortical traces" if cn9_ else "")
                            +(f" | cortex-jepa-name: {cj9_[0]} of {cj9_[1]} cues have a name-sharing trace, {cj9_[2]} pairs proposed" if cj9_ else ""),flush=True)
     if mc9_ and mc9_[0]: print(f"  [inference MIXING | TEST CHECK] bar {mc9_[6]:.1f} bits both ways | KNOWN LINKED PAIRS (premises of committed conclusions): {mc9_[1]}/{mc9_[0]} pass, weaker-side gain median {mc9_[2]:+.1f} bits | random pairs: {mc9_[4]}/{mc9_[3]} pass, median {mc9_[5]:+.1f} bits",flush=True)
@@ -10603,7 +10893,7 @@ def _jx_readouts(model,cfg,S_,ts,fa_,mem_,Zr_):
             def two_():
                 if not sm_: return float('nan')
                 v_=float(np.mean([_inf_score1(model,cfg,f"So {a_} is connected to ",cd_,s_,False)==0 for a_,cd_,s_ in sm_])); _INFM.pop('force',None); return v_
-            def bp_(): return bpc(model,vals_[t_],sl_,n=nb_),(float(np.mean([bpc(model,vals_[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan'))
+            def bp_(): return bpc(model,vals_[t_],sl_,n=nb_,skip=int(getattr(cfg,'brake_eval_skip',0))),(float(np.mean([bpc(model,vals_[d_],s_,n=nb_,skip=int(getattr(cfg,'brake_eval_skip',0))) for d_,s_ in olds_])) if olds_ else float('nan'))
             model.eval(); l0_,t0_=lat_(),two_(); v0_,o0_=bp_()
             sd0_=_snapcpu(model)
             ps_=[q_ for q_ in model.parameters() if q_.requires_grad]; op_=torch.optim.Adam(ps_,lr=float(cfg.lr)*float(getattr(cfg,'inf_jepa_consol_lr',0.01)))
@@ -10716,7 +11006,7 @@ def _inf_isotropy(model,cfg,S_,ts):
     if len(real_)<256: return
     if not model.__dict__.get('_jxref'): model.__dict__['_jxref']=[it_[real_[int(j_)]]['s'] for j_ in rs_.choice(len(real_),256,replace=False)]
     ref_=model.__dict__['_jxref']; was_=model.training
-    def bp_(): return bpc(model,vals_[t_],sl_,n=nb_),(float(np.mean([bpc(model,vals_[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan'))
+    def bp_(): return bpc(model,vals_[t_],sl_,n=nb_,skip=int(getattr(cfg,'brake_eval_skip',0))),(float(np.mean([bpc(model,vals_[d_],s_,n=nb_,skip=int(getattr(cfg,'brake_eval_skip',0))) for d_,s_ in olds_])) if olds_ else float('nan'))
     model.eval()
     with torch.no_grad(): r0_,tp0_=_jx_effrank(_jepa_emb(model,ref_))
     v0_,o0_=bp_(); sd_=_snapcpu(model)
@@ -10799,7 +11089,11 @@ def _jd_train(model,cfg,S_):
         if len(Pp_)>cap_: Pp_=[Pp_[int(j_)] for j_ in rs_.choice(len(Pp_),cap_,replace=False)]; bal_=f", planted capped at {cap_}"
         P2_=Pr_+Pp_
     if len(P2_)<int(getattr(cfg,'inf_jd_min',32)): print(f"  [inference JEPA DREAMS | TRAIN] {len(P2_)} linked pairs (need {int(getattr(cfg,'inf_jd_min',32))})",flush=True); return
-    rs_.shuffle(P2_); nh_=max(16,len(P2_)//5); H_,T_=P2_[:nh_],P2_[nh_:]
+    import zlib as _zl9                                                         # FIX: a FIXED held-out set - a pair is held out for ever if the hash of its two sentences
+    hk_=lambda pr_: _zl9.crc32(b'\x00'.join(sorted((pr_[0].strip(),pr_[1].strip()))))%5==0   #   (either order) falls in 1 of 5 buckets. The split was re-drawn every
+    H_=[pr_ for pr_ in P2_ if hk_(pr_)]; T_=[pr_ for pr_ in P2_ if not hk_(pr_)]  #   sleep while the heads persist, so held-out pairs had been trained on
+    rs_.shuffle(H_); rs_.shuffle(T_); P2_=H_+T_; nh_=len(H_)                   #   in earlier sleeps and the readouts were optimistic
+    if len(T_)<16: print(f"  [inference JEPA DREAMS | TRAIN] {len(T_)} training pairs after the fixed held-out split (need 16)",flush=True); return
     hr_=[j_ for j_,pr_ in enumerate(H_) if not isp_(pr_)]                       # held-out REAL-TEXT pairs (retrieval among themselves)
     hn_=int(getattr(cfg,'inf_jd_hn',0)); NI_=None; NGT_=None; fl_=[]
     if hn_>0:                                                                   # cg26f: hard negatives (name-sharing, unlinked) for every pair
@@ -10828,7 +11122,7 @@ def _jd_train(model,cfg,S_):
     if hn_>0:
         xn_=enc_(_jd_codes(model,cfg,fl_)); NI_=NI_.to(xn_.device); tau_=float(getattr(cfg,'inf_jd_tau',0.1)); whn_=float(getattr(cfg,'inf_jd_hnw',0.5))
     def heldhn_():                                                              # held-out: does the JEPA pick the partner among it + its name-sharing negatives?
-        if hn_<=0: return float('nan'),0,float('nan')
+        if hn_<=0 or nh_<1: return float('nan'),0,float('nan')
         ok_=[];ch_=[]
         with torch.no_grad():
             for j_ in range(nh_):
@@ -10838,6 +11132,7 @@ def _jd_train(model,cfg,S_):
                 ok_.append(float((q_@K_.T).argmax(1).item()==0)); ch_.append(1.0/(1+len(v_)))
         return (float(np.mean(ok_)) if ok_ else float('nan')),len(ok_),(float(np.mean(ch_)) if ch_ else float('nan'))
     def held_():
+        if nh_<4: return float('nan')
         with torch.no_grad():
             q_=F.normalize(Pq_(g_(ha_)),dim=-1); k_=F.normalize(gt_(hb_),dim=-1); q2_=F.normalize(Pq_(g_(hb_)),dim=-1); k2_=F.normalize(gt_(ha_),dim=-1)
             ar_=torch.arange(len(ha_),device=ha_.device)
@@ -10877,7 +11172,7 @@ def _jd_train(model,cfg,S_):
     npb_=sum(1 for pr_ in P2_ if isp_(pr_))   # how many training pairs are planted probe facts vs real text
     model.__dict__['_jdN']=model.__dict__.get('_jdN',0)+1
     print(f"  [inference JEPA DREAMS | TRAIN] sleep {model.__dict__['_jdN']}: {nT_} linked training pairs ({len([1 for c_ in S_.get('conc',[]) if isinstance(c_.get('src'),tuple)])} verified premises + fact chains through a shared entity), "
-          f"of which planted probe facts {npb_} and real text {len(P2_)-npb_}, {str(getattr(cfg,'inf_jd_pool','salient'))} pooling, top {kd_} directions removed | loss {ls_[0]:.3f} -> {ls_[-1]:.3f}, code effective rank {er_:.1f} of {d_} | HELD-OUT linked pairs ({nh_}, chance {1/nh_:.3f}): partner found {h0_:.2f} -> {h1_:.2f}"
+          f"of which planted probe facts {npb_} and real text {len(P2_)-npb_}, {str(getattr(cfg,'inf_jd_pool','salient'))} pooling, top {kd_} directions removed | loss {ls_[0]:.3f} -> {ls_[-1]:.3f}, code effective rank {er_:.1f} of {d_} | HELD-OUT linked pairs, fixed set ({nh_}, chance {1/max(1,nh_):.3f}): partner found {h0_:.2f} -> {h1_:.2f}"
           +(f" | REAL-TEXT held-out ({len(hr_)}, chance {1/len(hr_):.3f}): {hr0_:.2f} -> {hr1_:.2f}" if len(hr_)>=4 else f" | REAL-TEXT held-out: {len(hr_)} pairs (too few)")
           +(f" | of all pairs before balancing, planted {npl0_}{bal_}" if bal_ else "")
           +(f" | HARD NEGATIVES (partner vs up to {int(getattr(cfg,'inf_jd_hn',0))} name-sharing sentences, {hh1_[1]} held-out choices, chance {hh1_[2]:.2f}): JEPA {hh0_[0]:.2f} -> {hh1_[0]:.2f}, TF-IDF names {tfh_:.2f}" if hn_>0 else ""),flush=True)
@@ -11022,6 +11317,20 @@ def _inf_nm1(g_):
     w_=(g_.split() or [''])[0].strip('.,;:!?')
     return w_ if _INF_NAME.fullmatch(w_.encode('latin-1','ignore')) else ''
 @torch.no_grad()
+def _rem_conflict(S_,G_):
+    """cg26g: True if any grounding fact is superseded, or its (subject, relation) has a COMPETING object with live evidence - the belief is
+    not yet resolved (cg26e GPU pass 2: 30 pct of planted chains change, REM grounded on the old fact before the audit had the repeats to
+    supersede it: precision 5/6, 5/8, 3/5, 1/7)"""
+    R_=S_.get('rel',{}); it_=S_['it']
+    for g_ in G_:
+        if g_.get('freed') or g_.get('sup'): return True
+        i_=g_.get('i')
+        if isinstance(i_,int) and i_<len(it_) and it_[i_].get('sup'): return True
+        eb_=lambda x_: x_.encode('latin-1') if isinstance(x_,str) else x_
+        ob_=R_.get((g_['A'],g_['r'])) or R_.get((eb_(g_['A']),eb_(g_['r'])))      # (the evidence record is keyed by bytes)
+        fn_=S_.get('_func',{}); sv_=fn_.get(g_['r']) or fn_.get(eb_(g_['r']))   # only relations LEARNED to be single-valued (works-with may have many objects)
+        if sv_ and ob_ and sum(1 for o_,ids_ in ob_.items() if any(not it_[j_].get('sup') for j_ in ids_ if isinstance(j_,int) and j_<len(it_)))>=2: return True
+    return False
 def _inf_rem(model,cfg,S_,S_slot,n_,tag_,shadow_=False):
     """REM-LIKE RECOMBINATION (sleep-order test): links proposed from MEMORY (weights + fast store), not from co-occurrence.
       subject: a recorded fact 'A r0 B' (half from this visit, half older); lookup 1: complete 'A r0 ' -> bridge B^;
@@ -11065,6 +11374,8 @@ def _inf_rem(model,cfg,S_,S_slot,n_,tag_,shadow_=False):
         fp_=S_.get('fpair',{}); fa_=fp_.get((A_,Bh_)) or fp_.get((Bh_,A_)); fb_=fp_.get((Bh_,C_)) or fp_.get((C_,Bh_))   # grounded: recorded episodes link A-B^ and B^-C^
         if fa_ is not None and fb_ is not None and shadow_:                    # SHADOW: proposals are only counted (nothing written; discovery is unchanged)
             S_['rem_seen'].add(key_); st_['acc']+=1; st_['at']+=int(tr_); st_['aw']+=int(pw_)
+        elif fa_ is not None and fb_ is not None and int(getattr(cfg,'inf_rem_conflict',0)) and _rem_conflict(S_,(fa_,fb_)):
+            st_['conf']=st_.get('conf',0)+1; st_['cw']=st_.get('cw',0)+int(pw_); st_['hyp']+=1; st_['ht']+=int(tr_); st_['hw']+=int(pw_)   # cg26g: held back as a hypothesis
         elif fa_ is not None and fb_ is not None:
             S_['pairs'].add(key_); r1_=fb_['r'] if fb_['A']==Bh_ else r1_; c_={'A':A_,'B':Bh_,'C':C_,'r':(r0_,r1_),'typed':True,'s':f"{A_} {r0_} someone who {r1_} {C_}.",'src':(fa_['i'],fb_['i']),
                                     'd':f_['d'],'dep':1,'v':vis0_,'rem':True}
@@ -11074,7 +11385,7 @@ def _inf_rem(model,cfg,S_,S_slot,n_,tag_,shadow_=False):
     for e_ in eg_[:3]: print(f"    [inference REM e.g.] {e_}",flush=True)
     f2_=len(set(frozenset((c_['A'],c_['C'])) for c_ in S_['conc'] if (c_['A'],c_['C']) in t2_))
     print(f"  [inference REM recombination | {tag_}] {st_['n']} subjects{f' ({pf_:.0%} sampled from probe facts for scoring)' if pf_>0 else ''} ({len(rec_)} facts from this visit, {len(old_)} older; {len(rv_)} relations) | bridge recalled {st_['bok']/n0_:.2f} (no name {st_['nob']}) | "
-          f"{st_['prop']} proposals, {st_['abst']} abstained (margin {m_} nats), {st_['known']} already known | ACCEPTED grounded {st_['acc']} (probe-true {st_['at']}, probe-wrong {st_['aw']}) | "
+          f"{st_['prop']} proposals, {st_['abst']} abstained (margin {m_} nats), {st_['known']} already known"+(f", {st_.get('conf',0)} held back (belief not yet resolved; probe-wrong among them {st_.get('cw',0)})" if int(getattr(cfg,'inf_rem_conflict',0)) else "")+f" | ACCEPTED grounded {st_['acc']} (probe-true {st_['at']}, probe-wrong {st_['aw']}) | "
           f"hypotheses (ungrounded, not written) {st_['hyp']} (probe-true {st_['ht']}, probe-wrong {st_['hw']}) | facts recorded {len(F_)} | probe chains found so far: two-hop {f2_}/{len(t2_)//2}",flush=True)
     return out_
 @torch.no_grad()
@@ -11468,6 +11779,7 @@ def _inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_):
     subj_={}
     for (A,r),ob_ in R_.items(): subj_.setdefault(r,[]).append(sum(1 for o_,ids_ in ob_.items() if any(not S_['it'][i_].get('sup') for i_ in ids_)))
     func_={r:(np.mean([n_==1 for n_ in v_])>=float(getattr(cfg,'inf_audit_func',0.6)) and len(v_)>=int(getattr(cfg,'inf_audit_minsubj',20))) for r,v_ in subj_.items()}
+    S_['_func']=func_                                                           # cg26g: REM holds back facts of single-valued relations with a competing object
     w_=lambda i_: math.exp(-(V_-S_['it'][i_].get('v',V_))/tau_)
     sup_new_=set(); unc_=set(); conf_=0
     for (A,r),ob_ in R_.items():
@@ -11491,7 +11803,7 @@ def _inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_):
         else:
             for o_ in rk_:
                 for i_ in ob_[o_]: S_['it'][i_]['unc']=True; unc_.add(i_)
-    nret_=0; ndem_=0; nrep_=0; t2_,t3_=_inf_truth(cfg); upd_={(c_['names'][0],c_['names'][2]):c_['upd']['type'] for c_ in inf_probes(cfg) if c_.get('upd')}
+    nret_=0; ndem_=0; nrep_=0; t2_,t3_=_inf_truth(cfg,current=False); upd_={(c_['names'][0],c_['names'][2]):c_['upd']['type'] for c_ in inf_probes(cfg) if c_.get('upd')}
     good_=0; falser_=0
     for c_ in allc_:
         sr_=c_.get('src',())
@@ -11696,12 +12008,12 @@ def pu_consolidate(model,cfg,t,ts,vals,olds_,S_):
     nb_=int(cfg.pu_cons_eval); dev_=model.embed.weight.device
     def _ev(off):
         _PUOFF['d']=(ts if off else None)
-        try: b_=float(bpc(model,vals[t],ts,n=nb_))
+        try: b_=float(bpc(model,vals[t],ts,n=nb_,skip=int(getattr(cfg,'brake_eval_skip',0))))   # FIX (review): brake off the reported batches
         finally: _PUOFF['d']=None
         return b_
     def _evo():
         if not olds_: return float('nan')
-        return float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_]))
+        return float(np.mean([bpc(model,vals[d_],s_,n=nb_,skip=int(getattr(cfg,'brake_eval_skip',0))) for d_,s_ in olds_]))
     was_=model.training
     on0_=_ev(False); off0_=_ev(True); old0_=_evo(); model.train()
     PA_=[p_ for n_,p_ in model.named_parameters() if p_.requires_grad]
@@ -12681,6 +12993,7 @@ def run(cfg):
             _eo=False
             ts,_b0=infer_slot(model,cfg,train_of(t,pass_i),t,vi) if cfg.infer_ctx else (t,[])      # LABEL-FREE: the slot this visit trains
             _gv=_ReplayGet(train_of(t,pass_i),_b0,cfg.infer_batches) if cfg.infer_ctx else train_of(t,pass_i)
+        _tsp_=_t2s.get(t) if cfg.infer_ctx else None                        # FIX (review): the slot before this visit's routing (for 'before relearning')
         if cfg.infer_ctx and not _eo: _t2s[t]=ts
         shist_=model.__dict__.setdefault('_slot_hist',[]) if cfg.infer_ctx else None
         olds=[]
@@ -12697,7 +13010,7 @@ def run(cfg):
         object.__setattr__(model,'_olds',olds); object.__setattr__(model,'_visit',vi); model.__dict__['_cur_dom']=int(t)
         if cfg.n_passes>1 and cfg.data_free and not cfg.topic_mode and not _eo: rebuild_old_cov(model, olds)   # protect OTHER domains only
         if vi>0 and t in pre_visit:                                                       # before relearning (repeat visits)
-            pre_visit[t][pass_i]=bpc_m[vi-1][t] if (bpc_m[vi-1][t] is not None or t not in schedule[:vi]) else bpc(model,vals[t],_S(t))
+            pre_visit[t][pass_i]=bpc_m[vi-1][t] if (bpc_m[vi-1][t] is not None or t not in schedule[:vi]) else bpc(model,vals[t],(_tsp_ if _tsp_ is not None else _S(t)))
         print(f"\n=== Phase {vi+1}: {PILE_DOMAINS[t]}"+(f" (pass {pass_i+1}/{cfg.n_passes})" if cfg.n_passes>1 else "")+f" === [elapsed {(time.time()-_RUN_T0)/60:.1f} min]")
         if cfg.fwt_zeroshot and vi>0 and t not in schedule[:vi] and cfg.scratch_domain is None:              # before ANY training on domain t
             zeroshot[t]=bpc_inferred(model,vals[t],t,t,'bytes',cfg)[0]
@@ -13166,18 +13479,20 @@ if __name__=="__main__":
     if _dm_ not in ('0','off','none',''):
         _ok2_=_json.loads(_OVR)
         _dr_={"inf_cons": "both", "inf_cons_wlr": 0.0033, "inf_cons_wsteps": 60, "inf_cons_brake": 0.03, "inf_cons_mix": 0.25, "inf_cons_retry": 2, "inf_cons_retry_div": 3.0, "inf_cons_minpool": 16, "inf_jepa_probe": 1, "inf_jepa_cca": 1, "inf_mix_hybrid": 1, "inf_mix_cuerare": 0.75, "inf_mix_latent_score": 1, "inf_mix_nodream_src": "latent-linear,cortex-latent,cortex-latent-fam",
-              "inf_jepa_views": 1, "inf_jepa_geom": 3, "inf_jepa_next": 1, "inf_jepa_shadow": 0, "inf_jepa_consol": 0, "inf_bench": "embedded", "inf_ceiling": 1, "inf_mix_null_q": 0.97, "inf_mix_tfidf_names": 1, "inf_jepa_sigreg": 1.0, "inf_cons_protect": 1, "inf_cons_adapt": 1, "inf_ceiling2": 1, "inf_ceiling2_steps": 2000, "inf_jepa_pca": 64, "inf_cons_wlr_max": 0.0033, "inf_mix_minlen": 60, "inf_jepa_drop": 3, "inf_mix_sharename": 1, "inf_mix_cxlatent": 0, "inf_mix_cxshow": 1, "inf_jepa_every": 2, "inf_mix_nameidx": 1, "inf_jd": 1, "inf_jd_steps": 300, "inf_jd_pool": "mean", "inf_jd_drop": 3, "inf_jd_sigreg": 1.0, "inf_mix_benchcue": 0.33, "inf_mix_jdname": 1, "inf_mix_cxname": 1, "inf_mix_revisit": 1, "inf_jd_hn": 4, "inf_jd_hnw": 0.5, "inf_jd_tau": 0.1, "inf_tgrad": 1, "inf_jd_real": 1,
+              "inf_jepa_views": 1, "inf_jepa_geom": 3, "inf_jepa_next": 1, "inf_jepa_shadow": 0, "inf_jepa_consol": 0, "inf_bench": "embedded", "inf_ceiling": 1, "inf_mix_null_q": 0.97, "inf_mix_tfidf_names": 1, "inf_jepa_sigreg": 1.0, "inf_cons_protect": 1, "inf_cons_adapt": 1, "inf_ceiling2": 1, "inf_ceiling2_steps": 2000, "inf_jepa_pca": 64, "inf_cons_wlr_max": 0.0033, "inf_mix_minlen": 60, "inf_jepa_drop": 3, "inf_mix_sharename": 1, "inf_mix_cxlatent": 0, "inf_mix_cxshow": 1, "inf_jepa_every": 2, "inf_mix_nameidx": 1, "inf_jd": 1, "inf_jd_steps": 300, "inf_jd_pool": "mean", "inf_jd_drop": 3, "inf_jd_sigreg": 1.0, "inf_mix_benchcue": 0.33, "inf_mix_jdname": 1, "inf_mix_cxname": 1, "inf_mix_revisit": 1, "inf_jd_hn": 4, "inf_jd_hnw": 0.5, "inf_jd_tau": 0.1, "inf_tgrad": 1, "inf_tgrad_n": 24, "inf_release": 1, "inf_release_margin": 1.0, "inf_rem_conflict": 1, "inf_mix_neardup": 0.5, "inf_cons_need": 1, "inf_gist": 1, "inf_schema_fast": 1, "inf_mix_seq": 1, "brake_eval_skip": 15, "inf_mix_seq_cap": 0.25, "inf_tgrad_track": 64, "inf_ledger": 1, "inf_mem_guard": 0.85, "inf_sleep_budget": 600, "inf_cons_spaced": 1, "inf_cons_cap_sleep": 4, "inf_cons_anchor_target": 1, "inf_hl": 1, "inf_delete": 1, "inf_delete_grace": 2, "inf_ghost_n": 32, "inf_release_hl": 1, "inf_release_horizon": 10, "inf_graph_window": 12, "inf_jd_real": 1,
               "inf_splicemix": 1, "inf_mix_spectral": 1, "inf_mix_rarecopy": 1, "inf_mix_null": 1, "inf_mix_bits": 2.0, "inf_mix_q": 32,
               "inf_mix_kr": 4, "inf_mix_kn": 4, "inf_mix_nbase": 3, "inf_mix_dream": 0.5}
-        if _dm_ in ('rem','both','jepa'): _dr_.update({"inf_mix_cortex": 4, "inf_mix_cxsel": "mmr", "inf_mix_cxsrc": "familiar"})
+        if _dm_ in ('rem','both','jepa','noreplay','random'): _dr_.update({"inf_mix_cortex": 4, "inf_mix_cxsel": "mmr", "inf_mix_cxsrc": "familiar"})   # cg26g: the controls propose and log the same REM traces
         if _dm_=='rem': _dr_["inf_mix_dream_src"]="cortex-mmr,cortex-mmr-fam"
         if _dm_=='nrem': _dr_["inf_mix_dream_src"]="hybrid,spectral"
         if _dm_=='random': _dr_["inf_mix_dream_rand"]=1
-        if _dm_=='jepa': _dr_["inf_mix_dream_src"]="jepa-name,cortex-jepa-name-fam"   # cg26c: NREM and REM dreams both chosen by the JEPA within the name index (whole-store jepa was no better than random in cg26b)   # cg26: dream ONLY what the trained JEPA selector chose (NREM + REM)                         #   CONTROL: dream random real-text pairs (locally as good as selected pairs on BPC / forgetting)
+        if _dm_=='noreplay': _dr_.update({"inf_cons": "mem", "inf_mix_dream": 0.0, "inf_mix_dream_src": "jepa-name,cortex-jepa-name-fam,sequence"})   # cg26g CONTROL: everything else identical (dreams proposed, tested and logged, CLS readouts), but no trunk replay
+        if _dm_=='jepa': _dr_["inf_mix_dream_src"]="jepa-name,cortex-jepa-name-fam,sequence"   # cg26g: + sequence replay; cg26c: NREM and REM dreams both chosen by the JEPA within the name index (whole-store jepa was no better than random in cg26b)   # cg26: dream ONLY what the trained JEPA selector chose (NREM + REM)                         #   CONTROL: dream random real-text pairs (locally as good as selected pairs on BPC / forgetting)
         for k,v in _dr_.items():
             if k not in _ok2_ or k in ('inf_cons',): setattr(cfg,k,v)   # cg21b FIX: the default run options carry inf_cons=mem, which kept every dream out of the weights in cg21
+        if os.environ.get('PLATYPUS_PASSES','').strip().isdigit(): cfg.n_passes=int(os.environ['PLATYPUS_PASSES']); print(f"  [cg26g] PLATYPUS_PASSES: {cfg.n_passes} pass(es)",flush=True)
         print(f"  [cg21] DREAMS ({_dm_}): "+", ".join(f"{k}={getattr(cfg,k)}" for k in _dr_)+" | PLATYPUS_DREAMS=0 turns them off",flush=True)
-    NAME='STAGE C CONDUIT cg20: cg19 (no lesion) + cg26f = cg26e + JEPA HARD NEGATIVES (the dream selector is also trained to pick the linked partner among up to 4 stored sentences sharing a rare name with the cue, a contrastive term beside the JEPA loss; readout: held-out choice among name-sharing sentences, JEPA against TF-IDF on names) + CLS READOUTS (TEMPORAL GRADIENT: two-hop with the store off and on, grouped by how many visits ago each conclusion was first replayed; STORE HANDOVER: conclusions answered from the weights alone at two sleeps running, and whether earlier ones still are; nothing is released) + answered readouts off (latent consolidation try, shadow JEPA, latent cortex matcher) + cg26e = cg26d + DREAMS ON REVISITS (on pass 2+ the conduit writes the domain as verified replay windows, so cg26b found no plain-text cues and skipped splicing; revisit cues now include the verified-replay sentences of the visit, identical-sentence pairs are dropped, and a REVISIT line reports what the visit wrote) + cg26d = cg26c + GPU MEMORY CARE (restore-only weight snapshots of the sleep brake, readouts, isotropy and ceiling tests kept in CPU memory; GPU cache released after each sleep and after the end-of-run tests; a GPU MEMORY line per sleep with peak and reserved memory; the long ceiling test trains all weights again on the GPU - its size limit now applies only on CPU) + cg26c = cg26b + NAME-INDEXED REM DREAMS (remote sentences sharing a rare name with a cue join the cortical traces when the trunk predicts them as well as the median familiar sentence; cortex-jepa-name: the JEPA ranks only name-sharing traces; NREM and REM dreams are both JEPA choices within the name index - whole-store jepa matched random in cg26b) + cg26b = cg26 + MEASURABLE JEPA DREAMS (a third of the splice cues hold 2+ benchmark gold entities so their partners can be judged; a jepa-name source where the JEPA ranks only candidates sharing a rare name with the cue; planted probe pairs capped at the real-text count in JEPA training, with a separate real-text held-out readout; replay dose capped at x0.0033 - x0.0099 was rolled back on every try in cg26) + cg26 = cg25 + JEPA DREAM SELECTOR (an encoder head on frozen mean-pooled trunk codes (cg25 GPU pooling readout: next-span retrieval mean 0.17, middle block 0.16, salient 0.05), an EMA target head, a predictor and SIGReg, trained every sleep on linked views - verified premise pairs and recorded facts that chain through a shared entity - with a held-out partner-retrieval readout; it proposes NREM splice partners (jepa) and REM cortical traces (cortex-jepa), judged by the same both-ways test and dreamed under the same brake and protection; JEPA DREAMS ARE THE DEFAULT - only its choices are dreamed; PLATYPUS_DREAMS=both / random / 0 for the other modes) + REM TRACES FROM FAMILIAR REMOTE SENTENCES ONLY (cg25 GPU: dream-bank generations stay garbled, yet 5 of 6 accepted REM pairs were such traces) + NAME-INDEXED CANDIDATE POOL (splice candidates start from stored sentences that share a rare name with a cue; cg25 GPU: with 1500 random candidates only 1 of 32 cues found one); cg25 = cg24 + SHARED NAME (a splice candidate must share a rare name word with its cue; cg24 GPU: the hybrid paired sentences of the same genre - two biographies, a chess result and a birth date - not about the same thing, and the both-ways test passes such pairs because same-genre text predicts itself) + REM WITH COHERENT TRACES (cortical traces from BOTH the dream bank and familiar remote store sentences, tagged apart; GPU dream-bank traces were garbled) + LATENT CORTEX MATCHER (cue -> trunk code -> closed-form JEPA predictor -> nearest traces, scored beside the spectral matcher, never dreamed) + trace examples printed + LONG CEILING WITHOUT CONFOUNDS (distractors are trained two-hop answers; in context a decoy fact names a second candidate) + POOLING CHOICES judged by next-span retrieval + latent readouts every second sleep + splice step wrapped against failure; cg24 = cg23 + DOSE MAY CLIMB TO x0.01 (cg23 GPU visit 3: protected replay at x0.0033 KEPT at the first try with old domains +0.012, against +0.042 and a rollback for plain replay at the same dose and visit in cg22 - about 70 pct less damage - but two-hop did not move at that dose, and the adaptive dose was capped at its starting rate) + SPLICE CANDIDATES OF 60+ BYTES (short fragments matched falsely) + TF-IDF NAMES EXCLUDE CAPITALISED COMMON WORDS (First, Mark, Category) + LATENT FITS LEAVE OUT THE TOP 3 DIRECTIONS (cg23 GPU next-span: top-10 removed 0.37 vs raw 0.27) + optional SIGReg sleep phase on the trunk (inf_iso, off); cg23 = cg22 + PROTECTED TRUNK REPLAY (each Adam update of a protected block matrix during sleep replay is whitened by the Fisher factors of the other domains - the preconditioner daytime Muon uses - and rescaled to the same norm, so the step avoids what old domains rely on; cg21c GPU: plain-Adam replay bought two-hop at a fixed price in forgetting, x0.03 0.07 -> 0.40 for +0.158 old-domain BPC, x0.01 0.20 for +0.064, x0.0033 0.13 for +0.022) + ADAPTIVE DOSE (each sleep starts at the last kept rate, one notch higher if that one was kept at the first try) + LONG CEILING TEST on the GPU (entity graph, in-distribution vs out-of-distribution composition, AdamW, 2000 steps with a learning curve, weights and in context) + LATENT FITS IN THE TOP 64 PRINCIPAL DIRECTIONS (cg22 GPU: codes 1088 wide but effective rank 5.1; the full-width closed-form predictor overfit its 128 pairs - next-span top-1 0.01 vs 0.18 with no predictor) + CORRECTED GEOMETRY readout (effective rank after centring, removing the top 1 / 3 directions, per-dimension standardising; salient pooling; middle block) and next-span retrieval with no predictor under each correction - is the information there but hidden, or missing? + TF-IDF ON NAME WORDS ONLY (capitalised alphabetic words of 4+ letters; cg22 GPU: the hybrid matched shared years and citation surnames, e.g. a cond-mat reference with a bishop named in 2006) + CHANCE BAR AT THE 97TH PERCENTILE (cg22 GPU at the 99th: the bar, set by one or two random pairs, rose to 3.3-5.3 bits and passed only 1 of 15 known links) + SIGReg weight 1.0 in the shadow JEPA (0.1 left its code at rank 5.7-10 of 128) + dream-row counter fixed across retries; cg22 = cg21c + HYBRID PROPOSER (splice partners by TF-IDF cosine + 0.5 x spectral, both standardised; offline Re-DocRED chain premises 405-411 of 6000 vs spectral 376-377, TF-IDF 339-359, random 2-3; cg21b GPU: spectral alone proposed unrelated cross-domain pairs) + CUES WITH A NAME (75 pct of cues hold a rare capitalised word) + LATENT PROPOSER SCORED (closed-form JEPA partners go through the same test, never dreamed) + REAL-TEXT BENCHMARK EMBEDDED (Re-DocRED, planted in pass 1, related pairs scored on gold relations) + LATENT (JEPA) READOUTS, none of which changes the model: VIEWS (closed-form predictor fitted on verified premises, accepted splices, random same-domain pairs and neighbouring sentences), GEOMETRY (effective rank and drift - linear CKA, Procrustes residual - of 256 fixed passages across sleeps), NEXT-SPAN predictability (first half of a window to its second half in latent space), SHADOW JEPA (trainable head + EMA target + predictor + SIGReg on frozen trunk codes, continual across sleeps), LATENT CONSOLIDATION tried on a copy of the weights and restored (trunk taught the linear JEPA relation on verified links: latent link, two-hop from the weights and BPC cost) + TRUNK REPLAY STARTS AT x0.0033 (cg21c GPU visit 2: x0.03 old domains +0.41 rolled back, x0.01 +0.051 rolled back, x0.0033 KEPT with old domains -0.027 and two-hop from the weights 0.00 -> 0.25; retries go on down to x0.0011 and x0.00037) + STRICTER CHANCE BAR (99th percentile of random pairs; cg21c accepted chance-level junk at the 95th) + CEILING TEST at the end (local, 400 steps: memorised but did not compose - too short to judge) + chunked latent embeddings (bounded memory); cg21c = cg21b + DOSE RETRY (a trunk replay that the brake rolls back is retried from the same snapshot at a third of the rate, up to twice: x0.03, x0.01, x0.0033; cg21b GPU pass 1: x0.03 rolled back 10/10 with old domains +0.11 to +0.23, although two-hop from the weights on replayed conclusions rose within each sleep, e.g. 0.12 -> 0.38) + MINIMUM POOL 16 (no trunk replay while conclusions + dream pairs are fewer) + LATENT JEPA PROBE (readout only, no training: the closed-form whitened linear JEPA predictor is fitted on the trunk embeddings of verified premise pairs, then two-step latent retrieval on 48 brand-new chains A-B, B-C, C-D among real distractors - does A-B lead to B-C and then to C-D, which shares no name with A-B?) + end-of-run CEILING TEST and longer-window schema test options (off); cg21b = cg21 + FIX: the dream preset now sets inf_cons=both over the default run options and the trunk replay has its own conclusion share inf_cons_mix=0.25 (the fast store keeps 0.5) (the cg21 GPU run kept inf_cons=mem from them, so no dream reached the weights - only the fast store); cg21 = cg20z + DREAMS (PLATYPUS_DREAMS=both by default): NREM-like splices of stored sentences proposed by closed-form JEPA (spectral) word codes and REM-like splices of a stored cue with dream-bank traces generated by the trunk (band + orthogonal selection), each accepted only if both passages make the other cheaper to predict than 3 random same-domain sentences (shared rare words count, bar = 95th percentile of random pairs, positive control logged), dreamed as attended spans at 0.03x lr, 60 steps, anchor-heavy, brake 0.03 (local: dream arms kept every sleep, final BPC 1.964 vs 1.984, forgetting -0.004 vs +0.013); cg20z = cg20y + ROUTING: NO RULE MAY PICK THE SLOT TRAINED AT THE LAST VISIT (cg20y GPU: visits 14 and 22, the only times the choice equalled the last slot, were both wrong) + STAGING v2 ON (a conclusion is committed only when its premises are READ AGAIN: evidence fades with its links and the bar is 0.35 x the cost of naming the pair; local: pool 85-97 pct planted-true vs 70-77 pct, recall 55 of 58 vs 56) + real-text options built in but off (salience, symmetry with a repeat floor, mutual compression, bridge-free mixing) + REAL-TEXT BENCHMARK readout option (all default off); cg20y = cg20x + CONSOLIDATION AT 0.01x LR AND 50 STEPS (private-into-shared; 0.3x was rolled back in every GPU phase; locally 0.01x x 50 steps recovered 32-38 pct of the gap within the brake, 100 steps 11 pct, 200 steps 0) + DUAL PATHWAY RECALL readout (an overlapping link memory with spelling-aware codes learns beside the exact store; at the end two-hop questions with intact and damaged names are answered by exact recall, pattern completion and a RECOGNITION GATE: exact when the cue is a known name, completion otherwise; local: intact 1.00, damaged 0.44-0.69 vs 0.00) + ROUTING: drift clamped at zero (a slot that improved gets no bonus) and a STRONG PROTOTYPE rule (3x nearer than the next wins within 0.25 bits; replayed on the cg20x GPU routing log it fixes visit 16 and changes nothing else) + CLS PROBES at the end (lesion by age, partial cues, schema test) + REAL-TEXT CONCLUSIONS sample each sleep (non-probe conclusions with sources, for grading) + SLEEP TIMING + splice-and-appraise readout off; cg20x = cg20w + ONE-SCAN SALIENCE (links kept as one sparse weighted table W with decay and retraction; every two-step path scored at once as S = W W with log-count links and hub damping; new links promoted by gain x need) + GUMBEL REPLAY (store rows drawn in proportion to priority in one pass) + RE-ENCOUNTER STRENGTHENING (a conclusion seen again gets its support recounted and is rehearsed) + ROUTING FIX (each slot gap is corrected for trunk drift measured on that slot own dream-bank rows; the old rule choice is logged; PLATYPUS_ROUTEFIX=0 restores it) + untested switch inf_cls_probe (CLS probes at the end of the run), off; cg20w = cg20v + FACTS PLANTED 30x PER PASS (was 6x: a visit reads only about 20 pct of the text of a domain and later passes are closed loop, so each fact was read about once and the seen-twice rule could never fire for most facts) + RULE-FREE ON BY DEFAULT (PLATYPUS_RULEFREE=0 runs the rules setup) + untested switches inf_conc_refresh (re-encounter strengthening) and inf_reader 3 (core relation + learned modifiers), both off; cg20v = cg20u + FIVE GPU-SCALE FIXES for rule-free mode (the cg20u GPU run: the sentence store filled at visit 7 and froze, 11 of 197 chains found): (1) ROLLING SENTENCE STORE (when full, the oldest 10 pct of sentences from earlier visits that no live fact or conclusion depends on are emptied) (2) SEEN-TWICE ACROSS VISITS (a fact read once in each of two visits is recorded) (3) BRIDGES WITH RECORDED FACTS FIRST (one-off rare words no longer use up the linking budget) (4) CUT FRAGMENTS DROPPED (sentences cut by the window edge are not stored) (5) POOL ROOM (the going-rate cut-off applies only when links compete for room; seed 1 lost 10 of 35 questions to it with the pool far from full) + TWO-HOP GAP and DISCOVERY DETAIL readouts on; cg20u = cg20t + THREE-HOP IN RULE-FREE MODE (a stored conclusion counts as well-supported evidence when it is chained again; local three-hop 0.00 -> 0.44-0.56, paraphrase two-hop 0.57 -> 0.74) + EVICTION FADE (conclusions pushed out of the pool are erased from the store; real false memories 10 -> 6) + readout fixes (the new chain of an updated fact is not a false memory) + diagnostics (TWO-HOP GAP, DISCOVERY DETAIL, FALSE-MEMORY) + untested switches inf_reader (MDL reader) and inf_prose (natural-prose probes), both off; cg20t = cg20s + RULE-FREE SWITCH (inf_rulefree 1, or environment PLATYPUS_RULEFREE=1: no relation list - entities and relations found from word statistics, links kept in a 1000-link pool that pays for itself, plus four store fixes from local tests: the FIRST stored word in a sentence holds the store bank (stable as counts drift; the rarest-word bank collapsed two-hop recall mid-run), the bank closes 10 words after it opens, a fact must recur at least twice in a visit to be recorded, and both source facts of a conclusion must recur before it is written; separate write budgets for conclusions and NREM fact replay; local tests: two-hop 0.77 with every backed answer right, changed facts two-hop 1.00, store cost +0.008 BPC, forgetting -0.018) + diagnostics inf_fm_debug, inf_gap_debug; cg20s = cg20r + FOUR GPU FIXES: (1) belief revision at GPU exposure (recency rule needs 2 repeats, not 3; facts are seen 1-2 times) (2) identifier memory 4096 dimensions (1024 overloaded with 3000 facts) (3) RULE LAYER for paraphrase: rules phrase p => phrase q proposed from the fact records, kept only if they save bits on held-out evidence and reach half the going rate, applied when confident (derived facts replayed into the store; question-time paraphrases rewritten), with PARAPHRASE PROBES (facts stated in either or both wordings, competing relations per subject) and a PARAPHRASED one-hop readout (4) CONSOLIDATION BRAKE (a private-into-shared phase that makes old domains or its own domain worse by more than 0.005 BPC is rolled back) + IDENTIFIER MEMORY readout; cg20r = cg20q + FIX: NREM fact replay skips facts the grounding audit superseded (cg20q kept writing the old fact back into the store, so updated facts stayed stale); cg20q = cg20p + STRICT STORE GATE 3.0 (a store correction applies only where its largest logit is at least 3; cut the store cost about 60 pct locally with no recall loss) + RECENCY RULE IN THE GROUNDING AUDIT (for a single-valued relation the most recently stated object wins if it is repeated, at least a quarter of the old count; the old ratio rule left near-ties unresolved forever) + CASCADING RETRACTION (conclusions built on a retracted conclusion are retracted too) + REVISION EVIDENCE readout + MULTI-HOP QUESTION-TIME readout (depth 2 to 5, working memory and identifier lookups, decoys, paraphrased questions, competing relations); cg20p = cg20o + DRIFT-FREE STORE KEY (fixed random code of the last 8 bytes picks the units, the name picks the bank; no trunk features) + NREM FACT REPLAY (each visit up to 3000 one-hop facts, ranked by length over spread, written into the store) + REM LINKING WRITTEN (bridge recalled from the store, bridge-specific check, grounded in recorded facts, any grounded candidate; fixed lookup domain) + QUESTION-TIME CHAINING WITH A WORKING MEMORY readout (prompt facts written into a scratch store, two lookups, new chains and decoys) - skill transfer removed; cg20o = cg20n + SPLICE-AND-APPRAISE readout (true links vs false recombinations: raw confidence, specificity, path check by two own lookups, store lookups, oracle bridge) + SHADOW REM RECOMBINATION after the store writes (bridge recalled from memory, bridge-specific check, grounded in recorded facts; counted only, nothing written); cg20n = cg20m + GENTLE SKILL TRANSFER (worked examples from verified conclusions, lr x0.01, BPC brake; every second chain held out) + SHARPER IN-CONTEXT TEST (distractor fact last, both orders, in-context names as candidates, broken-bridge decoy); cg20m = cg20l + STORE MAINTENANCE (rewrite stored conclusions no longer recalled as the trunk drifts) + GROUNDING AUDIT with changing facts (30 pct of two-hop chains change in pass 2); cg20l = cg20k with the n-gram sparse-gradient FIX (cg19 bug: consolidation accumulated them -> GPU crash) and exposure-first store writes (rare-links-first starved probe conclusions); cg20k = cg20j + ANSWER-OR-ABSTAIN and SHOW-SOURCES readouts + calibration; cg20j = cg20i + guarded fast-store indexing (fix for the cuda illegal-address crash) + RARE LINKS FIRST in store writes + probe names with q/x/z; OFFLINE INFERENCE IN SLEEP (rarest bridges first, budget 2000, strict names: no non-ASCII neighbours, no capitalised common words; one-hop source facts ADDED to the store conclusion writes; unconsolidated conclusions written first; do-no-harm anchors aimed at text with stored names; in-context chaining probes), conclusions consolidated into a NAME-INDEXED FAST STORE (sparse delta-rule logit corrector, weights untouched; inf_cons w restores weight consolidation) (150 planted probe chains, sentence store of real/VERIFIED bytes, bridge-centred chaining with hub abstention, typed conclusions, three-hop via stored conclusions, conclusions consolidated alone into kept verified windows) | cg19: cg17e + PRIVATE-INTO-SHARED CONSOLIDATION on verified windows after every closed-loop visit (100 steps, 0.3x lr, 25% old-domain anchors) + TRACE-LEVEL RETIREMENT (KL < 0.25 x start) + CAPACITY CAP 128 windows per domain + TRACE LESION of Wikipedia and USPTO in pass 3 | '+NAME+' | overrides '+_OVR
+    NAME='STAGE C CONDUIT cg20: cg19 (no lesion) + cg26h = cg26g + DELETION AFTER A GRACE PERIOD (a released conclusion answered from the weights alone with the margin at 2 consecutive sleeps after its release is deleted: it leaves trunk replay, its link-graph and LM side links are given back, its source sentences become evictable and the record is purged, so the weights hold it alone; a ghost of each - names and domain only - is re-tested store-off each sleep, by visits since deletion) + RELEASE TIMED BY THE DECAY MODEL (once the decay model beats a constant rate out of sample at 2 sleeps running, a conclusion is released when its predicted half-life reaches 10 visits and its latest store-off test passed with the margin; until then the fixed rule of consecutive passing sleeps decides) + SLIDING-WINDOW LINK GRAPH (a read link not read again within 12 visits leaves the graph; strong links of live conclusions are kept) + MEMORY LEDGER (each sleep: GPU and CPU tensor bytes by owner with the change since the last sleep, untracked GPU memory, host memory, and counts of every growing sleep structure - sentence store, name index, facts, conclusions, link graph, word counts, fast-store names) + MEMORY GUARD (a visit or sleep peak above 85 pct of the device makes the next 2 sleeps lean: latent readouts off, CLS samples halved, rebuildable caches dropped) + SLEEP TIME BUDGET (a sleep over 600 s skips the optional readouts next time) + SPACED REPLAY (no lifetime cap of 30 rows per conclusion - in cg26e early conclusions got about 34 rows in one sleep and were never replayed again - but at most 4 rows per conclusion per sleep, and only rows of KEPT replays count) + TARGETED ANCHORS (old-domain anchor windows drawn in proportion to the damage each old domain took at the last replays) + DECAY MODEL, log only (store-off recall d visits after the last kept replay modelled as 2^(-d/h), half-life h from kept replays, their spacing, the information the conclusion holds for the trunk, the previous margin and the frequency of its subject; fitted online and scored out of sample each sleep against a constant rate) + cg26g = cg26f + CLS COMPLETION STEPS + FIXED JEPA HELD-OUT SET (a pair is held out for ever by the hash of its two sentences - the split was re-drawn every sleep while the heads persisted, so held-out pairs had been trained on) + SEQUENCE CAP (sequence dreams at most a quarter of the other dreams, min 2) + PASS-2 REVIEW FIXES (store-release tracking re-tests failed and released conclusions in rotation and needs CONSECUTIVE sleeps; a pending release is re-tested when applied; replay by need reads only a recent test; probe truth follows CHANGED facts once their domain is revisited, so a correct new chain is not scored wrong; forward-borrowing weights no longer use the real batch in closed-loop passes - each slot keeps those of its last real-text visit; all-zero Fisher gradient factors of closed-loop visits are not averaged in; brakes measure on batches after the 15 the reported metrics use; before relearning is measured through the slot the domain had before routing; frozen private n-gram tables take no optimiser step in the closed loop; REM runs mid-way through the store writes so its conclusions are written in the same sleep; freed and released conclusions are not rewritten or counted by maintenance; familiar traces are scored through their own slot; a strong prototype for the last slot is a genuine repeat for routing; the evidence-target readout says when it is inactive) + THREE FIXES FROM THE cg26e GPU RUN (REM does not ground a fact of a single-valued relation whose subject has a competing object with live evidence - pass-2 changed facts gave REM precision 5/6, 5/8, 3/5, 1/7 before the audit caught up; splice pairs sharing more than half their character 4-grams are dropped - repetitive EuroParl replays gave copying +15.4 bits per pair; spectral and hybrid proposers also read verified-replay sentences on revisits) + THREE CLS QUICK WINS (REPLAY BY NEED AND SCHEMA FIT: trunk replay sampling weights x2 for a conclusion the weights failed store-off at its last test, x0.5 for one they answered, x0.5 when the trunk already predicts it well and x1.5 for a misfit; SCHEMA-FAST RELEASE: a well-predicted conclusion is released after 2 sleeps store-off instead of 3, after Tse et al. 2007; SEQUENCE REPLAY: a dream source pairing a cue with the sentence stored next to it in the same visit and domain, judged by the same test) (the temporal gradient and store handover are measured after every sleep whatever the dream mode, on an unbiased random sample of 24 conclusions per age group; STORE RELEASE: a conclusion answered from the weights alone with a margin of 1 nat at 3 sleeps running is erased from the fast store and kept in trunk replay, and one that then fails store-off at 2 sleeps running is written back; PLATYPUS_DREAMS=noreplay is the no-replay control with everything else identical, and PLATYPUS_PASSES=1 runs pass 1 only) + cg26f = cg26e + JEPA HARD NEGATIVES (the dream selector is also trained to pick the linked partner among up to 4 stored sentences sharing a rare name with the cue, a contrastive term beside the JEPA loss; readout: held-out choice among name-sharing sentences, JEPA against TF-IDF on names) + CLS READOUTS (TEMPORAL GRADIENT: two-hop with the store off and on, grouped by how many visits ago each conclusion was first replayed; STORE HANDOVER: conclusions answered from the weights alone at two sleeps running, and whether earlier ones still are; nothing is released) + answered readouts off (latent consolidation try, shadow JEPA, latent cortex matcher) + cg26e = cg26d + DREAMS ON REVISITS (on pass 2+ the conduit writes the domain as verified replay windows, so cg26b found no plain-text cues and skipped splicing; revisit cues now include the verified-replay sentences of the visit, identical-sentence pairs are dropped, and a REVISIT line reports what the visit wrote) + cg26d = cg26c + GPU MEMORY CARE (restore-only weight snapshots of the sleep brake, readouts, isotropy and ceiling tests kept in CPU memory; GPU cache released after each sleep and after the end-of-run tests; a GPU MEMORY line per sleep with peak and reserved memory; the long ceiling test trains all weights again on the GPU - its size limit now applies only on CPU) + cg26c = cg26b + NAME-INDEXED REM DREAMS (remote sentences sharing a rare name with a cue join the cortical traces when the trunk predicts them as well as the median familiar sentence; cortex-jepa-name: the JEPA ranks only name-sharing traces; NREM and REM dreams are both JEPA choices within the name index - whole-store jepa matched random in cg26b) + cg26b = cg26 + MEASURABLE JEPA DREAMS (a third of the splice cues hold 2+ benchmark gold entities so their partners can be judged; a jepa-name source where the JEPA ranks only candidates sharing a rare name with the cue; planted probe pairs capped at the real-text count in JEPA training, with a separate real-text held-out readout; replay dose capped at x0.0033 - x0.0099 was rolled back on every try in cg26) + cg26 = cg25 + JEPA DREAM SELECTOR (an encoder head on frozen mean-pooled trunk codes (cg25 GPU pooling readout: next-span retrieval mean 0.17, middle block 0.16, salient 0.05), an EMA target head, a predictor and SIGReg, trained every sleep on linked views - verified premise pairs and recorded facts that chain through a shared entity - with a held-out partner-retrieval readout; it proposes NREM splice partners (jepa) and REM cortical traces (cortex-jepa), judged by the same both-ways test and dreamed under the same brake and protection; JEPA DREAMS ARE THE DEFAULT - only its choices are dreamed; PLATYPUS_DREAMS=both / random / 0 for the other modes) + REM TRACES FROM FAMILIAR REMOTE SENTENCES ONLY (cg25 GPU: dream-bank generations stay garbled, yet 5 of 6 accepted REM pairs were such traces) + NAME-INDEXED CANDIDATE POOL (splice candidates start from stored sentences that share a rare name with a cue; cg25 GPU: with 1500 random candidates only 1 of 32 cues found one); cg25 = cg24 + SHARED NAME (a splice candidate must share a rare name word with its cue; cg24 GPU: the hybrid paired sentences of the same genre - two biographies, a chess result and a birth date - not about the same thing, and the both-ways test passes such pairs because same-genre text predicts itself) + REM WITH COHERENT TRACES (cortical traces from BOTH the dream bank and familiar remote store sentences, tagged apart; GPU dream-bank traces were garbled) + LATENT CORTEX MATCHER (cue -> trunk code -> closed-form JEPA predictor -> nearest traces, scored beside the spectral matcher, never dreamed) + trace examples printed + LONG CEILING WITHOUT CONFOUNDS (distractors are trained two-hop answers; in context a decoy fact names a second candidate) + POOLING CHOICES judged by next-span retrieval + latent readouts every second sleep + splice step wrapped against failure; cg24 = cg23 + DOSE MAY CLIMB TO x0.01 (cg23 GPU visit 3: protected replay at x0.0033 KEPT at the first try with old domains +0.012, against +0.042 and a rollback for plain replay at the same dose and visit in cg22 - about 70 pct less damage - but two-hop did not move at that dose, and the adaptive dose was capped at its starting rate) + SPLICE CANDIDATES OF 60+ BYTES (short fragments matched falsely) + TF-IDF NAMES EXCLUDE CAPITALISED COMMON WORDS (First, Mark, Category) + LATENT FITS LEAVE OUT THE TOP 3 DIRECTIONS (cg23 GPU next-span: top-10 removed 0.37 vs raw 0.27) + optional SIGReg sleep phase on the trunk (inf_iso, off); cg23 = cg22 + PROTECTED TRUNK REPLAY (each Adam update of a protected block matrix during sleep replay is whitened by the Fisher factors of the other domains - the preconditioner daytime Muon uses - and rescaled to the same norm, so the step avoids what old domains rely on; cg21c GPU: plain-Adam replay bought two-hop at a fixed price in forgetting, x0.03 0.07 -> 0.40 for +0.158 old-domain BPC, x0.01 0.20 for +0.064, x0.0033 0.13 for +0.022) + ADAPTIVE DOSE (each sleep starts at the last kept rate, one notch higher if that one was kept at the first try) + LONG CEILING TEST on the GPU (entity graph, in-distribution vs out-of-distribution composition, AdamW, 2000 steps with a learning curve, weights and in context) + LATENT FITS IN THE TOP 64 PRINCIPAL DIRECTIONS (cg22 GPU: codes 1088 wide but effective rank 5.1; the full-width closed-form predictor overfit its 128 pairs - next-span top-1 0.01 vs 0.18 with no predictor) + CORRECTED GEOMETRY readout (effective rank after centring, removing the top 1 / 3 directions, per-dimension standardising; salient pooling; middle block) and next-span retrieval with no predictor under each correction - is the information there but hidden, or missing? + TF-IDF ON NAME WORDS ONLY (capitalised alphabetic words of 4+ letters; cg22 GPU: the hybrid matched shared years and citation surnames, e.g. a cond-mat reference with a bishop named in 2006) + CHANCE BAR AT THE 97TH PERCENTILE (cg22 GPU at the 99th: the bar, set by one or two random pairs, rose to 3.3-5.3 bits and passed only 1 of 15 known links) + SIGReg weight 1.0 in the shadow JEPA (0.1 left its code at rank 5.7-10 of 128) + dream-row counter fixed across retries; cg22 = cg21c + HYBRID PROPOSER (splice partners by TF-IDF cosine + 0.5 x spectral, both standardised; offline Re-DocRED chain premises 405-411 of 6000 vs spectral 376-377, TF-IDF 339-359, random 2-3; cg21b GPU: spectral alone proposed unrelated cross-domain pairs) + CUES WITH A NAME (75 pct of cues hold a rare capitalised word) + LATENT PROPOSER SCORED (closed-form JEPA partners go through the same test, never dreamed) + REAL-TEXT BENCHMARK EMBEDDED (Re-DocRED, planted in pass 1, related pairs scored on gold relations) + LATENT (JEPA) READOUTS, none of which changes the model: VIEWS (closed-form predictor fitted on verified premises, accepted splices, random same-domain pairs and neighbouring sentences), GEOMETRY (effective rank and drift - linear CKA, Procrustes residual - of 256 fixed passages across sleeps), NEXT-SPAN predictability (first half of a window to its second half in latent space), SHADOW JEPA (trainable head + EMA target + predictor + SIGReg on frozen trunk codes, continual across sleeps), LATENT CONSOLIDATION tried on a copy of the weights and restored (trunk taught the linear JEPA relation on verified links: latent link, two-hop from the weights and BPC cost) + TRUNK REPLAY STARTS AT x0.0033 (cg21c GPU visit 2: x0.03 old domains +0.41 rolled back, x0.01 +0.051 rolled back, x0.0033 KEPT with old domains -0.027 and two-hop from the weights 0.00 -> 0.25; retries go on down to x0.0011 and x0.00037) + STRICTER CHANCE BAR (99th percentile of random pairs; cg21c accepted chance-level junk at the 95th) + CEILING TEST at the end (local, 400 steps: memorised but did not compose - too short to judge) + chunked latent embeddings (bounded memory); cg21c = cg21b + DOSE RETRY (a trunk replay that the brake rolls back is retried from the same snapshot at a third of the rate, up to twice: x0.03, x0.01, x0.0033; cg21b GPU pass 1: x0.03 rolled back 10/10 with old domains +0.11 to +0.23, although two-hop from the weights on replayed conclusions rose within each sleep, e.g. 0.12 -> 0.38) + MINIMUM POOL 16 (no trunk replay while conclusions + dream pairs are fewer) + LATENT JEPA PROBE (readout only, no training: the closed-form whitened linear JEPA predictor is fitted on the trunk embeddings of verified premise pairs, then two-step latent retrieval on 48 brand-new chains A-B, B-C, C-D among real distractors - does A-B lead to B-C and then to C-D, which shares no name with A-B?) + end-of-run CEILING TEST and longer-window schema test options (off); cg21b = cg21 + FIX: the dream preset now sets inf_cons=both over the default run options and the trunk replay has its own conclusion share inf_cons_mix=0.25 (the fast store keeps 0.5) (the cg21 GPU run kept inf_cons=mem from them, so no dream reached the weights - only the fast store); cg21 = cg20z + DREAMS (PLATYPUS_DREAMS=both by default): NREM-like splices of stored sentences proposed by closed-form JEPA (spectral) word codes and REM-like splices of a stored cue with dream-bank traces generated by the trunk (band + orthogonal selection), each accepted only if both passages make the other cheaper to predict than 3 random same-domain sentences (shared rare words count, bar = 95th percentile of random pairs, positive control logged), dreamed as attended spans at 0.03x lr, 60 steps, anchor-heavy, brake 0.03 (local: dream arms kept every sleep, final BPC 1.964 vs 1.984, forgetting -0.004 vs +0.013); cg20z = cg20y + ROUTING: NO RULE MAY PICK THE SLOT TRAINED AT THE LAST VISIT (cg20y GPU: visits 14 and 22, the only times the choice equalled the last slot, were both wrong) + STAGING v2 ON (a conclusion is committed only when its premises are READ AGAIN: evidence fades with its links and the bar is 0.35 x the cost of naming the pair; local: pool 85-97 pct planted-true vs 70-77 pct, recall 55 of 58 vs 56) + real-text options built in but off (salience, symmetry with a repeat floor, mutual compression, bridge-free mixing) + REAL-TEXT BENCHMARK readout option (all default off); cg20y = cg20x + CONSOLIDATION AT 0.01x LR AND 50 STEPS (private-into-shared; 0.3x was rolled back in every GPU phase; locally 0.01x x 50 steps recovered 32-38 pct of the gap within the brake, 100 steps 11 pct, 200 steps 0) + DUAL PATHWAY RECALL readout (an overlapping link memory with spelling-aware codes learns beside the exact store; at the end two-hop questions with intact and damaged names are answered by exact recall, pattern completion and a RECOGNITION GATE: exact when the cue is a known name, completion otherwise; local: intact 1.00, damaged 0.44-0.69 vs 0.00) + ROUTING: drift clamped at zero (a slot that improved gets no bonus) and a STRONG PROTOTYPE rule (3x nearer than the next wins within 0.25 bits; replayed on the cg20x GPU routing log it fixes visit 16 and changes nothing else) + CLS PROBES at the end (lesion by age, partial cues, schema test) + REAL-TEXT CONCLUSIONS sample each sleep (non-probe conclusions with sources, for grading) + SLEEP TIMING + splice-and-appraise readout off; cg20x = cg20w + ONE-SCAN SALIENCE (links kept as one sparse weighted table W with decay and retraction; every two-step path scored at once as S = W W with log-count links and hub damping; new links promoted by gain x need) + GUMBEL REPLAY (store rows drawn in proportion to priority in one pass) + RE-ENCOUNTER STRENGTHENING (a conclusion seen again gets its support recounted and is rehearsed) + ROUTING FIX (each slot gap is corrected for trunk drift measured on that slot own dream-bank rows; the old rule choice is logged; PLATYPUS_ROUTEFIX=0 restores it) + untested switch inf_cls_probe (CLS probes at the end of the run), off; cg20w = cg20v + FACTS PLANTED 30x PER PASS (was 6x: a visit reads only about 20 pct of the text of a domain and later passes are closed loop, so each fact was read about once and the seen-twice rule could never fire for most facts) + RULE-FREE ON BY DEFAULT (PLATYPUS_RULEFREE=0 runs the rules setup) + untested switches inf_conc_refresh (re-encounter strengthening) and inf_reader 3 (core relation + learned modifiers), both off; cg20v = cg20u + FIVE GPU-SCALE FIXES for rule-free mode (the cg20u GPU run: the sentence store filled at visit 7 and froze, 11 of 197 chains found): (1) ROLLING SENTENCE STORE (when full, the oldest 10 pct of sentences from earlier visits that no live fact or conclusion depends on are emptied) (2) SEEN-TWICE ACROSS VISITS (a fact read once in each of two visits is recorded) (3) BRIDGES WITH RECORDED FACTS FIRST (one-off rare words no longer use up the linking budget) (4) CUT FRAGMENTS DROPPED (sentences cut by the window edge are not stored) (5) POOL ROOM (the going-rate cut-off applies only when links compete for room; seed 1 lost 10 of 35 questions to it with the pool far from full) + TWO-HOP GAP and DISCOVERY DETAIL readouts on; cg20u = cg20t + THREE-HOP IN RULE-FREE MODE (a stored conclusion counts as well-supported evidence when it is chained again; local three-hop 0.00 -> 0.44-0.56, paraphrase two-hop 0.57 -> 0.74) + EVICTION FADE (conclusions pushed out of the pool are erased from the store; real false memories 10 -> 6) + readout fixes (the new chain of an updated fact is not a false memory) + diagnostics (TWO-HOP GAP, DISCOVERY DETAIL, FALSE-MEMORY) + untested switches inf_reader (MDL reader) and inf_prose (natural-prose probes), both off; cg20t = cg20s + RULE-FREE SWITCH (inf_rulefree 1, or environment PLATYPUS_RULEFREE=1: no relation list - entities and relations found from word statistics, links kept in a 1000-link pool that pays for itself, plus four store fixes from local tests: the FIRST stored word in a sentence holds the store bank (stable as counts drift; the rarest-word bank collapsed two-hop recall mid-run), the bank closes 10 words after it opens, a fact must recur at least twice in a visit to be recorded, and both source facts of a conclusion must recur before it is written; separate write budgets for conclusions and NREM fact replay; local tests: two-hop 0.77 with every backed answer right, changed facts two-hop 1.00, store cost +0.008 BPC, forgetting -0.018) + diagnostics inf_fm_debug, inf_gap_debug; cg20s = cg20r + FOUR GPU FIXES: (1) belief revision at GPU exposure (recency rule needs 2 repeats, not 3; facts are seen 1-2 times) (2) identifier memory 4096 dimensions (1024 overloaded with 3000 facts) (3) RULE LAYER for paraphrase: rules phrase p => phrase q proposed from the fact records, kept only if they save bits on held-out evidence and reach half the going rate, applied when confident (derived facts replayed into the store; question-time paraphrases rewritten), with PARAPHRASE PROBES (facts stated in either or both wordings, competing relations per subject) and a PARAPHRASED one-hop readout (4) CONSOLIDATION BRAKE (a private-into-shared phase that makes old domains or its own domain worse by more than 0.005 BPC is rolled back) + IDENTIFIER MEMORY readout; cg20r = cg20q + FIX: NREM fact replay skips facts the grounding audit superseded (cg20q kept writing the old fact back into the store, so updated facts stayed stale); cg20q = cg20p + STRICT STORE GATE 3.0 (a store correction applies only where its largest logit is at least 3; cut the store cost about 60 pct locally with no recall loss) + RECENCY RULE IN THE GROUNDING AUDIT (for a single-valued relation the most recently stated object wins if it is repeated, at least a quarter of the old count; the old ratio rule left near-ties unresolved forever) + CASCADING RETRACTION (conclusions built on a retracted conclusion are retracted too) + REVISION EVIDENCE readout + MULTI-HOP QUESTION-TIME readout (depth 2 to 5, working memory and identifier lookups, decoys, paraphrased questions, competing relations); cg20p = cg20o + DRIFT-FREE STORE KEY (fixed random code of the last 8 bytes picks the units, the name picks the bank; no trunk features) + NREM FACT REPLAY (each visit up to 3000 one-hop facts, ranked by length over spread, written into the store) + REM LINKING WRITTEN (bridge recalled from the store, bridge-specific check, grounded in recorded facts, any grounded candidate; fixed lookup domain) + QUESTION-TIME CHAINING WITH A WORKING MEMORY readout (prompt facts written into a scratch store, two lookups, new chains and decoys) - skill transfer removed; cg20o = cg20n + SPLICE-AND-APPRAISE readout (true links vs false recombinations: raw confidence, specificity, path check by two own lookups, store lookups, oracle bridge) + SHADOW REM RECOMBINATION after the store writes (bridge recalled from memory, bridge-specific check, grounded in recorded facts; counted only, nothing written); cg20n = cg20m + GENTLE SKILL TRANSFER (worked examples from verified conclusions, lr x0.01, BPC brake; every second chain held out) + SHARPER IN-CONTEXT TEST (distractor fact last, both orders, in-context names as candidates, broken-bridge decoy); cg20m = cg20l + STORE MAINTENANCE (rewrite stored conclusions no longer recalled as the trunk drifts) + GROUNDING AUDIT with changing facts (30 pct of two-hop chains change in pass 2); cg20l = cg20k with the n-gram sparse-gradient FIX (cg19 bug: consolidation accumulated them -> GPU crash) and exposure-first store writes (rare-links-first starved probe conclusions); cg20k = cg20j + ANSWER-OR-ABSTAIN and SHOW-SOURCES readouts + calibration; cg20j = cg20i + guarded fast-store indexing (fix for the cuda illegal-address crash) + RARE LINKS FIRST in store writes + probe names with q/x/z; OFFLINE INFERENCE IN SLEEP (rarest bridges first, budget 2000, strict names: no non-ASCII neighbours, no capitalised common words; one-hop source facts ADDED to the store conclusion writes; unconsolidated conclusions written first; do-no-harm anchors aimed at text with stored names; in-context chaining probes), conclusions consolidated into a NAME-INDEXED FAST STORE (sparse delta-rule logit corrector, weights untouched; inf_cons w restores weight consolidation) (150 planted probe chains, sentence store of real/VERIFIED bytes, bridge-centred chaining with hub abstention, typed conclusions, three-hop via stored conclusions, conclusions consolidated alone into kept verified windows) | cg19: cg17e + PRIVATE-INTO-SHARED CONSOLIDATION on verified windows after every closed-loop visit (100 steps, 0.3x lr, 25% old-domain anchors) + TRACE-LEVEL RETIREMENT (KL < 0.25 x start) + CAPACITY CAP 128 windows per domain + TRACE LESION of Wikipedia and USPTO in pass 3 | '+NAME+' | overrides '+_OVR
     print(f"\n################ {NAME} | seed {cfg.seed} ################")
     r=run(cfg)
     print("\n==================== SUMMARY ====================")
