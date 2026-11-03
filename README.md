@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26k**.
+Current build: **cg26l**.
 
 ---
 
@@ -49,7 +49,7 @@ Platypus targets four long-standing problems with language models:
 - **Two recall pathways, as in the hippocampus.** Beside the exact store, an overlapping link memory with spelling-aware codes completes damaged cues. A recognition gate uses exact recall when the cue is a known name and pattern completion when it is not.
 - **Dreams, judged by the model itself.** NREM-like dreams splice two stored sentences; REM-like dreams pair a recent memory (the cue) with a trace of older knowledge, chosen neither too close nor too far from the cue and different from each other. A dream is kept only if each half makes the other cheaper for the model to predict than random text does. A trained JEPA (LeJEPA objective, trained on the links the system verified, on what the dream judge accepts and on the measured outcome of earlier dreams) ranks the candidates from every source that shares a rare name with the cue, and one pair per cue is dreamed: 20–40% of these choices are about a gold-linked fact on Wikipedia-style text, against about 1% for random pairs.
 - **Systems consolidation into the weights.** Verified conclusions and accepted dreams are replayed into the trunk, with the update steered away from what old domains rely on (their Fisher factors), a brake that rolls back any harmful sleep, and a dose that retries lower and climbs back when it can.
-- **Handing memories over to the weights.** Each sleep the model tests every tracked conclusion with the fast memory switched off. One the weights answer on their own, with a margin, at consecutive sleeps is released: erased from the fast memory and kept in replay. If the weights then keep answering it, the record is deleted after a grace period, so the weights are its only copy. If they stop, it is written back. Once a learned model of forgetting predicts better than a constant rate, it can also time release (either rule releases). Replay is spaced, aimed at what the weights are losing, and lighter for memories that fit what the model already knows (a schema): on the GPU such memories pass the test without the fast memory three to five times as often as misfits, and every release so far has been one of them.
+- **Handing memories over to the weights.** Each sleep the model tests every tracked conclusion with the fast memory switched off. One the weights answer on their own, with a margin, at consecutive sleeps is released: erased from the fast memory and kept in replay. If the weights then keep answering it, the record is deleted after a grace period, so the weights are its only copy. If they stop, it is written back. Once a learned model of forgetting predicts better than a constant rate, it also releases the memories it predicts the weights are most likely to still hold at the next visit (either rule releases), and a deleted memory the weights lose again is reinstated: written back to the fast memory and to replay. Replay is spaced, aimed at what the weights are losing, and lighter for memories that fit what the model already knows (a schema): on the GPU such memories pass the test without the fast memory three to five times as often as misfits, and every release so far has been one of them.
 - **Consolidation of shared structure.** After closed-loop visits, what a domain's private units learned is distilled into the shared weights, at a gentle rate and under a brake that rolls back any phase that harms old domains.
 - **An identifier memory for exact chains.** Verified facts are bound into a vector-symbolic memory, so multi-step chains need no round trip through text, and broken chains are declined.
 - **Rules that pay for themselves.** Equivalences between relation phrases ("answers to" and "reports to") are discovered from the text and kept only if they compress held-out evidence (minimum description length), so paraphrased questions can be answered.
@@ -94,12 +94,41 @@ The slow network learns general skill, and only from real text or verified repla
 | Forgetting as a model | Recall without the store, d visits after the last replay, is modelled as 2^(−d/h), with a half-life h learned from replays, their spacing and what the trunk already knows (half-life regression). It may time release only after it beats a constant rate on data it has not seen. |
 | Spaced, targeted replay | Replay rows are capped per memory per sleep, counted only when the replay is kept, and weighted towards memories the weights failed and away from those that fit a schema; anchor windows follow the damage each old domain took. |
 | Either rule releases | A calibrated model of forgetting may time release, but it does not switch off the fixed rule: on the GPU its half-lives (about 0.3 visits) never reached its 10-visit horizon, and releases had stopped. |
+| Release by relative predicted recall | With half-lives of a fraction of a visit, an absolute bar on predicted recall never fires. The model of forgetting ranks memories instead: those in the top quarter of predicted recall at the next visit, at least twice the median and at least 0.2, are released; if the model is degenerate it stays idle. |
+| Reinstate what fades | A deleted memory whose ghost fails the test without the fast memory at two sleeps running is written back, unless one of its sources has been superseded. Deletion can then be tried early without losing what the weights cannot hold. |
+| Relative replay by predicted forgetting | Replay weights follow each memory's predicted decay relative to the rest of the pool (×0.5 to ×2), since in absolute terms every memory is predicted to be lost and the weights were uniform. |
 | Sleep keyed by the routed slot | Sleep, the sentence store and the brakes see only what routing decided, never the true domain label, so the whole cycle stays label-free. |
 | Rest from replay | A random fifth of conclusions sits out each sleep's replay, so the model of forgetting sees what happens without it. |
 | Dreams that share a name | Cross-domain REM traces that share no rare name with the cue are not dreamed: in cg26i, which dreamed them, a revisit damaged an old domain. |
 | Name index first, JEPA second | Searching the whole store, the JEPA picks same-genre text. Restricting candidates to memories that share a rare name with the cue brings recall; the JEPA then ranks them, and is trained against those same name-sharing alternatives (hard negatives). |
 
 ## Results
+
+**Releasing by predicted recall, and reinstating what fades (cg26l, ten Pile domains, seed 1).** The cg26l GPU run, to visit 14 of 30:
+
+| | cg26l | cg26k |
+|---|---|---|
+| Pass 1 | mean BPC 1.733, forgetting +0.009 | 1.739 / +0.006 |
+| Routing | 14 of 14 | 14 of 14 |
+| Model of forgetting | beats a constant rate at visit 13 | visit 14 |
+| Release by predicted recall | 13 and 12 memories marked at visits 13 and 14 (top quarter of the pool, bar 0.58–0.60) | 0 (the absolute 10-visit rule never fires) |
+| Memories released by visit 14 | 15 (cg26k 6); right after release they answer without the fast memory half of the time, close to the 0.58 the model predicted | 6 |
+| Deleted memories | both failed at visit 13, as in cg26k; one failed again at visit 14 and was **reinstated**, the other recovered | both faded and were lost |
+| Old domains at visit 14 | 1.655 | 1.653 |
+| Pass-2 Wikipedia revisit, old domains before sleep | 1.683 (the EuroParl guard holds) | 1.689 |
+| Schema effect | every release (25) is a memory the trunk already predicts well; such memories pass the test without the fast memory 0.23 of the time, misfits 0.03 | same pattern |
+
+**Changed facts are learned once they are seen again.** On the GPU (cg26e, a full pass 2), facts that change in pass 2 are answered correctly once their domain has been revisited: with the fast memory, updated one-hop and two-hop recall rise from 0.00 at visit 10 to 1.00 at visit 20, and the old answer is preferred 0.00 of the time; from the weights alone updated one-hop is 0.55, the same as ordinary facts (0.57). Readings taken mid-way through pass 2 looked stale only because most changed facts had not been revisited yet (the lab readout now scores them only after a revisit).
+
+**Local tests since cg26k** (five-domain harness, seed noise about 0.017 BPC; mean forgetting / final BPC, cg26k −0.018 / 2.074):
+
+| Test | Result |
+|---|---|
+| More JEPA training pairs (entity-sharing facts, weighted planted pairs) | 2.7× the pairs, held-out separation d′ 1.79 against 0.84 at the same sleep; −0.011 / 2.075. The selector is data-limited, as the analysis predicted; better selection did not move forgetting or BPC locally |
+| Closed-form (MEMIT-style) consolidation, applied for real | two-hop from the weights 0.00 → 0.26, three-hop 0.11, but +0.013 / 2.119. A sweep traced the cost to keys dominated by the sentence template (87% of their energy in the directions ordinary text uses, at width 512); a null-space projection cut the cost 2.6× for 0.65× the recall |
+| Platonic dream selection (dreams scored by whether their update moves linked passages towards a shared representation) | about 60% of dreams do; choosing by it gave a small, noisy edge in alignment that faded over four sleeps; −0.013 / 2.081 |
+| REM analogy dreams in the JEPA space | analogies are found in the trunk's own space (0.58–0.77) and by shared words, not in the JEPA space (0.11–0.40); −0.008 / 2.067 |
+| REM self-exam, LLM-JEPA term in replay | neutral (−0.014 / 2.078; −0.017 / 2.079) |
 
 **A JEPA selector that learns, and schema-fast consolidation (cg26i–cg26k, ten Pile domains, seed 1).** The cg26k GPU run has finished pass 1:
 
@@ -261,10 +290,10 @@ Platypus is a single Python script designed to run on one GPU (for example in Go
 
 ```bash
 pip install torch datasets scipy
-python threshold_lean_stagec9_7cg26k_conduit.py
+python threshold_lean_stagec9_7cg26l_conduit.py
 ```
 
-In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg26k_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
+In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg26l_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
 
 A full run streams ten domains over three passes and takes about four to five hours on a single modern GPU.
 
@@ -274,7 +303,7 @@ Options are set through the `LAB_OVR` environment variable as JSON, on top of th
 
 ```bash
 LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "seed": 1}' \
-  python threshold_lean_stagec9_7cg26k_conduit.py
+  python threshold_lean_stagec9_7cg26l_conduit.py
 ```
 
 Environment switches:
@@ -326,7 +355,9 @@ Useful options:
 | `inf_jepa_probe`, `inf_jepa_geom`, `inf_jepa_next`, `inf_jepa_shadow`, `inf_jepa_consol`, `inf_jepa_every` | Latent readouts (no effect on training) and how often they run |
 | `inf_bench`, `inf_ceiling`, `inf_ceiling2` | Re-DocRED real-text benchmark (`embedded` in the GPU file); composition ceiling tests |
 | `inf_sleep_inferred` | Sleep, store and brakes keyed by the routed slot (on) |
-| `inf_cons_rest`, `inf_cons_hlsched` | Share of conclusions resting from each sleep's replay (0.2); replay by predicted forgetting once the decay model is calibrated |
+| `inf_cons_rest`, `inf_cons_hlsched` | Share of conclusions resting from each sleep's replay (0.2); replay by predicted forgetting once the decay model is calibrated (2 = relative to the pool, the default) |
+| `inf_release_pnext_q`, `inf_release_pnext_min` | Release by relative predicted recall: the top share of the pool (0.25) and the lowest predicted recall allowed (0.2) |
+| `inf_ghost_reinstate` | A deleted memory whose ghost fails this many tests running is written back (2) |
 | `inf_evict_clean`, `inf_schema_speed` | Evicted sentences leave the evidence record; schema-speed readout |
 | `inf_jd_obj`, `inf_jd_lambda`, `inf_jd_sigreg_mode` | JEPA objective (`lejepa` or `hybrid`), SIGReg weight, SIGReg as LeJEPA defines it |
 | `inf_jd_statm`, `inf_jd_es`, `inf_jd_es_tol`, `inf_jd_wd` | Running input statistics; early stopping and its tolerance; weight decay |
@@ -361,7 +392,8 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 - **GPU MEMORY**: peak during the visit and the sleep, reserved, device total
 - **MEMORY LEDGER**: GPU and CPU tensor bytes by owner, with the change since the last sleep, and counts of every growing sleep structure
 - **CLS | RELEASE** and **CLS | DELETED**: conclusions released, restored and deleted; ghosts of deleted conclusions still answered from the weights, by visits since deletion
-- **CLS | RELEASE TIMING** and **DECAY MODEL**: which rule decides release; the fitted half-life and its out-of-sample score against a constant rate
+- **CLS | RELEASE TIMING** and **DECAY MODEL**: which rule decides release, and how many memories were marked by predicted recall and the bar used; the fitted half-life and its out-of-sample score against a constant rate
+- **REINSTATED** (on the CLS | DELETED line): deleted memories written back after their ghosts failed, and those dropped because a source was superseded
 - **SPACED REPLAY**, **REPLAY BY NEED**: rows per conclusion and kept replays; sampling weights by the last test and schema fit
 - **MIXING | SEQUENCE CAP**: accepted sequence pairs and how many were dreamed
 - **SLEEP KEYED BY SLOT**: the slot each sleep works on and the other slots it protects
@@ -381,10 +413,11 @@ Known limits:
 - Pronouns, descriptions and nested clauses are not resolved, so chains through "he" or "she" are not found.
 - Consolidation into the weights works at full size but slowly: replay at doses the brake accepts adds only a little two-hop recall per sleep, though what it adds survives later training. Protection against forgetting during replay is not yet reliable from one visit to the next, and the small local model shows no transfer at all.
 - The JEPA selector now learns (cg26k), but it is data-limited: about 390 linked pairs for an effective input of about 128 dimensions. TF-IDF on names still picks the right partner among name-sharing sentences more often, and among the 1,500 candidates of `jepa-wide` the JEPA is right only about 7% of the time.
-- The model of forgetting fits half-lives of only 0.3–0.5 visits, so its release timing rarely fires; cg26k keeps the fixed rule beside it. Deleted memories are still recalled from the weights a few visits later, but in cg26i both such memories had faded by visit 13.
-- A pass-2 revisit in cg26i damaged one old domain (EuroParl) before sleep repaired it; the suspected cause is guarded against in cg26k but not yet confirmed.
+- The model of forgetting fits half-lives of only 0.2–0.5 visits. cg26l therefore releases by predicted recall relative to the pool; memories released this way answer without the fast memory only about half the time afterwards, as the model predicts, and depend on the restore path. Deleted memories fade from the weights after about four visits; cg26l reinstates them, but whether reinstated memories recover is not yet known.
+- A pass-2 revisit in cg26i damaged one old domain (EuroParl) before sleep repaired it; with the guard (cg26k, cg26l) the same revisit leaves the old domains at 1.68–1.69.
 - Dreams chosen by the JEPA are far more often related than random ones, but they are not yet shown to give more two-hop recall or less forgetting than random dreams; the control run (`PLATYPUS_DREAMS=random` beside the default) is pending.
-- Under local test, not yet in a GPU build: a REM self-exam of the weights, REM analogy dreams, more and better training pairs for the JEPA, an LLM-JEPA term in replay, and closed-form (MEMIT-style) consolidation, which in a first test raised two-hop recall from the weights on edited conclusions from 0.09 to 0.50 for +0.026 BPC.
+- In the GPU file but off, or in the lab only: a REM self-exam of the weights, REM analogy dreams, more training pairs for the JEPA, an LLM-JEPA term in replay, platonic dream selection, and closed-form (MEMIT-style) consolidation (local: two-hop from the weights 0.00 → 0.26 for +0.031 forgetting; the cost comes from template-dominated keys and is expected to be lower at GPU width). In the lab only: cue repair (a misspelt, truncated or lower-cased name is mapped to the stored name it most plausibly is; under local test) and the changed-fact readout fix.
+- Damaged names: the fast memory is keyed by exact names, so two-hop recall falls from 1.00 to about 0 when the subject is misspelt, and the overlapping link memory was at chance on the GPU.
 - At the replay dose the brake accepts (×0.0033), later sleeps no longer raise two-hop recall measurably, and transfer kept from earlier sleeps decays in some visits.
 - The trunk's passage codes are strongly anisotropic; latent readouts and the JEPA head work around this, but the trunk itself is unchanged.
 - Forgetting at full size rises in later passes, and routing confuses the most similar domains.
@@ -393,7 +426,7 @@ Known limits:
 ## Roadmap
 
 1. **Dreams that beat random.** Run the JEPA dreams against random-dream and no-replay controls on the same build; show that related dreams give more lasting two-hop recall in the weights. Give the JEPA more linked pairs and a smaller input, so it can pick partners among the whole store.
-2. **Free the fast store.** Release, deletion, ghosts and decay-model timing are in (cg26g–cg26k). Next, reinstate deleted memories that fade from the weights, release on predicted recall rather than a long half-life, and hand over stored facts as well as conclusions.
+2. **Free the fast store.** Release, deletion, ghosts, decay-model timing, release by predicted recall and reinstatement are in (cg26g–cg26l). Next, show that reinstated memories recover, tune how many memories are released at once, and hand over stored facts as well as conclusions.
 3. **Faster consolidation.** Test closed-form (MEMIT-style) writes of verified conclusions into the weights under the brake, against replay: whether they last, and what they cost over many sleeps.
 4. **Real text.** Measure the precision of conclusions drawn from real text, and test on multi-hop question sets and MQuAKE for multi-step edits.
 5. **Consolidating structure.** Move relation regularities (which relations chain, which are single-valued, paraphrase rules) into the weights, and show they become independent of the store over time.
