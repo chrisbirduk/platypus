@@ -1,0 +1,13 @@
+# BuildKit reads <Dockerfile>.dockerignore beside the Dockerfile, so this applies to docker/Dockerfile.
+# Keep data, results and anything secret out of the image.
+runs/
+pile_cache/
+releases/
+*.ckpt
+*.log
+.env
+.env.*
+!env/.env.example
+.git/
+__pycache__/
+*.ipynb_checkpoints

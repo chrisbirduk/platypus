@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Platypus run manifest",
+  "description": "Written by scripts/run_gpu.sh beside every run log.",
+  "type": "object",
+  "required": ["build", "build_sha256", "preset", "seed", "switches", "lab_ovr", "started_utc"],
+  "properties": {
+    "build": {"type": "string", "description": "build file name"},
+    "build_sha256": {"type": "string"},
+    "preset": {"type": "string"},
+    "preset_sha256": {"type": "string"},
+    "controls": {"type": "array", "items": {"type": "object", "properties": {"file": {"type": "string"}, "sha256": {"type": "string"}}}},
+    "seed": {"type": "integer"},
+    "switches": {"type": "object", "description": "PLATYPUS_* and related environment switches", "additionalProperties": {"type": "string"}},
+    "lab_ovr": {"type": "object", "description": "the merged option overrides the build ran with"},
+    "git_commit": {"type": ["string", "null"]},
+    "git_dirty": {"type": "boolean"},
+    "gpu": {"type": "object"},
+    "host": {"type": "string"},
+    "started_utc": {"type": "string"},
+    "finished_utc": {"type": "string"},
+    "wall_seconds": {"type": "integer"},
+    "exit_status": {"type": "integer"}
+  }
+}

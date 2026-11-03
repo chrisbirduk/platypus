@@ -1,0 +1,9 @@
+# GPU runs (Colab or a cloud machine with CUDA).
+# On Colab, torch is preinstalled with the right CUDA build: do not reinstall it.
+torch>=2.4
+numpy>=1.26
+datasets>=2.19          # streams monology/pile-uncopyrighted by domain
+# Optional Triton kernels for the gated delta-rule mixer. The build installs
+# these itself when FLA_AUTO_INSTALL=1; listed here for container builds.
+fla-core
+einops

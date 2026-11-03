@@ -1,0 +1,10 @@
+{
+  "_comment": "The cg26n options as overrides, for applying them to the cg26m build. In the cg26n build they are already the defaults (see cg26n.env). Keys starting with _ are ignored by scripts/merge_overrides.py.",
+  "inf_cf_maxgrow": 1.5,
+  "_inf_cf_maxgrow": "growth cap: accumulated edits kept within 1.5x the norm of the unedited matrix (local: final BPC 2.079 vs 2.104 uncapped, 2.073 without edits)",
+  "inf_cf_min_others": 16,
+  "_inf_cf_min_others": "the edit batch shrinks so 16 live conclusions are kept back to centre the keys on; no edit below 8 + 16 live conclusions (GPU cg26m rolled back edits at visits 3-4 at +5.9 and +7.9 BPC)",
+  "inf_sleep_adapt": 1,
+  "inf_sleep_cycles_max": 6,
+  "_inf_sleep_adapt": "adaptive sleep: NREM ends at write convergence, REM cycles end at closure or falling yield, at most 6 (local: -0.014 / 2.068 vs -0.012 / 2.073, REM conclusions 36 vs 25, run time -17%)"
+}
