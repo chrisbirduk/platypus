@@ -1,0 +1,3 @@
+  [inference temporal gradient | END OF RUN] two-hop recall FROM THE WEIGHTS ALONE (store off) by conclusion age (split at visit 5): OLDER half 0.27 (n 15) | RECENT half 0.11 (n 18) | CLS predicts OLDER > RECENT once transfer works
+MEAN FORGETTING: -0.008 | MEAN FINAL BPC: 2.079
+WALL 3488s

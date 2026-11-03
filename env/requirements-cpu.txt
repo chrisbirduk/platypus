@@ -1,0 +1,5 @@
+# Local CPU harness and CI. Install torch from the CPU index:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.4
+numpy>=1.26
+datasets>=2.19

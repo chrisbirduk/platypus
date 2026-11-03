@@ -1,0 +1,51 @@
+# Copy to .github/workflows/ci.yml in the repository.
+#
+# Runs on every push and pull request, on CPU only:
+#   1. every build file compiles and its NAME strings have no apostrophes
+#   2. secret scan of the whole repository
+#   3. tests for the deployment scripts (readout extraction on real log excerpts)
+#   4. (after the package split) a tiny CPU smoke run and the equivalence check
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile builds and check NAME strings
+        run: |
+          shopt -s nullglob
+          for f in platypus_test.py threshold_lean_stagec9_7*_conduit.py; do
+            python -m py_compile "$f"
+            python - "$f" <<'PY'
+          import ast, sys
+          t = ast.parse(open(sys.argv[1], encoding="utf-8").read())
+          bad = [n.lineno for n in ast.walk(t) if isinstance(n, ast.Assign)
+                 and any(isinstance(x, ast.Name) and x.id == "NAME" for x in n.targets)
+                 and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str) and "'" in n.value.value]
+          sys.exit(f"{sys.argv[1]}: apostrophe in NAME at {bad}" if bad else 0)
+          PY
+          done
+
+      - name: Secret scan
+        run: python scripts/scan_secrets.py .
+
+      - name: Deployment script tests
+        run: python -m unittest discover -s tests -v
+
+      # Enable once the package exists (refactor step 3) and a 1-domain CPU preset is defined.
+      # - name: CPU smoke run
+      #   run: |
+      #     pip install torch --index-url https://download.pytorch.org/whl/cpu
+      #     pip install -r env/requirements-cpu.txt
+      #     python -m platypus --preset smoke_cpu --max-visits 1
