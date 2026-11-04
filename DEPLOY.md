@@ -11,11 +11,11 @@ Copyright Christian Bird. Apache 2.0.
 
 ```
 (repository root)
-  platypus_test.py    the current build (cg26o on this branch)
+  platypus_test.py    the current build (cg26p on this branch)
   README.md           the project README
   DEPLOY.md           this file
   configs/            what a run is: switches and option overrides
-    presets/          one file per build preset (cg26m, cg26n, cg26o ...)
+    presets/          one file per build preset (cg26m, cg26n, cg26o, cg26p ...)
     controls/         the control runs (random dreams, no replay, edits off)
     local/            the five-domain CPU harness
   env/                Python requirements and the names of environment variables
@@ -52,9 +52,9 @@ the first cell, run all. The log and manifest are saved to Drive.
 GPU, on a cloud machine with Docker:
 
 ```
-docker build -f docker/Dockerfile -t platypus:cg26o .
+docker build -f docker/Dockerfile -t platypus:cg26p .
 docker run --gpus all -v $PWD/runs:/work/runs -v $PWD/pile_cache:/work/pile_cache \
-    platypus:cg26o platypus_test.py configs/presets/cg26o.env 1
+    platypus:cg26p platypus_test.py configs/presets/cg26p.env 1
 ```
 
 Summarise a log (the readouts that decide whether a build is kept):
