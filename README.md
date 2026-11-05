@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26o**.
+Current build: **cg26p**.
 
 ---
 
@@ -18,6 +18,7 @@ Current build: **cg26o**.
 - [Results](#results)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Code layout](#code-layout)
 - [Reading the logs](#reading-the-logs)
 - [Project status](#project-status)
 - [Roadmap](#roadmap)
@@ -107,6 +108,19 @@ The slow network learns general skill, and only from real text or verified repla
 | Name index first, JEPA second | Searching the whole store, the JEPA picks same-genre text. Restricting candidates to memories that share a rare name with the cue brings recall; the JEPA then ranks them, and is trained against those same name-sharing alternatives (hard negatives). |
 
 ## Results
+
+**Re-keying every edit every sleep (cg26p, local five-domain harness).** On the GPU, cg26o showed why weight edits fade: the layers below the edited matrix keep learning, so the key a question produces drifts away from the key the edit was aimed at (key cosine about 0.75 after one visit, about 0.4 after four or more). Refreshing 8 conclusions per edit could not keep up with over 160 edited conclusions. cg26p re-solves every edited conclusion, live or released, with its current key in one closed-form solve at every sleep:
+
+| End of run | cg26p | cg26o |
+|---|---|---|
+| Mean forgetting / final BPC | −0.004 / 2.081 | −0.009 / 2.077 |
+| Two-hop from the weights alone (typed wording) | 0.43 (**0.43**) | 0.49 (0.31) |
+| Older vs recent conclusions, weights alone | 0.73 vs **0.40** | 0.67 vs 0.16 |
+| Two-hop with the fast store / asked by description | 0.97 / 0.81 | 0.91 / 0.88 |
+| Edits kept (rolled back), old-domain cost | 6 (0), +0.0050 of the 0.05 budget | 6 (0), about +0.005 |
+| REM conclusions (none wrong) / run time | 41 / 3995 s | 31 / 3696 s |
+
+Every edited conclusion is now at most one visit from its last fit (the decay diagnostic shows 0.96 of each signal left at the end). cg26p also releases a memory only if the weights answer it in one of two other wordings as well, and adds a LAYER DRIFT readout that shows which blocks move. Locally the keys barely drift (cosine 0.96–0.99 per block after four visits), so the benefit against drift is the GPU test. A key anchor in trunk replay is included but off: locally it halved key change during replay but cost +0.011 BPC with no benefit.
 
 **Refreshing older edits (cg26o, local five-domain harness, two seeds).** Each kept closed-form edit also re-fits the 8 least recently fitted earlier edited conclusions, so later edits and training refresh them instead of overwriting them:
 
@@ -364,7 +378,7 @@ The inference tests use templated facts about invented people. See [Project stat
 
 ## Getting started
 
-Platypus is a single Python script designed to run on one GPU (for example in Google Colab).
+Platypus is a Python package, `platypus/`, designed to run on one GPU (for example in Google Colab). It is the former single-file build split into modules with no change in behaviour (see [Code layout](#code-layout)); `scripts/export_single_file.py` writes it back out as one script for environments that take a single file.
 
 **Requirements**
 
@@ -378,10 +392,10 @@ Platypus is a single Python script designed to run on one GPU (for example in Go
 
 ```bash
 pip install torch datasets scipy
-python threshold_lean_stagec9_7cg26o_conduit.py
+python -m platypus                     # from the repository root
 ```
 
-In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg26o_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
+In Colab, use `colab/platypus_gpu.ipynb`: it clones the repository and runs `python -m platypus` through `scripts/run_gpu.sh`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
 
 A full run streams ten domains over three passes and takes about four to five hours on a single modern GPU.
 
@@ -393,8 +407,10 @@ Options are set through the `LAB_OVR` environment variable as JSON, on top of th
 
 ```bash
 LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "seed": 1}' \
-  python threshold_lean_stagec9_7cg26o_conduit.py
+  python -m platypus
 ```
+
+`LAB_OVR` replaces the default override set (`DEFAULT_LAB_OVR` in `platypus/presets.py`); `scripts/merge_overrides.py platypus my_overrides.json` merges a small override file onto the defaults instead.
 
 Environment switches:
 
@@ -453,6 +469,7 @@ Useful options:
 | `inf_cue_repair`, `inf_cue_repair_d` | Cue repair at question time, and the edit distance allowed (2) |
 | `inf_cf_apply`, `inf_cf_center`, `inf_cf_scale`, `inf_cf_brake`, `inf_cf_budget`, `inf_cf_n` | Closed-form edits: on, frame directions removed from the keys (1), strength (0.5), brake per edit (0.015 BPC), cumulative budget (0.05 BPC), conclusions per edit (32) |
 | `inf_cf_maxgrow`, `inf_cf_min_others`, `inf_cf_decay` | Closed-form edits: accumulated edits kept within this multiple of the unedited matrix (1.5); live conclusions kept back from each edit to centre the keys on (16); share of the accumulated edits taken back each sleep (0, off) |
+| `inf_cf_resolve`, `inf_release_strict`, `inf_cf_layerdrift`, `inf_key_anchor` | Re-solve every edited conclusion with its current key at every sleep (on in cg26p); release only if the weights also answer in this many other wordings (1 in cg26p); per-block drift readout (on); key anchor strength in trunk replay (off) |
 | `inf_cf_refresh`, `inf_cf_refresh_mode`, `inf_cf_diag` | Edit refresh: each kept edit re-fits this many earlier edited conclusions (8 in cg26o), the least recently fitted (`old`, default in cg26o) or the weakest of them (`weak`); the edit decay diagnostic (readout only, on in cg26o) |
 | `inf_sleep_adapt`, `inf_sleep_cycles_max` | Adaptive sleep: NREM ends when the store writes converge, REM cycles end at closure or when the predicted next cycle adds less than one conclusion (on); most REM cycles per sleep (6) |
 | `inf_jd_entpairs`, `inf_jd_plantw` | More JEPA training pairs: fact pairs sharing an entity (1000), planted pairs weighted against real text |
@@ -466,6 +483,61 @@ Useful options:
 | `inf_salience`, `inf_sym`, `inf_mutual`, `inf_iso` | Off by default, for experiments: salience, symmetry, mutual compression, SIGReg on the trunk |
 
 The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of the script.
+
+## Code layout
+
+The package keeps every function and option of the former single file, grouped by what it does. `python -m platypus` runs `platypus/__main__.py`, which reads the switches above, builds the run configuration from `presets.py` and calls `runner.run`.
+
+| Module | Lines | What it holds |
+|---|---:|---|
+| `common.py` | 18 | Shared imports, the device, and the helpers that keep module-level names consistent across modules. |
+| `config.py` | 760 | Config: every option with its default; the base domains and their difficulty. |
+| `gating.py` | 120 | Write gating: thresholds from impedance and importance, drive statistics, polarisation-gated writes with split weight gradients. |
+| `protection.py` | 591 | Weight protection: replay stiffness, projections, Kalman/Fisher factors, protected Muon, varpro head refits, probes. |
+| `private.py` | 176 | Per-domain private parts: masks, private trunk units, private n-gram tables. |
+| `slots.py` | 230 | Replay and stream sources, slot scoring and slot (domain) inference. |
+| `layers.py` | 884 | Output heads and the delta-rule core: WY solve, chunked and blocked kernels, DeltaBlock. |
+| `capacity.py` | 132 | Dormant reserve, uniqueness-driven activation, per-domain weight deltas. |
+| `sampler.py` | 662 | Frozen teachers, stacked teacher pass and the recurrent dream sampler. |
+| `dream_bank.py` | 580 | Dream bank: teacher building, stream generation, bank refresh and dream batches. |
+| `ngrams.py` | 194 | Hashed n-gram embeddings and count features, the main optimiser and compilation. |
+| `model.py` | 169 | The Model. |
+| `meta.py` | 207 | Learned meta-controller, differentiable meta helpers and threshold gates. |
+| `diagnostics.py` | 322 | Topic identification, reconstruction and forgetting diagnostics. |
+| `importance.py` | 173 | Data-free input covariances, importance and revisit bookkeeping. |
+| `data.py` | 208 | Text data: Pile streaming with a disk cache, fact injection, loaders. |
+| `heads.py` | 126 | Inferred heads (domain not given at test time) and BPC evaluation. |
+| `train.py` | 1,238 | One visit of training (train_domain) and its step-level helpers. |
+| `orth.py` | 100 | Orthogonality diagnostics. |
+| `conduit.py` | 785 | Conduit dreams: replay rows, hints, CUDA-graph and slot-memory generation, NREM losses. |
+| `inference/store.py` | 177 | The fast store: name-indexed sparse logit corrector, and evaluation with it. |
+| `inference/units.py` | 348 | Rule-free units: the learned lexicon and the MDL reader. |
+| `inference/probes.py` | 232 | Planted probe chains, prose variants and the real-text benchmark. |
+| `inference/sentences.py` | 121 | The sentence store: adding, evicting, relations. |
+| `inference/links.py` | 104 | Link memory and cue repair. |
+| `inference/infer.py` | 742 | Offline inference: bridges, conclusions, staging and salience. |
+| `inference/evaluate.py` | 609 | Probe evaluation, CLS measurements and REM examination. |
+| `inference/ledger.py` | 58 | Memory ledger. |
+| `inference/decay.py` | 43 | Decay model of store-off recall. |
+| `inference/closed_form.py` | 390 | Closed-form edits of the last block MLP: layer states, drift, application. |
+| `inference/sleep.py` | 777 | Sleep: NREM, REM, store writes, replay into the trunk. |
+| `inference/readouts.py` | 432 | End-of-run readouts: dual pathway, CLS probes, ceiling, transfer. |
+| `inference/selftaught.py` | 197 | Self-taught inference: freeing, occlusion, attended-span splices, spectral word codes. |
+| `inference/mixing.py` | 472 | Mixing (splice) dreams: proposal, judging, dreaming. |
+| `inference/jepa.py` | 909 | JEPA dream selector and latent readouts. |
+| `inference/rem.py` | 235 | Greedy generation, self-inference, episodic fact records, the rule layer and REM recombination. |
+| `inference/qtime.py` | 265 | Question-time chaining with a working memory. |
+| `inference/audit.py` | 273 | Hypotheses, pruning, abstention and the grounding audit. |
+| `inference/need.py` | 248 | Store-off helpers, feature-need signals, sleep-only feature learning, private-into-shared consolidation. |
+| `losses.py` | 826 | Conduit losses, replay diagnostics, reconstruction fidelity and oracle readouts. |
+| `runner.py` | 486 | run(cfg): the whole continual-learning run. |
+| `profiling.py` | 24 | Named regions for the one-off GPU profile. |
+| `presets.py` | 175 | The run options of the GPU run (ALLPILE_CONFIG), the default overrides and the build name with its history. |
+| `__main__.py` | 64 | python -m platypus: the PLATYPUS_* switches, the banner, the run and its summary. |
+
+Names a module needs from a module that loads before it are imported at its top. A few names are needed only at run time from a module that loads after it (for example the training loop calling into sleep); each module lists those in a `_LATE` table, and `platypus/__init__.py` links them once every module is loaded. Module-level state that is rebound while running goes through `common._set_global`, so every module sees the new value.
+
+The split was made by `tools/refactor/` (stage 0 edits, then the split) and checked by running the old single file and the package side by side on the local harness with the same seed: the logs are identical apart from wall-clock times. On the full-build local safety configuration (5 domains, 2 passes) both produce 974 log lines and end at forgetting −0.004, final BPC 2.081; 11 lines differ, all of them how many proposed REM traces are tagged as familiar remote sentences (and a count that follows from it), which differs in the same way between two runs of the old file.
 
 ## Reading the logs
 
@@ -494,6 +566,8 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 - **CLS | RELEASE TIMING** and **DECAY MODEL**: which rule decides release, and how many memories were marked by predicted recall and the bar used; the fitted half-life and its out-of-sample score against a constant rate
 - **CUE REPAIR**: two-hop with the subject name damaged, repair off and on, and how often the repair named the right subject, a wrong one, or abstained
 - **CLOSED-FORM CONSOLIDATION APPLIED**: each edit KEPT or ROLLED BACK with its cost, recall from the weights before and after, the cumulative cost against the budget, the share of key energy removed by centring, and PERSISTENCE of earlier edits by age
+- **LAYER DRIFT** (cg26p): cosine of each block's state for edited conclusions, now against when they were fitted, by age
+- **RE-SOLVE** at the end of a KEPT edit line (cg26p): how many edited conclusions were re-fitted with their current keys, and how many are new
 - **CF DECAY DIAGNOSTIC** (cg26o): for conclusions edited 1, 2–3 and 4+ visits ago, the change along each edit's own signal since it was written, by cause (ordinary training, later edits, key drift), the key cosine and the share left
 - **REFRESH (old)** at the end of a KEPT edit line: how many earlier edited conclusions were re-fitted, with their weights-only recall before and after
 - **SLEEP CYCLES | ADAPTIVE**: REM cycles run and conclusions accepted per cycle, NREM write steps per chunk against the fixed schedule, and why the sleep stopped (closure, falling yield or the cycle cap)
@@ -512,7 +586,7 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 
 ## Project status
 
-This is **research code**. It is bulky: it carries options, readouts and experiment paths from many iterations that are switched off in the current configuration. It needs a cleanup (dead options removed, modules split, tests added) and further optimisation before wider use.
+This is **research code**. It is bulky: it carries options, readouts and experiment paths from many iterations that are switched off in the current configuration. It is now split into modules (5 November), but it still needs a cleanup (dead options removed, the run-time links between modules reduced, tests added) and further optimisation before wider use.
 
 Known limits:
 
@@ -524,7 +598,7 @@ Known limits:
 - Without weight edits the model of forgetting fits half-lives of only 0.2–0.5 visits, so cg26l releases by predicted recall relative to the pool. With the edits (cg26m, GPU) the fitted half-lives rose to 2–3.6 visits, but released memories began to fail again in pass 2: by visit 15, 24 of 65 had been restored.
 - A pass-2 revisit in cg26i damaged one old domain (EuroParl) before sleep repaired it; with the guard (cg26k, cg26l) the same revisit leaves the old domains at 1.68–1.69.
 - Dreams chosen by the JEPA are far more often related than random ones, but they are not yet shown to give more two-hop recall or less forgetting than random dreams; the control run (`PLATYPUS_DREAMS=random` beside the default) is pending.
-- Closed-form edits reach two-hop 0.48–0.55 from the weights alone on the GPU (visit 10), but that falls to about 0.3 in pass 2 (cg26m 0.28 at visit 15; cg26n 0.29 at visit 15, 0.32 at visit 16). The growth cap of cg26n never bound, so edit size is not the cause; ordinary training and later edits overwrite older edits. cg26o refreshes older edits and measures the loss by cause.
+- Closed-form edits reach two-hop 0.48–0.55 from the weights alone on the GPU (visit 10), but that falls to about 0.3 in pass 2 (cg26m 0.28 at visit 15; cg26n 0.29 at visit 15, 0.32 at visit 16). The growth cap of cg26n never bound, so edit size is not the cause. The decay diagnostic of cg26o shows the cause at full size is key drift (key cosine about 0.4 after four visits), with ordinary training second; refreshing 8 per edit (cg26o) settles at the same floor of about 0.3 through visit 21. cg26p re-keys every edit every sleep.
 - The weights store conclusions but do not compose facts: with both facts in the weights and no written conclusion, two-hop from the weights is 0 of 11 (local), and conclusions held back from writing stay at 0.00 after training on all the others. Asking in two steps (the bridge, then the answer) looks better but is a shortcut: a random wrong bridge scores the same, because the weights answer from the relation phrase alone.
 - In the GPU file but off: a REM self-exam of the weights, REM analogy dreams (the local harness's 128-byte rows are too short to test them), an LLM-JEPA term in replay, platonic dream selection, principal-direction input and same-document negatives for the JEPA. Each was neutral or harmful in local tests.
 - Completion beyond spelling is only partly shown: asked by description ("the one who <relation> <B>") the model answers 0.88 with cg26n locally and on the GPU (0.62 locally without edits; chance 0.10), but this is a readout on templated facts; completion from other partial context is not addressed, and the overlapping link memory was at chance on the GPU.
@@ -537,7 +611,7 @@ Known limits:
 
 1. **Dreams that beat random.** Run the JEPA dreams against random-dream and no-replay controls on the same build; show that related dreams give more lasting two-hop recall in the weights. Give the JEPA more linked pairs and a smaller input, so it can pick partners among the whole store.
 2. **Free the fast store.** Release, deletion, ghosts, decay-model timing, release by predicted recall and reinstatement are in (cg26g–cg26l). Next, show that reinstated memories recover, tune how many memories are released at once, and hand over stored facts as well as conclusions.
-3. **Faster consolidation.** Closed-form writes with centred keys lasted and gave the first temporal gradient locally (cg26m), and reached two-hop 0.55 from the weights alone on the GPU before decaying in pass 2. The growth cap (cg26n) did not stop the pass-2 decline; cg26o refreshes older edits and measures what removes them. Next, by what that shows: keep training out of the edited directions, solve new edits in the null space of earlier ones, or re-fit memories that fail.
+3. **Faster consolidation.** Closed-form writes with centred keys lasted and gave the first temporal gradient locally (cg26m), and reached two-hop 0.55 from the weights alone on the GPU before decaying in pass 2. The growth cap (cg26n) and refreshing 8 edits at a time (cg26o) did not stop the pass-2 decline; the measured cause is key drift. cg26p re-keys every edit every sleep. Next, by what the GPU shows: slow the drift at its source (an earlier edit layer, or anchoring the edited keys), or re-key by value on a spaced schedule once memories number in the thousands.
 4. **Real text.** Measure the precision of conclusions drawn from real text, and test on multi-hop question sets and MQuAKE for multi-step edits.
 5. **Consolidating structure.** Move relation regularities (which relations chain, which are single-valued, paraphrase rules) into the weights, and show they become independent of the store over time.
 6. **Stable domains at scale.** Protect slots from drift, to cut routing errors and later-pass forgetting; test learning rates that follow novelty and consolidation that stops itself at the brake.
@@ -557,11 +631,12 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **31 October – 1 November.** Rule-free inference, three-hop chains, every two-step link scored in one pass.
 - **2 November.** Dreams judged by mutual compression; Fisher-protected replay; the JEPA dream selector; memories released from the fast store, deleted, and timed by a model of forgetting (cg21–cg26h).
 - **3 November.** The JEPA selector rebuilt on LeJEPA and trained on outcomes; CLS integration; release by predicted recall and ghost reinstatement, first seen on the GPU; cue repair; centred closed-form edits giving the first durable transfer into the weights and the first temporal gradient (cg26i–cg26m); on the GPU, two-hop 0.55 from the weights alone; capped edits and adaptive sleep, with sleep length set by the model's own statistics (cg26n).
-- **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none, and REM adds nothing over NREM while every premise stays in the store.
+- **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none; with old premises evicted, sleep keeps solving remote problems only when fact records protect them (25 of 65 against 4 of 86, two seeds), and REM recombination itself adds nothing over NREM. The decay of weight edits traced to key drift on the GPU; every edit re-keyed every sleep (cg26p).
+- **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
 
 ## Contributing
 
-Issues, results and pull requests are welcome. Cleanup work is especially useful: removing dead options, splitting the script into modules and adding tests. By contributing you agree that your contributions are licensed under the Apache License 2.0.
+Issues, results and pull requests are welcome. Cleanup work is especially useful: removing dead options, untangling the modules and adding tests. By contributing you agree that your contributions are licensed under the Apache License 2.0.
 
 ## Citing
 

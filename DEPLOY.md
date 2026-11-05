@@ -1,6 +1,6 @@
 # Platypus deployment
 
-How to run the Platypus build (`platypus_test.py`) somewhere other than a laptop:
+How to run the Platypus build (the `platypus` package) somewhere other than a laptop:
 a GPU run on Colab or a cloud machine, the local CPU harness, the
 checks a build passes before it reaches the GPU, and the record kept of
 each run.
@@ -11,11 +11,12 @@ Copyright Christian Bird. Apache 2.0.
 
 ```
 (repository root)
-  platypus_test.py    the current build (cg26o on this branch)
+  platypus/           the current build (cg26p on this branch), run with python -m platypus
+  tools/refactor/     how the package was split from the single file, and the identity checks
   README.md           the project README
   DEPLOY.md           this file
   configs/            what a run is: switches and option overrides
-    presets/          one file per build preset (cg26m, cg26n, cg26o ...)
+    presets/          one file per build preset (cg26m, cg26n, cg26o, cg26p ...)
     controls/         the control runs (random dreams, no replay, edits off)
     local/            the five-domain CPU harness
   env/                Python requirements and the names of environment variables
@@ -34,8 +35,8 @@ Copyright Christian Bird. Apache 2.0.
 A run is fully described by three things, and the run script records
 all three:
 
-1. **The build file**, e.g. `platypus_test.py`,
-   identified by its SHA-256.
+1. **The build**: the `platypus` package (or a single-file build),
+   identified by its SHA-256 (for the package: every `.py` file, by path).
 2. **A preset**: `configs/presets/<build>.env` holds the switches the build
    reads from the environment (`PLATYPUS_CF`, `PLATYPUS_DREAMS`, ...) and
    may name a JSON file of option overrides (`LAB_OVR`).
@@ -52,9 +53,9 @@ the first cell, run all. The log and manifest are saved to Drive.
 GPU, on a cloud machine with Docker:
 
 ```
-docker build -f docker/Dockerfile -t platypus:cg26o .
+docker build -f docker/Dockerfile -t platypus:cg26p .
 docker run --gpus all -v $PWD/runs:/work/runs -v $PWD/pile_cache:/work/pile_cache \
-    platypus:cg26o platypus_test.py configs/presets/cg26o.env 1
+    platypus:cg26p platypus configs/presets/cg26p.env 1
 ```
 
 Summarise a log (the readouts that decide whether a build is kept):
@@ -79,7 +80,7 @@ that place, and they work with the current single-file build now:
 | Refactor step | What here supports it |
 |---|---|
 | 0 Snapshot branch | `manifests/builds.csv` records the freeze point (suggested cg26m) |
-| 3 Package split | `scripts/run_gpu.sh` takes any entry point; switch it to `python -m platypus` when the package exists |
+| 3 Package split | done (5 November): `platypus/`; `scripts/run_gpu.sh platypus ...` runs `python -m platypus` |
 | 4 Equivalence check | `scripts/extract_readouts.py --json` gives the numbers to compare old and new code on the same seed |
 | 5 Config and presets | `configs/` is the start of it; the presets move into the package's config later |
 | 6 CI | `ci/github/workflows/ci.yml` |

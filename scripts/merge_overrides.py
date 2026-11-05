@@ -11,8 +11,11 @@ This script reads the build's default set, merges an override file on top
 JSON, ready for `export LAB_OVR=...`.
 
 Usage:
-    merge_overrides.py BUILD.py [OVERRIDES.json]       # prints merged JSON
-    merge_overrides.py BUILD.py OVERRIDES.json --diff  # prints what changes
+    merge_overrides.py BUILD [OVERRIDES.json]       # prints merged JSON
+    merge_overrides.py BUILD OVERRIDES.json --diff  # prints what changes
+
+BUILD is the platypus package directory (defaults in platypus/presets.py,
+DEFAULT_LAB_OVR) or a single-file build.
 """
 import ast
 import json
@@ -21,6 +24,13 @@ import sys
 
 
 def build_defaults(build_path):
+    import os
+    if os.path.isdir(build_path):
+        tree = ast.parse(open(os.path.join(build_path, "presets.py"), encoding="utf-8").read())
+        for n in tree.body:
+            if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "DEFAULT_LAB_OVR" for t in n.targets):
+                return json.loads(ast.literal_eval(n.value))
+        sys.exit(f"merge_overrides: no DEFAULT_LAB_OVR in {build_path}/presets.py")
     src = open(build_path, encoding="utf-8").read()
     m = re.search(r"os\.environ\.get\(\s*['\"]LAB_OVR['\"]\s*,\s*('(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\")\s*\)", src)
     if not m:

@@ -1,10 +1,10 @@
 # Copy to .github/workflows/ci.yml in the repository.
 #
 # Runs on every push and pull request, on CPU only:
-#   1. every build file compiles and its NAME strings have no apostrophes
+#   1. the package (and any single-file build) compiles and its NAME strings have no apostrophes
 #   2. secret scan of the whole repository
 #   3. tests for the deployment scripts (readout extraction on real log excerpts)
-#   4. (after the package split) a tiny CPU smoke run and the equivalence check
+#   4. package structure tests (imports, run-time links, the single-file export) on CPU torch
 name: ci
 
 on:
@@ -25,13 +25,14 @@ jobs:
       - name: Compile builds and check NAME strings
         run: |
           shopt -s nullglob
-          for f in platypus_test.py threshold_lean_stagec9_7*_conduit.py; do
+          python -m compileall -q platypus
+          for f in platypus/presets.py platypus/__main__.py threshold_lean_stagec9_7*_conduit.py; do
             python -m py_compile "$f"
             python - "$f" <<'PY'
           import ast, sys
           t = ast.parse(open(sys.argv[1], encoding="utf-8").read())
           bad = [n.lineno for n in ast.walk(t) if isinstance(n, ast.Assign)
-                 and any(isinstance(x, ast.Name) and x.id == "NAME" for x in n.targets)
+                 and any(isinstance(x, ast.Name) and x.id in ("NAME", "BUILD_NAME", "BASE_NAME") for x in n.targets)
                  and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str) and "'" in n.value.value]
           sys.exit(f"{sys.argv[1]}: apostrophe in NAME at {bad}" if bad else 0)
           PY
@@ -40,10 +41,15 @@ jobs:
       - name: Secret scan
         run: python scripts/scan_secrets.py .
 
-      - name: Deployment script tests
+      - name: CPU torch for the package tests
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy scipy
+
+      - name: Tests (deployment scripts and package structure)
         run: python -m unittest discover -s tests -v
 
-      # Enable once the package exists (refactor step 3) and a 1-domain CPU preset is defined.
+      # Enable once a 1-domain CPU preset is defined.
       # - name: CPU smoke run
       #   run: |
       #     pip install torch --index-url https://download.pytorch.org/whl/cpu
