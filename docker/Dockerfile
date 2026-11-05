@@ -1,11 +1,11 @@
 # Platypus GPU runner for a cloud machine with an NVIDIA GPU.
 #
 # Build from the repository root:
-#   docker build -f docker/Dockerfile -t platypus:cg26m .
+#   docker build -f docker/Dockerfile -t platypus:cg26p .
 # Run (mount runs/ and pile_cache/ so results and the data cache survive):
 #   docker run --gpus all \
 #     -v $PWD/runs:/work/runs -v $PWD/pile_cache:/work/pile_cache \
-#     platypus:cg26m platypus_test.py configs/presets/cg26m.env 1
+#     platypus:cg26p platypus configs/presets/cg26p.env 1
 #
 # No secret is baked into the image. Pass any token at run time
 # (docker run -e HF_TOKEN=...), from the machine's secret store.

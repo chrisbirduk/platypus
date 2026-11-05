@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Run one Platypus build on a GPU and keep a complete record of the run.
 #
-#   run_gpu.sh BUILD.py PRESET.env [SEED] [CONTROL.env ...]
+#   run_gpu.sh BUILD PRESET.env [SEED] [CONTROL.env ...]
+#
+# BUILD is the platypus package directory (run as python3 -m platypus) or a
+# single-file build (an older build, or scripts/export_single_file.py output).
 #
 # Writes runs/<build>_<preset>[_<control>]_s<seed>_<UTC time>/ with
 #   run.log        everything the build prints
@@ -10,18 +13,16 @@
 #   readouts.md    the summary from extract_readouts.py
 # and finishes with a secret scan of the run folder.
 #
-# Works with the current single-file builds. After the package split, set
-# ENTRY="python3 -m platypus" and pass the preset instead of a build file.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${1:?usage: run_gpu.sh BUILD.py PRESET.env [SEED] [CONTROL.env ...]}"
-PRESET="${2:?usage: run_gpu.sh BUILD.py PRESET.env [SEED] [CONTROL.env ...]}"
+BUILD="${1:?usage: run_gpu.sh BUILD PRESET.env [SEED] [CONTROL.env ...]}"; BUILD="${BUILD%/}"
+PRESET="${2:?usage: run_gpu.sh BUILD PRESET.env [SEED] [CONTROL.env ...]}"
 SEED="${3:-1}"
 shift $(( $# >= 3 ? 3 : $# ))
 CONTROLS=("$@")
 
-[ -f "$BUILD" ] || { echo "no build file: $BUILD" >&2; exit 1; }
+[ -f "$BUILD" ] || [ -f "$BUILD/__main__.py" ] || { echo "no build file or package: $BUILD" >&2; exit 1; }
 [ -f "$PRESET" ] || { echo "no preset: $PRESET" >&2; exit 1; }
 
 # Load the preset, then any controls on top (later files win).
@@ -47,7 +48,16 @@ mkdir -p "$RUN_DIR"
 python3 - "$BUILD" "$PRESET" "$SEED" "$RUN_DIR/manifest.json" ${CONTROLS[@]+"${CONTROLS[@]}"} <<'PY'
 import hashlib, json, os, subprocess, sys, datetime
 build, preset, seed, out, *controls = sys.argv[1:]
-def sha(p): return hashlib.sha256(open(p, "rb").read()).hexdigest()
+def sha(p):
+    if os.path.isdir(p):                     # a package: every .py file, by relative path, in sorted order
+        h = hashlib.sha256()
+        for root, dirs, files in sorted(os.walk(p)):
+            dirs.sort()
+            for f in sorted(files):
+                if f.endswith(".py"):
+                    fp = os.path.join(root, f); h.update(os.path.relpath(fp, p).encode() + b"\0" + open(fp, "rb").read() + b"\0")
+        return h.hexdigest()
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
 def git(*a):
     try: return subprocess.run(["git", *a], capture_output=True, text=True, timeout=10).stdout.strip() or None
     except Exception: return None
@@ -77,7 +87,11 @@ PY
 echo "run: $RUN_DIR"
 start=$(date +%s)
 set +e
-${ENTRY:-python3} "$BUILD" 2>&1 | tee "$RUN_DIR/run.log"
+if [ -d "$BUILD" ]; then
+  PYTHONPATH="$(cd "$(dirname "$BUILD")" && pwd)${PYTHONPATH:+:$PYTHONPATH}" ${ENTRY:-python3} -m "$(basename "$BUILD")" 2>&1 | tee "$RUN_DIR/run.log"
+else
+  ${ENTRY:-python3} "$BUILD" 2>&1 | tee "$RUN_DIR/run.log"
+fi
 status=${PIPESTATUS[0]}
 set -e
 

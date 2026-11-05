@@ -18,6 +18,7 @@ Current build: **cg26p**.
 - [Results](#results)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Code layout](#code-layout)
 - [Reading the logs](#reading-the-logs)
 - [Project status](#project-status)
 - [Roadmap](#roadmap)
@@ -377,7 +378,7 @@ The inference tests use templated facts about invented people. See [Project stat
 
 ## Getting started
 
-Platypus is a single Python script designed to run on one GPU (for example in Google Colab).
+Platypus is a Python package, `platypus/`, designed to run on one GPU (for example in Google Colab). It is the former single-file build split into modules with no change in behaviour (see [Code layout](#code-layout)); `scripts/export_single_file.py` writes it back out as one script for environments that take a single file.
 
 **Requirements**
 
@@ -391,10 +392,10 @@ Platypus is a single Python script designed to run on one GPU (for example in Go
 
 ```bash
 pip install torch datasets scipy
-python threshold_lean_stagec9_7cg26p_conduit.py
+python -m platypus                     # from the repository root
 ```
 
-In Colab, upload the script, choose a GPU runtime and run it with `!python threshold_lean_stagec9_7cg26p_conduit.py`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
+In Colab, use `colab/platypus_gpu.ipynb`: it clones the repository and runs `python -m platypus` through `scripts/run_gpu.sh`. If you need credentials (for example a Hugging Face token), keep them in Colab Secrets or environment variables. Never commit them to the repository.
 
 A full run streams ten domains over three passes and takes about four to five hours on a single modern GPU.
 
@@ -406,8 +407,10 @@ Options are set through the `LAB_OVR` environment variable as JSON, on top of th
 
 ```bash
 LAB_OVR='{"n_passes": 3, "steps_per_task": 400, "inf_on": true, "seed": 1}' \
-  python threshold_lean_stagec9_7cg26p_conduit.py
+  python -m platypus
 ```
+
+`LAB_OVR` replaces the default override set (`DEFAULT_LAB_OVR` in `platypus/presets.py`); `scripts/merge_overrides.py platypus my_overrides.json` merges a small override file onto the defaults instead.
 
 Environment switches:
 
@@ -481,6 +484,61 @@ Useful options:
 
 The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of the script.
 
+## Code layout
+
+The package keeps every function and option of the former single file, grouped by what it does. `python -m platypus` runs `platypus/__main__.py`, which reads the switches above, builds the run configuration from `presets.py` and calls `runner.run`.
+
+| Module | Lines | What it holds |
+|---|---:|---|
+| `common.py` | 18 | Shared imports, the device, and the helpers that keep module-level names consistent across modules. |
+| `config.py` | 760 | Config: every option with its default; the base domains and their difficulty. |
+| `gating.py` | 120 | Write gating: thresholds from impedance and importance, drive statistics, polarisation-gated writes with split weight gradients. |
+| `protection.py` | 591 | Weight protection: replay stiffness, projections, Kalman/Fisher factors, protected Muon, varpro head refits, probes. |
+| `private.py` | 176 | Per-domain private parts: masks, private trunk units, private n-gram tables. |
+| `slots.py` | 230 | Replay and stream sources, slot scoring and slot (domain) inference. |
+| `layers.py` | 884 | Output heads and the delta-rule core: WY solve, chunked and blocked kernels, DeltaBlock. |
+| `capacity.py` | 132 | Dormant reserve, uniqueness-driven activation, per-domain weight deltas. |
+| `sampler.py` | 662 | Frozen teachers, stacked teacher pass and the recurrent dream sampler. |
+| `dream_bank.py` | 580 | Dream bank: teacher building, stream generation, bank refresh and dream batches. |
+| `ngrams.py` | 194 | Hashed n-gram embeddings and count features, the main optimiser and compilation. |
+| `model.py` | 169 | The Model. |
+| `meta.py` | 207 | Learned meta-controller, differentiable meta helpers and threshold gates. |
+| `diagnostics.py` | 322 | Topic identification, reconstruction and forgetting diagnostics. |
+| `importance.py` | 173 | Data-free input covariances, importance and revisit bookkeeping. |
+| `data.py` | 208 | Text data: Pile streaming with a disk cache, fact injection, loaders. |
+| `heads.py` | 126 | Inferred heads (domain not given at test time) and BPC evaluation. |
+| `train.py` | 1,238 | One visit of training (train_domain) and its step-level helpers. |
+| `orth.py` | 100 | Orthogonality diagnostics. |
+| `conduit.py` | 785 | Conduit dreams: replay rows, hints, CUDA-graph and slot-memory generation, NREM losses. |
+| `inference/store.py` | 177 | The fast store: name-indexed sparse logit corrector, and evaluation with it. |
+| `inference/units.py` | 348 | Rule-free units: the learned lexicon and the MDL reader. |
+| `inference/probes.py` | 232 | Planted probe chains, prose variants and the real-text benchmark. |
+| `inference/sentences.py` | 121 | The sentence store: adding, evicting, relations. |
+| `inference/links.py` | 104 | Link memory and cue repair. |
+| `inference/infer.py` | 742 | Offline inference: bridges, conclusions, staging and salience. |
+| `inference/evaluate.py` | 609 | Probe evaluation, CLS measurements and REM examination. |
+| `inference/ledger.py` | 58 | Memory ledger. |
+| `inference/decay.py` | 43 | Decay model of store-off recall. |
+| `inference/closed_form.py` | 390 | Closed-form edits of the last block MLP: layer states, drift, application. |
+| `inference/sleep.py` | 777 | Sleep: NREM, REM, store writes, replay into the trunk. |
+| `inference/readouts.py` | 432 | End-of-run readouts: dual pathway, CLS probes, ceiling, transfer. |
+| `inference/selftaught.py` | 197 | Self-taught inference: freeing, occlusion, attended-span splices, spectral word codes. |
+| `inference/mixing.py` | 472 | Mixing (splice) dreams: proposal, judging, dreaming. |
+| `inference/jepa.py` | 909 | JEPA dream selector and latent readouts. |
+| `inference/rem.py` | 235 | Greedy generation, self-inference, episodic fact records, the rule layer and REM recombination. |
+| `inference/qtime.py` | 265 | Question-time chaining with a working memory. |
+| `inference/audit.py` | 273 | Hypotheses, pruning, abstention and the grounding audit. |
+| `inference/need.py` | 248 | Store-off helpers, feature-need signals, sleep-only feature learning, private-into-shared consolidation. |
+| `losses.py` | 826 | Conduit losses, replay diagnostics, reconstruction fidelity and oracle readouts. |
+| `runner.py` | 486 | run(cfg): the whole continual-learning run. |
+| `profiling.py` | 24 | Named regions for the one-off GPU profile. |
+| `presets.py` | 175 | The run options of the GPU run (ALLPILE_CONFIG), the default overrides and the build name with its history. |
+| `__main__.py` | 64 | python -m platypus: the PLATYPUS_* switches, the banner, the run and its summary. |
+
+Names a module needs from a module that loads before it are imported at its top. A few names are needed only at run time from a module that loads after it (for example the training loop calling into sleep); each module lists those in a `_LATE` table, and `platypus/__init__.py` links them once every module is loaded. Module-level state that is rebound while running goes through `common._set_global`, so every module sees the new value.
+
+The split was made by `tools/refactor/` (stage 0 edits, then the split) and checked by running the old single file and the package side by side on the local harness with the same seed: the logs are identical apart from wall-clock times. RESULT_LINE
+
 ## Reading the logs
 
 - Per-visit **BPC** and **forgetting** for every domain seen so far
@@ -528,7 +586,7 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 
 ## Project status
 
-This is **research code**. It is bulky: it carries options, readouts and experiment paths from many iterations that are switched off in the current configuration. It needs a cleanup (dead options removed, modules split, tests added) and further optimisation before wider use.
+This is **research code**. It is bulky: it carries options, readouts and experiment paths from many iterations that are switched off in the current configuration. It is now split into modules (5 November), but it still needs a cleanup (dead options removed, the run-time links between modules reduced, tests added) and further optimisation before wider use.
 
 Known limits:
 
@@ -577,7 +635,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 
 ## Contributing
 
-Issues, results and pull requests are welcome. Cleanup work is especially useful: removing dead options, splitting the script into modules and adding tests. By contributing you agree that your contributions are licensed under the Apache License 2.0.
+Issues, results and pull requests are welcome. Cleanup work is especially useful: removing dead options, untangling the modules and adding tests. By contributing you agree that your contributions are licensed under the Apache License 2.0.
 
 ## Citing
 
