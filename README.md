@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26p**.
+Current build on `main`: **cg26p**. This is the **`jepa` branch**: build **cg26p_jepa** = cg26p + JEPA readouts, training identical (see [JEPA line](#jepa-line)).
 
 ---
 
@@ -16,6 +16,7 @@ Current build: **cg26p**.
 - [What it does](#what-it-does)
 - [How it works](#how-it-works)
 - [Results](#results)
+- [JEPA line](#jepa-line)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [Reading the logs](#reading-the-logs)
@@ -375,6 +376,50 @@ Verified replay recovered 98% of the gap, with no domain labels. The cg20x run (
 
 The inference tests use templated facts about invented people. See [Project status](#project-status) for what has not been shown yet.
 
+## JEPA line
+
+This branch (`jepa`) carries **cg26p_jepa**: cg26p with JEPA readouts added at the end of the run. Training is identical to cg26p (the default option set is unchanged), so a GPU run of this build is also a second cg26p sample. The branch is kept apart from `main` until the JEPA work shows its worth.
+
+### What the readouts measure
+
+All run once, at the end of the run, on stored text with the trunk frozen. `PLATYPUS_JEPA_READ=0` turns them off.
+
+| Readout | Question |
+|---|---|
+| **HIPPOCAMPAL JEPA, retrieval by meaning** | Does a JEPA head trained on different wordings of the same fact (8 wordings, plus misspelt-name views) find a stored fact from a reworded or misspelt cue better than raw trunk embeddings and name keys? Does it keep apart facts that share names? |
+| **HIPPOCAMPAL JEPA, novelty gating** | Does distance in JEPA space tell new facts from known ones (reworded, or with typos) better than byte surprise, including new pairings of known names? |
+| **HIPPOCAMPAL JEPA, latent chaining** | A predictor trained only on one-hop facts, among 1,000 interfering facts, chained twice: does it find held-out two-hop answers, and can it abstain when there is no answer? |
+| **TRACE AS MEMORY CONTEXT** | How much of a block memory's effect on predictions does a 32-number JEPA trace keep once decoded back (against a random projection)? |
+| **RECONSTRUCTION FROM A TRACE** | Given the subject name, can the trunk regenerate the rest of a fact sentence from the full memory, from its decoded JEPA trace, or from nothing? The first text-decoding measure. |
+| **MEMORY LAYER** and **BRAND-NEW NAMES** | Can the trunk read one fact, or combine two, from its context, given as text or as a separate memory layer (memories reach each block as its starting delta-rule state)? |
+| **STATE JEPA**, **DSREG** | Fresh JEPA probe heads between a block's state and the next text; a DSReg-style sparse rotation of the traces. |
+
+### Local results (five-domain harness, trunk frozen for the readouts)
+
+| | Result |
+|---|---|
+| Novelty, JEPA v2 (AUC, 4 trunks) | 0.92–0.95; raw embeddings 0.86–0.90; **byte surprise 0.41–0.50, and 0.23–0.28 for new pairings of known names (reversed)** |
+| Retrieval, reworded, top-1 (4 trunks) | JEPA v2 0.79–0.95; raw embeddings 0.59–0.86 (raw ahead on 1 of 4); exact name key 1.00 |
+| Retrieval, misspelt name (4 trunks) | top-1: JEPA v2 0.51–0.71, edit-distance repair 0.61–0.74; top-5: JEPA v2 0.91–0.97 |
+| Facts sharing names, different relation | embeddings 0.92–1.00; name keys 0.50 |
+| Latent chaining (6 trunks, chance 0.05) | two-hop 0.12–0.41; abstention AUC 0.46–0.59 (no better than chance) |
+| Trace as memory context | a 32-number JEPA trace keeps 0.55–0.72 of the memory's effect (random projection 0.30–0.61); the effect itself is tiny locally (KL 0.014–0.03 nats) |
+| Reconstruction from a trace (3 runs) | object name exact 0.02–0.08 from full memory, trace and none alike: the local trunk does not use its memory |
+| Brand-new names | the local trunk reads one fact from its context 0.03–0.15 (chance 0.05), as text or as a memory layer: it cannot copy a new name from context |
+
+Full-build local safety run: forgetting −0.004, final BPC 2.081, identical to cg26p's: the readouts do not change training.
+
+### What a GPU run should show
+
+1. Whether the 171M trunk can copy a brand-new name from its context (BRAND-NEW NAMES), and whether the full memory beats no memory in RECONSTRUCTION. Both are at the floor locally; text decoding needs them above it.
+2. Whether JEPA v2's lead in novelty and retrieval holds at full size.
+3. Whether latent chaining keeps finding held-out two-hop answers, and whether it can abstain.
+
+### Built in, off
+
+- **Schema-maturity openness** (`inf_open 1`): REM proposals and the mixed-pair dream share scale with how unformed each domain's schema is; verification unchanged. Local, two seeds: about twice the proposals, 25–100% more true conclusions accepted, none false, but only 1–2 more distinct chains; BPC unchanged or slightly better. Not yet separated from simply making more proposals.
+- The memory-layer and state-JEPA *training* options of the lab need training-step hooks that are not in this file; here only their readouts run.
+
 ## Getting started
 
 Platypus is a single Python script designed to run on one GPU (for example in Google Colab).
@@ -419,6 +464,7 @@ Environment switches:
 | `PLATYPUS_PASSES=1` | Run pass 1 only |
 | `PLATYPUS_CF=0` | Turn off closed-form edits into the weights (on by default, capped and centred) |
 | `PLATYPUS_SLEEP=fixed` | Use the fixed sleep schedule instead of adaptive sleep (adaptive by default from cg26n) |
+| `PLATYPUS_JEPA_READ=0` | Turn off the JEPA readouts at the end of the run (`jepa` branch; on by default; training is unchanged either way) |
 
 Useful options:
 
@@ -525,6 +571,10 @@ The full list, with a change history, is in `NAME` and `LAB_OVR` near the end of
 - **CLS | SCHEMA SPEED**: tests passed and releases for schema fits against misfits
 - **JEPA DREAMS | TRAIN SETUP**: early stopping, SIGReg statistic, objective, judge- and outcome-trained pairs
 - **MIXING | JEPA FINAL SELECTION**, **JEPA-WIDE**: accepted pairs by source and what was dreamed; the JEPA's picks among the whole sample
+- **HIPPOCAMPAL JEPA | RETRIEVAL BY MEANING**, **NOVELTY GATING**, **LATENT CHAINING** (cg26p_jepa): JEPA keys (first head and v2) against raw embeddings and name keys; novelty AUC against byte surprise; two-hop by chaining a one-hop predictor, and abstention
+- **TRACE AS MEMORY CONTEXT**, **RECONSTRUCTION FROM A TRACE** (cg26p_jepa): share of a memory's effect a 32-number JEPA trace keeps; sentences regenerated from the full memory, the trace or none
+- **MEMORY LAYER | END OF RUN**, **BRAND-NEW NAMES** (cg26p_jepa): two-hop with premises as text or in the memory layer; reading one brand-new fact and combining two, with the effect on the right answer in nats
+- **STATE JEPA | END OF RUN**, **DSREG ON JEPA TRACES** (cg26p_jepa): probe heads between a block state and the next text, latent against byte surprise for typos; the sparse-rotation criterion and single-axis domain AUC
 
 ## Project status
 
@@ -574,6 +624,8 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **2 November.** Dreams judged by mutual compression; Fisher-protected replay; the JEPA dream selector; memories released from the fast store, deleted, and timed by a model of forgetting (cg21–cg26h).
 - **3 November.** The JEPA selector rebuilt on LeJEPA and trained on outcomes; CLS integration; release by predicted recall and ghost reinstatement, first seen on the GPU; cue repair; centred closed-form edits giving the first durable transfer into the weights and the first temporal gradient (cg26i–cg26m); on the GPU, two-hop 0.55 from the weights alone; capped edits and adaptive sleep, with sleep length set by the model's own statistics (cg26n).
 - **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none; with old premises evicted, sleep keeps solving remote problems only when fact records protect them (25 of 65 against 4 of 86, two seeds), and REM recombination itself adds nothing over NREM. The decay of weight edits traced to key drift on the GPU; every edit re-keyed every sleep (cg26p).
+
+- **4–5 November (branch `jepa`).** JEPA tested as the hippocampus's representation: trained on wordings of the same fact it gives the best novelty signal (byte surprise is reversed for new pairings of known names) and the best retrieval from reworded cues; a latent predictor chains held-out two-hop facts above chance but cannot yet abstain; the local trunk cannot copy a new name from its own context, so text decoding from traces waits on the GPU (cg26p_jepa).
 
 ## Contributing
 
