@@ -132,6 +132,23 @@ def _inf_variant_readout(model,cfg):
     if va_:
         fv_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in va_]); fn_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in no_]) if no_ else float('nan')
         print(f"  [inference VARIANT BRIDGES] chains whose bridge is spelled differently in its two facts: concluded {fv_:.2f} (n {len(va_)}) | ordinary two-hop chains concluded {fn_:.2f} (n {len(no_)})",flush=True)
+def _gpu_mem_report(tag):
+    """cg26q GPU MEMORY: what is still allocated before the heavy end-of-run readouts (two of them ran out of memory on the GPU with about 80 GiB
+    held), grouped by tensor shape; tensors under 64 MiB are left out"""
+    if not torch.cuda.is_available(): return
+    try:
+        import gc as _gc9; _gc9.collect(); torch.cuda.empty_cache()
+        al_=torch.cuda.memory_allocated()/2**30; rv_=torch.cuda.memory_reserved()/2**30; big_={}
+        for o_ in _gc9.get_objects():
+            try:
+                if torch.is_tensor(o_) and o_.is_cuda:
+                    n_=o_.numel()*o_.element_size()
+                    if n_>=2**26: k_=(tuple(o_.shape),str(o_.dtype).replace('torch.','')); v_=big_.setdefault(k_,[0,0]); v_[0]+=1; v_[1]+=n_
+            except Exception: pass
+        top_=sorted(big_.items(),key=lambda kv_:-kv_[1][1])[:10]
+        print(f"  [GPU MEMORY | {tag}] allocated {al_:.1f} GiB, reserved {rv_:.1f} GiB | largest live tensors (count x shape dtype: GiB): "
+              +" | ".join(f"{v_[0]} x {list(k_[0])} {k_[1]}: {v_[1]/2**30:.2f}" for k_,v_ in top_),flush=True)
+    except Exception as e_: print(f"  [GPU MEMORY | {tag}] unavailable ({type(e_).__name__})",flush=True)
 def _inf_cls_probe(model,cfg):
     """END-OF-RUN CLS PROBES. (1) LESION BY AGE: two-hop with the store ON vs OFF for chains concluded early vs late (complementary learning
     predicts older memories survive the lesion better once consolidation works). (2) PARTIAL CUES: two-hop with the store when the subject's
@@ -198,9 +215,16 @@ def _inf_cls_probe(model,cfg):
         try: _ng_zero(model)
         except Exception: pass
     if int(getattr(cfg,'inf_ceiling2',0)):
-        try: _inf_ceiling2(model,cfg,nm,sl0_,acc,rs_)
-        except Exception as e_:
-            import traceback as _tb; print(f"  [inference CEILING LONG] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
+        _gpu_mem_report('before CEILING LONG')
+        for lean_ in (0,1):                                                     # cg26q: after running out of GPU memory, retry once without optimizer state for the large tables
+            cfg._ceil2_lean=lean_
+            try: _inf_ceiling2(model,cfg,nm,sl0_,acc,rs_); break
+            except Exception as e_:
+                oom_='out of memory' in str(e_).lower() and torch.cuda.is_available()
+                import traceback as _tb; print(f"  [inference CEILING LONG] FAILED{' (retrying lean)' if oom_ and not lean_ else ''}: {type(e_).__name__}: {str(e_)[:200]} | {_tb.format_exc()[-300:]!r}",flush=True)
+                if not oom_: break
+                import gc as _gc9; _gc9.collect(); torch.cuda.empty_cache()
+        cfg._ceil2_lean=0
         try:
             if torch.cuda.is_available(): torch.cuda.empty_cache()
         except Exception: pass

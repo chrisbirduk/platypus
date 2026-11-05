@@ -2,8 +2,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from platypus.config import (
-    PILE_DOMAINS,
+from platypus.common import (
+    _nslots,
 )
 from platypus.protection import (
     _STF,
@@ -11,7 +11,7 @@ from platypus.protection import (
 
 def ngp_init(model,cfg):
     dev=model.embed.weight.device; T={}
-    for d in range(len(PILE_DOMAINS)):
+    for d in range(_nslots(cfg)):
         T[d]=[nn.Embedding(int(cfg.ngp_rows),cfg.d_model,sparse=True).to(dev) for _ in cfg.ngp]
         for E in T[d]: E.weight.data.zero_()
     model.__dict__['_ngp']=T; model.__dict__['_ngp_opt']=torch.optim.SparseAdam([E.weight for d in T for E in T[d]],lr=cfg.lr*cfg.ngram_lr_mult)

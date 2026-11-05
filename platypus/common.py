@@ -15,4 +15,17 @@ def _pkg_globals():
     """all module-level names and their current values, in the order of the original single file"""
     if not _PKG_MODULES: return globals()
     return {n_:m_.__dict__[n_] for m_,n_ in _PKG_ORDER if n_ in m_.__dict__}
+# CLEAN EVALUATION (inf_clean): wordings the system never writes (conclusions are written as "So A is connected to C.", typed
+#   "A r1 someone who r2 C."); the fit wording measures schema fit with a prompt different from every test prompt
+_HO_TWO=("{A} is tied to ","The one tied to {A} is ")
+_HO_TYPED="{A} {r0} a person who {r1} "
+_FIT_W="{A} keeps company with "
+def _nslots(cfg):
+    """slots the router may open (infer_slots; default: one per domain)"""
+    return max(len(PILE_DOMAINS),int(getattr(cfg,"infer_slots",0) or 0))
 LOG2=math.log(2)
+
+# names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
+_LATE = {
+    'PILE_DOMAINS': 'platypus.config',
+}

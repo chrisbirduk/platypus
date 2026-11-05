@@ -48,6 +48,13 @@ if _dm_ not in ('0','off','none',''):
         if k not in _ok2_ or k in ('inf_cons',): setattr(cfg,k,v)   # cg21b FIX: the default run options carry inf_cons=mem, which kept every dream out of the weights in cg21
     if os.environ.get('PLATYPUS_PASSES','').strip().isdigit(): cfg.n_passes=int(os.environ['PLATYPUS_PASSES']); print(f"  [cg26g] PLATYPUS_PASSES: {cfg.n_passes} pass(es)",flush=True)
     print(f"  [cg21] DREAMS ({_dm_}): "+", ".join(f"{k}={getattr(cfg,k)}" for k in _dr_)+" | PLATYPUS_DREAMS=0 turns them off",flush=True)
+if os.environ.get('PLATYPUS_CLEAN','1')!='0':                            # cg26q: ON by default; PLATYPUS_CLEAN=0 restores the cg26p evaluation and oracle options                            # CLEAN EVALUATION (review fixes): held-out wordings, bridges as candidates, no
+    for k_,v_ in {'inf_clean':1,'inf_rem_probe_frac':0.0,'inf_mix_benchcue':0.0,'inf_jd_plantw':0,'inf_jd_real':0,'inf_fm_debug':1}.items(): setattr(cfg,k_,v_)   #   slot given; oracle options off
+    print('  [cg26q] CLEAN EVALUATION on: held-out probe wordings, bridges as candidates, no slot given; REM probe subjects, benchmark cues and planted-pair weighting off | PLATYPUS_CLEAN=0 restores cg26p',flush=True)
+if os.environ.get('PLATYPUS_HINTS','1')=='0':
+    cfg.cd_hint_frac=0.0; cfg.cd_hint_adapt=0.0; print('  [clean] PLATYPUS_HINTS=0: no true bytes given to the conduit generator in the closed-loop passes',flush=True)
+if os.environ.get('PLATYPUS_SLOTS','').strip().isdigit():
+    cfg.infer_slots=int(os.environ['PLATYPUS_SLOTS']); print(f'  [clean] PLATYPUS_SLOTS: the router may open up to {cfg.infer_slots} slots',flush=True)
 NAME=BUILD_NAME+NAME+' | overrides '+_OVR
 print(f"\n################ {NAME} | seed {cfg.seed} ################")
 r=run(cfg)

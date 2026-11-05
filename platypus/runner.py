@@ -217,6 +217,8 @@ def run(cfg):
         if cfg.n_passes>1 and cfg.data_free and not cfg.topic_mode and not _eo: rebuild_old_cov(model, olds)   # protect OTHER domains only
         if vi>0 and t in pre_visit:                                                       # before relearning (repeat visits)
             pre_visit[t][pass_i]=bpc_m[vi-1][t] if (bpc_m[vi-1][t] is not None or t not in schedule[:vi]) else bpc(model,vals[t],(_tsp_ if _tsp_ is not None else _S(t)))
+        _pf9=__import__('sys').modules.get('platypus.profiling')
+        if _pf9 is not None and vi>0: _pf9._ft_report(f"visit {vi-1} and its sleep")
         print(f"\n=== Phase {vi+1}: {PILE_DOMAINS[t]}"+(f" (pass {pass_i+1}/{cfg.n_passes})" if cfg.n_passes>1 else "")+f" === [elapsed {(time.time()-_RUN_T0)/60:.1f} min]")
         if cfg.fwt_zeroshot and vi>0 and t not in schedule[:vi] and cfg.scratch_domain is None:              # before ANY training on domain t
             zeroshot[t]=bpc_inferred(model,vals[t],t,t,'bytes',cfg)[0]
@@ -457,6 +459,8 @@ def run(cfg):
         print(f"  {PILE_DOMAINS[p][:12]:12} | post {post[p]:.3f} | final {final:.3f} | forget {f:+.3f}")
     mf=float(np.mean(fg)); mb=float(np.mean([bpc_m[-1][p] for p in range(len(PILE_DOMAINS))]))
     if cfg.inf_on: inf_eval(model,cfg,_inf_store(model),"END OF RUN"); inf_final_bpc(model,cfg,vals,_S)
+    _pf9=__import__('sys').modules.get('platypus.profiling')
+    if _pf9 is not None: _pf9._ft_total()
     print(f"\nMEAN FORGETTING: {mf:+.3f} | MEAN FINAL BPC: {mb:.3f}")
     if cfg.recon_diag: (replay_diag if cfg.recon_mark else recon_fidelity)(model,cfg,vals,NDOM,_S)
     orc_=None

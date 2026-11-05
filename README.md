@@ -2,16 +2,21 @@
 
 **A language model that learns without forgetting and thinks in its sleep.**
 
-Platypus is a 171-million-parameter byte-level language model that learns ten text domains one after another without forgetting earlier ones. After its first look at the data it learns only from what it can verify, and while it "sleeps" it links facts it met in different places into new conclusions, checks them against their sources and keeps only the ones that hold up. It then dreams: a trained JEPA picks which memories to splice together, the model judges each dream by whether the two halves make each other easier to predict, and what passes is consolidated into its weights under a brake that protects old knowledge. It needs no domain labels, no stored training data and, in its default rule-free mode, no hand-written language rules: entities and relations are found from word statistics, and links are kept only if they pay for themselves in compression. Its memory and sleep cycle also work when attached to a frozen GPT-2.
+Platypus is a 171-million-parameter byte-level language model that learns ten text domains one after another without forgetting earlier ones. After its first look at the data it learns only from what it can verify, and while it "sleeps" it links facts it met in different places into new conclusions, checks them against their sources and keeps only the ones that hold up. It then dreams: a trained JEPA picks which memories to splice together, the model judges each dream by whether the two halves make each other easier to predict, and what passes is consolidated into its weights under a brake that protects old knowledge. It needs no domain labels, no stored training data (apart from a small share of hint bytes kept with its memory traces, see below) and, in its default rule-free mode, no hand-written language rules: entities and relations are found from word statistics, and links are kept only if they pay for themselves in compression. Its memory and sleep cycle also work when attached to a frozen GPT-2.
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26p**.
+Current build: **cg26q**.
+
+## A note on this documentation
+
+All of the documentation in this repository, this README included, is generated automatically with an AI model. That can cause problems: the model only knows the context and the research it was given or has seen, so explanations can miss relevant work, describe ideas as new that others developed first, or leave out credit where it is due. I apologise to any researchers whose prior work is not credited in these documents. This is not intentional, and it is something I am actively working to address. If you see work that should be cited, or a claim that should be qualified, please open an issue and I will correct it.
 
 ---
 
 ## Contents
 
+- [A note on this documentation](#a-note-on-this-documentation)
 - [Why it exists](#why-it-exists)
 - [What it does](#what-it-does)
 - [How it works](#how-it-works)
@@ -44,13 +49,13 @@ Platypus targets four long-standing problems with language models:
 ## What it does
 
 - **Continual learning without stored data.** Domains are learned in sequence. Old domains are protected by rehearsing the model's own dreams (stored self-generated windows with their top-32 predictions), by curvature-aware (Fisher-whitened) updates, and by small per-domain capacity.
-- **A strict closed loop.** After the first pass the model sees no real text again. It learns only from replays of its memory traces that it can verify exactly against what it originally read.
+- **A closed loop.** After the first pass the model sees no new real text. It learns from replays of its memory traces that it can verify exactly against what it originally read. One exception remains by default: when a memory trace is written, a small share of the true bytes (those hardest to predict, 2–8% of the replayed bytes) is stored with it as hints and forced during replay (`PLATYPUS_HINTS=1`). Verification is unchanged, but this is a small amount of stored training text. `PLATYPUS_HINTS=0` gives the strict closed loop, which has not yet been tested at full size.
 - **Label-free routing.** The domain is never given. The model recognises returning domains by how well it predicts them, corrected for how far each domain's slot has drifted since it was last trained.
 - **Rule-free inference in sleep.** After each visit it links facts met in different places. All links live in one sparse table, and every possible two-step link is scored at once (one-scan salience) and promoted by gain × need. It replays salient memories (NREM-like), proposes links from memory and keeps only grounded ones (REM-like), strengthens conclusions it meets again, revises beliefs and retracts conclusions that depended on superseded facts.
 - **A fast memory that can abstain.** Conclusions live in an entity-banked, delta-rule logit corrector outside the weights. It is silent for entities it has never seen, so the model can say "I don't know", and it costs almost nothing on ordinary text.
 - **Two recall pathways, as in the hippocampus.** Beside the exact store, an overlapping link memory with spelling-aware codes completes damaged cues. A recognition gate uses exact recall when the cue is a known name and pattern completion when it is not.
 - **Cue repair.** At question time, a name the fast memory does not know (misspelt, truncated or lower-cased) is mapped to the stored name it most plausibly is: within two edits, strictly nearer than any other name, and never a common word. Ties abstain.
-- **Dreams, judged by the model itself.** NREM-like dreams splice two stored sentences; REM-like dreams pair a recent memory (the cue) with a trace of older knowledge, chosen neither too close nor too far from the cue and different from each other. A dream is kept only if each half makes the other cheaper for the model to predict than random text does. A trained JEPA (LeJEPA objective, trained on the links the system verified, on what the dream judge accepts and on the measured outcome of earlier dreams) ranks the candidates from every source that shares a rare name with the cue, and one pair per cue is dreamed: 20–40% of these choices are about a gold-linked fact on Wikipedia-style text, against about 1% for random pairs.
+- **Dreams, judged by the model itself.** NREM-like dreams splice two stored sentences; REM-like dreams pair a recent memory (the cue) with a trace of older knowledge, chosen neither too close nor too far from the cue and different from each other. A dream is kept only if each half makes the other cheaper for the model to predict than random text does. A trained JEPA (LeJEPA objective, trained on the links the system verified, on what the dream judge accepts and on the measured outcome of earlier dreams) ranks the candidates from every source that shares a rare name with the cue, and one pair per cue is dreamed: 20–40% of these choices are about a gold-linked fact on Wikipedia-style text, against about 1% for random pairs. That figure was measured on cues chosen to contain benchmark entities (an option now off by default, see [Results](#results)) and has not yet been measured under clean evaluation.
 - **Systems consolidation into the weights.** Verified conclusions and accepted dreams are replayed into the trunk, with the update steered away from what old domains rely on (their Fisher factors), a brake that rolls back any harmful sleep, and a dose that retries lower and climbs back when it can. Verified conclusions are also written straight into the weights in one least-squares step (closed-form, MEMIT-style edits), with the sentence frame removed from the keys, under their own brake and a cumulative budget.
 - **Handing memories over to the weights.** Each sleep the model tests every tracked conclusion with the fast memory switched off. One the weights answer on their own, with a margin, at consecutive sleeps is released: erased from the fast memory and kept in replay. If the weights then keep answering it, the record is deleted after a grace period, so the weights are its only copy. If they stop, it is written back. Once a learned model of forgetting predicts better than a constant rate, it also releases the memories it predicts the weights are most likely to still hold at the next visit (either rule releases), and a deleted memory the weights lose again is reinstated: written back to the fast memory and to replay. Replay is spaced, aimed at what the weights are losing, and lighter for memories that fit what the model already knows (a schema): on the GPU such memories pass the test without the fast memory three to five times as often as misfits, and every release so far has been one of them.
 - **Consolidation of shared structure.** After closed-loop visits, what a domain's private units learned is distilled into the shared weights, at a gentle rate and under a brake that rolls back any phase that harms old domains.
@@ -108,6 +113,27 @@ The slow network learns general skill, and only from real text or verified repla
 | Name index first, JEPA second | Searching the whole store, the JEPA picks same-genre text. Restricting candidates to memories that share a rare name with the cue brings recall; the JEPA then ranks them, and is trained against those same name-sharing alternatives (hard negatives). |
 
 ## Results
+
+**Clean evaluation (cg26q, local five-domain harness).** An outside code review found that several readouts and training options let the planted benchmark leak in: REM subjects drawn from the probe facts, dream cues chosen by the benchmark's gold entities, JEPA batches balanced by the planted label, probes asked in the exact wording the system wrote its conclusions in, through the true domain's slot, with the bridge entity left out of the candidates. cg26q turns all of these off by default (`PLATYPUS_CLEAN=0` restores cg26p) and adds held-out readouts: two wordings never used for writing, the bridge among the candidates, and no slot given (the answer is scored over every slot in use).
+
+| End of run (seed 1, 35 chains) | Written wording | Held-out wording |
+|---|---|---|
+| Two-hop from the weights alone (typed wording) | 0.46 (0.43) | **0.17 (0.26)** |
+| Two-hop with the fast store (typed wording) | 0.94 (0.97) | **0.69 (0.86)** |
+| Three-hop from the weights / with the store | 0.11 / 0.72 | 0.00 / 0.28 (bridge picked 0.61) |
+
+Turning the oracle options off cost nothing: mean forgetting −0.001 and final BPC 2.072, against −0.003 / 2.082 with them on; discovery found 54 of 58 chains, with no wrong conclusion accepted. The figures cg26p and earlier report below are in the written wording, so they overstate what the weights and the store hold. The hippocampal side (the store) generalises to new wordings; the cortex (the weights) mostly does not, and three-hop answers usually stop at the bridge. The full cg26q package gives the same result in its local safety run (−0.001 / 2.072, routing 9 of 9, 33 of 33 cited sources checking out). Without the slot cap the router opened a new slot on every revisit (+0.06 BPC, seed 1), so the cap stays (`PLATYPUS_SLOTS` lifts it for tests).
+
+**Re-keying on the GPU (cg26p, full size, three passes, 30 visits).** The run kept the cg26p training and added JEPA readouts only. Re-solving every edit with its current key ended the decay that held cg26o at about 0.3:
+
+| Weights alone (written wording) | cg26p | cg26o |
+|---|---|---|
+| Two-hop at visit 10 / 16 / 21 / 30 | 0.67 / 0.62 / 0.64 / 0.81 | 0.50 / 0.28 / about 0.28 / – |
+| End of run: one-hop / two-hop / three-hop | 0.79 / 0.91 / 0.79 | – |
+| Older vs recent conclusions (store lesion, older vs recent) | 1.00 vs 0.90 (1.00 vs 0.85) | 0.73 vs 0.16 locally |
+| Final BPC / forgetting | 1.376 / +0.060 | cg20y 1.368 / +0.058 |
+
+Older conclusions now survive without the store better than recent ones, as the complementary learning systems view predicts. The store answered two-hop 0.99 and three-hop 0.91; 193 memories were released and 10 restored; routing was right on all 26 printed visits. These figures are in the wording the system wrote, with the oracle options on. In other wordings the weights answer less (typed two-hop 0.48, reworded 0.53, one-hop in an unseen wording 0.41 against 0.83), and the ceiling test shows no composition in the weights: chains taught only their one-hop facts give two-hop 0.17, against 0.95 in context. cg26q measures the same build with held-out wordings.
 
 **Re-keying every edit every sleep (cg26p, local five-domain harness).** On the GPU, cg26o showed why weight edits fade: the layers below the edited matrix keep learning, so the key a question produces drifts away from the key the edit was aimed at (key cosine about 0.75 after one visit, about 0.4 after four or more). Refreshing 8 conclusions per edit could not keep up with over 160 edited conclusions. cg26p re-solves every edited conclusion, live or released, with its current key in one closed-form solve at every sleep:
 
@@ -422,6 +448,9 @@ Environment switches:
 | `PLATYPUS_PASSES=1` | Run pass 1 only |
 | `PLATYPUS_CF=0` | Turn off closed-form edits into the weights (on by default, capped and centred) |
 | `PLATYPUS_SLEEP=fixed` | Use the fixed sleep schedule instead of adaptive sleep (adaptive by default from cg26n) |
+| `PLATYPUS_CLEAN=0` | Restore the cg26p evaluation and training options (oracle options on, no held-out readouts); clean evaluation is the default from cg26q |
+| `PLATYPUS_HINTS=0` | No conduit hints (true bytes given to the generator) in the closed-loop passes |
+| `PLATYPUS_SLOTS=N` | Let the router open up to N slots instead of one per domain (test only: locally every revisit then went to a new slot) |
 
 Useful options:
 
@@ -597,24 +626,25 @@ Known limits:
 - The JEPA selector now learns (cg26k), but it is data-limited: about 390 linked pairs for an effective input of about 128 dimensions. TF-IDF on names still picks the right partner among name-sharing sentences more often, and among the 1,500 candidates of `jepa-wide` the JEPA is right only about 7% of the time.
 - Without weight edits the model of forgetting fits half-lives of only 0.2–0.5 visits, so cg26l releases by predicted recall relative to the pool. With the edits (cg26m, GPU) the fitted half-lives rose to 2–3.6 visits, but released memories began to fail again in pass 2: by visit 15, 24 of 65 had been restored.
 - A pass-2 revisit in cg26i damaged one old domain (EuroParl) before sleep repaired it; with the guard (cg26k, cg26l) the same revisit leaves the old domains at 1.68–1.69.
-- Dreams chosen by the JEPA are far more often related than random ones, but they are not yet shown to give more two-hop recall or less forgetting than random dreams; the control run (`PLATYPUS_DREAMS=random` beside the default) is pending.
-- Closed-form edits reach two-hop 0.48–0.55 from the weights alone on the GPU (visit 10), but that falls to about 0.3 in pass 2 (cg26m 0.28 at visit 15; cg26n 0.29 at visit 15, 0.32 at visit 16). The growth cap of cg26n never bound, so edit size is not the cause. The decay diagnostic of cg26o shows the cause at full size is key drift (key cosine about 0.4 after four visits), with ordinary training second; refreshing 8 per edit (cg26o) settles at the same floor of about 0.3 through visit 21. cg26p re-keys every edit every sleep.
-- The weights store conclusions but do not compose facts: with both facts in the weights and no written conclusion, two-hop from the weights is 0 of 11 (local), and conclusions held back from writing stay at 0.00 after training on all the others. Asking in two steps (the bridge, then the answer) looks better but is a shortcut: a random wrong bridge scores the same, because the weights answer from the relation phrase alone.
+- Dreams chosen by the JEPA are far more often related than random ones, but they are not yet shown to give more two-hop recall or less forgetting than random dreams; the GPU control run (`PLATYPUS_DREAMS=random` beside the default) is pending. Locally with clean evaluation, dreams against no dreams lowered final BPC slightly (2.072 against 2.088, near seed noise) and left recall unchanged (two-hop from the weights 0.40 both).
+- Weight edits used to fade in pass 2 on the GPU (about 0.3 from visit 15, from key drift); cg26p fixed this by re-keying every edit every sleep (0.81 at visit 30, older conclusions 1.00 against recent 0.90). But recall from the weights is tied to the wording the system wrote: in held-out wordings it is 0.17 locally (0.46 in the written wording), and on the GPU typed questions reach 0.48, reworded ones 0.53 and one-hop questions in an unseen wording 0.41. The store holds up in new wordings (0.69 locally, 0.97–0.99 on the GPU). Released memories are tested only in written wordings so far.
+- The weights store conclusions but do not compose facts: with both facts in the weights and no written conclusion, two-hop from the weights is 0 of 11 (local), and conclusions held back from writing stay at 0.00 after training on all the others. Asking in two steps (the bridge, then the answer) looks better but is a shortcut: a random wrong bridge scores the same, because the weights answer from the relation phrase alone. The same holds at full size: on the GPU, chains taught only their one-hop facts answer two-hop 0.17 from the weights against 0.95 in context, and given both premises in the memory layer the model names the bridge (0.55) rather than the answer (0.07). Inference happens in sleep, where conclusions are written; the weights hold what sleep concludes.
 - In the GPU file but off: a REM self-exam of the weights, REM analogy dreams (the local harness's 128-byte rows are too short to test them), an LLM-JEPA term in replay, platonic dream selection, principal-direction input and same-document negatives for the JEPA. Each was neutral or harmful in local tests.
 - Completion beyond spelling is only partly shown: asked by description ("the one who <relation> <B>") the model answers 0.88 with cg26n locally and on the GPU (0.62 locally without edits; chance 0.10), but this is a readout on templated facts; completion from other partial context is not addressed, and the overlapping link memory was at chance on the GPU.
 - At the replay dose the brake accepts (×0.0033), later sleeps no longer raise two-hop recall measurably, and transfer kept from earlier sleeps decays in some visits.
 - The trunk's passage codes are strongly anisotropic; latent readouts and the JEPA head work around this, but the trunk itself is unchanged.
-- Forgetting at full size rises in later passes, and routing confuses the most similar domains.
+- Forgetting at full size rises in later passes (+0.06 after passes 2 and 3), and routing confuses the most similar domains. Routing also depends on the cap of one slot per domain: without it every revisit opened a new slot locally (+0.06 BPC). Byte-pair evidence picks the right slot on revisits but does not tell a new domain from a revisit.
+- False memories: by the end of the cg26p GPU run 8 wrong conclusions about probe subjects existed, and the weights preferred the wrong answer over the truth in 6 of them (the store in 3). The false-memory diagnostic is on in cg26q to find their source.
 - There is no fine-tuning baseline and no benchmark result yet.
 
 ## Roadmap
 
 1. **Dreams that beat random.** Run the JEPA dreams against random-dream and no-replay controls on the same build; show that related dreams give more lasting two-hop recall in the weights. Give the JEPA more linked pairs and a smaller input, so it can pick partners among the whole store.
 2. **Free the fast store.** Release, deletion, ghosts, decay-model timing, release by predicted recall and reinstatement are in (cg26g–cg26l). Next, show that reinstated memories recover, tune how many memories are released at once, and hand over stored facts as well as conclusions.
-3. **Faster consolidation.** Closed-form writes with centred keys lasted and gave the first temporal gradient locally (cg26m), and reached two-hop 0.55 from the weights alone on the GPU before decaying in pass 2. The growth cap (cg26n) and refreshing 8 edits at a time (cg26o) did not stop the pass-2 decline; the measured cause is key drift. cg26p re-keys every edit every sleep. Next, by what the GPU shows: slow the drift at its source (an earlier edit layer, or anchoring the edited keys), or re-key by value on a spaced schedule once memories number in the thousands.
+3. **Faster consolidation.** Closed-form writes with centred keys lasted and gave the first temporal gradient locally (cg26m), and reached two-hop 0.55 from the weights alone on the GPU before decaying in pass 2. The growth cap (cg26n) and refreshing 8 edits at a time (cg26o) did not stop the pass-2 decline; the measured cause is key drift. cg26p re-keys every edit every sleep, which held two-hop from the weights at 0.6–0.8 through three passes on the GPU. Next: make what is consolidated hold in new wordings (the trunk does not carry the subject forward, so edits store wording patterns rather than facts about entities), and teach the weights to compose (superposed-memory dreams are under test).
 4. **Real text.** Measure the precision of conclusions drawn from real text, and test on multi-hop question sets and MQuAKE for multi-step edits.
 5. **Consolidating structure.** Move relation regularities (which relations chain, which are single-valued, paraphrase rules) into the weights, and show they become independent of the store over time.
-6. **Stable domains at scale.** Protect slots from drift, to cut routing errors and later-pass forgetting; test learning rates that follow novelty and consolidation that stops itself at the brake.
+6. **Stable domains at scale.** A router that recognises revisits without a slot cap; the strict closed loop without conduit hints at full size; protect slots from drift, to cut routing errors and later-pass forgetting; test learning rates that follow novelty and consolidation that stops itself at the brake.
 7. **References and meaning.** Resolve pronouns and descriptions as rules that must pay for themselves; carry negation, hedging and time on each relation.
 8. **Entity resolution.** Merge spelling variants only when the evidence supports it: rare typos of a common name, or variants that share context.
 
@@ -633,6 +663,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **3 November.** The JEPA selector rebuilt on LeJEPA and trained on outcomes; CLS integration; release by predicted recall and ghost reinstatement, first seen on the GPU; cue repair; centred closed-form edits giving the first durable transfer into the weights and the first temporal gradient (cg26i–cg26m); on the GPU, two-hop 0.55 from the weights alone; capped edits and adaptive sleep, with sleep length set by the model's own statistics (cg26n).
 - **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none; with old premises evicted, sleep keeps solving remote problems only when fact records protect them (25 of 65 against 4 of 86, two seeds), and REM recombination itself adds nothing over NREM. The decay of weight edits traced to key drift on the GPU; every edit re-keyed every sleep (cg26p).
 - **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
+- **5 November.** cg26q: clean evaluation after an outside code review. Oracle options off by default at no cost; held-out readouts show two-hop recall from the weights of 0.17 in new wordings (0.46 in the written wording) and 0.69 with the fast store.
 
 ## Contributing
 
@@ -654,16 +685,56 @@ If you use Platypus in your work, please cite:
 
 ## References
 
+Works this project draws on or compares itself with. The list is incomplete (see [A note on this documentation](#a-note-on-this-documentation)); please open an issue for anything missing.
+
+**Memory systems and sleep**
+
 - McClelland, McNaughton and O'Reilly (1995). [Why there are complementary learning systems in the hippocampus and neocortex](https://doi.org/10.1037/0033-295X.102.3.419). *Psychological Review* 102(3).
 - Kumaran, Hassabis and McClelland (2016). [What learning systems do intelligent agents need? Complementary learning systems theory updated](https://doi.org/10.1016/j.tics.2016.05.004). *Trends in Cognitive Sciences* 20(7).
-- Huh, Cheung, Wang and Isola (2024). [The platonic representation hypothesis](https://arxiv.org/abs/2405.07987). ICML 2024.
-- Meng et al. (2023). [Mass-editing memory in a transformer](https://arxiv.org/abs/2210.07229) (MEMIT). ICLR 2023.
 - Tse et al. (2007). [Schemas and memory consolidation](https://doi.org/10.1126/science.1135935). *Science* 316.
+- Cai, Mednick, Harrison, Kanady and Mednick (2009). [REM, not incubation, improves creativity by priming associative networks](https://doi.org/10.1073/pnas.0900271106). *PNAS* 106(25).
 - Settles and Meeder (2016). [A trainable spaced repetition model for language learning](https://aclanthology.org/P16-1174/) (half-life regression). ACL 2016.
+
+**Continual learning**
+
+- Kirkpatrick et al. (2017). [Overcoming catastrophic forgetting in neural networks](https://doi.org/10.1073/pnas.1611835114) (elastic weight consolidation). *PNAS* 114(13).
+- Ritter, Botev and Barber (2018). [Online structured Laplace approximations for overcoming catastrophic forgetting](https://arxiv.org/abs/1805.07810). NeurIPS 2018.
+- Martens and Grosse (2015). [Optimizing neural networks with Kronecker-factored approximate curvature](https://arxiv.org/abs/1503.05671) (K-FAC). ICML 2015.
+- Shin, Lee, Kim and Kim (2017). [Continual learning with deep generative replay](https://arxiv.org/abs/1705.08690). NeurIPS 2017.
+
+**Multi-hop reasoning and knowledge editing**
+
+- Balesni, Korbak and Evans (2024). [The two-hop curse: LLMs trained on A→B, B→C fail to learn A→C](https://arxiv.org/abs/2411.16353).
+- Zhong et al. (2023). [MQuAKE: assessing knowledge editing in language models via multi-hop questions](https://arxiv.org/abs/2305.14795). EMNLP 2023.
+- Cohen et al. (2024). [Evaluating the ripple effects of knowledge editing in language models](https://arxiv.org/abs/2307.12976) (RippleEdits). *TACL* 12.
+- Meng et al. (2023). [Mass-editing memory in a transformer](https://arxiv.org/abs/2210.07229) (MEMIT). ICLR 2023.
+
+**Architecture and optimisation**
+
+- Schlag, Irie and Schmidhuber (2021). [Linear transformers are secretly fast weight programmers](https://arxiv.org/abs/2102.11174) (the delta rule as a fast-weight memory). ICML 2021.
+- Yang, Wang, Zhang, Shen and Kim (2024). [Parallelizing linear transformers with the delta rule over sequence length](https://arxiv.org/abs/2406.06484) (DeltaNet, WY-form parallel solve). NeurIPS 2024.
+- Yang, Kautz and Hatamizadeh (2025). [Gated delta networks: improving Mamba2 with delta rule](https://arxiv.org/abs/2412.06464). ICLR 2025.
+- Jordan et al. (2024). [Muon: an optimizer for hidden layers in neural networks](https://kellerjordan.github.io/posts/muon/).
+- Radford et al. (2019). [Language models are unsupervised multitask learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) (GPT-2).
+
+**Representation learning**
+
 - Assran et al. (2023). [Self-supervised learning from images with a joint-embedding predictive architecture](https://arxiv.org/abs/2301.08243) (I-JEPA).
 - Balestriero and LeCun (2025). [LeJEPA: provable and scalable self-supervised learning without the heuristics](https://arxiv.org/abs/2511.08544) (SIGReg); [code](https://github.com/rbalestr-lab/lejepa).
+- Huang, LeCun and Balestriero (2025). [LLM-JEPA: large language models meet joint embedding predictive architectures](https://arxiv.org/abs/2509.14252).
+- Huh, Cheung, Wang and Isola (2024). [The platonic representation hypothesis](https://arxiv.org/abs/2405.07987). ICML 2024.
+- Plate (1995). [Holographic reduced representations](https://doi.org/10.1109/72.377968) (vector-symbolic binding). *IEEE Transactions on Neural Networks* 6(3).
+
+**Statistics and retrieval**
+
+- Rissanen (1978). [Modeling by shortest data description](https://doi.org/10.1016/0005-1098(78)90005-5) (minimum description length). *Automatica* 14(5).
+- Spärck Jones (1972). [A statistical interpretation of term specificity and its application in retrieval](https://doi.org/10.1108/eb026526) (inverse document frequency). *Journal of Documentation* 28(1).
+
+**Data**
+
+- Gao et al. (2020). [The Pile: an 800GB dataset of diverse text for language modeling](https://arxiv.org/abs/2101.00027); [uncopyrighted subset](https://huggingface.co/datasets/monology/pile-uncopyrighted) (training data).
+- Yao et al. (2019). [DocRED: a large-scale document-level relation extraction dataset](https://arxiv.org/abs/1906.06127). ACL 2019.
 - Tan et al. (2022). [Revisiting DocRED: addressing the false negative problem in relation extraction](https://arxiv.org/abs/2205.12696) (Re-DocRED); [data](https://github.com/tonytan48/re-docred).
-- [The Pile, uncopyrighted subset](https://huggingface.co/datasets/monology/pile-uncopyrighted) (training data).
 
 ## Licence
 

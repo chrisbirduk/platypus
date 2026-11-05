@@ -490,7 +490,8 @@ def _inf_ceiling2(model,cfg,nm,sl0_,acc,rs_):
     dev_=model.embed.weight.device; sd_=_snapcpu(model); wd_=float(getattr(cfg,'inf_ceiling2_wd',0.1))
     _SCORE_LEN['n']=max(_SCORE_LEN['n'],200); res_={}
     def run(txt_,ctx_):
-        opt_=torch.optim.AdamW([q_ for n_,q_ in model.named_parameters() if q_.requires_grad and (q_.is_cuda or ('ngram' not in n_ and q_.numel()<4_000_000))],lr=float(getattr(cfg,'inf_cls_lr',3e-4)),weight_decay=wd_); cur_=[]; ls_=[]   # (no hashed n-gram tables or huge embeddings: local memory)
+        ln_=int(getattr(cfg,'_ceil2_lean',0))                                   # lean retry: tensors of 4M+ numbers stay fixed (no optimizer state), one tensor at a time
+        opt_=torch.optim.AdamW([q_ for n_,q_ in model.named_parameters() if q_.requires_grad and (q_.is_cuda or ('ngram' not in n_ and q_.numel()<4_000_000)) and not (ln_ and q_.numel()>=4_000_000)],lr=float(getattr(cfg,'inf_cls_lr',3e-4)),weight_decay=wd_,foreach=False if ln_ else None); cur_=[]; ls_=[]   # (no hashed n-gram tables or huge embeddings: local memory)
         for st_ in range(1,K_+1):
             model.train(); bt_=[txt_[i_] for i_ in rs_.choice(len(txt_),min(16,len(txt_)),replace=False)]; L0_=max(len(t_) for t_ in bt_)+1
             X_=torch.full((len(bt_),L0_),32,dtype=torch.long,device=dev_)
@@ -511,7 +512,7 @@ def _inf_ceiling2(model,cfg,nm,sl0_,acc,rs_):
         except Exception: pass
         _carry_load(sv_); _XDG['cur']=sc_; _INFM.pop('force',None)
     for k_,nm9_ in (('W','IN THE WEIGHTS (atomic facts of all entities + two-hop statements of half the ID paths)'),('C','IN CONTEXT (worked examples of the trained ID paths; test prompts carry both premises)')):
-        print(f"  [inference CEILING LONG | {nm9_}] {NE_} entities, {len(trn_)} trained paths, held out ID {len(idt_)} / OOD {len(ood_)}, AdamW wd {wd_}, chance 0.10 (distractors are trained two-hop answers; in context a decoy fact puts a second candidate name in the prompt) | "
+        print(f"  [inference CEILING LONG | {nm9_}]{' LEAN (tensors of 4M+ numbers fixed)' if int(getattr(cfg,'_ceil2_lean',0)) else ''} {NE_} entities, {len(trn_)} trained paths, held out ID {len(idt_)} / OOD {len(ood_)}, AdamW wd {wd_}, chance 0.10 (distractors are trained two-hop answers; in context a decoy fact puts a second candidate name in the prompt) | "
               +" | ".join(f"step {s_}: loss {l_:.2f}"+(f", one-hop {o_:.2f}" if o_==o_ else "")+f", trained {a_:.2f}, ID held-out {b_:.2f}, OOD {c_:.2f}" for s_,l_,o_,a_,b_,c_ in res_[k_]),flush=True)
 def _inf_isotropy(model,cfg,S_,ts):
     """cg24 ISOTROPY IN THE TRUNK (LeJEPA's prescription as a sleep phase): a few steps of SIGReg on the trunk's pooled passage codes of stored

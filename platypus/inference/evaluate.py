@@ -1,7 +1,11 @@
 """Probe evaluation, CLS measurements and REM examination."""
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
+from platypus.common import (
+    _HO_TWO, _HO_TYPED,
+)
 from platypus.private import (
     _XDG,
 )
@@ -74,11 +78,16 @@ def _inf_eval1(model,cfg,S_,tag):
             seqs=[(p_+c_+'.').encode('latin-1')[-int(cfg.seq_len):] for c_ in cs_]; L_=max(len(s_) for s_ in seqs)
             X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
             for j_,s_ in enumerate(seqs): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
-            sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=slot; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
-            try: lp_=F.log_softmax(model(X_[:,:-1],slot).float(),-1)
-            finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
             n0_=[len(s_)-len((c_+'.').encode()) for s_,c_ in zip(seqs,cs_)]
-            sc2_=[float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))]
+            # slot -1 (inf_clean): NO SLOT GIVEN - the candidates' log-probabilities are mixed over every slot in use (equal weights)
+            sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0]); tot_=None
+            for sl9_ in sls_:
+                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                try: lp_=F.log_softmax(model(X_[:,:-1],sl9_).float(),-1)
+                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+                tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
+            sc2_=list(tot_-math.log(len(sls_)))
             out.append(int(np.argmax(sc2_)))
             if _INF.get('cal_on'):
                 pp_=np.exp(np.array(sc2_)-max(sc2_)); pp_=pp_/pp_.sum(); A0_=_INF['cal_on'][len(_INF['calrec'])] if len(_INF['calrec'])<len(_INF['cal_on']) else ('','','')
@@ -88,13 +97,14 @@ def _inf_eval1(model,cfg,S_,tag):
         UPD_=float(getattr(cfg,'inf_upd_frac',0.0))>0
         KINDS_=('one-hop','two-hop','typed two-hop','three-hop')+(('UPDATED one-hop','UPDATED two-hop','NOISE-CONTRADICTED one-hop') if UPD_ else ())+(('reworded two-hop','context two-hop','pronoun two-hop') if (int(getattr(cfg,'inf_eval_hard',0)) and ('END' in tag or _INF.get('corr'))) else ())+(('IN-CONTEXT two-hop','IN-CONTEXT decoy bridge','IN-CONTEXT three-hop') if (int(getattr(cfg,'inf_eval_ctx',0)) and not _INF.get('corr')) else ())+(('CTX2 order AB','CTX2 order BA','CTX2 decoy AB','CTX2 decoy BA') if (int(getattr(cfg,'inf_eval_ctx2',0)) and not _INF.get('corr')) else ())
         if float(getattr(cfg,'inf_para_frac',0.0))>0: KINDS_=KINDS_+('PARAPHRASED one-hop (unseen wording)','SEEN-WORDING one-hop (para probes)')
+        if int(getattr(cfg,'inf_clean',0)): KINDS_=KINDS_+('HELD-OUT two-hop','HELD-OUT typed two-hop','HELD-OUT three-hop')   # unwritten wordings, bridges as candidates, no slot given
         act_={}; aw9_={}
         vd9_=S_.get('_vdom') if (int(getattr(cfg,'inf_upd_revisited',1)) and S_.get('_vdom_from',-1)==0) else None   # READOUT FIX: changed facts count only after a revisit
         for kind in KINDS_:
             pr_=[];cd_=[];sl_=[];bn_=[]; _INFM['dbg']=[0,0,0.0]
             for c_ in ch_:
                 n_=c_['names']; r_=c_['rels']
-                if kind in ('three-hop','IN-CONTEXT three-hop') and len(n_)<4: continue
+                if kind in ('three-hop','IN-CONTEXT three-hop','HELD-OUT three-hop') and len(n_)<4: continue
                 if kind.startswith(('PARAPHRASED','SEEN-WORDING')) and (not c_.get('wd') or (kind.startswith('PARAPHRASED') and c_['wd'][0]=='both')): continue
                 u0_=c_.get('upd')
                 if kind.startswith('UPDATED') and not (u0_ and u0_['type']=='true'): continue
@@ -106,14 +116,16 @@ def _inf_eval1(model,cfg,S_,tag):
                 if kind.startswith(('IN-CONTEXT','CTX2')) and str(getattr(cfg,'inf_xfer','none'))=='skill' and n_[0] not in _inf_heldout(cfg): continue
                 if kind.startswith('CTX2') and len(n_)!=3: continue   # skill runs: in-context probes on HELD-OUT chains only
                 fs_=[f_ for _,f_ in c_['facts']]; oth0_=[x_ for x_ in alln_ if x_ not in n_]
-                tgt={'one-hop':n_[1],'three-hop':n_[-1],'IN-CONTEXT three-hop':n_[-1],'UPDATED one-hop':(u0_ or {}).get('B2'),'UPDATED two-hop':(u0_ or {}).get('C2'),'NOISE-CONTRADICTED one-hop':n_[1]}.get(kind,n_[2])
+                tgt={'one-hop':n_[1],'three-hop':n_[-1],'IN-CONTEXT three-hop':n_[-1],'HELD-OUT three-hop':n_[-1],'UPDATED one-hop':(u0_ or {}).get('B2'),'UPDATED two-hop':(u0_ or {}).get('C2'),'NOISE-CONTRADICTED one-hop':n_[1]}.get(kind,n_[2])
                 pp={'one-hop':f"{n_[0]} {r_[0]} ",'two-hop':f"So {n_[0]} is connected to ",'typed two-hop':f"{n_[0]} {r_[0]} someone who {r_[1]} ",'three-hop':f"So {n_[0]} is connected to ",
                     'reworded two-hop':f"{n_[0]}, it turns out, is connected to ",'context two-hop':f"The weather was mild that year. So {n_[0]} is connected to ",
                     'pronoun two-hop':f"Consider {n_[0]}. They are connected to ",
                     'IN-CONTEXT two-hop':f"{fs_[0]} {fs_[1]} So {n_[0]} is connected to ",                       # S1: the two source facts in the context
                     'IN-CONTEXT decoy bridge':f"{fs_[0].replace(n_[1],oth0_[len(pr_)%len(oth0_)])} {fs_[1]} So {n_[0]} is connected to ",   # chain broken at the bridge: C still in context
                     'IN-CONTEXT three-hop':(' '.join(fs_[:3])+f" So {n_[0]} is connected to "),
-                    'UPDATED one-hop':f"{n_[0]} {r_[0]} ",'UPDATED two-hop':f"So {n_[0]} is connected to ",'NOISE-CONTRADICTED one-hop':f"{n_[0]} {r_[0]} "}.get(kind,'')
+                    'UPDATED one-hop':f"{n_[0]} {r_[0]} ",'UPDATED two-hop':f"So {n_[0]} is connected to ",'NOISE-CONTRADICTED one-hop':f"{n_[0]} {r_[0]} ",
+                    'HELD-OUT two-hop':_HO_TWO[len(pr_)%len(_HO_TWO)].format(A=n_[0]),'HELD-OUT three-hop':_HO_TWO[len(pr_)%len(_HO_TWO)].format(A=n_[0]),
+                    'HELD-OUT typed two-hop':_HO_TYPED.format(A=n_[0],r0=r_[0],r1=(r_[1] if len(r_)>1 else r_[0]))}.get(kind,'')
                 if kind.startswith(('PARAPHRASED','SEEN-WORDING')):
                     pz_=_INF_PARA[r_[0]]; seen_para_=c_['wd'][0]=='para'
                     pp=f"{n_[0]} {(r_[0] if seen_para_ else pz_) if kind.startswith('PARAPHRASED') else (pz_ if seen_para_ else r_[0])} "; tgt=n_[1]
@@ -126,7 +138,8 @@ def _inf_eval1(model,cfg,S_,tag):
                 elif kind=='UPDATED two-hop': cs_=[tgt,n_[2]]+cs_[1:19]
                 elif kind=='NOISE-CONTRADICTED one-hop': cs_=[tgt,u0_['B3']]+cs_[1:19]  # the single false contradiction is a candidate: picking it = a wrong flip
                 elif kind.startswith('CTX2'): ic_=[n_[1],X0_,Y0_]; cs_=[tgt]+ic_+[x_ for x_ in cs_[1:] if x_ not in ic_][:16]   # in-context names compete with the answer
-                pr_.append(pp); cd_.append(cs_); bn_.append(n_[1]); sl_.append(int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0])))
+                elif kind.startswith('HELD-OUT'): br_=[x_ for x_ in n_[1:] if x_!=tgt]; cs_=[tgt]+br_+cs_[1:20-len(br_)]   # the BRIDGE(S) are candidates too
+                pr_.append(pp); cd_.append(cs_); bn_.append(n_[1]); sl_.append(-1 if kind.startswith('HELD-OUT') else int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0])))
             hits=[]
             for sl in sorted(set(sl_)):
                 ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]
@@ -134,9 +147,11 @@ def _inf_eval1(model,cfg,S_,tag):
                 hh_=score([pr_[i_] for i_ in ix_],[cd_[i_] for i_ in ix_],sl); hits+=[int(h_==0) for h_ in hh_]
                 if kind.startswith(('UPDATED','NOISE')): _INF.setdefault('stale',{}).setdefault(kind,[]).extend([int(h_==1) for h_ in hh_])
                 if kind.startswith('CTX2'): _INF.setdefault('copy',{}).setdefault(kind,[]).extend([int(1<=h_<=3) for h_ in hh_])
+                if kind.startswith('HELD-OUT'): _INF.setdefault('brg',{}).setdefault(kind,[]).extend([int(1<=h_<=(2 if 'three' in kind else 1)) for h_ in hh_])
                 if _INF.get('cal_on') is not None and kind=='two-hop' and _INF.get('corr'): _INF.setdefault('calrec_all',[]).extend(_INF['calrec']); _INF['cal_on']=None
             res[kind]=(float(np.mean(hits)) if hits else float('nan'),len(hits)); d_=_INFM.get('dbg',[0,0,0.0]); act_[kind]=d_[2]/max(1,d_[0])
             if kind.startswith('CTX2'): cp0_=_INF['copy'].pop(kind,[]); res[kind+f" (picked another in-context name {np.mean(cp0_) if cp0_ else float('nan'):.2f})"]=res.pop(kind)
+            if kind.startswith('HELD-OUT'): bg0_=_INF.setdefault('brg',{}).pop(kind,[]); res[kind+f" (picked a bridge {np.mean(bg0_) if bg0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith(('UPDATED','NOISE')): st0_=_INF.setdefault('stale',{}).pop(kind,[]); res[kind+(' (STALE: old answer preferred' if kind.startswith('UPDATED') else ' (WRONG FLIP: false contradiction preferred')+f" {np.mean(st0_) if st0_ else float('nan'):.2f})"]=res.pop(kind)
         if aw9_ and not _INF.get('corr'): print("  [inference eval | changed facts] scored only once the domain of the new fact has been revisited - awaiting a revisit: "+", ".join(f"{k_} {v_}" for k_,v_ in aw9_.items()),flush=True)
         if _INF.get('corr') and int(getattr(cfg,'inf_eval_hard',0)) and 'END' in tag:   # FALSE HITS: invented names never seen anywhere

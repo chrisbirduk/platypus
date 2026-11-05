@@ -1,11 +1,11 @@
 """Data-free input covariances, importance and revisit bookkeeping."""
 import math
 import torch
-from platypus.config import (
-    PILE_DOMAINS,
-)
 from platypus.gating import (
     _f32,
+)
+from platypus.capacity import (
+    _lab,
 )
 from platypus.meta import (
     flow_importance, unit_features,
@@ -117,7 +117,7 @@ def revisit_begin(model, cfg, t):
         cur=getattr(o,n); m=torch.zeros_like(cur)
         for w,c in oth: m=torch.maximum(m,w*c[j])
         setattr(o,n,m)
-    if tau>0 and oth: print('  [recency] protection weight per old domain: '+' '.join(f'{PILE_DOMAINS[d][:6]} {w_(d):.2f}' for d in sorted(D) if d!=t))
+    if tau>0 and oth: print('  [recency] protection weight per old domain: '+' '.join(f'{_lab(None,d)} {w_(d):.2f}' for d in sorted(D) if d!=t))
     model.__dict__['_imp_base']=[getattr(o,n).clone() for o,n in _rev_items(model)]
     return own is not None
 
