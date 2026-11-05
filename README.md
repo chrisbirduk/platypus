@@ -119,6 +119,17 @@ The slow network learns general skill, and only from real text or verified repla
 
 Turning the oracle options off cost nothing: mean forgetting −0.001 and final BPC 2.072, against −0.003 / 2.082 with them on; discovery found 54 of 58 chains, with no wrong conclusion accepted. The figures cg26p and earlier report below are in the written wording, so they overstate what the weights and the store hold. The hippocampal side (the store) generalises to new wordings; the cortex (the weights) mostly does not, and three-hop answers usually stop at the bridge. Without the slot cap the router opened a new slot on every revisit (+0.06 BPC, seed 1), so the cap stays (`PLATYPUS_SLOTS` lifts it for tests).
 
+**Re-keying on the GPU (cg26p, full size, three passes, 30 visits).** The run kept the cg26p training and added JEPA readouts only. Re-solving every edit with its current key ended the decay that held cg26o at about 0.3:
+
+| Weights alone (written wording) | cg26p | cg26o |
+|---|---|---|
+| Two-hop at visit 10 / 16 / 21 / 30 | 0.67 / 0.62 / 0.64 / 0.81 | 0.50 / 0.28 / about 0.28 / – |
+| End of run: one-hop / two-hop / three-hop | 0.79 / 0.91 / 0.79 | – |
+| Older vs recent conclusions (store lesion, older vs recent) | 1.00 vs 0.90 (1.00 vs 0.85) | 0.73 vs 0.16 locally |
+| Final BPC / forgetting | 1.376 / +0.060 | cg20y 1.368 / +0.058 |
+
+Older conclusions now survive without the store better than recent ones, as the complementary learning systems view predicts. The store answered two-hop 0.99 and three-hop 0.91; 193 memories were released and 10 restored; routing was right on all 26 printed visits. These figures are in the wording the system wrote, with the oracle options on. In other wordings the weights answer less (typed two-hop 0.48, reworded 0.53, one-hop in an unseen wording 0.41 against 0.83), and the ceiling test shows no composition in the weights: chains taught only their one-hop facts give two-hop 0.17, against 0.95 in context. cg26q measures the same build with held-out wordings.
+
 **Re-keying every edit every sleep (cg26p, local five-domain harness).** On the GPU, cg26o showed why weight edits fade: the layers below the edited matrix keep learning, so the key a question produces drifts away from the key the edit was aimed at (key cosine about 0.75 after one visit, about 0.4 after four or more). Refreshing 8 conclusions per edit could not keep up with over 160 edited conclusions. cg26p re-solves every edited conclusion, live or released, with its current key in one closed-form solve at every sleep:
 
 | End of run | cg26p | cg26o |
