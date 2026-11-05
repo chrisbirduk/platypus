@@ -57,6 +57,7 @@ class _SlotF:
     Writes go to slot i (in place); Gt is the running log decay, Gs the log decay at each slot's write (so old slots are never rescaled)."""
     __slots__=('U','K','Gs','Gt','r0','i')
     def __init__(s,U,K,Gs,Gt,r0,i=0): s.U=U; s.K=K; s.Gs=Gs; s.Gt=Gt; s.r0=r0; s.i=i
+_CHN={'on':False,'k':{}}   # merged-memory chaining loss: keys captured per delta block (inference.supmem)
 _CARRY={'on':False,'nr':0,'st':{},'new':{},'sm':None,'slot':None,'rows':None}   # CONTINUOUS CONTEXT (ctx_carry): carried delta-rule memories of the real rows, per block
 _PREC={'p':0.0,'C':0,'det':False}   # preconditioned delta-rule writes (mix_precond, mix_precond_chunk, mix_precond_detach); set by setup_kernel
 def _smem_seed(slot,nr):
@@ -724,6 +725,7 @@ class DeltaBlock(nn.Module):
                     be_o=(bt.float() if bt is not None else torch.sigmoid(s.beta.float()).expand(B,T,mh))[...,None]
                     A_o=_ORACLE['st'].setdefault(id(s),[0.0,0.0])
                     A_o[0]=A_o[0]+torch.einsum('bthi,bthj->hij',kn_o*be_o,kn_o); A_o[1]=A_o[1]+torch.einsum('bthi,bthj->hij',vv_o*be_o,kn_o)
+            if _CHN['on'] and q is None: _CHN['k'][id(s)]=k
             cr_={'S':_CARRY['st'].get(id(s)),'P':_CARRY['st'].get((id(s),'P')),'nr':_CARRY['nr'],'rows':_CARRY.get('rows'),'grad':bool(_CARRY.get('grad')) and _RC_GRAD['on'],'fac':bool(_CARRY.get('fac'))} if (_CARRY['on'] and q is None and s0_ is None) else None
             out=_delta_core(k, v, bt, la, mh, None if mb else s.beta, B, T, getattr(s,'_kern','torch'), q, s0_, carry=cr_)   # CONTINUOUS CONTEXT
             if cr_ is not None and 'out' in cr_:
