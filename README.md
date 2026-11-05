@@ -537,7 +537,7 @@ The package keeps every function and option of the former single file, grouped b
 
 Names a module needs from a module that loads before it are imported at its top. A few names are needed only at run time from a module that loads after it (for example the training loop calling into sleep); each module lists those in a `_LATE` table, and `platypus/__init__.py` links them once every module is loaded. Module-level state that is rebound while running goes through `common._set_global`, so every module sees the new value.
 
-The split was made by `tools/refactor/` (stage 0 edits, then the split) and checked by running the old single file and the package side by side on the local harness with the same seed: the logs are identical apart from wall-clock times. RESULT_LINE
+The split was made by `tools/refactor/` (stage 0 edits, then the split) and checked by running the old single file and the package side by side on the local harness with the same seed: the logs are identical apart from wall-clock times. On the full-build local safety configuration (5 domains, 2 passes) both produce 974 log lines and end at forgetting −0.004, final BPC 2.081; 11 lines differ, all of them how many proposed REM traces are tagged as familiar remote sentences (and a count that follows from it), which differs in the same way between two runs of the old file.
 
 ## Reading the logs
 
@@ -632,6 +632,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **2 November.** Dreams judged by mutual compression; Fisher-protected replay; the JEPA dream selector; memories released from the fast store, deleted, and timed by a model of forgetting (cg21–cg26h).
 - **3 November.** The JEPA selector rebuilt on LeJEPA and trained on outcomes; CLS integration; release by predicted recall and ghost reinstatement, first seen on the GPU; cue repair; centred closed-form edits giving the first durable transfer into the weights and the first temporal gradient (cg26i–cg26m); on the GPU, two-hop 0.55 from the weights alone; capped edits and adaptive sleep, with sleep length set by the model's own statistics (cg26n).
 - **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none; with old premises evicted, sleep keeps solving remote problems only when fact records protect them (25 of 65 against 4 of 86, two seeds), and REM recombination itself adds nothing over NREM. The decay of weight edits traced to key drift on the GPU; every edit re-keyed every sleep (cg26p).
+- **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
 
 ## Contributing
 
