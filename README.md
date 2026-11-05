@@ -685,16 +685,56 @@ If you use Platypus in your work, please cite:
 
 ## References
 
+Works this project draws on or compares itself with. The list is incomplete (see [A note on this documentation](#a-note-on-this-documentation)); please open an issue for anything missing.
+
+**Memory systems and sleep**
+
 - McClelland, McNaughton and O'Reilly (1995). [Why there are complementary learning systems in the hippocampus and neocortex](https://doi.org/10.1037/0033-295X.102.3.419). *Psychological Review* 102(3).
 - Kumaran, Hassabis and McClelland (2016). [What learning systems do intelligent agents need? Complementary learning systems theory updated](https://doi.org/10.1016/j.tics.2016.05.004). *Trends in Cognitive Sciences* 20(7).
-- Huh, Cheung, Wang and Isola (2024). [The platonic representation hypothesis](https://arxiv.org/abs/2405.07987). ICML 2024.
-- Meng et al. (2023). [Mass-editing memory in a transformer](https://arxiv.org/abs/2210.07229) (MEMIT). ICLR 2023.
 - Tse et al. (2007). [Schemas and memory consolidation](https://doi.org/10.1126/science.1135935). *Science* 316.
+- Cai, Mednick, Harrison, Kanady and Mednick (2009). [REM, not incubation, improves creativity by priming associative networks](https://doi.org/10.1073/pnas.0900271106). *PNAS* 106(25).
 - Settles and Meeder (2016). [A trainable spaced repetition model for language learning](https://aclanthology.org/P16-1174/) (half-life regression). ACL 2016.
+
+**Continual learning**
+
+- Kirkpatrick et al. (2017). [Overcoming catastrophic forgetting in neural networks](https://doi.org/10.1073/pnas.1611835114) (elastic weight consolidation). *PNAS* 114(13).
+- Ritter, Botev and Barber (2018). [Online structured Laplace approximations for overcoming catastrophic forgetting](https://arxiv.org/abs/1805.07810). NeurIPS 2018.
+- Martens and Grosse (2015). [Optimizing neural networks with Kronecker-factored approximate curvature](https://arxiv.org/abs/1503.05671) (K-FAC). ICML 2015.
+- Shin, Lee, Kim and Kim (2017). [Continual learning with deep generative replay](https://arxiv.org/abs/1705.08690). NeurIPS 2017.
+
+**Multi-hop reasoning and knowledge editing**
+
+- Balesni, Korbak and Evans (2024). [The two-hop curse: LLMs trained on A→B, B→C fail to learn A→C](https://arxiv.org/abs/2411.16353).
+- Zhong et al. (2023). [MQuAKE: assessing knowledge editing in language models via multi-hop questions](https://arxiv.org/abs/2305.14795). EMNLP 2023.
+- Cohen et al. (2024). [Evaluating the ripple effects of knowledge editing in language models](https://arxiv.org/abs/2307.12976) (RippleEdits). *TACL* 12.
+- Meng et al. (2023). [Mass-editing memory in a transformer](https://arxiv.org/abs/2210.07229) (MEMIT). ICLR 2023.
+
+**Architecture and optimisation**
+
+- Schlag, Irie and Schmidhuber (2021). [Linear transformers are secretly fast weight programmers](https://arxiv.org/abs/2102.11174) (the delta rule as a fast-weight memory). ICML 2021.
+- Yang, Wang, Zhang, Shen and Kim (2024). [Parallelizing linear transformers with the delta rule over sequence length](https://arxiv.org/abs/2406.06484) (DeltaNet, WY-form parallel solve). NeurIPS 2024.
+- Yang, Kautz and Hatamizadeh (2025). [Gated delta networks: improving Mamba2 with delta rule](https://arxiv.org/abs/2412.06464). ICLR 2025.
+- Jordan et al. (2024). [Muon: an optimizer for hidden layers in neural networks](https://kellerjordan.github.io/posts/muon/).
+- Radford et al. (2019). [Language models are unsupervised multitask learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) (GPT-2).
+
+**Representation learning**
+
 - Assran et al. (2023). [Self-supervised learning from images with a joint-embedding predictive architecture](https://arxiv.org/abs/2301.08243) (I-JEPA).
 - Balestriero and LeCun (2025). [LeJEPA: provable and scalable self-supervised learning without the heuristics](https://arxiv.org/abs/2511.08544) (SIGReg); [code](https://github.com/rbalestr-lab/lejepa).
+- Huang, LeCun and Balestriero (2025). [LLM-JEPA: large language models meet joint embedding predictive architectures](https://arxiv.org/abs/2509.14252).
+- Huh, Cheung, Wang and Isola (2024). [The platonic representation hypothesis](https://arxiv.org/abs/2405.07987). ICML 2024.
+- Plate (1995). [Holographic reduced representations](https://doi.org/10.1109/72.377968) (vector-symbolic binding). *IEEE Transactions on Neural Networks* 6(3).
+
+**Statistics and retrieval**
+
+- Rissanen (1978). [Modeling by shortest data description](https://doi.org/10.1016/0005-1098(78)90005-5) (minimum description length). *Automatica* 14(5).
+- Spärck Jones (1972). [A statistical interpretation of term specificity and its application in retrieval](https://doi.org/10.1108/eb026526) (inverse document frequency). *Journal of Documentation* 28(1).
+
+**Data**
+
+- Gao et al. (2020). [The Pile: an 800GB dataset of diverse text for language modeling](https://arxiv.org/abs/2101.00027); [uncopyrighted subset](https://huggingface.co/datasets/monology/pile-uncopyrighted) (training data).
+- Yao et al. (2019). [DocRED: a large-scale document-level relation extraction dataset](https://arxiv.org/abs/1906.06127). ACL 2019.
 - Tan et al. (2022). [Revisiting DocRED: addressing the false negative problem in relation extraction](https://arxiv.org/abs/2205.12696) (Re-DocRED); [data](https://github.com/tonytan48/re-docred).
-- [The Pile, uncopyrighted subset](https://huggingface.co/datasets/monology/pile-uncopyrighted) (training data).
 
 ## Licence
 
