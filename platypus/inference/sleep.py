@@ -3,6 +3,9 @@ import math
 import numpy as np
 import torch
 import torch.nn.functional as F
+from platypus.common import (
+    _FIT_W,
+)
 from platypus.protection import (
     _kf_apply,
 )
@@ -537,6 +540,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             ans_=c_.get('C') or c_.get('B'); s0_=c_.get('s','')
             if not ans_ or ans_ not in s0_: continue
             ctx_=s0_[:s0_.rfind(ans_)]
+            if int(getattr(cfg,'inf_clean',0)) and not c_.get('fact') and c_.get('A') and c_.get('C'): ctx_=_FIT_W.format(A=c_['A'])   # inf_clean: fit prompt != test prompts
             try: lp_=_inf_lp(model,cfg,ctx_,[ans_],int(S_slot(c_['d'])),False)[0]
             except Exception: continue
             b_=-lp_/math.log(2)/max(1,len(ans_)+1); c_['tbits']=b_; c_['gchk']=vis1_; nb_g.append(b_)

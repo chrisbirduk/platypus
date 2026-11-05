@@ -88,7 +88,7 @@ _HEAVY=('_sm','_sm_log','_tr','_hyb','_vals_share','_share_res','_bank','_reserv
 
 def _pmap(model): return {id(p_):p_ for p_ in model.parameters()}
 
-def _lab(cfg,d): return PILE_DOMAINS[d][:6]
+def _lab(cfg,d): return PILE_DOMAINS[d][:6] if 0<=int(d)<len(PILE_DOMAINS) else f"slot{int(d)}"
 
 def domain_delta(model, d):
     """Domain d's own configuration relative to the shared main weights: its specific delta + its cross gains x

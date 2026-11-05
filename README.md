@@ -109,6 +109,16 @@ The slow network learns general skill, and only from real text or verified repla
 
 ## Results
 
+**Clean evaluation (cg26q, local five-domain harness).** An outside code review found that several readouts and training options let the planted benchmark leak in: REM subjects drawn from the probe facts, dream cues chosen by the benchmark's gold entities, JEPA batches balanced by the planted label, probes asked in the exact wording the system wrote its conclusions in, through the true domain's slot, with the bridge entity left out of the candidates. cg26q turns all of these off by default (`PLATYPUS_CLEAN=0` restores cg26p) and adds held-out readouts: two wordings never used for writing, the bridge among the candidates, and no slot given (the answer is scored over every slot in use).
+
+| End of run (seed 1, 35 chains) | Written wording | Held-out wording |
+|---|---|---|
+| Two-hop from the weights alone (typed wording) | 0.46 (0.43) | **0.17 (0.26)** |
+| Two-hop with the fast store (typed wording) | 0.94 (0.97) | **0.69 (0.86)** |
+| Three-hop from the weights / with the store | 0.11 / 0.72 | 0.00 / 0.28 (bridge picked 0.61) |
+
+Turning the oracle options off cost nothing: mean forgetting −0.001 and final BPC 2.072, against −0.003 / 2.082 with them on; discovery found 54 of 58 chains, with no wrong conclusion accepted. The figures cg26p and earlier report below are in the written wording, so they overstate what the weights and the store hold. The hippocampal side (the store) generalises to new wordings; the cortex (the weights) mostly does not, and three-hop answers usually stop at the bridge. Without the slot cap the router opened a new slot on every revisit (+0.06 BPC, seed 1), so the cap stays (`PLATYPUS_SLOTS` lifts it for tests).
+
 **Re-keying every edit every sleep (cg26p, local five-domain harness).** On the GPU, cg26o showed why weight edits fade: the layers below the edited matrix keep learning, so the key a question produces drifts away from the key the edit was aimed at (key cosine about 0.75 after one visit, about 0.4 after four or more). Refreshing 8 conclusions per edit could not keep up with over 160 edited conclusions. cg26p re-solves every edited conclusion, live or released, with its current key in one closed-form solve at every sleep:
 
 | End of run | cg26p | cg26o |
@@ -422,6 +432,9 @@ Environment switches:
 | `PLATYPUS_PASSES=1` | Run pass 1 only |
 | `PLATYPUS_CF=0` | Turn off closed-form edits into the weights (on by default, capped and centred) |
 | `PLATYPUS_SLEEP=fixed` | Use the fixed sleep schedule instead of adaptive sleep (adaptive by default from cg26n) |
+| `PLATYPUS_CLEAN=0` | Restore the cg26p evaluation and training options (oracle options on, no held-out readouts); clean evaluation is the default from cg26q |
+| `PLATYPUS_HINTS=0` | No conduit hints (true bytes given to the generator) in the closed-loop passes |
+| `PLATYPUS_SLOTS=N` | Let the router open up to N slots instead of one per domain (test only: locally every revisit then went to a new slot) |
 
 Useful options:
 
@@ -633,6 +646,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **3 November.** The JEPA selector rebuilt on LeJEPA and trained on outcomes; CLS integration; release by predicted recall and ghost reinstatement, first seen on the GPU; cue repair; centred closed-form edits giving the first durable transfer into the weights and the first temporal gradient (cg26i–cg26m); on the GPU, two-hop 0.55 from the weights alone; capped edits and adaptive sleep, with sleep length set by the model's own statistics (cg26n).
 - **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none; with old premises evicted, sleep keeps solving remote problems only when fact records protect them (25 of 65 against 4 of 86, two seeds), and REM recombination itself adds nothing over NREM. The decay of weight edits traced to key drift on the GPU; every edit re-keyed every sleep (cg26p).
 - **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
+- **5 November.** cg26q: clean evaluation after an outside code review. Oracle options off by default at no cost; held-out readouts show two-hop recall from the weights of 0.17 in new wordings (0.46 in the written wording) and 0.69 with the fast store.
 
 ## Contributing
 

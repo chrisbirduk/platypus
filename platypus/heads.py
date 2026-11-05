@@ -4,10 +4,7 @@ import time
 import torch
 import torch.nn.functional as F
 from platypus.common import (
-    LOG2,
-)
-from platypus.config import (
-    PILE_DOMAINS,
+    LOG2, _nslots,
 )
 from platypus.capacity import (
     apply_delta, domain_delta,
@@ -20,7 +17,7 @@ def head_stats_update(model, x, dom_id, step, cfg):
     variance of the final representation (second half of the domain, when it has settled)."""
     dev=x.device
     if not hasattr(model,'_bg'):
-        object.__setattr__(model,'_bg',torch.zeros(len(PILE_DOMAINS),256*256,device=dev))
+        object.__setattr__(model,'_bg',torch.zeros(_nslots(cfg),256*256,device=dev))
         object.__setattr__(model,'_fs',{})
     pair=(x[:,:-1]*256+x[:,1:]).reshape(-1)
     model._bg[dom_id]+=torch.bincount(pair,minlength=256*256).float()

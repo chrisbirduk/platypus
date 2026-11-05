@@ -3,8 +3,11 @@ import contextlib
 import math
 import torch
 import torch.nn as nn
+from platypus.common import (
+    _nslots,
+)
 from platypus.config import (
-    PILE_DOMAINS, sample_theta,
+    sample_theta,
 )
 from platypus.gating import (
     _track,
@@ -42,16 +45,16 @@ class Model(nn.Module):
         for E in s.ngram: E.weight.data.zero_()
         s.__dict__['_ng_cur']=[torch.zeros(int(z)) for z in sz]; s.__dict__['_ng_old']=[torch.zeros(int(z)) for z in sz]
         if cfg.pu_k>0:                                                  # PRIVATE TRUNK UNITS per domain
-            k_=int(cfg.pu_k); ND_=len(PILE_DOMAINS)
+            k_=int(cfg.pu_k); ND_=_nslots(cfg)
             for b in s.blocks:
                 b.pu_in=nn.Parameter(torch.randn(ND_,cfg.d_model,k_)*(1.0/math.sqrt(cfg.d_model))); b.pu_b=nn.Parameter(torch.zeros(ND_,k_))
                 b.pu_out=nn.Parameter(torch.zeros(ND_,k_,cfg.d_model)); b._pu_dream_grad=bool(cfg.pu_dream_grad)
                 if 0<cfg.pu_k_base<k_:
                     mk_=torch.zeros(ND_,k_); mk_[:,:int(cfg.pu_k_base)]=1.0; b.register_buffer('pu_mask',mk_)
-        k_=int(cfg.film_k); s.film_codes=nn.Parameter(torch.randn(len(PILE_DOMAINS),k_)*0.1)
+        k_=int(cfg.film_k); s.film_codes=nn.Parameter(torch.randn(_nslots(cfg),k_)*0.1)
         for b in s.blocks:
             b.film_g=nn.Parameter(torch.zeros(cfg.d_model,k_)); b.film_b=nn.Parameter(torch.zeros(cfg.d_model,k_))
-        s.heads=nn.ModuleList([Head(cfg.d_model,cfg.vocab) for _ in range(len(PILE_DOMAINS))])
+        s.heads=nn.ModuleList([Head(cfg.d_model,cfg.vocab) for _ in range(_nslots(cfg))])
         for h_ in s.heads: h_.cap=cfg.logit_cap
         # EMBEDDING CHANNEL NEURONS: shared byte/position entry point, gated like any layer
         s.register_buffer('emb_theta0', sample_theta(cfg.d_model))

@@ -5,7 +5,7 @@ import time
 import torch
 import torch.nn.functional as F
 from platypus.common import (
-    LOG2,
+    LOG2, _nslots,
 )
 from platypus.config import (
     PILE_DOMAINS,
@@ -21,7 +21,7 @@ from platypus.private import (
     _SLP, _XDG, priv,
 )
 from platypus.slots import (
-    _ema_params,
+    _ema_params, _rbg_add,
 )
 from platypus.layers import (
     _BPTT, _CARRY, _carry_off, _carry_on, _pair_on,
@@ -63,7 +63,7 @@ def borrow_align(model, cfg, olds, dom_id, x, y, n_rows=8):
     flat=lambda g: torch.cat([(gi if gi is not None else torch.zeros_like(p_)).flatten().float() for gi,p_ in zip(g,ps)])
     gc=flat(torch.autograd.grad(F.cross_entropy(model.heads[dom_id](model.features(x)).reshape(-1,256),y.reshape(-1)),ps,allow_unused=True))
     G=model.__dict__.get('_borrow_g')
-    if G is None: G=model.__dict__['_borrow_g']=torch.zeros(len(PILE_DOMAINS),device=y.device)
+    if G is None: G=model.__dict__['_borrow_g']=torch.zeros(_nslots(cfg),device=y.device)
     Pp=min(cfg.dream_stream_prompt,min(cfg.dream_len,cfg.seq_len)//2); Q=model._dsq; out={}
     for d in olds:
         q=Q.get(d) or []
@@ -423,6 +423,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         _kfm_=bool(cfg.pmuon and cfg.kf_source=='main' and step%cfg.kf_every==cfg.kf_every//2)
         if cfg.noise_diag>0 and n_old>0 and step%cfg.noise_diag==cfg.noise_diag//2: noise_diag(model,cfg,x,y,dom_id,olds)
         if cfg.head_select_eval or cfg.fwt_zeroshot or cfg.block_attr or cfg.block_auto: head_stats_update(model, x, dom_id, step, cfg)
+        _rbg_add(model,cfg,x,dom_id)                                         # byte-pair profile of the slot being trained (routing evidence, drift-free)
         lv=model.__dict__.setdefault('_live',[]); lv.append((x,y)); del lv[:-cfg.buffer_batches]   # transient, current domain only
         model._cov_on=(step%cfg.cov_every==0) and not (cfg.cov_skip and not (cfg.orth_gate or cfg.pg_mode or cfg.og_common_always or cfg.polar_diag))
         if cfg.topic_diag: model._topics.update(x, dom_id)
@@ -594,7 +595,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     rel_=(po_[:n_old].mean((1,2))*(n_old+1)).clamp(max=1.0)
                     R_=model.__dict__.get('_borrow_r'); oi_=torch.tensor(olds,device=y.device)
                     if R_ is None or step<=1:
-                        R_=model.__dict__['_borrow_r']=torch.zeros(len(PILE_DOMAINS),device=y.device); R_[oi_]=rel_
+                        R_=model.__dict__['_borrow_r']=torch.zeros(_nslots(cfg),device=y.device); R_[oi_]=rel_
                     else: R_[oi_]=0.9*R_[oi_]+0.1*rel_
             if fk_:                                                                  # FUSED KL over every old head at once
                 tg_=tgt if torch.is_tensor(tgt) else torch.stack(tgt)
