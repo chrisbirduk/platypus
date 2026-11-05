@@ -65,6 +65,8 @@ _common._PKG_MODULES[:] = _loaded
 _common._PKG_ORDER[:] = [(_sys.modules['platypus.' + m_], n_) for m_, n_ in _ord.ORDER]
 from platypus import profiling as _profiling
 _profiling._label_regions()
+import os as _os
+if _os.environ.get('PLATYPUS_FNTIME','0')!='0': _profiling._time_functions()
 from platypus import presets
 from platypus.config import Config, _CONFIG_DEFAULTS
 from platypus.data import set_stream_source

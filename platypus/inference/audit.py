@@ -149,14 +149,17 @@ def _inf_abstain_sources(S_,cr_,tag):
                 hb_[h0_][0]+=1; hb_[h0_][1]+=int(r_[0]); hb_[h0_][2]+=int(frozenset((r_[4],r_[6])) in cm_)
             print(f"  [inference FREQUENT ENTITIES | {tag}] two-hop (n, right, chain found): frequent names {hb_[True][0]}: {hb_[True][1]/max(1,hb_[True][0]):.2f}, {hb_[True][2]/max(1,hb_[True][0]):.2f} | ordinary names {hb_[False][0]}: {hb_[False][1]/max(1,hb_[False][0]):.2f}, {hb_[False][2]/max(1,hb_[False][0]):.2f}",flush=True)
         print(f"  [inference TWO-HOP GAP | {tag}] "+' | '.join(f"{k_} {v_} (e.g. {exs_[k_]})" for k_,v_ in sorted(cat_.items())),flush=True)
-    ex_=[];ver_=0;nc_=0
+    ex_=[];ver_=0;nc_=0;nemp_=0
     for r_ in cr_:
         c_=cm_.get(frozenset((r_[4],r_[5])))
         if c_ is None: continue
         nc_+=1; s1_=S_['it'][c_['src'][0]]['s'].decode('latin-1','replace').strip(); s2_=S_['it'][c_['src'][1]]['s'].decode('latin-1','replace').strip()
+        if (not s1_ or not s2_) and c_.get('srct'):                             # cg26q: premises kept with a released conclusion after its sentences left the store
+            k8_=[x_.decode('latin-1','replace').strip() for x_ in c_['srct']]; s1_=s1_ or k8_[0]; s2_=s2_ or (k8_[1] if len(k8_)>1 else '')
+        if not s1_ or not s2_: nemp_+=1
         good_=(r_[5]==r_[6]) and (r_[7] in s1_+' '+s2_) and (r_[4] in s1_+' '+s2_) and (r_[6] in s1_+' '+s2_); ver_+=int(good_)
         if len(ex_)<2: ex_.append(f"{r_[4]} -> {r_[5]} because \"{s1_[:80]}\" + \"{s2_[:80]}\" ({'checks out' if good_ else 'WRONG'})")
-    print(f"  [inference show-sources | {tag}] {nc_} answers backed by a stored conclusion; cited sources contain the true chain (A, bridge, C) and the answer is right in {ver_}/{nc_}"+(" | e.g. "+" || ".join(ex_) if ex_ else ''),flush=True)
+    print(f"  [inference show-sources | {tag}] {nc_} answers backed by a stored conclusion; cited sources contain the true chain (A, bridge, C) and the answer is right in {ver_}/{nc_} (sources lost: {nemp_})"+(" | e.g. "+" || ".join(ex_) if ex_ else ''),flush=True)
 
 @torch.no_grad()
 def _inf_fade_sent(sn_,d_,S_slot,Lr_,filler,feats,dev_,beta_,it_n=10):

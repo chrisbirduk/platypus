@@ -100,6 +100,9 @@ def _inf_store_evict(cfg,S_,model):
                 else: del ob9_[o9_]
             if not ob9_: del S_['rel'][k9_]
         S_['_evclean']=S_.get('_evclean',0)+nr9_
+    for c_ in S_.get('conc',()):                                                # cg26q PROVENANCE: a released conclusion keeps a short copy of its two premises when their
+        if c_.get('freed') and 'srct' not in c_ and any(isinstance(i_,int) and i_ in E_ for i_ in c_.get('src',())):   #   sentences leave the store, so it can still cite them
+            c_['srct']=tuple(bytes(S_['it'][i_]['s'][:160]) if isinstance(i_,int) and 0<=i_<len(S_['it']) else b'' for i_ in c_['src'])
     for i_ in ev_:
         it_=S_['it'][i_]; nm_.update(_INF_NAME.findall(it_['s'])); it_['s']=b''; it_['gone']=True
     for n_ in nm_:
