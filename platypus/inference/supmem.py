@@ -11,7 +11,7 @@ and value projections (all weights otherwise); inf_sup_chain > 0 adds a CHAINING
 M_AB k_q, should match the key B produces as a subject, k_B): inf_sup_chain_mode 'nce' (contrastive among the batch's bridges, temperature
 inf_sup_chain_tau) or 'cos'.
 Readout per sleep, before and after, store off: two-hop from the superposed memory, from no memory, from the B-C premise's memory alone,
-from a random memory (another chain's premises) and with the premises as text; the same rows for up to inf_sup_ho_n (24) steps of chains
+from a random memory (another chain's premises) and with the premises as text; the same rows for up to inf_sup_ho_n (64) steps of chains
 held out by inf_kgx_hold, which are never concluded or trained (HELD-OUT CHAINS line: transfer of the skill, each sleep); a one-hop control (premise prefix -> B from that premise's memory against none); the chaining
 margin and own-bridge retrieval. A training step that runs out of GPU memory is retried with half the rows.
 The brake is measured in eager mode before and after (the compiled-forward offset is printed); inf_sup_anc_visit F takes that share of the
@@ -225,20 +225,22 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
             out9_={k_:(float(torch.cat(v_).mean()) if v_ else float('nan')) for k_,v_ in R_.items()}
             out9_['chain']=float(np.mean(ch_)) if ch_ else float('nan'); out9_['chain_ctl']=float(np.mean(cc_)) if cc_ else float('nan')
             return out9_
-    try: HO_,hmiss_=_sup_heldout(cfg,S_,S_slot,int(getattr(cfg,'inf_sup_ho_n',24)))   # HELD-OUT CHAINS (never concluded, never trained): readout only
+    try: HO_,hmiss_=_sup_heldout(cfg,S_,S_slot,int(getattr(cfg,'inf_sup_ho_n',64)))   # HELD-OUT CHAINS (never concluded, never trained): readout only
     except Exception as e8_: HO_,hmiss_=[],0; print(f"  [inference SUPERPOSED-MEMORY DREAMS | HELD-OUT CHAINS] unavailable ({type(e8_).__name__}: {e8_})"[:260],flush=True)
+    xs_=[0]
     def hprobe():
         """the same two-hop rows for the held-out chains: superposed, none, B-C premise only, random memory (the next held-out chain's
         premises), premises as text; each item read in the slot of its A-B premise"""
         if not HO_: return None
         with torch.no_grad():
-            R_={k_:[] for k_ in ('sup','none','bc','rand','text')}
+            R_={k_:[] for k_ in ('sup','none','bc','rand','text')}; xs_[0]=0
             AL_=[(q2_(c_)+(list(m_),),s_) for s_,c_,m_ in HO_]; L9_=int(cfg_seq_(model))
             for s_ in sorted(set(s9_ for s9_,_,_ in HO_)):
                 ix9_=[j_ for j_,(_,s9_) in enumerate(AL_) if s9_==s_]; rw_=[AL_[j_][0] for j_ in ix9_]
                 R_['sup'].append(_sup_lp2(model,cfg,rw_,s_,'mem')); R_['none'].append(_sup_lp2(model,cfg,rw_,s_,'none'))
                 R_['bc'].append(_sup_lp2(model,cfg,[(p_,t_,[m_[1]]) for p_,t_,m_ in rw_],s_,'mem'))
-                if len(AL_)>1: R_['rand'].append(_sup_lp2(model,cfg,[(p_,t_,AL_[(j_+1)%len(AL_)][0][2]) for j_,(p_,t_,_) in zip(ix9_,rw_)],s_,'mem'))
+                if len(ix9_)>1: R_['rand'].append(_sup_lp2(model,cfg,[(p_,t_,rw_[(j_+1)%len(rw_)][2]) for j_,(p_,t_,_) in enumerate(rw_)],s_,'mem'))   # same slot, as for the trained sample
+                elif len(AL_)>1: R_['rand'].append(_sup_lp2(model,cfg,[(p_,t_,AL_[(ix9_[0]+1)%len(AL_)][0][2]) for p_,t_,_ in rw_],s_,'mem')); xs_[0]+=1   # a lone item: another slot's
                 tx_=[]
                 for p_,t_,m_ in rw_:
                     h_=max(8,(L9_-len(p_)-len(t_)-4)//2); tx_.append((m_[0][-h_:]+b' '+m_[1][-h_:]+b' '+p_,t_,None))
@@ -312,7 +314,8 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
         if H0_ is not None and H1_ is not None:
             f8_=lambda a_,b_: f"{a_:.3f} -> {b_:.3f} ({b_-a_:+.3f})"
             print(f"  [inference SUPERPOSED-MEMORY DREAMS | HELD-OUT CHAINS] visit {vis_}: {len(HO_)} steps of chains held out by inf_kgx_hold (never concluded, never trained), "
-                  f"{len(set(s9_ for s9_,_,_ in HO_))} slots, {hmiss_} more waiting for a premise | log p(C) per byte, store off, before -> after this phase: "
+                  f"{len(set(s9_ for s9_,_,_ in HO_))} slots, {hmiss_} more waiting for a premise (their premises are read like any fact: stored, and among the anchor rows as plain text; "
+                  f"only the conclusion is withheld) | random memory from the same slot{f' ({xs_[0]} lone items from another slot)' if xs_[0] else ''} | log p(C) per byte, store off, before -> after this phase: "
                   f"SUPERPOSED {f8_(H0_['sup'],H1_['sup'])}, NO memory {f8_(H0_['none'],H1_['none'])}, B-C premise ONLY {f8_(H0_['bc'],H1_['bc'])}, "
                   f"RANDOM memory {f8_(H0_['rand'],H1_['rand'])}, premises as TEXT {f8_(H0_['text'],H1_['text'])} | "
                   f"SUPERPOSED minus B-C ONLY (composition beyond the memory that names C): held-out {f8_(H0_['sup']-H0_['bc'],H1_['sup']-H1_['bc'])}, "
