@@ -8,7 +8,7 @@ answer confidence).
 Readouts each sleep (probe chains, store off for every answer):
   RETRIEVAL   is the true fact sentence (it names A and B) the top-1 / among the top-5 of all live stored sentences for 'A r0 '; the same
               for the question in a HELD-OUT wording (inf_eval paraphrases); NAME LOOKUP baseline: the most recent stored sentence
-              naming A.
+              naming A; HYBRID: the stored sentences naming A, ranked by the JEPA key (names pick the candidates, the index the fact).
   ONE-HOP     answer B among 20 candidates from the weights alone, with the RETRIEVED sentence in context, with the TRUE sentence in
               context (ceiling); held-out wording with the retrieved sentence.
   TWO-HOP     by retrieval: hop 1 retrieves for 'A r0 ', reads B' from that sentence (20 candidates), hop 2 retrieves for 'B' r1 ' and
@@ -93,7 +93,13 @@ def _jx_readout(model, cfg, S_, tag_):
     def ans_(ctx_, q_, tgt_, oth_, sl_):
         cs_ = [tgt_] + oth_; ps_ = (ctx_.decode('latin-1', 'replace') + ' ' + q_) if ctx_ else q_
         return cs_[int(np.argmax(_inf_lps(model, cfg, ps_, cs_, sl_, False)))]
-    R_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'name', 'w', 'ret', 'true', 'ho_ret', 'h1', 'two', 'two_rand', 'two_true')}
+    R_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'name', 'hyb', 'ho_hyb', 'w', 'ret', 'true', 'ho_ret', 'h1', 'two', 'two_rand', 'two_true')}
+    pos_ = {i_: j_ for j_, i_ in enumerate(lv_)}
+    def hyb_(q_, A_):                                                         # HYBRID: the sentences that name A, ranked by the JEPA key
+        c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
+        if not c9_: return None
+        p9_ = _JX['pr'](_JX['on'](_jx_batch([q_.encode('latin-1', 'replace')], int(getattr(cfg, 'inf_jx_len', 128)), dev_)))
+        return c9_[int((K_[c9_] - p9_).abs().sum(-1).argmin())]
     for c_ in ch_:
         A_, B_, C_ = c_['names'][:3]; r0_, r1_ = c_['rels'][0], c_['rels'][1]; sl_ = int(t2s_.get(int(c_['facts'][0][0]), 0)); sl2_ = int(t2s_.get(int(c_['facts'][1][0]), 0))
         tr1_ = next((S_['it'][i_]['s'] for i_ in reversed(NX_.get(A_, [])) if has_(S_['it'][i_]['s'], A_, B_)), None)
@@ -101,11 +107,15 @@ def _jx_readout(model, cfg, S_, tag_):
         if tr1_ is None: continue                                            # the fact is not (yet) in the store: nothing to retrieve
         q_ = f"{A_} {r0_} "; top_ = _jx_find(cfg, q_, K_, dev_); R_['r1'].append(has_(txt_(top_[0]), A_, B_)); R_['r5'].append(any(has_(txt_(i_), A_, B_) for i_ in top_))
         nm_ = S_['it'][NX_[A_][-1]]['s'] if NX_.get(A_) else None; R_['name'].append(bool(nm_) and has_(nm_, A_, B_))
+        with torch.no_grad(): hb_ = hyb_(q_, A_)
+        R_['hyb'].append(hb_ is not None and has_(txt_(hb_), A_, B_))
         oth_ = list(rs_.choice([x_ for x_ in alln_ if x_ not in c_['names']], 19, replace=False))
         R_['w'].append(ans_(None, q_, B_, oth_, sl_) == B_); R_['ret'].append(ans_(txt_(top_[0]), q_, B_, oth_, sl_) == B_); R_['true'].append(ans_(tr1_, q_, B_, oth_, sl_) == B_)
         if r0_ in _INF_PARA:
             qh_ = f"{A_} {_INF_PARA[r0_]} "; th_ = _jx_find(cfg, qh_, K_, dev_); R_['ho1'].append(has_(txt_(th_[0]), A_, B_)); R_['ho5'].append(any(has_(txt_(i_), A_, B_) for i_ in th_))
             R_['ho_ret'].append(ans_(txt_(th_[0]), qh_, B_, oth_, sl_) == B_)
+            with torch.no_grad(): hh_ = hyb_(qh_, A_)
+            R_['ho_hyb'].append(hh_ is not None and has_(txt_(hh_), A_, B_))
         if tr2_ is None: continue
         Bh_ = ans_(txt_(top_[0]), q_, B_, oth_, sl_); R_['h1'].append(Bh_ == B_)                            # hop 1: retrieve, read B'
         oth2_ = list(rs_.choice([x_ for x_ in alln_ if x_ not in c_['names']], 19, replace=False))
@@ -114,7 +124,7 @@ def _jx_readout(model, cfg, S_, tag_):
         Bt_ = ans_(tr1_, q_, B_, oth_, sl_); R_['two_true'].append(ans_(tr2_, f"{Bt_} {r1_} ", C_, oth2_, sl2_) == C_)
     f_ = lambda k_: f"{np.mean(R_[k_]):.2f} (n {len(R_[k_])})" if R_[k_] else "- (n 0)"
     print(f"  [JEPA INDEX | {tag_}] {len(lv_)} stored sentences keyed | RETRIEVAL of the fact sentence for 'A r0 ': top-1 {f_('r1')}, top-5 {f_('r5')} | HELD-OUT wording top-1 {f_('ho1')}, top-5 {f_('ho5')} | "
-          f"NAME LOOKUP (most recent sentence naming A) {f_('name')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "
+          f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
           f"true sentences {f_('two_true')} (chance 0.05)", flush=True)
 def _jx_sleep(model, cfg, S_):
