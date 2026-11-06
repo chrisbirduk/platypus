@@ -1,0 +1,22 @@
+{
+  "_comment": "Merged-memory dreams with the contrastive chaining loss, for the GPU test of cg26r. Keys starting with _ are ignored by scripts/merge_overrides.py.",
+  "inf_sup": 1,
+  "inf_sup_lr_abs": 0.0001,
+  "_inf_sup_lr_abs": "absolute rate for the phase (local: 3e-4 for 200 steps and 1e-4 for 120 steps over all weights cost +0.12 to +0.15 BPC and were rolled back)",
+  "inf_sup_steps": 120,
+  "inf_sup_retry": 2,
+  "inf_sup_retry_div": 3.0,
+  "_inf_sup_retry": "after a sleep is rolled back by the brake, retry from the same weights at a third of the rate, up to twice (1e-4, 3.3e-5, 1.1e-5); on the GPU the kv set is 42.6M parameters and 1e-4 x 120 steps cost +0.046 BPC on the visited domain",
+  "inf_sup_rows": 8,
+  "inf_sup_wgrad": 1,
+  "_inf_sup_wgrad": "the premise reads keep their gradient, so the premises can be written in a chainable form",
+  "inf_sup_params": "kv",
+  "_inf_sup_params": "only the delta blocks' key and value projections are trained (local: kept at +0.01 to +0.02 BPC)",
+  "inf_sup_chain": 1.0,
+  "inf_sup_chain_mode": "nce",
+  "inf_sup_chain_tau": 0.1,
+  "_inf_sup_chain_mode": "contrastive: the value returned for A must pick out its own bridge key among the batch's bridges (local: own-bridge retrieval 0.21 -> 0.52 after one sleep; a plain cosine loss raised every bridge alike)",
+  "inf_kgx": 1,
+  "inf_kgx_hold": 3,
+  "_inf_kgx_hold": "every third chain is never concluded, so held-out composition (GRAPH INTO WEIGHTS 5) can be measured; this lowers written-wording recall compared with cg26q"
+}

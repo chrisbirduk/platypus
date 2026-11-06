@@ -48,6 +48,9 @@ from platypus.inference.decay import (
 from platypus.inference.closed_form import (
     _CF_VARY, _cf_apply, _gpu_gb, _ws_batch, _ws_closed_form, _ws_direction, _ws_eager,
 )
+from platypus.inference.supmem import (
+    _sup_dreams,
+)
 
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     """timing wrapper: wall time of the whole sleep and of the linking step"""
@@ -83,6 +86,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
                           +(f" | since the first probe: separation {a9_['sep']-H9_[0][2]['sep']:+.3f}, alignment {a9_['mknn']-H9_[0][2]['mknn']:+.3f}" if len(H9_)>1 else ""),flush=True)
             except Exception as e9_: print(f"  [inference PLATONIC PROBE] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if int(getattr(cfg,'inf_cf_apply',0)): _cf_apply(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26l closed-form consolidation (kept under its brake)
+        if float(getattr(cfg,'inf_sup',0))>0: _sup_dreams(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # MERGED-MEMORY DREAMS (inference.supmem, under their own brake)
         if cai9_ is not None:                                                   # CAI TEST: after the whole sleep (inference, REM, writes, replay, closed-form edits)
             try:
                 td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); _cai_report(model,cfg,td9_,cai9_,_cai_score(model,cfg))

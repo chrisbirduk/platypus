@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26q**.
+Current build: **cg26r** (cg26q plus merged-memory dreams, off by default; `configs/presets/cg26r_merged.env` turns them on for the GPU test).
 
 ## A note on this documentation
 
@@ -523,6 +523,9 @@ Useful options:
 | `inf_cf_apply`, `inf_cf_center`, `inf_cf_scale`, `inf_cf_brake`, `inf_cf_budget`, `inf_cf_n` | Closed-form edits: on, frame directions removed from the keys (1), strength (0.5), brake per edit (0.015 BPC), cumulative budget (0.05 BPC), conclusions per edit (32) |
 | `inf_cf_maxgrow`, `inf_cf_min_others`, `inf_cf_decay` | Closed-form edits: accumulated edits kept within this multiple of the unedited matrix (1.5); live conclusions kept back from each edit to centre the keys on (16); share of the accumulated edits taken back each sleep (0, off) |
 | `inf_cf_resolve`, `inf_release_strict`, `inf_cf_layerdrift`, `inf_key_anchor` | Re-solve every edited conclusion with its current key at every sleep (on in cg26p); release only if the weights also answer in this many other wordings (1 in cg26p); per-block drift readout (on); key anchor strength in trunk replay (off) |
+| `inf_sup`, `inf_sup_lr_abs`, `inf_sup_steps`, `inf_sup_params`, `inf_sup_wgrad` | Merged-memory dreams (cg26r, off): each concluded chain's two premises are read separately into the delta-block memories, the memories are added, and the trunk is trained to answer the two-hop question from that superposed memory under its own brake; absolute rate, steps, `kv` to train only the key and value projections, gradient through the premise reads |
+| `inf_sup_chain`, `inf_sup_chain_mode`, `inf_sup_chain_tau` | Chaining loss for the merged-memory dreams: the value the A–B memory returns for A's question must match the key B produces as a subject; `nce` (contrastive among the batch's bridges) or `cos` |
+| `inf_kgx`, `inf_kgx_hold` | Held-out composition: every Nth chain is never concluded, and the end-of-run readout asks whether the weights answer it anyway |
 | `inf_cf_refresh`, `inf_cf_refresh_mode`, `inf_cf_diag` | Edit refresh: each kept edit re-fits this many earlier edited conclusions (8 in cg26o), the least recently fitted (`old`, default in cg26o) or the weakest of them (`weak`); the edit decay diagnostic (readout only, on in cg26o) |
 | `inf_sleep_adapt`, `inf_sleep_cycles_max` | Adaptive sleep: NREM ends when the store writes converge, REM cycles end at closure or when the predicted next cycle adds less than one conclusion (on); most REM cycles per sleep (6) |
 | `inf_jd_entpairs`, `inf_jd_plantw` | More JEPA training pairs: fact pairs sharing an entity (1000), planted pairs weighted against real text |
@@ -689,6 +692,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **4 November.** Older edits refreshed instead of overwritten, doubling two-hop recall from the weights alone locally, and a diagnostic that splits edit decay by cause (cg26o); on the GPU, cg26n halves restores of released memories. Tests that the weights do not compose facts on their own, and a sleep analogue of Cai et al. (2009): sleep solves about half the problems whose facts were just read, quiet rest none; with old premises evicted, sleep keeps solving remote problems only when fact records protect them (25 of 65 against 4 of 86, two seeds), and REM recombination itself adds nothing over NREM. The decay of weight edits traced to key drift on the GPU; every edit re-keyed every sleep (cg26p).
 - **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
 - **5 November.** cg26q: clean evaluation after an outside code review. Oracle options off by default at no cost; held-out readouts show two-hop recall from the weights of 0.17 in new wordings (0.46 in the written wording) and 0.69 with the fast store.
+- **6 November.** cg26r: merged-memory dreams with a contrastive chaining loss, off by default, and the preset `cg26r_merged.env` for the GPU test of whether the weights can compose. Locally, training only the key and value projections keeps the phase within its brake and makes each memory point at the right next key (own-bridge retrieval 0.21 → 0.52), but the small trunk does not read names back from memory, so composition stays at 0.00 there.
 
 ## Contributing
 

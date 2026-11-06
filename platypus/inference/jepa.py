@@ -24,6 +24,9 @@ from platypus.inference.units import (
 from platypus.inference.probes import (
     inf_probes,
 )
+from platypus.inference.supmem import (
+    _jd_memread,
+)
 from platypus.inference.closed_form import (
     _snapcpu,
 )
@@ -845,6 +848,8 @@ def _jd_train(model,cfg,S_):
                 sm_=_tfidf_sim(S_,[H_[j_][0]],[H_[j_][1]]+L_,int(cfg.inf_df),True); ok9_.append(float(int(sm_[0].argmax())==0))
             tfh_=float(np.mean(ok9_)) if ok9_ else float('nan')
         except Exception: pass
+    if int(getattr(cfg,'inf_jd_memread',0)) and hn_>0:                         # MEMORY-READ VIEW readouts (inference.supmem), compared with TF-IDF and the JEPA below
+        _jd_memread(model,cfg,S_,H_,NGT_,nh_)
     with torch.no_grad(): er_,_=_jx_effrank(g_(torch.cat([xa_,xb_])))
     npb_=sum(1 for pr_ in P2_ if isp_(pr_))   # how many training pairs are planted probe facts vs real text
     model.__dict__['_jdN']=model.__dict__.get('_jdN',0)+1
