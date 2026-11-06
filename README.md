@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26q**.
+Current build: **cg26r** (cg26q plus merged-memory dreams, off by default; `configs/presets/cg26r_merged.env` turns them on for the GPU test).
 
 ## A note on this documentation
 
