@@ -123,8 +123,10 @@ def readout(model, cs, three=None):
     R['sup'] = ev(addm(MAB, MBC)); R['none'] = ev(None); R['bc'] = ev(MBC)
     R['rand'] = ev(addm([m[perm] for m in MAB], [m[perm] for m in MBC]))
     R['2chains'] = ev(addm(MAB, MBC, [m[perm] for m in MAB], [m[perm] for m in MBC]))   # another chain's two premises superposed too
-    caps = [{} for _ in range(model.nb)]                                    # composed operator: M_BC (M_AB k) - built per block as the product
-    R['composed'] = ev([torch.einsum('bhvk,bhkj->bhvj', MBC[i], MAB[i]) for i in range(model.nb)])
+    cp = lambda X, Y: [torch.einsum('bhvk,bhkj->bhvj', X[i], Y[i]) for i in range(model.nb)]
+    R['composed'] = ev(cp(MBC, MAB))
+    R['comp_wrongBC'] = ev(cp([m[perm] for m in MBC], MAB))                  # A-B composed with ANOTHER chain's B-C: must fail if it composes
+    R['comp_wrongAB'] = ev(cp(MBC, [m[perm] for m in MAB]))                  # another chain's A-B with this B-C: names C, but the chain is broken
     oh = lp_answer(model, [[A, R0 + r1] for A, B, C, r1, r2 in cs], B_, addm(MAB, [m[perm] for m in MBC]))[1]
     R['onehop'] = (float((oh[:, E0:].argmax(-1) + E0 == torch.tensor(B_)).float().mean()), 0.0)
     if three:
@@ -132,6 +134,10 @@ def readout(model, cs, three=None):
                   model.mem([[C, R0 + r3, D, DOT] for A, B, C, D, r1, r2, r3 in three]))
         lp, full = lp_answer(model, [[SO, c[0], CONN] for c in three], [c[3] for c in three], M3)
         R['3hop'] = (float((full[:, E0:].argmax(-1) + E0 == torch.tensor([c[3] for c in three])).float().mean()), float(lp.mean()))
+        M1 = model.mem([[A, R0 + r1, B, DOT] for A, B, C, D, r1, r2, r3 in three]); M2 = model.mem([[B, R0 + r2, C, DOT] for A, B, C, D, r1, r2, r3 in three])
+        M3c = model.mem([[C, R0 + r3, D, DOT] for A, B, C, D, r1, r2, r3 in three])
+        lp, full = lp_answer(model, [[SO, c[0], CONN] for c in three], [c[3] for c in three], cp(M3c, cp(M2, M1)))
+        R['3hop_composed'] = (float((full[:, E0:].argmax(-1) + E0 == torch.tensor([c[3] for c in three])).float().mean()), float(lp.mean()))
     return R
 
 def fmt(R): return ' '.join(f"{k} {v[0]:.2f}" + (f"/{v[1]:.2f}" if k not in ('onehop',) else '') for k, v in R.items())
