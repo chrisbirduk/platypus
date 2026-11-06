@@ -874,6 +874,12 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                           f"teacher-forced wrong bytes {wr_/tb_:.4f}, of them hinted {float(_HINT['wcov'])/max(1.0,wr_):.2f} | {_HINT['calls']} calls"
                           +(" | REPLAY FIDELITY ALARM: over 5% of bytes wrong with the trace (cg14c Gutenberg 16.9%)" if wr_/tb_>0.05 else ""))
                     _HINT.update(calls=0,bytes=0,tot=0,wrong=0,wcov=0,pieces=0)
+                if _HEMB['n'] or _HEMB['skip']:                                    # LAB embedded hints
+                    tE_=max(1,_HEMB.get('tot',0))
+                    print(f"    [embedded hints] {_HEMB['n']} calls ({_HEMB['skip']} skipped: trace not factored) | teacher-forced wrong bytes with the trace: written {_HEMB['w0']/tE_:.4f} -> "
+                          f"strengthened {_HEMB['w1']/tE_:.4f} -> after {int(cfg.cd_hint_embed_rounds)} round(s) {_HEMB['wf']/tE_:.4f} | hinted wrong bytes made right by the first strengthening "
+                          f"{_HEMB['fix']/max(1.0,_HEMB['hit']):.2f} | x{1+float(cfg.cd_hint_embed):g} at offsets {cfg.cd_hint_embed_off}; no hint bytes forced",flush=True)
+                    _HEMB.update(n=0,w0=0,w1=0,wf=0,hit=0,fix=0,skip=0,tot=0,diag=None)
                 if FOKS['skip']:
                     fz_=_fok_dom(dom_id)
                     es_=(_fsum(FOKS['estn'])/max(1.0,_fsum(FOKS['estd']))) if FOKS.get('estd') else (_fm(FOKS['est']) if FOKS['est'] else 0.0)
@@ -1219,6 +1225,7 @@ _LATE = {
     '_CDR': 'platypus.losses',
     '_CDT': 'platypus.conduit',
     '_HINT': 'platypus.conduit',
+    '_HEMB': 'platypus.conduit',
     '_PRF': 'platypus.profiling',
     '_V97': 'platypus.conduit',
     '_cd_lrf': 'platypus.losses',

@@ -22,7 +22,7 @@ from platypus.ngrams import (
 )
 from platypus.conduit import (
     FOKS, _CBUF, _CDCONF, _CDT, _INC, _MIS32, _RESET, _V97, _carry_load, _carry_save, _cbuf_take, _cd_cat, _cd_encode, _cd_encode_chk, _cd_fb, _cd_g,
-    _cd_gen, _cd_hints, _cd_kdist, _cd_mis, _cd_rows, _cd_slices, _cd_vcheck, _cd_weights, _cdt, _fok_dom, _fok_thr_gpu, _nrem_loss, _prot_minv,
+    _cd_gen, _cd_hint_embed, _cd_hints, _cd_kdist, _cd_mis, _cd_rows, _cd_slices, _cd_vcheck, _cd_weights, _cdt, _fok_dom, _fok_thr_gpu, _nrem_loss, _prot_minv,
     _recon_loss_mark, _rp_tags, _rs_pick, _sig_update, _store_score, _uh_load, _uh_save,
 )
 from platypus.inference.store import (
@@ -205,6 +205,8 @@ def _cd_loss_(model,cfg,x,dom):
                         elif cfg.cd_repair:                                            # v9e RECALL FIX: greedy try -> key-row check -> repair
                             fd_=_fok_dom(dom)
                             hn_=_cd_hints(model,cfg,st_,m_,L,dom,M,X[a_:b_]) if (float(cfg.cd_hint_frac)>0 or float(cfg.cd_hint_adapt)>0) else None   # cg12b
+                            if hn_ is not None and float(getattr(cfg,'cd_hint_embed',0.0))>0:    # LAB: the hints go INTO the trace, no bytes forced
+                                st_=_cd_hint_embed(model,cfg,st_,m_,L,dom,M,X[a_:b_],hn_[0]); hn_=None
                             Ys,lp_=_cd_gen(model,cfg,st_,m_,L,dom,M,0.0,g_,hint=hn_); tries+=m_; cf_=_CDCONF['c'].clone()
                             if cfg.cd_fok:                                             # the GATE on the greedy try (as v7)
                                 cnf_=cf_>=fd_['thr']; cal_=cnf_&(torch.rand(m_,generator=g_,device=dev)<float(cfg.cd_fok_chk)); chk_=(~cnf_)|cal_

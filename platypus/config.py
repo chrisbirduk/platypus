@@ -306,6 +306,12 @@ class Config:
     cd_hint_adapt=0.0               # cg13: >0 = hint budget per call = this x the teacher-forced wrong bytes (one host read per call), clamped to
     cd_hint_min=0.02                #   [cd_hint_min, cd_hint_max] of the replayed bytes (replaces cd_hint_frac)
     cd_hint_max=0.08
+    cd_hint_embed=0.0               # LAB, off: >0 = HINTS EMBEDDED IN THE TRACE: no hint bytes are kept or forced; the trace's own write rows (U)
+                                    #   at the hinted positions are strengthened x (1 + this) while the text is at hand, so the replay has to read
+                                    #   the hard bytes from the trace itself (verification unchanged: the key rows are not touched)
+    cd_hint_embed_off='-1,0'        #   which write rows, as offsets from each hinted byte (comma list)
+    cd_hint_embed_rounds=1          #   >1 = ERROR CORRECTION: the margins are measured again with the strengthened trace and the bytes still
+                                    #   wrong are strengthened again (at most cd_hint_piece per piece per round)
     cd_partial=True                 #   (with cd_repair) the key-verified prefix of an inexact piece teaches (partial credit)
     cd_keytol=0.02                  #   key-row tolerance floor (relative row distance); max(this, 10 x the re-encode noise)
     cd_first_block=False            # v9e: checks re-encode only up to the first delta block; exact iff no key row differs (with cd_repair)

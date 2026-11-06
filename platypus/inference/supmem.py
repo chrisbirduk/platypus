@@ -163,7 +163,7 @@ def _sup_heldout(cfg,S_,S_slot,n_):
             out_.append((int(S_slot(it_[ia_]['d'])),{'A':A_,'B':B_,'C':C_},(it_[ia_]['s'][:120],it_[ic_]['s'][:120])))
             if len(out_)>=n_: return out_,miss_
     return out_,miss_
-def _sup_lp2(model,cfg,rows_,sl_,mode_,grad_=False,wgrad_=False):
+def _sup_lp2(model,cfg,rows_,sl_,mode_,grad_=False,wgrad_=False,full_=False):
     """log p per byte of each row's target; rows_ = [(prompt bytes, target bytes, memory texts or None)]; mode_ 'mem' builds the summed
     memory of the row's memory texts (one or two), 'none' uses no memory"""
     X_,M_=_ws_batch(model,[p_+t_ for p_,t_,_ in rows_]); st_=None
@@ -190,8 +190,8 @@ def _sup_lp2(model,cfg,rows_,sl_,mode_,grad_=False,wgrad_=False):
     out_=[]
     for j_,(p_,t_,_) in enumerate(rows_):
         ps_=torch.arange(len(p_)-1,len(p_)+len(t_)-1,device=X_.device); ps_=ps_[ps_<X_.shape[1]-1]
-        out_.append(lp_[j_,ps_].gather(-1,X_[j_,ps_+1,None]).squeeze(-1).mean())
-    return torch.stack(out_)
+        out_.append(lp_[j_,ps_] if full_ else lp_[j_,ps_].gather(-1,X_[j_,ps_+1,None]).squeeze(-1).mean())
+    return out_ if full_ else torch.stack(out_)
 def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     """SUPERPOSED-MEMORY DREAMS (see the module note in the build): practise inferring A->C from a memory that holds A-B and B-C"""
     lv_=[c_ for c_ in S_.get('conc',[]) if not c_.get('freed') and isinstance(c_.get('C'),str) and isinstance(c_.get('A'),str) and _sup_rows(S_,c_) is not None and not _kgx_ho(cfg,c_)]
@@ -285,6 +285,14 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     try:                                                                         #   baseline used to be measured with the compiled forward, the 'after' eager)
         H0_=hprobe_safe()
         P0_=probe(); m0_,n0_=P0_['sup'],P0_['none']; b0_,o0_=_ws_bpc(model,cfg,vals,t,ts,olds_)
+        dist_=str(getattr(cfg,'inf_sup_mode','sup'))=='distill'; TT_={}
+        if dist_:                                                            # DISTILLATION: the teacher is the superposed-memory read with the weights
+            with torch.no_grad():                                            #   as they were before this phase (fixed); the student reads NO memory
+                for s9_ in sls_:
+                    L9_=by_[s9_]
+                    for i9_ in range(0,len(L9_),8):
+                        c9_=L9_[i9_:i9_+8]
+                        for c_,tl_ in zip(c9_,_sup_lp2(model,cfg,[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in c9_],s9_,'mem',full_=True)): TT_[id(c_)]=tl_.detach()
         for at_ in range(nre_+1):
             lr9_=lr_/(dv_**at_); ls_=[]; lch_=[]
             if at_>0:
@@ -294,7 +302,10 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
             for _ in range(st_):
                 s_=sls_[rs_.randint(len(sls_))]; L_=by_[s_]; cs_=[L_[int(i_)] for i_ in rs_.choice(len(L_),min(nb_,len(L_)),replace=False)]
                 try:
-                    l_=-_sup_lp2(model,cfg,[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in cs_],s_,'mem',grad_=True,wgrad_=wg_).mean()
+                    if dist_:
+                        sl9_=_sup_lp2(model,cfg,[q2_(c_)+(None,) for c_ in cs_],s_,'none',grad_=True,full_=True)
+                        l_=torch.stack([(TT_[id(c_)].exp()*(TT_[id(c_)]-q9_)).sum(-1).mean() for c_,q9_ in zip(cs_,sl9_)]).mean()
+                    else: l_=-_sup_lp2(model,cfg,[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in cs_],s_,'mem',grad_=True,wgrad_=wg_).mean()
                     anc_=[]; nv_=int(round(fv_*nb_)) if av_ else 0
                     if an_ and nb_-nv_>0: anc_.append([an_[int(i_)] for i_ in rs_.choice(len(an_),min(nb_-nv_,len(an_)),replace=False)])
                     if nv_>0: anc_.append([av_[int(i_)] for i_ in rs_.choice(len(av_),min(nv_,len(av_)),replace=False)])
@@ -336,7 +347,7 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
                 for p_,w_ in zip(P_,W0_): p_.copy_(w_)
         P1_=probe(); m1_,n1_=P1_['sup'],P1_['none']; H1_=hprobe_safe() if H0_ is not None else None
         print(f"  [inference SUPERPOSED-MEMORY DREAMS] visit {vis_}: {st_} steps on {len(lv_)} concluded chains in {len(sls_)} slots ({nb_} rows + {nb_ if (an_ or av_) else 0} anchor rows per step{f', {nv0_} of them from the visited slot ({len(av_)} available)' if fv_>0 else ''}{f', one-hop rows x{ow0_:g}' if ow0_>0 else ''}{f', PROTECTED {pinfo_[0]} key/value matrices by all domains incl. the visited one (mode {pm_}), step kept {np.mean(pinfo_[1]):.2f} cosine to Adam' if pinfo_[1] else (', protection requested but no factors' if pm_ else '')}, lr {lr9_:.1e}) | "
-              f"loss {ls_[0]:.3f} -> {np.mean(ls_[-5:]):.3f} | visited {dB_:+.4f}, old {dO_:+.4f}: {'KEPT' if kept_ else 'ROLLED BACK (brake '+str(bk_)+')'}{(' after '+str(len(tr_))+' tries: '+', '.join(f'{a_:.1e} visited {b_:+.4f} old {c_:+.4f} '+('kept' if d_ else 'rolled back') for a_,b_,c_,d_ in tr_)) if len(tr_)>1 else ''} | BRAKE measured in eager mode before and after{f' (compiled forward minus eager before training: visited {bc0_-b0_:+.4f}, old {(oc0_-o0_) if oc0_==oc0_ else 0.0:+.4f}; the brake used to count minus that as damage)' if cmp0_ else ' (no compiled forward)'} | "
+              f"{'DISTILLATION (no-memory student matches the superposed-memory teacher, KL) ' if dist_ else ''}loss {ls_[0]:.3f} -> {np.mean(ls_[-5:]):.3f} | visited {dB_:+.4f}, old {dO_:+.4f}: {'KEPT' if kept_ else 'ROLLED BACK (brake '+str(bk_)+')'}{(' after '+str(len(tr_))+' tries: '+', '.join(f'{a_:.1e} visited {b_:+.4f} old {c_:+.4f} '+('kept' if d_ else 'rolled back') for a_,b_,c_,d_ in tr_)) if len(tr_)>1 else ''} | BRAKE measured in eager mode before and after{f' (compiled forward minus eager before training: visited {bc0_-b0_:+.4f}, old {(oc0_-o0_) if oc0_==oc0_ else 0.0:+.4f}; the brake used to count minus that as damage)' if cmp0_ else ' (no compiled forward)'} | "
               f"log p(C) per byte on {len(smp_)} sampled chains (store off): from the SUPERPOSED memory {m0_:.3f} -> {m1_:.3f}, from no memory {n0_:.3f} -> {n1_:.3f}, "
               f"B-C premise ONLY {P0_['bc']:.3f} -> {P1_['bc']:.3f}, premises as TEXT {P0_['text']:.3f} -> {P1_['text']:.3f}, RANDOM memory (another chain's premises) {P0_['rand']:.3f} -> {P1_['rand']:.3f} | ONE-HOP CONTROL (premise prefix -> B): from that premise's memory {P0_['one_m']:.3f} -> {P1_['one_m']:.3f}, "
               f"from no memory {P0_['one_n']:.3f} -> {P1_['one_n']:.3f} | first rate {lr_:.1e}, gradient through the premise reads {'on' if wg_ else 'off'}, trained {str(getattr(cfg,'inf_sup_params','all'))} ({sum(p_.numel() for p_ in P_)/1e6:.2f}M parameters)"

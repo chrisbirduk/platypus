@@ -178,6 +178,52 @@ def _cd_hints(model,cfg,st_,m_,L,dom,M,Xc):
     _HINT['calls']+=1; _HINT['bytes']=_HINT['bytes']+hm.sum(); _HINT['tot']+=m_*L
     _HINT['wrong']=_HINT['wrong']+wr_.sum(); _HINT['wcov']=_HINT['wcov']+(wr_&hm).sum(); _HINT['pieces']=_HINT['pieces']+hm.any(1).sum()
     return hm,Xc
+def _cd_tf_margin(model,st_,m_,dom,M,Xc):
+    """teacher-forced margin per true byte with the trace st_: log p(true byte) - best other, (m_, L)"""
+    dev=Xc.device; sv_=_carry_save()
+    try:
+        Yin=torch.cat([torch.full((m_,1),M,dtype=torch.long,device=dev),Xc[:,:-1]],1)
+        _CARRY.update(on=True,nr=m_,st=st_,new={},rows=None)
+        lp=F.log_softmax(model(Yin,dom).float(),-1)
+    finally: _carry_load(sv_)
+    return lp.gather(-1,Xc[...,None]).squeeze(-1)-lp.scatter(-1,Xc[...,None],float('-inf')).max(-1).values
+_HEMB={'n':0,'w0':0,'w1':0,'wf':0,'hit':0,'fix':0,'skip':0,'diag':None}         # embedded-hint statistics
+def _cd_hint_embed(model,cfg,st_,m_,L,dom,M,Xc,hm):
+    """HINTS EMBEDDED IN THE TRACE (cd_hint_embed): returns a trace whose write rows U at the hinted positions (offsets cd_hint_embed_off)
+    are scaled x (1 + cd_hint_embed); with cd_hint_embed_rounds > 1 the bytes still wrong under the strengthened trace are strengthened
+    again (ERROR CORRECTION, written while the text is at hand). No hint bytes leave this function."""
+    al_=float(cfg.cd_hint_embed); R_=max(1,int(getattr(cfg,'cd_hint_embed_rounds',1))); cap_=int(cfg.cd_hint_piece)
+    ok_=all(isinstance(v_,tuple) and len(v_)==2 and v_[0].dim()==3 and v_[0].shape[1]==L and v_[0].shape[0]%m_==0 for v_ in st_.values())
+    if not ok_: _HEMB['skip']+=1; return st_
+    def mk_(hm_,offs_,base_,al_=al_):
+        out_={}
+        for k_,(U_,K_) in base_.items():
+            w_=torch.zeros(m_,L,device=U_.device)
+            for o_ in offs_:
+                if o_>=0: w_[:,o_:]+=hm_[:,:L-o_].float() if o_>0 else hm_.float()
+                else: w_[:,:L+o_]+=hm_[:,-o_:].float()
+            f_=(1.0+al_*w_.clamp(max=1.0)).repeat_interleave(U_.shape[0]//m_,0)
+            out_[k_]=((U_.float()*f_[...,None]).to(U_.dtype),K_)
+        return out_
+    offs_=[int(o_) for o_ in str(getattr(cfg,'cd_hint_embed_off','-1,0')).split(',') if o_.strip()]
+    mg0_=_cd_tf_margin(model,st_,m_,dom,M,Xc); w0_=mg0_<0
+    if _HEMB['diag'] is None:                                                 # first call: which write rows carry a byte (printed once)
+        rs_=[]
+        for of9_ in ([-1],[0],[1],[-1,0],[-1,0,1]):
+            for a9_ in (1.0,4.0,16.0):
+                mgd_=_cd_tf_margin(model,mk_(hm,of9_,st_,a9_),m_,dom,M,Xc); rs_.append((of9_,a9_,float(((mgd_>=0)&hm&w0_).sum())/max(1.0,float((hm&w0_).sum())),float((mgd_<0).float().mean())))
+        _HEMB['diag']=rs_
+        print(f"    [embedded hints | first call of the visit] {int(hm.sum())} hinted bytes, {int((hm&w0_).sum())} of them wrong | hinted wrong bytes made right / all wrong bytes after, "
+              f"by write rows strengthened (offsets) x (1 + strength): "+" | ".join(f"{o_} x{1+a_:g}: {f_:.2f} / {b_:.4f}" for o_,a_,f_,b_ in rs_)+f" | before {float(w0_.float().mean()):.4f}",flush=True)
+    st2_=mk_(hm,offs_,st_); mg_=_cd_tf_margin(model,st2_,m_,dom,M,Xc); w1_=mg_<0
+    _HEMB['hit']+=float((hm&w0_).sum()); _HEMB['fix']+=float((hm&w0_&~w1_).sum())
+    _HEMB['w1']+=float(w1_.sum())
+    for _ in range(R_-1):
+        if not bool(w1_.any()): break
+        rk_=torch.argsort(torch.argsort(mg_,1),1); hm2_=w1_&(rk_<cap_)
+        st2_=mk_(hm2_,offs_,st2_); mg_=_cd_tf_margin(model,st2_,m_,dom,M,Xc); w1_=mg_<0
+    _HEMB['n']+=1; _HEMB['w0']+=float(w0_.sum()); _HEMB['wf']+=float(w1_.sum()); _HEMB['tot']=_HEMB.get('tot',0)+m_*L
+    return st2_
 def _cd_fb(model,snap):
     fb_=model.__dict__.get('_cd_fb')
     if fb_ is None:
