@@ -38,12 +38,22 @@ for A, B, C, D, r1, r2, r3 in ch3: facts += [(A, R0 + r1, B), (B, R0 + r2, C), (
 ftxt = lambda f: [f[0], f[1], f[2], DOT]
 
 # ---------------------------------------------------------------- model
+import os as _os
+ARCH = _os.environ.get('TOY_ARCH', '')                                     # 'conv3,sepq': short causal convolution on key/value inputs + separate query
+CONVW = int(ARCH.split('conv')[1].split(',')[0]) if 'conv' in ARCH else 0; SEPQ = 'sepq' in ARCH
 class Delta(nn.Module):
     def __init__(s, d, h, sepq):
         super().__init__(); s.h = h; s.dh = d // h; s.Wk = nn.Linear(d, d, bias=False); s.Wv = nn.Linear(d, d, bias=False)
-        s.Wq = nn.Linear(d, d, bias=False) if sepq else None; s.Wb = nn.Linear(d, h); s.Wo = nn.Linear(d, d, bias=False)
+        s.Wq = nn.Linear(d, d, bias=False) if (sepq or SEPQ) else None; s.Wb = nn.Linear(d, h); s.Wo = nn.Linear(d, d, bias=False); s.w = CONVW
+        if s.w:                                                             # depthwise causal convolutions, starting as the identity
+            s.ck = nn.Conv1d(d, d, s.w, groups=d); s.cv = nn.Conv1d(d, d, s.w, groups=d)
+            for c in (s.ck, s.cv):
+                with torch.no_grad(): c.weight.zero_(); c.weight[:, 0, -1] = 1.0; c.bias.zero_()
     def forward(s, x, S0=None, cap=None):
-        B, T, D = x.shape; k = F.normalize(s.Wk(x).view(B, T, s.h, s.dh), dim=-1); v = s.Wv(x).view(B, T, s.h, s.dh)
+        B, T, D = x.shape
+        if s.w: xp = F.pad(x.transpose(1, 2), (s.w - 1, 0)); xk = s.ck(xp).transpose(1, 2); xv = s.cv(xp).transpose(1, 2)
+        else: xk = xv = x
+        k = F.normalize(s.Wk(xk).view(B, T, s.h, s.dh), dim=-1); v = s.Wv(xv).view(B, T, s.h, s.dh)
         q = F.normalize(s.Wq(x).view(B, T, s.h, s.dh), dim=-1) if s.Wq is not None else k; b = torch.sigmoid(s.Wb(x))
         S = torch.zeros(B, s.h, s.dh, s.dh) if S0 is None else S0; out = []
         if cap is not None: cap['k'] = k
@@ -150,7 +160,7 @@ def fmt(R): return ' '.join(f"{k} {v[0]:.2f}" + (f"/{v[1]:.2f}" if k not in ('on
 # ---------------------------------------------------------------- run
 import os
 ARMS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['base', 'chain', 'onehop', 'chain+onehop', 'all']
-t0 = time.time(); base = Toy(); CK = f'toy_stageA_v2_s{SEED}.pt'
+t0 = time.time(); base = Toy(); CK = f'toy_stageA_v2{"_" + ARCH.replace(",", "_") if ARCH else ""}_s{SEED}.pt'
 opA = torch.optim.Adam(base.parameters(), lr=1e-3)
 if os.path.exists(CK): base.load_state_dict(torch.load(CK)); STEPS_A = 0; print(f"stage A loaded from {CK}", flush=True)
 for st in range(STEPS_A):

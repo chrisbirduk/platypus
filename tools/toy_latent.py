@@ -26,7 +26,7 @@ src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'toy_compose
 head = src[:src.index('# ---------------------------------------------------------------- stage A')]
 sys.argv = [sys.argv[0], str(SEED)]; exec(head)                            # identical data split, entities and model class
 torch.set_num_threads(1)
-CK = f'toy_stageA_v2_s{SEED}.pt'; assert os.path.exists(CK), CK
+CK = f'toy_stageA_v2{"_" + ARCH.replace(",", "_") if ARCH else ""}_s{SEED}.pt'; assert os.path.exists(CK), CK
 m = Toy(); m.load_state_dict(torch.load(CK)); m.eval()
 for p in m.parameters(): p.requires_grad_(False)
 t0 = time.time(); rsl = np.random.RandomState(9000 + SEED); torch.manual_seed(9000 + SEED)
