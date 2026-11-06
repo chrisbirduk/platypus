@@ -18,5 +18,10 @@
   "_inf_sup_chain_mode": "contrastive: the value returned for A must pick out its own bridge key among the batch's bridges (local: own-bridge retrieval 0.21 -> 0.52 after one sleep; a plain cosine loss raised every bridge alike)",
   "inf_kgx": 1,
   "inf_kgx_hold": 3,
-  "_inf_kgx_hold": "every third chain is never concluded, so held-out composition (GRAPH INTO WEIGHTS 5) can be measured; this lowers written-wording recall compared with cg26q"
+  "_inf_kgx_hold": "every third chain is never concluded, so held-out composition (GRAPH INTO WEIGHTS 5) can be measured; this lowers written-wording recall compared with cg26q",
+  "inf_sup_anc_visit": 0.5,
+  "inf_sup_protect": 1,
+  "inf_sup_tc": 1,
+  "inf_jd_memread": 1,
+  "_comment_sup_heldout_probe": "Branch sup-heldout-probe defaults: half the merged-memory anchor rows from the visited slot (GPU: 4 of 5 pass-1 merged-memory sleeps kept, against 1); key/value steps whitened by every domain's Fisher factors, the visited one included; readouts only: trace composition (inf_sup_tc) and the JEPA memory-read view (inf_jd_memread). One-hop rows (inf_sup_onehop_w) stay off: one-hop reading from memory already improves on the GPU."
 }
