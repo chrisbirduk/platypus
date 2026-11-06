@@ -23,9 +23,9 @@ Reported: answer accuracy (and the share of questions whose own trace was picked
 TWO-HOP ROLLOUT (V-JEPA 2-AC planning analogue): context = a chain A r1 B, B r2 C plus same-subject distractors (A and B each with another
 relation) and random facts; question 'A r1 r2'; two more facts with relation r2 and one with r1 about other subjects, so the relation alone cannot pick a trace (at
 most 1/3). DECODE: hop 1 picked by the VJEPA index, read -> B'; hop 2 picked by the index for 'B' r2',
-read -> C. Control: hop 2 asked about a RANDOM entity instead of B' (must fall to chance). LATENT: a hop-2 predictor P2 maps (hop-1 latent,
-r2) to the key of the B-C trace without decoding B, trained TEACHER-FORCED (true hop-1 key) or on its own ROLLOUT (the predicted hop-1
-latent, as V-JEPA 2-AC trains on its own predictions); scored by whether the B-C trace is picked (reading it then needs B; with the true B
+read -> C. Control: hop 2 asked about a RANDOM entity instead of B' (must fall to chance). LATENT: a hop-2 predictor P2 maps (the key of the
+trace hop 1 RETRIEVED, r2) to the key of the B-C trace without decoding B, trained TEACHER-FORCED (true hop-1 key) or on its own ROLLOUT
+(the key its own hop-1 prediction retrieves, as V-JEPA 2-AC trains on its own predictions); scored by whether the B-C trace is picked (reading it then needs B; with the true B
 the reader answers from the picked trace). Control: P2 given another fact's key (must fall to chance).
 usage: python3 toy_jsel.py [seed] [stageA checkpoint] [steps]"""
 import sys, os, time
@@ -133,9 +133,10 @@ def evaluate(SEL, n_ctx, ctx, wording, held, n=150):
             c = f_(q, wording, fs, Mf); acc[k_].append(int(read(P, Mf[c:c + 1]).argmax()) == q[2]); hit[k_].append(c == j)
     return {k: float(np.mean(v)) if v else float('nan') for k, v in acc.items()}, {k: float(np.mean(v)) if v else float('nan') for k, v in hit.items()}
 print(f"TOY JEPA TRACE SELECTION, seed {SEED}, reader {CK}, per-fact memories of {DM} numbers, latent {DZ}, {STEPS} training steps")
-MODELS = {k: train(k, STEPS) for k in ('jepa', 'nce')}; MODELS.update({k: train_vj(k, STEPS) for k in ('vjepa', 'frozen')})
-SEL = {'JEPA': sel_lat(MODELS['jepa']), 'NCE': sel_lat(MODELS['nce']), 'VJEPA': sel_key(MODELS['vjepa']), 'FROZEN': sel_key(MODELS['frozen'])}
-for n_ctx in (24, 96):
+ONLY = os.environ.get('JSEL_ONLY', '')                                     # 'vjepa': only the VJEPA index and the two-hop test
+MODELS = {} if ONLY else {k: train(k, STEPS) for k in ('jepa', 'nce')}; MODELS.update({k: train_vj(k, STEPS) for k in (('vjepa',) if ONLY else ('vjepa', 'frozen'))})
+SEL = {'VJEPA': sel_key(MODELS['vjepa'])} if ONLY else {'JEPA': sel_lat(MODELS['jepa']), 'NCE': sel_lat(MODELS['nce']), 'VJEPA': sel_key(MODELS['vjepa']), 'FROZEN': sel_key(MODELS['frozen'])}
+for n_ctx in (() if ONLY else (24, 96)):
     for cn, ctx in (('RANDOM', fresh), ('HARD', hard)):
         for wn, w, held in (('wording 1', 1, False), ('wording 2, seen relations', 2, False), ('wording 2, HELD-OUT relations', 2, True)):
             a, h = evaluate(SEL, n_ctx, ctx, w, held)
@@ -156,7 +157,11 @@ def train_p2(mode, steps):
     M_ = P2(); op = torch.optim.AdamW(M_.parameters(), lr=5e-4, weight_decay=1e-4); B = 128; ls = []
     for st in range(steps):
         c1 = fresh(B); c2 = [(f[2], R0 + int(rsm.randint(NREL)), int(rsm.randint(E0, V))) for f in c1]
-        with torch.no_grad(): z1 = VJm.key(c1) if mode == 'teacher' else VJm.predict([wq(f, 1) for f in c1]); k2 = VJm.key(c2)
+        with torch.no_grad():
+            K1 = VJm.key(c1); k2 = VJm.key(c2)
+            if mode == 'teacher': z1 = K1
+            else:                                                          # ROLLOUT: the key its own hop-1 prediction retrieves (among the batch)
+                z1 = K1[(VJm.predict([wq(f, 1) for f in c1])[:, None] - K1[None]).abs().sum(-1).argmin(1)]
         l = (M_(z1, [f[1] for f in c2]) - k2).abs().mean(); op.zero_grad(); l.backward(); op.step(); ls.append(float(l))
     print(f"  trained hop-2 predictor ({mode}): L1 {np.mean(ls[:20]):.3f} -> {np.mean(ls[-50:]):.3f}  ({time.time()-t0:.0f}s)", flush=True); return M_
 P2s = {k: train_p2(k, max(2, STEPS * 2 // 3)) for k in ('teacher', 'rollout')}
@@ -170,7 +175,7 @@ def two_hop(n_ctx, n=200):
         c2 = int((VJm.predict([wq((Bh, r2, C), 1)]) - K).abs().sum(-1).argmin()); R['dec'].append(int(read([[Bh, r2]], Mf[c2:c2 + 1]).argmax()) == C); R['dec_hit'].append(c2 == i2)
         Br = int(rsm.randint(E0, V)); c2r = int((VJm.predict([wq((Br, r2, C), 1)]) - K).abs().sum(-1).argmin()); R['dec_rand'].append(int(read([[Br, r2]], Mf[c2r:c2r + 1]).argmax()) == C); R['dec_rand_hit'].append(c2r == i2)
         for k_, M_ in P2s.items():
-            c2l = int((M_(z1, [r2]) - K).abs().sum(-1).argmin()); R['lat_' + k_].append(c2l == i2)
+            c2l = int((M_(K[c1:c1 + 1], [r2]) - K).abs().sum(-1).argmin()); R['lat_' + k_].append(c2l == i2)   # from the RETRIEVED hop-1 key
             if k_ == 'rollout': R['lat_rollout_ans'].append(int(read([[B, r2]], Mf[c2l:c2l + 1]).argmax()) == C)
         o_ = int(rsm.randint(len(fs)))
         while o_ in (i1, i2): o_ = int(rsm.randint(len(fs)))
