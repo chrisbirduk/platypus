@@ -4,7 +4,8 @@ Each sleep, after the closed-form edits: for chains A-B-C the system concluded i
 are skipped), the two source sentences are read SEPARATELY into each delta block's memory and the two memories are ADDED. The trunk is then
 trained to answer 'So A is connected to C.' from that superposed memory (store off), with plain-text anchor rows, under a brake that rolls
 the phase back if the visited or old domains get worse by more than inf_sup_brake.
-Options: inf_sup_lr_abs (absolute rate; 0 = lr x inf_sup_lr), inf_sup_steps, inf_sup_rows, inf_sup_brake; inf_sup_wgrad 1 keeps the
+Options: inf_sup_lr_abs (absolute rate; 0 = lr x inf_sup_lr), inf_sup_steps, inf_sup_rows, inf_sup_brake; inf_sup_retry N retries a
+rolled-back phase up to N times from the same weights, each time at the rate / inf_sup_retry_div (default 3); inf_sup_wgrad 1 keeps the
 gradient through the premise reads (so premises can be WRITTEN in a chainable form); inf_sup_params 'kv' trains only the delta blocks' key
 and value projections (all weights otherwise); inf_sup_chain > 0 adds a CHAINING loss (the value the A-B memory returns for A's question,
 M_AB k_q, should match the key B produces as a subject, k_B): inf_sup_chain_mode 'nce' (contrastive among the batch's bridges, temperature
@@ -192,39 +193,48 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     else: P_=[p_ for p_ in _opt_params(model) if p_.requires_grad]
     W0_=[p_.detach().clone() for p_ in P_]
     la_=float(getattr(cfg,'inf_sup_lr_abs',0.0)); lr_=la_ if la_>0 else float(cfg.lr)*float(getattr(cfg,'inf_sup_lr',0.0033)); wg_=bool(int(getattr(cfg,'inf_sup_wgrad',0)))
-    op_=torch.optim.Adam(P_,lr=lr_); st_=int(getattr(cfg,'inf_sup_steps',60)); nb_=int(getattr(cfg,'inf_sup_rows',8)); noom_=0; lch_=[]
-    an_=[x_ for x_ in S_['it'] if x_.get('k')=='real' and not x_.get('gone') and len(x_['s'])>=40]; ls_=[]
+    st_=int(getattr(cfg,'inf_sup_steps',60)); nb_=int(getattr(cfg,'inf_sup_rows',8)); noom_=0; lch_=[]
+    nre_=int(getattr(cfg,'inf_sup_retry',0)); dv_=float(getattr(cfg,'inf_sup_retry_div',3.0)); tr_=[]   # RETRY: after a rolled-back try, again from the same weights at rate / dv_
+    an_=[x_ for x_ in S_['it'] if x_.get('k')=='real' and not x_.get('gone') and len(x_['s'])>=40]
     back_=_ws_eager(model)
     try:
-        for _ in range(st_):
-            s_=sls_[rs_.randint(len(sls_))]; L_=by_[s_]; cs_=[L_[int(i_)] for i_ in rs_.choice(len(L_),min(nb_,len(L_)),replace=False)]
-            try:
-                l_=-_sup_lp2(model,cfg,[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in cs_],s_,'mem',grad_=True,wgrad_=wg_).mean()
-                if an_:
-                    ax_=[an_[int(i_)] for i_ in rs_.choice(len(an_),min(nb_,len(an_)),replace=False)]; Xa_,Ma_=_ws_batch(model,[x_['s'] for x_ in ax_])
-                    lg_=_ws_run(model,Xa_,int(S_slot(ax_[0]['d'])),grad_=True); l_=l_+F.cross_entropy(lg_.reshape(-1,lg_.shape[-1]),Xa_[:,1:].reshape(-1),reduction='none').view(Xa_.shape[0],-1).mul(Ma_[:,1:]).sum()/Ma_[:,1:].sum().clamp(min=1)
-                chw_=float(getattr(cfg,'inf_sup_chain',0))
-                if chw_>0:
-                    cq_=[c_ for c_ in cs_ if _sup_onehop(S_,c_) is not None and _sup_bc(S_,c_) is not None]
-                    if len(cq_)>=1:
-                        a9_=_sup_chain(model,cfg,cq_,S_,s_,grad_=True,wgrad_=True)
-                        if a9_ is not None: l_=l_+chw_*(1.0-a9_); lch_.append(float(a9_))
-                op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_)); del l_
-            except RuntimeError as e8_:
-                if 'out of memory' not in str(e8_).lower() or nb_<=2: raise
-                op_.zero_grad(set_to_none=True); nb_=max(2,nb_//2); noom_+=1
-                if torch.cuda.is_available(): torch.cuda.empty_cache()
-        op_.zero_grad(set_to_none=True); model.zero_grad(set_to_none=True)
-        b1_,o1_=_ws_bpc(model,cfg,vals,t,ts,olds_); bk_=float(getattr(cfg,'inf_sup_brake',0.03)); dB_,dO_=b1_-b0_,(o1_-o0_ if o1_==o1_ else 0.0); kept_=dB_<=bk_ and dO_<=bk_
+        for at_ in range(nre_+1):
+            lr9_=lr_/(dv_**at_); ls_=[]; lch_=[]
+            if at_>0:
+                with torch.no_grad():
+                    for p_,w_ in zip(P_,W0_): p_.copy_(w_)
+            op_=torch.optim.Adam(P_,lr=lr9_)
+            for _ in range(st_):
+                s_=sls_[rs_.randint(len(sls_))]; L_=by_[s_]; cs_=[L_[int(i_)] for i_ in rs_.choice(len(L_),min(nb_,len(L_)),replace=False)]
+                try:
+                    l_=-_sup_lp2(model,cfg,[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in cs_],s_,'mem',grad_=True,wgrad_=wg_).mean()
+                    if an_:
+                        ax_=[an_[int(i_)] for i_ in rs_.choice(len(an_),min(nb_,len(an_)),replace=False)]; Xa_,Ma_=_ws_batch(model,[x_['s'] for x_ in ax_])
+                        lg_=_ws_run(model,Xa_,int(S_slot(ax_[0]['d'])),grad_=True); l_=l_+F.cross_entropy(lg_.reshape(-1,lg_.shape[-1]),Xa_[:,1:].reshape(-1),reduction='none').view(Xa_.shape[0],-1).mul(Ma_[:,1:]).sum()/Ma_[:,1:].sum().clamp(min=1)
+                    chw_=float(getattr(cfg,'inf_sup_chain',0))
+                    if chw_>0:
+                        cq_=[c_ for c_ in cs_ if _sup_onehop(S_,c_) is not None and _sup_bc(S_,c_) is not None]
+                        if len(cq_)>=1:
+                            a9_=_sup_chain(model,cfg,cq_,S_,s_,grad_=True,wgrad_=True)
+                            if a9_ is not None: l_=l_+chw_*(1.0-a9_); lch_.append(float(a9_))
+                    op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_)); del l_
+                except RuntimeError as e8_:
+                    if 'out of memory' not in str(e8_).lower() or nb_<=2: raise
+                    op_.zero_grad(set_to_none=True); nb_=max(2,nb_//2); noom_+=1
+                    if torch.cuda.is_available(): torch.cuda.empty_cache()
+            op_.zero_grad(set_to_none=True); model.zero_grad(set_to_none=True); del op_
+            b1_,o1_=_ws_bpc(model,cfg,vals,t,ts,olds_); bk_=float(getattr(cfg,'inf_sup_brake',0.03)); dB_,dO_=b1_-b0_,(o1_-o0_ if o1_==o1_ else 0.0); kept_=dB_<=bk_ and dO_<=bk_
+            tr_.append((lr9_,dB_,dO_,kept_))
+            if kept_: break
         if not kept_:
             with torch.no_grad():
                 for p_,w_ in zip(P_,W0_): p_.copy_(w_)
         P1_=probe(); m1_,n1_=P1_['sup'],P1_['none']
-        print(f"  [inference SUPERPOSED-MEMORY DREAMS] visit {vis_}: {st_} steps on {len(lv_)} concluded chains in {len(sls_)} slots ({nb_} rows + {nb_ if an_ else 0} anchor rows per step, lr x{float(getattr(cfg,'inf_sup_lr',0.0033)):g}) | "
-              f"loss {ls_[0]:.3f} -> {np.mean(ls_[-5:]):.3f} | visited {dB_:+.4f}, old {dO_:+.4f}: {'KEPT' if kept_ else 'ROLLED BACK (brake '+str(bk_)+')'} | "
+        print(f"  [inference SUPERPOSED-MEMORY DREAMS] visit {vis_}: {st_} steps on {len(lv_)} concluded chains in {len(sls_)} slots ({nb_} rows + {nb_ if an_ else 0} anchor rows per step, lr {lr9_:.1e}) | "
+              f"loss {ls_[0]:.3f} -> {np.mean(ls_[-5:]):.3f} | visited {dB_:+.4f}, old {dO_:+.4f}: {'KEPT' if kept_ else 'ROLLED BACK (brake '+str(bk_)+')'}{(' after '+str(len(tr_))+' tries: '+', '.join(f'{a_:.1e} visited {b_:+.4f} old {c_:+.4f} '+('kept' if d_ else 'rolled back') for a_,b_,c_,d_ in tr_)) if len(tr_)>1 else ''} | "
               f"log p(C) per byte on {len(smp_)} sampled chains (store off): from the SUPERPOSED memory {m0_:.3f} -> {m1_:.3f}, from no memory {n0_:.3f} -> {n1_:.3f}, "
               f"premises as TEXT {P0_['text']:.3f} -> {P1_['text']:.3f}, RANDOM memory (another chain's premises) {P0_['rand']:.3f} -> {P1_['rand']:.3f} | ONE-HOP CONTROL (premise prefix -> B): from that premise's memory {P0_['one_m']:.3f} -> {P1_['one_m']:.3f}, "
-              f"from no memory {P0_['one_n']:.3f} -> {P1_['one_n']:.3f} | lr {lr_:.1e}, gradient through the premise reads {'on' if wg_ else 'off'}, trained {str(getattr(cfg,'inf_sup_params','all'))} ({sum(p_.numel() for p_ in P_)/1e6:.2f}M parameters)"
+              f"from no memory {P0_['one_n']:.3f} -> {P1_['one_n']:.3f} | first rate {lr_:.1e}, gradient through the premise reads {'on' if wg_ else 'off'}, trained {str(getattr(cfg,'inf_sup_params','all'))} ({sum(p_.numel() for p_ in P_)/1e6:.2f}M parameters)"
               +(f", {noom_} out-of-memory retries (rows now {nb_})" if noom_ else "")
               +(f" | CHAINING {'(contrastive) cosine margin own bridge minus others' if str(getattr(cfg,'inf_sup_chain_mode','cos'))=='nce' else 'ALIGNMENT cos(M_AB k_q, k_B)'}: {P0_['chain']:.3f} -> {P1_['chain']:.3f} "
                 f"({'own bridge retrieved among the sampled chains' if str(getattr(cfg,'inf_sup_chain_mode','cos'))=='nce' else 'control, another chain bridge'}: {P0_['chain_ctl']:.3f} -> {P1_['chain_ctl']:.3f}); "
