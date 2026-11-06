@@ -186,7 +186,8 @@ def identity(lm, J, n=50, reps=6):
     return out
 print(f"TOY TEXT JEPA NAME DETECTION, seed {SEED}, {STEPS} steps; {len(TRN_N)} training names, {len(TST_N)} test names (never seen)", flush=True)
 lm = train_lm(STEPS)
-for kind in ('ema', 'lejepa'):
+import os
+for kind in tuple(os.environ.get('JN_KINDS', 'ema,lejepa').split(',')):
     J = train_jepa(kind, STEPS)
     for tn, tpl in (('training wordings', TRAIN_T), ('HELD-OUT wording', HELD_T)):
         res, means = detection(lm, J, tpl)
