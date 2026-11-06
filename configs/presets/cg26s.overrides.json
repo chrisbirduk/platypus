@@ -1,0 +1,19 @@
+{
+  "_comment": "cg26s: the JEPA index readouts (inference.jindex). Keys starting with _ are ignored by scripts/merge_overrides.py.",
+  "inf_jx": 1,
+  "_inf_jx": "train the index each sleep and print the JEPA INDEX readouts; readouts only, the trunk is not trained",
+  "inf_jx_steps": 400,
+  "inf_jx_rows": 64,
+  "inf_jx_dim": 256,
+  "inf_jx_layers": 4,
+  "inf_jx_len": 128,
+  "inf_jx_lr": 0.0005,
+  "inf_jx_mom": 0.996,
+  "_inf_jx_dim": "encoder width and depth (about 3M parameters); local runs use 128 x 3",
+  "inf_jx_nce": 0.0,
+  "_inf_jx_nce": "0 = pure V-JEPA (EMA target, L1, no negatives); > 0 adds InfoNCE over the batch (the toy: helps when facts share a subject)",
+  "inf_jx_n": 120,
+  "inf_jx_every": 1,
+  "inf_jx_pool": 200000,
+  "_inf_jx_pool": "the most recent live stored sentences that are keyed"
+}
