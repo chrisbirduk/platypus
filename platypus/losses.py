@@ -591,7 +591,10 @@ def _cd_loss_(model,cfg,x,dom):
                     e_['iv']=e_['iv']*2 if r_<=e_['v'] else max(2,e_['iv']//2)      #   consolidating: wait longer; being forgotten: sooner
                     e_['v']=r_; e_['due']=st_s+e_['iv']
             SB_['e']=[e_ for e_ in SB_['e'] if id(e_) not in drop_]
-    if cfg.inf_on and model.__dict__.get('_tqy') is not None: inf_store_add(model,cfg,bj_,int(model.__dict__.get('_cur_dom',dom)),wp_)   # cg20 store (verified)
+    if cfg.inf_on: inf_store_add(model,cfg,bj_,int(model.__dict__.get('_cur_dom',dom)),wp_)   # cg20 store (verified replays)
+    # FIX 2026-11-06: this used to require model._tqy, which is only set when cd_store_cap > 0 or nrem_res > 0 (and is popped first when
+    #   cd_store_cap > 0), so with nrem_res 0 the fast store read NOTHING in closed-loop passes (local harness: store frozen after pass 1,
+    #   17 of 58 chains against 40 with real text). Unchanged on the GPU preset (nrem_res 256, cd_store_cap 0).
     if int(cfg.nrem_res)>0 and model.__dict__.get('_tqy') is not None:            # NREM v1 RESERVOIR (uniform over the visit's verified windows)
         with torch.no_grad():
             RV_=model.__dict__.setdefault('_nres',{'dom':None,'e':[],'seen':0,'ret':0,'rep':0})
