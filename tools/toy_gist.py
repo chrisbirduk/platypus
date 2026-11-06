@@ -156,15 +156,21 @@ def twin_docs(pool, n):
         if j > 0: b['s'][j - 1][2] = X                                        # keep the chain inside b
         out.append((a, i, b, j))
     return out
-def items(pairs):
-    """per twin fact: (question, fact, context = the document's other facts, doc id, twin index)"""
-    it = []
+def build(pairs):
+    """CANDIDATES: every fact of every document, each with its document's gist; QUERIES: the twin facts' questions 'X r' with the gist of the
+    document asked about. The gist of a document = its facts other than the twin fact (one gist per document, so it never contains the
+    answer of the query and is shared by all the document's facts: the question must still pick the fact within the document)."""
+    C, Q = [], []
     for p, (a, i, b, j) in enumerate(pairs):
-        for d, k, tw in ((a, i, 2 * p + 1), (b, j, 2 * p)):
-            ctx = [x for q, s in enumerate(d['s']) if q != k for x in s][:24]
-            it.append({'q': d['s'][k][:2], 'f': d['s'][k], 'c': ctx, 'doc': 2 * p + (d is b), 'tw': tw})
-    for q in it: q['ans'] = q['f'][2]
-    return it
+        base = len(C); pos = {}
+        for di, (d, k) in enumerate(((a, i), (b, j))):
+            g = [x for q, s in enumerate(d['s']) if q != k for x in s][:30]
+            for q, s in enumerate(d['s']):
+                if q == k: pos[di] = len(C)
+                C.append({'f': s, 'g': g, 'doc': 2 * p + di})
+        for di, (d, k) in enumerate(((a, i), (b, j))):
+            Q.append({'q': d['s'][k][:2], 'g': C[pos[di]]['g'], 'doc': 2 * p + di, 'target': pos[di], 'twin': pos[1 - di]})
+    return C, Q
 def final_states(seqs):
     res = [None] * len(seqs); byL = {}
     for i, q in enumerate(seqs): byL.setdefault(len(q), []).append(i)
@@ -173,35 +179,42 @@ def final_states(seqs):
             jj = ix[a:a + 128]; _, Ss = m.run(torch.tensor([seqs[j] for j in jj])); v = Ss[-1].reshape(len(jj), -1)
             for q, j in enumerate(jj): res[j] = v[q]
     return torch.stack(res)
+def feats(C, Q):
+    return {'f': final_states([c['f'] for c in C]), 'fg': final_states([c['g'] for c in C]), 'fm': final_states([c['g'] + c['f'] for c in C]),
+            'q': final_states([q['q'] for q in Q]), 'qg': final_states([q['g'] for q in Q]), 'qm': final_states([q['g'] + q['q'] for q in Q])}
 with torch.no_grad():
-    TRI, TEI = items(twin_docs(TRAIN_E, 300)), items(twin_docs(TEST_E, 100))
-    def feats(I):
-        return {'q': final_states([x['q'] for x in I]), 'f': final_states([x['f'] for x in I]), 'c': final_states([x['c'] for x in I]),
-                'qc': final_states([x['c'] + x['q'] for x in I]), 'fc': final_states([x['c'] + x['f'] for x in I])}
-    FT, FE = feats(TRI), feats(TEI)
+    CT, QT = build(twin_docs(TRAIN_E, 300)); CE, QE = build(twin_docs(TEST_E, 100)); FT, FE = feats(CT, QT), feats(CE, QE)
 nz = {k: (FT[k].mean(0), FT[k].std(0) + 1e-6) for k in FT}
 N = lambda Fd, k: (Fd[k] - nz[k][0]) / nz[k][1]
 def train_variant(var):
     din = FT['q'].shape[1]; Eq_, Ef_, Eg_ = Head(din), Head(din), Head(din); P_ = nn.Sequential(nn.Linear(64, 128), nn.GELU(), nn.Linear(128, 64))
     o = torch.optim.AdamW([*Eq_.parameters(), *Ef_.parameters(), *Eg_.parameters(), *P_.parameters()], lr=1e-3, weight_decay=0.05)
-    def enc(Fd):
-        if var == 'memory': return P_(Eq_(N(Fd, 'qc'))), Ef_(N(Fd, 'fc'))
-        q, f = P_(Eq_(N(Fd, 'q'))), Ef_(N(Fd, 'f'))
-        if var == 'plain': return q, f
-        if var == 'add': g = Ef_(N(Fd, 'c')); return q + g, f + g                    # the gist in the same space as the facts
-        g = Eg_(N(Fd, 'c')); return torch.cat([q, g], 1), torch.cat([f, g], 1)      # orthogonal: its own subspace
+    def encq(Fd):
+        if var == 'memory': return P_(Eq_(N(Fd, 'qm')))
+        q = P_(Eq_(N(Fd, 'q')))
+        if var == 'plain': return q
+        if var == 'add': return q + Ef_(N(Fd, 'qg'))                          # the gist in the same space as the facts
+        return torch.cat([q, Eg_(N(Fd, 'qg'))], 1)                             # orthogonal: its own subspace
+    def encf(Fd):
+        if var == 'memory': return Ef_(N(Fd, 'fm'))
+        f = Ef_(N(Fd, 'f'))
+        if var == 'plain': return f
+        if var == 'add': return f + Ef_(N(Fd, 'fg'))
+        return torch.cat([f, Eg_(N(Fd, 'fg'))], 1)
+    tq = torch.tensor([q['target'] for q in QT])
     for st in range(1500):
-        ix = torch.as_tensor(rs.choice(len(TRI), 128, replace=False)); Fd = {k: v[ix] for k, v in FT.items()}
-        q, f = enc(Fd); qn, fn = F.normalize(q, dim=-1), F.normalize(f, dim=-1)
-        l = 0.95 * ((q - f) ** 2).sum(1).mean() + 0.05 * sigreg(torch.cat([q, f])) + F.cross_entropy(qn @ fn.T / 0.1, torch.arange(len(ix)))
+        ix = torch.as_tensor(rs.choice(len(QT), min(128, len(QT)), replace=False)); ti = tq[ix]
+        q = encq({k: FT[k][ix] for k in ('q', 'qg', 'qm')}); f = encf({k: FT[k][ti] for k in ('f', 'fg', 'fm')})
+        l = 0.95 * ((q - f) ** 2).sum(1).mean() + 0.05 * sigreg(torch.cat([q, f])) + F.cross_entropy(F.normalize(q, dim=-1) @ F.normalize(f, dim=-1).T / 0.1, torch.arange(len(ix)))
         o.zero_grad(); l.backward(); o.step()
     with torch.no_grad():
-        q, f = enc(FE); sim = F.normalize(q, dim=-1) @ F.normalize(f, dim=-1).T; top = sim.argmax(1)
-        n = len(TEI); right = (top == torch.arange(n)).float().mean()
-        tw = float(np.mean([float(sim[i, i] > sim[i, TEI[i]['tw']]) for i in range(n)]))
-        same = float(np.mean([float(int(top[i]) != i and TEI[int(top[i])]['doc'] == TEI[i]['doc']) for i in range(n)]))
-    return float(right), tw, same
-print(f"TEST 2 GIST: {len(TRI)} training and {len(TEI)} held-out twin facts (names never seen in training); retrieval of the fact from the question among all {len(TEI)} held-out facts")
+        sim = F.normalize(encq(FE), dim=-1) @ F.normalize(encf(FE), dim=-1).T; top = sim.argmax(1)
+        right = float(np.mean([int(top[i]) == q['target'] for i, q in enumerate(QE)]))
+        tw = float(np.mean([float(sim[i, q['target']] > sim[i, q['twin']]) for i, q in enumerate(QE)]))
+        same = float(np.mean([float(int(top[i]) != q['target'] and CE[int(top[i])]['doc'] == q['doc']) for i, q in enumerate(QE)]))
+    return right, tw, same
+print(f"TEST 2 GIST: {len(QT)} training and {len(QE)} held-out twin questions (names never seen in training); retrieval of the fact among all "
+      f"{len(CE)} facts of the held-out documents (each document's gist is shared by all its facts)")
 for var, nm in (('plain', 'PLAIN (no gist)'), ('add', 'ADD (gist in the same space)'), ('orth', 'ORTHOGONAL (gist subspace)'), ('memory', 'MEMORY (read after the document)')):
     r, tw, same = train_variant(var)
     print(f"  {nm:34s} top-1 {r:.2f} | twin test {tw:.2f} (chance 0.5) | errors to another fact of the same document {same:.2f}", flush=True)
