@@ -17,6 +17,7 @@ All of the documentation in this repository, this README included, is generated 
 ## Contents
 
 - [A note on this documentation](#a-note-on-this-documentation)
+- [Novelty and prior art](#novelty-and-prior-art)
 - [Why it exists](#why-it-exists)
 - [What it does](#what-it-does)
 - [How it works](#how-it-works)
@@ -34,6 +35,28 @@ All of the documentation in this repository, this README included, is generated 
 - [Licence](#licence)
 
 ---
+
+## Novelty and prior art
+
+An honest estimate of what is new here: roughly **70% assembled from known parts, 20% recognisable twists and 10% genuinely new**. The new part is concentrated in three places:
+
+- **The JEPA dream selector**: a joint-embedding predictive model trained only on links the system verified itself and on the measured outcome of earlier dreams, used to choose which memories to splice and consolidate.
+- **Per-sleep re-keying of weight edits**: every closed-form edit is re-solved with its current key at every sleep, so the edits do not decay as the layers below them keep learning.
+- **The handover protocol from the fast store to the weights**: release after consecutive store-off tests, deletion after a grace period, restoration and reinstatement of memories the weights lose, timed by a learned model of forgetting.
+
+That is a respectable ratio for research, but it comes with two risks, and they are the first things to fix:
+
+1. **Prior art has been understated.** Several closely related lines of work were not credited in these documents (see [A note on this documentation](#a-note-on-this-documentation)). The ones a reviewer would notice first:
+   - **Google's sleep framework** (Behrouz, Hashemi, Javanmard and Mirrokni, 2026): a sleep phase for language models that consolidates short-term memory into longer-term weights by distillation, with a "dreaming" stage of filtered self-generated rehearsal. It is the closest published work to Platypus's sleep cycle.
+   - **Self-generated rehearsal in language models**: LAMOL (Sun et al., 2020), which trains one model to both solve tasks and generate pseudo-samples of earlier ones, and Self-Synthesized Rehearsal (Huang et al., 2024), which rehearses on the model's own synthetic data. Platypus's dream rehearsal and verified replay belong to this family, and to deep generative replay (Shin et al., 2017) before it.
+   - **The decay of sequential weight edits**: model editing at scale leads to gradual and then catastrophic forgetting (Gupta et al., 2024), null-space constrained editing (AlphaEdit, Fang et al., 2025) and lifelong editing with side memories (WISE, Wang et al., 2024; MEMOIR, 2025). The edit decay Platypus diagnosed, and its re-keying, should be read against this work. ROME (Meng et al., 2022) and MEMIT (Meng et al., 2023) are the editing methods the closed-form edits build on.
+   - The rest of the design draws on complementary learning systems theory, curvature-based protection against forgetting, fast-weight and delta-rule memories, JEPA objectives and half-life models of memory; these are listed under [References](#references).
+2. **The genuinely new claims are the least tested.**
+   - The JEPA selector has not yet been shown to give better dreams than random choices: the random-dream control on the GPU is still to run, and locally, dreams against no dreams left recall unchanged.
+   - Per-sleep re-keying held two-hop recall from the weights at 0.6–0.8 through three passes on the GPU, but on one seed, and in the wording the system wrote; in held-out wordings the weights keep about a third of it.
+   - The handover protocol released 193 memories and restored 10 on the GPU, but on one seed, and released memories have been tested only in written wordings.
+
+   Each of these needs a second seed, the matching control and the held-out evaluation before it can be claimed.
 
 ## Why it exists
 
@@ -739,6 +762,17 @@ Works this project draws on or compares itself with. The list is incomplete (see
 - Gao et al. (2020). [The Pile: an 800GB dataset of diverse text for language modeling](https://arxiv.org/abs/2101.00027); [uncopyrighted subset](https://huggingface.co/datasets/monology/pile-uncopyrighted) (training data).
 - Yao et al. (2019). [DocRED: a large-scale document-level relation extraction dataset](https://arxiv.org/abs/1906.06127). ACL 2019.
 - Tan et al. (2022). [Revisiting DocRED: addressing the false negative problem in relation extraction](https://arxiv.org/abs/2205.12696) (Re-DocRED); [data](https://github.com/tonytan48/re-docred).
+
+**Sleep, rehearsal and knowledge editing in language models** (added after an outside assessment of prior art)
+
+- Behrouz, Hashemi, Javanmard and Mirrokni (2026). [The sleep framework: a new way for LLMs to retain knowledge in continual learning](https://arxiv.org/abs/2606.03979) ([Google Research blog](https://research.google/blog/the-sleep-framework-a-new-way-for-llms-to-retain-knowledge-in-continual-learning/)).
+- Sun, Ho and Lee (2020). [LAMOL: language modeling for lifelong language learning](https://arxiv.org/abs/1909.03329). ICLR 2020.
+- Huang et al. (2024). [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://aclanthology.org/2024.acl-long.77) (SSR). ACL 2024.
+- Gupta, Rao and Anumanchipalli (2024). [Model editing at scale leads to gradual and catastrophic forgetting](https://arxiv.org/abs/2401.07453).
+- Fang et al. (2025). [AlphaEdit: null-space constrained knowledge editing for language models](https://arxiv.org/abs/2410.02355). ICLR 2025.
+- Wang et al. (2024). [WISE: rethinking the knowledge memory for lifelong model editing of large language models](https://arxiv.org/abs/2405.14768). NeurIPS 2024.
+- MEMOIR (2025). [MEMOIR: lifelong model editing with minimal overwrite and informed retention for LLMs](https://arxiv.org/abs/2506.07899).
+- Meng, Bau, Andonian and Belinkov (2022). [Locating and editing factual associations in GPT](https://arxiv.org/abs/2202.05262) (ROME). NeurIPS 2022.
 
 ## Licence
 
