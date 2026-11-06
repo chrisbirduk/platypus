@@ -521,6 +521,7 @@ ORDER = (
     ('inference.supmem', '_sup_bc'),
     ('inference.supmem', '_sup_keys'),
     ('inference.supmem', '_sup_chain'),
+    ('inference.supmem', '_sup_heldout'),
     ('inference.supmem', '_sup_lp2'),
     ('inference.supmem', '_sup_dreams'),
     ('inference.supmem', '_jd_memread'),

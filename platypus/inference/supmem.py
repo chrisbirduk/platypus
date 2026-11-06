@@ -10,8 +10,9 @@ gradient through the premise reads (so premises can be WRITTEN in a chainable fo
 and value projections (all weights otherwise); inf_sup_chain > 0 adds a CHAINING loss (the value the A-B memory returns for A's question,
 M_AB k_q, should match the key B produces as a subject, k_B): inf_sup_chain_mode 'nce' (contrastive among the batch's bridges, temperature
 inf_sup_chain_tau) or 'cos'.
-Readout per sleep, before and after, store off: two-hop from the superposed memory, from no memory, from a random memory (another chain's
-premises) and with the premises as text; a one-hop control (premise prefix -> B from that premise's memory against none); the chaining
+Readout per sleep, before and after, store off: two-hop from the superposed memory, from no memory, from the B-C premise's memory alone,
+from a random memory (another chain's premises) and with the premises as text; the same rows for up to inf_sup_ho_n (24) steps of chains
+held out by inf_kgx_hold, which are never concluded or trained (HELD-OUT CHAINS line: transfer of the skill, each sleep); a one-hop control (premise prefix -> B from that premise's memory against none); the chaining
 margin and own-bridge retrieval. A training step that runs out of GPU memory is retried with half the rows."""
 import numpy as np
 import torch
@@ -33,6 +34,9 @@ from platypus.inference.store import (
 )
 from platypus.inference.units import (
     _UWORD,
+)
+from platypus.inference.probes import (
+    inf_probes,
 )
 from platypus.inference.infer import (
     _kgx_ho,
@@ -123,6 +127,34 @@ def _sup_chain(model,cfg,cs_,S_,sl_,grad_=False,wgrad_=False,shuffle_=False):
         _SUPCH.update(acc=float(acc_),own=float(own_),oth=float(oth_),n=n_)
         return 1.0-ce_ if grad_ else own_-oth_                                         # training: 1 - CE (the caller adds weight x (1 - value)); readout: margin
     return torch.cat(cs9_).mean()
+def _sup_heldout(cfg,S_,S_slot,n_):
+    """HELD-OUT CHAINS for the per-sleep transfer readout. Probe chains held out by inf_kgx_hold never get a conclusion (NREM, REM, audit and
+    reinstatement all skip them), so they are not in S_['conc']: their items are built from the probe definitions and the stored premise
+    sentences instead. For each step A-B-C of a held-out chain: the latest live real or verified sentence that names A then B (both within
+    the first 120 bytes, as _sup_rows keeps), and the same for B then C; a step is skipped until both premises are stored, or if one sentence
+    holds all three. Returns ([(slot, {'A','B','C'}, (A-B premise, B-C premise))], steps still waiting for a premise)."""
+    N_=int(getattr(cfg,'inf_kgx_hold',0))
+    if N_<=0 or n_<=0: return [],0
+    it_=S_['it']; ix_=S_.get('idx',{}); out_=[]; miss_=0
+    def prem_(a_,b_):
+        A9_=a_.encode('latin-1','replace'); B9_=b_.encode('latin-1','replace')
+        for i_ in sorted(set(ix_.get(A9_,()))&set(ix_.get(B9_,())),reverse=True):
+            if not (isinstance(i_,int) and 0<=i_<len(it_)): continue
+            x_=it_[i_]
+            if x_.get('gone') or x_.get('k') not in ('real','ver') or not x_.get('s'): continue
+            ja_=x_['s'].find(A9_); jb_=x_['s'].find(B9_)
+            if 0<=ja_<jb_ and jb_+len(B9_)<=120: return i_
+        return None
+    for k_,ch_ in enumerate(inf_probes(cfg)):
+        if k_%N_!=N_-1: continue
+        nm_=ch_['names']
+        for j_ in range(len(nm_)-2):
+            A_,B_,C_=nm_[j_],nm_[j_+1],nm_[j_+2]
+            ia_=prem_(A_,B_); ic_=prem_(B_,C_)
+            if ia_ is None or ic_ is None or ia_==ic_: miss_+=1; continue
+            out_.append((int(S_slot(it_[ia_]['d'])),{'A':A_,'B':B_,'C':C_},(it_[ia_]['s'][:120],it_[ic_]['s'][:120])))
+            if len(out_)>=n_: return out_,miss_
+    return out_,miss_
 def _sup_lp2(model,cfg,rows_,sl_,mode_,grad_=False,wgrad_=False):
     """log p per byte of each row's target; rows_ = [(prompt bytes, target bytes, memory texts or None)]; mode_ 'mem' builds the summed
     memory of the row's memory texts (one or two), 'none' uses no memory"""
@@ -165,11 +197,12 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     q2_=lambda c_: (f"So {c_['A']} is connected to ".encode('latin-1','replace'),(c_['C']+'.').encode('latin-1','replace'))
     def probe():
         with torch.no_grad():
-            R_={k_:[] for k_ in ('sup','none','text','one_m','one_n','rand')}
+            R_={k_:[] for k_ in ('sup','none','text','one_m','one_n','rand','bc')}
             for s_ in sls_:
                 cs_=[c_ for s9_,c_ in smp_ if s9_==s_]
                 rw_=[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in cs_]
                 R_['sup'].append(_sup_lp2(model,cfg,rw_,s_,'mem')); R_['none'].append(_sup_lp2(model,cfg,rw_,s_,'none'))
+                R_['bc'].append(_sup_lp2(model,cfg,[(p_,t_,[m_[1]]) for p_,t_,m_ in rw_],s_,'mem'))   # the B-C premise's memory alone (src = (A side, C side))
                 if len(rw_)>1: R_.setdefault('rand',[]).append(_sup_lp2(model,cfg,[(p_,t_,rw_[(j_+1)%len(rw_)][2]) for j_,(p_,t_,_) in enumerate(rw_)],s_,'mem'))
                 L9_=int(cfg_seq_(model)); tx_=[]
                 for p_,t_,m_ in rw_:                                            # premises as text, trimmed from the front of each to fit the window
@@ -190,6 +223,29 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
             out9_={k_:(float(torch.cat(v_).mean()) if v_ else float('nan')) for k_,v_ in R_.items()}
             out9_['chain']=float(np.mean(ch_)) if ch_ else float('nan'); out9_['chain_ctl']=float(np.mean(cc_)) if cc_ else float('nan')
             return out9_
+    try: HO_,hmiss_=_sup_heldout(cfg,S_,S_slot,int(getattr(cfg,'inf_sup_ho_n',24)))   # HELD-OUT CHAINS (never concluded, never trained): readout only
+    except Exception as e8_: HO_,hmiss_=[],0; print(f"  [inference SUPERPOSED-MEMORY DREAMS | HELD-OUT CHAINS] unavailable ({type(e8_).__name__}: {e8_})"[:260],flush=True)
+    def hprobe():
+        """the same two-hop rows for the held-out chains: superposed, none, B-C premise only, random memory (the next held-out chain's
+        premises), premises as text; each item read in the slot of its A-B premise"""
+        if not HO_: return None
+        with torch.no_grad():
+            R_={k_:[] for k_ in ('sup','none','bc','rand','text')}
+            AL_=[(q2_(c_)+(list(m_),),s_) for s_,c_,m_ in HO_]; L9_=int(cfg_seq_(model))
+            for s_ in sorted(set(s9_ for s9_,_,_ in HO_)):
+                ix9_=[j_ for j_,(_,s9_) in enumerate(AL_) if s9_==s_]; rw_=[AL_[j_][0] for j_ in ix9_]
+                R_['sup'].append(_sup_lp2(model,cfg,rw_,s_,'mem')); R_['none'].append(_sup_lp2(model,cfg,rw_,s_,'none'))
+                R_['bc'].append(_sup_lp2(model,cfg,[(p_,t_,[m_[1]]) for p_,t_,m_ in rw_],s_,'mem'))
+                if len(AL_)>1: R_['rand'].append(_sup_lp2(model,cfg,[(p_,t_,AL_[(j_+1)%len(AL_)][0][2]) for j_,(p_,t_,_) in zip(ix9_,rw_)],s_,'mem'))
+                tx_=[]
+                for p_,t_,m_ in rw_:
+                    h_=max(8,(L9_-len(p_)-len(t_)-4)//2); tx_.append((m_[0][-h_:]+b' '+m_[1][-h_:]+b' '+p_,t_,None))
+                R_['text'].append(_sup_lp2(model,cfg,tx_,s_,'none'))
+            return {k_:(float(torch.cat(v_).mean()) if v_ else float('nan')) for k_,v_ in R_.items()}
+    def hprobe_safe():
+        try: return hprobe()
+        except Exception as e8_: print(f"  [inference SUPERPOSED-MEMORY DREAMS | HELD-OUT CHAINS] unavailable ({type(e8_).__name__}: {e8_})"[:260],flush=True); return None
+    H0_=hprobe_safe()
     P0_=probe(); m0_,n0_=P0_['sup'],P0_['none']; b0_,o0_=_ws_bpc(model,cfg,vals,t,ts,olds_)
     if str(getattr(cfg,'inf_sup_params','all'))=='kv':
         P_=[p_ for n_,p_ in model.named_parameters() if p_.requires_grad and (n_.endswith(('Wk.weight','Wv.weight','conv_k','conv_v')))]
@@ -232,16 +288,27 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
         if not kept_:
             with torch.no_grad():
                 for p_,w_ in zip(P_,W0_): p_.copy_(w_)
-        P1_=probe(); m1_,n1_=P1_['sup'],P1_['none']
+        P1_=probe(); m1_,n1_=P1_['sup'],P1_['none']; H1_=hprobe_safe() if H0_ is not None else None
         print(f"  [inference SUPERPOSED-MEMORY DREAMS] visit {vis_}: {st_} steps on {len(lv_)} concluded chains in {len(sls_)} slots ({nb_} rows + {nb_ if an_ else 0} anchor rows per step, lr {lr9_:.1e}) | "
               f"loss {ls_[0]:.3f} -> {np.mean(ls_[-5:]):.3f} | visited {dB_:+.4f}, old {dO_:+.4f}: {'KEPT' if kept_ else 'ROLLED BACK (brake '+str(bk_)+')'}{(' after '+str(len(tr_))+' tries: '+', '.join(f'{a_:.1e} visited {b_:+.4f} old {c_:+.4f} '+('kept' if d_ else 'rolled back') for a_,b_,c_,d_ in tr_)) if len(tr_)>1 else ''} | "
               f"log p(C) per byte on {len(smp_)} sampled chains (store off): from the SUPERPOSED memory {m0_:.3f} -> {m1_:.3f}, from no memory {n0_:.3f} -> {n1_:.3f}, "
-              f"premises as TEXT {P0_['text']:.3f} -> {P1_['text']:.3f}, RANDOM memory (another chain's premises) {P0_['rand']:.3f} -> {P1_['rand']:.3f} | ONE-HOP CONTROL (premise prefix -> B): from that premise's memory {P0_['one_m']:.3f} -> {P1_['one_m']:.3f}, "
+              f"B-C premise ONLY {P0_['bc']:.3f} -> {P1_['bc']:.3f}, premises as TEXT {P0_['text']:.3f} -> {P1_['text']:.3f}, RANDOM memory (another chain's premises) {P0_['rand']:.3f} -> {P1_['rand']:.3f} | ONE-HOP CONTROL (premise prefix -> B): from that premise's memory {P0_['one_m']:.3f} -> {P1_['one_m']:.3f}, "
               f"from no memory {P0_['one_n']:.3f} -> {P1_['one_n']:.3f} | first rate {lr_:.1e}, gradient through the premise reads {'on' if wg_ else 'off'}, trained {str(getattr(cfg,'inf_sup_params','all'))} ({sum(p_.numel() for p_ in P_)/1e6:.2f}M parameters)"
               +(f", {noom_} out-of-memory retries (rows now {nb_})" if noom_ else "")
               +(f" | CHAINING {'(contrastive) cosine margin own bridge minus others' if str(getattr(cfg,'inf_sup_chain_mode','cos'))=='nce' else 'ALIGNMENT cos(M_AB k_q, k_B)'}: {P0_['chain']:.3f} -> {P1_['chain']:.3f} "
                 f"({'own bridge retrieved among the sampled chains' if str(getattr(cfg,'inf_sup_chain_mode','cos'))=='nce' else 'control, another chain bridge'}: {P0_['chain_ctl']:.3f} -> {P1_['chain_ctl']:.3f}); "
                 f"in training {lch_[0]:.3f} -> {np.mean(lch_[-10:]):.3f}, weight {float(getattr(cfg,'inf_sup_chain',0)):g}" if lch_ else ""),flush=True)
+        if H0_ is not None and H1_ is not None:
+            f8_=lambda a_,b_: f"{a_:.3f} -> {b_:.3f} ({b_-a_:+.3f})"
+            print(f"  [inference SUPERPOSED-MEMORY DREAMS | HELD-OUT CHAINS] visit {vis_}: {len(HO_)} steps of chains held out by inf_kgx_hold (never concluded, never trained), "
+                  f"{len(set(s9_ for s9_,_,_ in HO_))} slots, {hmiss_} more waiting for a premise | log p(C) per byte, store off, before -> after this phase: "
+                  f"SUPERPOSED {f8_(H0_['sup'],H1_['sup'])}, NO memory {f8_(H0_['none'],H1_['none'])}, B-C premise ONLY {f8_(H0_['bc'],H1_['bc'])}, "
+                  f"RANDOM memory {f8_(H0_['rand'],H1_['rand'])}, premises as TEXT {f8_(H0_['text'],H1_['text'])} | "
+                  f"SUPERPOSED minus B-C ONLY (composition beyond the memory that names C): held-out {f8_(H0_['sup']-H0_['bc'],H1_['sup']-H1_['bc'])}, "
+                  f"trained sample {f8_(P0_['sup']-P0_['bc'],P1_['sup']-P1_['bc'])} | SUPERPOSED minus RANDOM: held-out {f8_(H0_['sup']-H0_['rand'],H1_['sup']-H1_['rand'])}, "
+                  f"trained sample {f8_(P0_['sup']-P0_['rand'],P1_['sup']-P1_['rand'])}",flush=True)
+        elif int(getattr(cfg,'inf_kgx_hold',0))>0:
+            print(f"  [inference SUPERPOSED-MEMORY DREAMS | HELD-OUT CHAINS] visit {vis_}: none yet ({hmiss_} held-out steps waiting for a premise)",flush=True)
     except Exception as e9_:
         with torch.no_grad():
             for p_,w_ in zip(P_,W0_): p_.copy_(w_)
