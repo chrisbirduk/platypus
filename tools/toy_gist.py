@@ -26,7 +26,9 @@ rs = np.random.RandomState(SEED); torch.manual_seed(SEED)
 # ---------------------------------------------------------------- vocabulary and documents
 NREL, NTOP, NENT = 8, 40, 3000
 SO, CONN, DOT, PAD = 0, 1, 2, 3; R0 = 4; T0 = R0 + NREL; E0 = T0 + NTOP; V = E0 + NENT
-ent = rs.permutation(np.arange(E0, V)); TRAIN_E, TEST_E = list(ent[:2200]), list(ent[2200:])
+ent = rs.permutation(np.arange(E0, V)); TRAIN_E, TEST_E = list(ent[:2200]), list(ent[2200:]); ALL_E = TRAIN_E + TEST_E
+# (test entities are read in stage A as single facts, like any fact, so their embeddings are trained; they never appear in a training
+#  DOCUMENT or twin pair - the byte-level trunk has always seen the bytes of any name, so untrained name tokens would be an unfair test)
 def make_doc(pool, nf=None, names=None):
     nf = nf or int(rs.randint(2, 6)); tp = [T0 + int(x) for x in rs.choice(NTOP, 3, replace=False)]
     nm = names or [int(pool[int(i)]) for i in rs.choice(len(pool), nf + 1, replace=False)]
@@ -75,7 +77,7 @@ def addm(a, b): return [x + y for x, y in zip(a, b)]
 def lossA(m):
     st = [make_stream(TRAIN_E)[0] for _ in range(16)]; X, M_ = pad(st); lg, _ = m.run(X)
     l1 = (F.cross_entropy(lg[:, :-1].reshape(-1, V), X[:, 1:].reshape(-1), reduction='none') * M_[:, 1:].reshape(-1)).sum() / M_[:, 1:].sum()
-    fa = [make_doc(TRAIN_E, 1)['s'][0] for _ in range(32)]; fd = [make_doc(TRAIN_E, 1)['s'][0] for _ in range(32)]
+    fa = [make_doc(ALL_E, 1)['s'][0] for _ in range(32)]; fd = [make_doc(ALL_E, 1)['s'][0] for _ in range(32)]
     Xa, _ = pad(fa); Xd, _ = pad(fd); Mm = addm(m.run(Xa)[1], m.run(Xd)[1])
     lg2, _ = m.run(torch.tensor([[f[0], f[1]] for f in fa]), Mm)
     l2 = F.cross_entropy(lg2[:, -1], torch.tensor([f[2] for f in fa]))
@@ -94,6 +96,10 @@ for st in range(STEPS_A):
     l = lossA(m); op.zero_grad(); l.backward(); op.step()
     if (st + 1) % max(1, STEPS_A // 5) == 0: print(f"stage A {st+1}: loss {float(l):.3f} ({time.time()-t0:.0f}s)", flush=True)
 for p in m.parameters(): p.requires_grad_(False)
+with torch.no_grad():                                                        # sanity: can the model read a test entity's fact back from memory?
+    fa = [make_doc(TEST_E, 1)['s'][0] for _ in range(200)]; fd = [make_doc(TEST_E, 1)['s'][0] for _ in range(200)]
+    Xa, _ = pad(fa); Xd, _ = pad(fd); lg, _ = m.run(torch.tensor([[f[0], f[1]] for f in fa]), addm(m.run(Xa)[1], m.run(Xd)[1]))
+    print(f"SANITY one-hop from memory (test entities, distractor superposed): {float((lg[:, -1].argmax(-1) == torch.tensor([f[2] for f in fa])).float().mean()):.2f}", flush=True)
 
 # ---------------------------------------------------------------- TEST 1: segmentation
 def states_stream(toks):
@@ -213,7 +219,7 @@ def train_variant(var):
         tw = float(np.mean([float(sim[i, q['target']] > sim[i, q['twin']]) for i, q in enumerate(QE)]))
         same = float(np.mean([float(int(top[i]) != q['target'] and CE[int(top[i])]['doc'] == q['doc']) for i, q in enumerate(QE)]))
     return right, tw, same
-print(f"TEST 2 GIST: {len(QT)} training and {len(QE)} held-out twin questions (names never seen in training); retrieval of the fact among all "
+print(f"TEST 2 GIST: {len(QT)} training and {len(QE)} held-out twin questions (names never in a training document or twin pair); retrieval of the fact among all "
       f"{len(CE)} facts of the held-out documents (each document's gist is shared by all its facts)")
 for var, nm in (('plain', 'PLAIN (no gist)'), ('add', 'ADD (gist in the same space)'), ('orth', 'ORTHOGONAL (gist subspace)'), ('memory', 'MEMORY (read after the document)')):
     r, tw, same = train_variant(var)
