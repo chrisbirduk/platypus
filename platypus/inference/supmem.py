@@ -15,7 +15,9 @@ from a random memory (another chain's premises) and with the premises as text; t
 held out by inf_kgx_hold, which are never concluded or trained (HELD-OUT CHAINS line: transfer of the skill, each sleep); a one-hop control (premise prefix -> B from that premise's memory against none); the chaining
 margin and own-bridge retrieval. A training step that runs out of GPU memory is retried with half the rows.
 The brake is measured in eager mode before and after (the compiled-forward offset is printed); inf_sup_anc_visit F takes that share of the
-anchor rows from the visited slot (off by default)."""
+anchor rows from the visited slot (off by default); inf_sup_onehop_w W adds one-hop rows (premise prefix -> B from that premise's
+memory) at weight W; inf_sup_protect 1|2 whitens each key/value step by every domain's Fisher factors, the visited domain's included
+(1 keeps the step's norm, 2 keeps the whitened size)."""
 import numpy as np
 import torch
 import torch.nn as nn
@@ -28,6 +30,9 @@ from platypus.layers import (
 )
 from platypus.ngrams import (
     _COMPILED, _opt_params,
+)
+from platypus.protection import (
+    _kf_apply, kf_build,
 )
 from platypus.conduit import (
     _carry_load, _carry_save, _uh_load, _uh_save,
@@ -261,6 +266,17 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     fv_=float(getattr(cfg,'inf_sup_anc_visit',0.0))                             # VISITED-SLOT ANCHORS: this share of the anchor rows comes from the visited slot
     av_=[x_ for x_ in S_['it'] if x_.get('k') in ('real','ver') and not x_.get('gone') and len(x_['s'])>=40 and int(S_slot(x_['d']))==int(ts)] if fv_>0 else []
     nv0_=int(round(fv_*nb_)) if av_ else 0
+    ow0_=float(getattr(cfg,'inf_sup_onehop_w',0.0))
+    KP_=None; pinfo_=[0,[]]; pm_=int(getattr(cfg,'inf_sup_protect',0))
+    if pm_:                                                                     # PROTECTED UPDATES: whiten each key/value step by the Fisher factors of ALL
+        sv9_={k_:model.__dict__.get(k_) for k_ in ('_kf_P','_kf_K','_kf_proj')}   #   domains, the visited one included (its factors are stored at the end of
+        try:                                                                    #   its visit); the run's own preconditioner is left exactly as it was
+            kf_build(model,cfg,-1,quiet=True); KP_=model.__dict__.get('_kf_P') or None
+        except Exception as e8_: print(f"  [inference SUPERPOSED-MEMORY DREAMS] protection unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True); KP_=None
+        finally:
+            for k_,v_ in sv9_.items():
+                if v_ is None: model.__dict__.pop(k_,None)
+                else: model.__dict__[k_]=v_
     cmp0_=_COMPILED.get(id(model)) is not None and not _COMPILED.get('failed')
     if cmp0_: bc0_,oc0_=_ws_bpc(model,cfg,vals,t,ts,olds_)                       # compiled-forward BPC: for the offset readout only
     back_=_ws_eager(model)                                                       # every measurement below, before and after, in eager mode (the brake
@@ -290,7 +306,21 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
                         if len(cq_)>=1:
                             a9_=_sup_chain(model,cfg,cq_,S_,s_,grad_=True,wgrad_=True)
                             if a9_ is not None: l_=l_+chw_*(1.0-a9_); lch_.append(float(a9_))
-                    op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_)); del l_
+                    ow_=float(getattr(cfg,'inf_sup_onehop_w',0.0))
+                    if ow_>0:                                                       # ONE-HOP ROWS: keep reading B back from the A-B premise's own memory
+                        oh_=[x_ for x_ in (_sup_onehop(S_,c_) for c_ in cs_) if x_ is not None]
+                        if oh_: l_=l_-ow_*_sup_lp2(model,cfg,[(pf_,b_,[pm9_]) for pm9_,pf_,b_ in oh_],s_,'mem',grad_=True,wgrad_=wg_).mean()
+                    op_.zero_grad(); l_.backward()
+                    if KP_:
+                        pw_=[(q_,q_.detach().clone()) for q_ in P_ if q_.ndim==2 and id(q_) in KP_]; op_.step()
+                        with torch.no_grad():
+                            for q_,q0_ in pw_:
+                                d_=(q_-q0_).float(); z_=_kf_apply(KP_[id(q_)],d_)
+                                if pm_==1: z_=z_*(d_.norm()/z_.norm().clamp_min(1e-12))
+                                pinfo_[1].append(float(F.cosine_similarity(d_.flatten(),z_.flatten(),dim=0))); q_.copy_((q0_.float()+z_).to(q_.dtype))
+                        pinfo_[0]=len(pw_); del pw_
+                    else: op_.step()
+                    ls_.append(float(l_)); del l_
                 except RuntimeError as e8_:
                     if 'out of memory' not in str(e8_).lower() or nb_<=2: raise
                     op_.zero_grad(set_to_none=True); nb_=max(2,nb_//2); noom_+=1
@@ -303,7 +333,7 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
             with torch.no_grad():
                 for p_,w_ in zip(P_,W0_): p_.copy_(w_)
         P1_=probe(); m1_,n1_=P1_['sup'],P1_['none']; H1_=hprobe_safe() if H0_ is not None else None
-        print(f"  [inference SUPERPOSED-MEMORY DREAMS] visit {vis_}: {st_} steps on {len(lv_)} concluded chains in {len(sls_)} slots ({nb_} rows + {nb_ if (an_ or av_) else 0} anchor rows per step{f', {nv0_} of them from the visited slot ({len(av_)} available)' if fv_>0 else ''}, lr {lr9_:.1e}) | "
+        print(f"  [inference SUPERPOSED-MEMORY DREAMS] visit {vis_}: {st_} steps on {len(lv_)} concluded chains in {len(sls_)} slots ({nb_} rows + {nb_ if (an_ or av_) else 0} anchor rows per step{f', {nv0_} of them from the visited slot ({len(av_)} available)' if fv_>0 else ''}{f', one-hop rows x{ow0_:g}' if ow0_>0 else ''}{f', PROTECTED {pinfo_[0]} key/value matrices by all domains incl. the visited one (mode {pm_}), step kept {np.mean(pinfo_[1]):.2f} cosine to Adam' if pinfo_[1] else (', protection requested but no factors' if pm_ else '')}, lr {lr9_:.1e}) | "
               f"loss {ls_[0]:.3f} -> {np.mean(ls_[-5:]):.3f} | visited {dB_:+.4f}, old {dO_:+.4f}: {'KEPT' if kept_ else 'ROLLED BACK (brake '+str(bk_)+')'}{(' after '+str(len(tr_))+' tries: '+', '.join(f'{a_:.1e} visited {b_:+.4f} old {c_:+.4f} '+('kept' if d_ else 'rolled back') for a_,b_,c_,d_ in tr_)) if len(tr_)>1 else ''} | BRAKE measured in eager mode before and after{f' (compiled forward minus eager before training: visited {bc0_-b0_:+.4f}, old {(oc0_-o0_) if oc0_==oc0_ else 0.0:+.4f}; the brake used to count minus that as damage)' if cmp0_ else ' (no compiled forward)'} | "
               f"log p(C) per byte on {len(smp_)} sampled chains (store off): from the SUPERPOSED memory {m0_:.3f} -> {m1_:.3f}, from no memory {n0_:.3f} -> {n1_:.3f}, "
               f"B-C premise ONLY {P0_['bc']:.3f} -> {P1_['bc']:.3f}, premises as TEXT {P0_['text']:.3f} -> {P1_['text']:.3f}, RANDOM memory (another chain's premises) {P0_['rand']:.3f} -> {P1_['rand']:.3f} | ONE-HOP CONTROL (premise prefix -> B): from that premise's memory {P0_['one_m']:.3f} -> {P1_['one_m']:.3f}, "
