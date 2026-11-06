@@ -16,7 +16,9 @@ Readouts on TEST names, per word (gold labels used only for scoring):
   2 SWAP AUC: 1 - cosine of the rest-of-text latent after the word is replaced by a random pseudo-word (low = name).
   3 WHAT THE LATENT KEEPS: the same test name in two different documents - is its latent nearest to its own other mention among 50 test
     names (identity kept) - for the JEPA target latents and the byte language model's hidden states.
-usage: python3 toy_jname.py [seed] [steps]"""
+usage: python3 toy_jname.py [seed] [steps]
+env: JN_KINDS (ema,lejepa), JN_CKPTS (e.g. 1000,3000,6000: compact readouts during training), JN_NOREP=1 (training documents whose names
+never repeat: tests whether keeping a name's identity is rewarded by its repeat mentions)"""
 import sys, time, math, re
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 SEED = int(sys.argv[1]) if len(sys.argv) > 1 else 0
@@ -40,17 +42,23 @@ FILL = ["It was a cold day.", "The market opened late.", "Rain fell on the town.
         "The bell rang twice.", "Bread was cheap that year.", "The river was high."]
 TRAIN_T, HELD_T = [0, 1, 2], [3]
 L = 128; PAD, MASK = 256, 257; V = 258
-def doc(names, tpl, r=rs):
-    """2-3 sentences: (A,B), (B,C) or (A,C), maybe a third about two of them, maybe a filler; returns text and gold word labels"""
+import os
+NOREP = os.environ.get('JN_NOREP', '0') == '1'                             # training documents whose names never repeat (control)
+def doc(names, tpl, r=rs, norep=False):
+    """2-3 sentences: (A,B), (B,C) or (A,C), maybe a third about two of them, maybe a filler; returns text and gold word labels.
+    norep: every sentence about two fresh names (no name repeats inside the document)"""
     A, B, C = [names[i] for i in r.choice(len(names), 3, replace=False)]
     pairs = [(A, B), [(B, C), (A, C)][r.randint(2)]]
     if r.rand() < 0.5: pairs.append([(A, B), (C, A), (B, A)][r.randint(3)])
+    if norep:
+        pairs = [tuple(names[i] for i in r.choice(len(names), 2, replace=False)) for _ in pairs]
+        return ' '.join(REL[r.randint(len(REL))][tpl[r.randint(len(tpl))]].format(A=a, B=b) for a, b in pairs), {x for pr in pairs for x in pr}
     ss = []
     for a, b in pairs: ss.append(REL[r.randint(len(REL))][tpl[r.randint(len(tpl))]].format(A=a, B=b))
     if r.rand() < 0.5: ss.insert(r.randint(len(ss) + 1), FILL[r.randint(len(FILL))])
     return ' '.join(ss), {A, B, C}
 def enc(t): b = list(t.encode())[:L]; return b + [PAD] * (L - len(b))
-def batch(n, names=TRN_N, tpl=TRAIN_T): return torch.tensor([enc(doc(names, tpl)[0]) for _ in range(n)])
+def batch(n, names=TRN_N, tpl=TRAIN_T): return torch.tensor([enc(doc(names, tpl, norep=NOREP)[0]) for _ in range(n)])
 WORDS = sorted({w for R in REL for t in R for w in re.findall(r'[A-Za-z]+', t.replace('{A}', '').replace('{B}', ''))} |
                {w for f in FILL for w in re.findall(r'[A-Za-z]+', f)})
 def spans(t):
@@ -108,9 +116,10 @@ class JEPA(nn.Module):
         z = (s.tgt if s.kind == 'ema' else s.enc)(X, kpm=(X == PAD)); return F.layer_norm(z, z.shape[-1:])
     def predict(s, Xm):
         h = s.enc(Xm, kpm=(Xm == PAD)); return s.pred(Xm, kpm=(Xm == PAD), x_in=h)
-def train_jepa(kind, steps):
+def train_jepa(kind, steps, ck=None, at=()):
     m = JEPA(kind); P_ = [p for p in m.parameters() if p.requires_grad]; op = torch.optim.AdamW(P_, lr=5e-4, weight_decay=0.01); ls = []
     for st in range(steps):
+        if ck is not None and st in at: m.eval(); ck(m, st, ls); m.train()
         X = batch(32); Xm, M = mask_words(X); p = m.predict(Xm)
         if kind == 'ema': tg = m.target(X)
         else:
@@ -181,19 +190,35 @@ def identity(lm, J, n=50, reps=6):
             H['jepa'][side].append(J.target(X)[0, a:b].mean(0))
             Xi = torch.cat([torch.full((1, 1), PAD), X[:, :-1]], 1); H['lm'][side].append(lm.t(Xi)[0, a + 1:b + 1].mean(0))
     out = {}
+    W = []                                                                 # WITHIN a document: a repeat mention's latent nearest its own first mention?
+    for _ in range(150):
+        t, nms = doc(TST_N, TRAIN_T); X = torch.tensor([enc(t)]); z = F.normalize(J.target(X)[0], dim=-1); first = {}; reps = []
+        for a, b, w in spans(t):
+            if w in nms:
+                if w in first: reps.append((w, z[a:b].mean(0)))
+                else: first[w] = z[a:b].mean(0)
+        for w, v in reps:
+            if len(first) > 1: W.append(max(first, key=lambda k: float(F.cosine_similarity(v, first[k], dim=0))) == w)
+    out['within'] = float(np.mean(W)) if W else float('nan')
     for k, (A, B) in H.items():
         A, B = F.normalize(torch.stack(A), dim=-1), F.normalize(torch.stack(B), dim=-1); out[k] = float(((A @ B.T).argmax(1) == torch.arange(n)).float().mean())
     return out
 print(f"TOY TEXT JEPA NAME DETECTION, seed {SEED}, {STEPS} steps; {len(TRN_N)} training names, {len(TST_N)} test names (never seen)", flush=True)
 lm = train_lm(STEPS)
-import os
+CK = [int(x) for x in os.environ.get('JN_CKPTS', '').split(',') if x]      # checkpoints: a compact readout during training
+def ckpt(J, st, ls):
+    rT, _ = detection(lm, J, TRAIN_T, n=100); rH, _ = detection(lm, J, HELD_T, n=100); idn = identity(lm, J)
+    f = lambda r, m: f"gap {r[m][2]:.2f} lowJ {r[m][1]:.2f} swap {r[m][3]:.2f}"
+    print(f"  [CKPT {st:5d}{' NO-REPEAT training' if NOREP else ''}] loss {np.mean(ls[-100:]) if ls else float('nan'):.3f} | training wordings first {f(rT, 'first mentions')}, repeat {f(rT, 'repeat mentions')} | "
+          f"HELD-OUT wording first {f(rH, 'first mentions')}, repeat {f(rH, 'repeat mentions')} | identity across documents {idn['jepa']:.2f} (byte LM {idn['lm']:.2f}), "
+          f"within a document {idn['within']:.2f}  ({time.time()-t0:.0f}s)", flush=True)
 for kind in tuple(os.environ.get('JN_KINDS', 'ema,lejepa').split(',')):
-    J = train_jepa(kind, STEPS)
+    J = train_jepa(kind, STEPS, ckpt if CK else None, set(CK))
     for tn, tpl in (('training wordings', TRAIN_T), ('HELD-OUT wording', HELD_T)):
         res, means = detection(lm, J, tpl)
         for mn, (a1, a2, a3, a4) in res.items():
             print(f"  [{kind}] {tn:18s} {mn:16s} | AUC name vs other words: byte surprise {a1:.2f} | LOW JEPA surprise {a2:.2f} | GAP byte - JEPA {a3:.2f} | SWAP (rest of text barely moves) {a4:.2f}", flush=True)
         print(f"  [{kind}] {tn:18s} means (byte surprise nats / JEPA surprise / swap change): " + " | ".join(f"{c} {v[0]:.2f} / {v[1]:.3f} / {v[2]:.3f}" for c, v in means.items()), flush=True)
     idn = identity(lm, J)
-    print(f"  [{kind}] IDENTITY KEPT? same test name in two documents found among 50 by its latent: JEPA target latent {idn['jepa']:.2f} | byte LM hidden state {idn['lm']:.2f} (chance 0.02)  ({time.time()-t0:.0f}s)", flush=True)
+    print(f"  [{kind}] IDENTITY KEPT? same test name in two documents found among 50 by its latent: JEPA target latent {idn['jepa']:.2f} | byte LM hidden state {idn['lm']:.2f} (chance 0.02) | WITHIN a document, a repeat mention nearest its own first mention {idn['within']:.2f}  ({time.time()-t0:.0f}s)", flush=True)
 print(f"DONE {time.time()-t0:.0f}s")
