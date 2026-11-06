@@ -360,11 +360,16 @@ def _sup_tracecomp(model,cfg,S_,S_slot):
                 p1_,p2_=it_[f_['i']]['s'][:120],it_[g_['i']]['s'][:120]
                 if p1_.strip()==p2_.strip(): continue
                 seen_.add((A_,B_,C_)); TR_.append((A_,B_,C_,p1_,p2_,int(S_slot(it_[f_['i']]['d']))))
+        for c_ in S_.get('conc',[]):                                              # + the chains the system concluded (their two source sentences)
+            if c_.get('freed') or not all(isinstance(c_.get(x_),str) for x_ in 'ABC'): continue
+            A_,B_,C_=c_['A'],c_['B'],c_['C']; P9_=_sup_rows(S_,c_)
+            if P9_ is None or len({A_,B_,C_})<3 or (A_,B_,C_) in seen_ or ({A_,B_,C_}&hon_): continue
+            seen_.add((A_,B_,C_)); TR_.append((A_,B_,C_,P9_[0],P9_[1],int(S_slot(c_['d']))))
         HO_,_=_sup_heldout(cfg,S_,S_slot,int(getattr(cfg,'inf_sup_ho_n',64)))
         HT_=[(c_['A'],c_['B'],c_['C'],m_[0],m_[1],s_) for s_,c_,m_ in HO_]
-        if len(TR_)<32: print(f"{tag_} visit {vis_}: skipped, {len(TR_)} fact chains outside the held-out names (need 32)",flush=True); return
+        if len(TR_)<32: print(f"{tag_} visit {vis_}: skipped, {len(TR_)} fact and concluded chains outside the held-out names (need 32)",flush=True); return
         rs_=np.random.RandomState(8080+vis_); rs_.shuffle(TR_); TR_=TR_[:int(getattr(cfg,'inf_sup_tc_n',512))]
-        nv_=max(8,len(TR_)//5); VA_=TR_[:nv_]; TT_=TR_[nv_:]
+        nv_=max(16,len(TR_)//4); VS_=TR_[:nv_//2]; VA_=TR_[nv_//2:nv_]; TT_=TR_[nv_:]   # VS_ picks the heads, VA_ is reported (unbiased)
         cq_=lambda a_,c_: f"So {a_} is connected to {c_}.".encode('latin-1','replace')
         txt_={}                                                                   # (bytes, slot) -> row
         def tid_(b_,s_):
@@ -373,7 +378,7 @@ def _sup_tracecomp(model,cfg,S_,S_slot):
             return txt_[k_]
         def rows_(T_):
             return [(tid_(p1_,s_),tid_(p2_,s_),[tid_(cq_(A_,C_),s_),tid_(cq_(C_,A_),s_),tid_(cq_(A_,B_),s_),tid_(cq_(B_,C_),s_)]) for A_,B_,C_,p1_,p2_,s_ in T_]
-        RT_,RV_,RH_=rows_(TT_),rows_(VA_),rows_(HT_)
+        RT_,RV_,RH_,RS_=rows_(TT_),rows_(VA_),rows_(HT_),rows_(VS_)
         keys_=list(txt_.keys()); dev_=model.embed.weight.device; Mx_=[None]*len(keys_); bk_=None
         back_=_ws_eager(model)
         try:
@@ -416,9 +421,9 @@ def _sup_tracecomp(model,cfg,S_,S_slot):
             bi_=torch.as_tensor(rs_.choice(len(RT_),min(64,len(RT_)),replace=False),device=dev_)
             za_,zb_,zc_=enc_(M_[ia_[bi_]]),enc_(M_[ib_[bi_]]),enc_(M_[ic_[bi_]])
             l_=(1-lam_)*((P_(torch.cat([za_,zb_],1))-zc_)**2).sum(1).mean()+lam_*_sigreg_le(torch.cat([za_,zb_,zc_]))
-            op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_))
-            if (k9_+1)%100==0 and RV_:                                             # keep the heads that score best on the validation chains
-                v9_=score(RV_,'P')[0]
+            op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_.detach()))
+            if (k9_+1)%100==0 and RS_:                                             # keep the heads that score best on the selection chains
+                v9_=score(RS_,'P')[0]
                 if v9_>best_[0]: best_=(v9_,[{k_:x_.detach().clone() for k_,x_ in m_.state_dict().items()} for m_ in (E1_,E2_,P_)],k9_+1)
         if best_[1] is not None:
             for m_,sd9_ in zip((E1_,E2_,P_),best_[1]): m_.load_state_dict(sd9_)
@@ -427,7 +432,7 @@ def _sup_tracecomp(model,cfg,S_,S_slot):
             Z_=enc_(M_); dt_=[float(F.cosine_similarity(Z_[cs_[0]],Z_[cs_[1]],dim=0)) for _,_,cs_ in RT_[:64]]
         f2_=lambda x_: f"{x_[0]:.2f} / {x_[1]:.2f}"
         fr9_.__exit__(None,None,None); fr9_=None
-        print(f"{tag_} visit {vis_}: {len(TT_)} training and {len(VA_)} validation fact chains (names of held-out probe chains excluded), {len(RH_)} HELD-OUT chain steps | "
+        print(f"{tag_} visit {vis_}: {len(TT_)} training, {len(VS_)} selection and {len(VA_)} validation chains (recorded fact chains and concluded chains; names of held-out probe chains excluded), {len(RH_)} HELD-OUT chain steps | "
               f"last delta block memory ({mh_} heads x {dd_}) -> trace {dz_}, predictor MLP, LeJEPA lambda {lam_:g}, {st9_} steps (heads kept from step {best_[2]}), loss {ls_[0]:.3f} -> {np.mean(ls_[-20:]):.3f} | "
               f"TOP-1 among A->C, C->A, A->B, B->C (chance 0.25) / plus 4 other chains (chance 0.125): LEARNED PREDICTOR train {f2_(R9_[('train','P')])}, validation {f2_(R9_[('val','P')])}, HELD-OUT {f2_(R9_[('ho','P')])} | "
               f"SUM of premise traces: validation {f2_(R9_[('val','sum')])}, held-out {f2_(R9_[('ho','sum')])} | A-B trace alone: validation {f2_(R9_[('val','ab')])}, held-out {f2_(R9_[('ho','ab')])} | "
