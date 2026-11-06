@@ -205,13 +205,14 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     q2_=lambda c_: (f"So {c_['A']} is connected to ".encode('latin-1','replace'),(c_['C']+'.').encode('latin-1','replace'))
     def probe():
         with torch.no_grad():
-            R_={k_:[] for k_ in ('sup','none','text','one_m','one_n','rand','bc')}
+            R_={k_:[] for k_ in ('sup','none','text','one_m','one_n','rand','bc','two')}
             for s_ in sls_:
                 cs_=[c_ for s9_,c_ in smp_ if s9_==s_]
                 rw_=[q2_(c_)+(list(_sup_rows(S_,c_)),) for c_ in cs_]
                 R_['sup'].append(_sup_lp2(model,cfg,rw_,s_,'mem')); R_['none'].append(_sup_lp2(model,cfg,rw_,s_,'none'))
                 R_['bc'].append(_sup_lp2(model,cfg,[(p_,t_,[m_[1]]) for p_,t_,m_ in rw_],s_,'mem'))   # the B-C premise's memory alone (src = (A side, C side))
                 if len(rw_)>1: R_.setdefault('rand',[]).append(_sup_lp2(model,cfg,[(p_,t_,rw_[(j_+1)%len(rw_)][2]) for j_,(p_,t_,_) in enumerate(rw_)],s_,'mem'))
+                if len(rw_)>1: R_['two'].append(_sup_lp2(model,cfg,[(p_,t_,list(m_)+list(rw_[(j_+1)%len(rw_)][2])) for j_,(p_,t_,m_) in enumerate(rw_)],s_,'mem'))   # + another chain's two premises
                 L9_=int(cfg_seq_(model)); tx_=[]
                 for p_,t_,m_ in rw_:                                            # premises as text, trimmed from the front of each to fit the window
                     h_=max(8,(L9_-len(p_)-len(t_)-4)//2); tx_.append((m_[0][-h_:]+b' '+m_[1][-h_:]+b' '+p_,t_,None))
@@ -239,7 +240,7 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
         premises), premises as text; each item read in the slot of its A-B premise"""
         if not HO_: return None
         with torch.no_grad():
-            R_={k_:[] for k_ in ('sup','none','bc','rand','text')}; xs_[0]=0
+            R_={k_:[] for k_ in ('sup','none','bc','rand','text','two')}; xs_[0]=0
             AL_=[(q2_(c_)+(list(m_),),s_) for s_,c_,m_ in HO_]; L9_=int(cfg_seq_(model))
             for s_ in sorted(set(s9_ for s9_,_,_ in HO_)):
                 ix9_=[j_ for j_,(_,s9_) in enumerate(AL_) if s9_==s_]; rw_=[AL_[j_][0] for j_ in ix9_]
@@ -247,6 +248,7 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
                 R_['bc'].append(_sup_lp2(model,cfg,[(p_,t_,[m_[1]]) for p_,t_,m_ in rw_],s_,'mem'))
                 if len(ix9_)>1: R_['rand'].append(_sup_lp2(model,cfg,[(p_,t_,rw_[(j_+1)%len(rw_)][2]) for j_,(p_,t_,_) in enumerate(rw_)],s_,'mem'))   # same slot, as for the trained sample
                 elif len(AL_)>1: R_['rand'].append(_sup_lp2(model,cfg,[(p_,t_,AL_[(ix9_[0]+1)%len(AL_)][0][2]) for p_,t_,_ in rw_],s_,'mem')); xs_[0]+=1   # a lone item: another slot's
+                if len(ix9_)>1: R_['two'].append(_sup_lp2(model,cfg,[(p_,t_,list(m_)+list(rw_[(j_+1)%len(rw_)][2])) for j_,(p_,t_,m_) in enumerate(rw_)],s_,'mem'))   # + another held-out chain's premises
                 tx_=[]
                 for p_,t_,m_ in rw_:
                     h_=max(8,(L9_-len(p_)-len(t_)-4)//2); tx_.append((m_[0][-h_:]+b' '+m_[1][-h_:]+b' '+p_,t_,None))
@@ -348,7 +350,8 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
                   f"{len(set(s9_ for s9_,_,_ in HO_))} slots, {hmiss_} more waiting for a premise (their premises are read like any fact: stored, and among the anchor rows as plain text; "
                   f"only the conclusion is withheld) | random memory from the same slot{f' ({xs_[0]} lone items from another slot)' if xs_[0] else ''} | log p(C) per byte, store off, before -> after this phase: "
                   f"SUPERPOSED {f8_(H0_['sup'],H1_['sup'])}, NO memory {f8_(H0_['none'],H1_['none'])}, B-C premise ONLY {f8_(H0_['bc'],H1_['bc'])}, "
-                  f"RANDOM memory {f8_(H0_['rand'],H1_['rand'])}, premises as TEXT {f8_(H0_['text'],H1_['text'])} | "
+                  f"RANDOM memory {f8_(H0_['rand'],H1_['rand'])}, premises as TEXT {f8_(H0_['text'],H1_['text'])}, "
+                  f"TWO CHAINS (own premises + another chain's, superposed: A must pick its chain) {f8_(H0_['two'],H1_['two'])} (trained sample {f8_(P0_['two'],P1_['two'])}) | "
                   f"SUPERPOSED minus B-C ONLY (composition beyond the memory that names C): held-out {f8_(H0_['sup']-H0_['bc'],H1_['sup']-H1_['bc'])}, "
                   f"trained sample {f8_(P0_['sup']-P0_['bc'],P1_['sup']-P1_['bc'])} | SUPERPOSED minus RANDOM: held-out {f8_(H0_['sup']-H0_['rand'],H1_['sup']-H1_['rand'])}, "
                   f"trained sample {f8_(P0_['sup']-P0_['rand'],P1_['sup']-P1_['rand'])}",flush=True)

@@ -10,7 +10,10 @@ Arms (same stage-A start): base (superposed two-hop, key/value projections only)
 Readouts on trained and held-out chains, accuracy among all entities and log p(C):
   superposed | no memory | B-C premise only | random memory | superposed WITH A SECOND CHAIN's premises (must follow A, not just find an end)
   | composed operator M_BC M_AB read once | one-hop from memory | three-hop on held-out 3-chains (three memories superposed).
-usage: python3 toy_compose.py [seed] [steps_B]"""
+Extra arms (argument 4, comma list): distract (every training memory also holds another chain's two premises, so the name-in-the-B-C-memory
+shortcut stops paying), composed (trained from the composed operator M_BC M_AB instead of the sum), wd (AdamW weight decay 0.1, for long
+runs, as in the grokking literature); combine with '+', e.g. distract+chain+wd. Stage A is cached per seed (toy_stageA_s<seed>.pt).
+usage: python3 toy_compose.py [seed] [steps_B] [steps_A] [arms]"""
 import sys, math, time, json
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 torch.set_num_threads(1)
@@ -96,7 +99,11 @@ def chain_loss(model, cs, tau=0.1):
     return sum(ls) / len(ls)
 def stageB_loss(model, arm):
     cs = [TRN[int(i)] for i in rs.randint(len(TRN), size=64)]
-    M = addm(model.mem([[A, R0 + r1, B, DOT] for A, B, C, r1, r2 in cs]), model.mem([[B, R0 + r2, C, DOT] for A, B, C, r1, r2 in cs]))
+    MAB = model.mem([[A, R0 + r1, B, DOT] for A, B, C, r1, r2 in cs]); MBC = model.mem([[B, R0 + r2, C, DOT] for A, B, C, r1, r2 in cs])
+    if 'composed' in arm: M = [torch.einsum('bhvk,bhkj->bhvj', MBC[i], MAB[i]) for i in range(model.nb)]
+    else: M = addm(MAB, MBC)
+    if 'distract' in arm:                                                    # another chain's two premises superposed too
+        pm = torch.as_tensor(rs.permutation(len(cs))); M = addm(M, [m[pm] for m in MAB], [m[pm] for m in MBC]) if 'composed' not in arm else addm(M, [torch.einsum('bhvk,bhkj->bhvj', MBC[i][pm], MAB[i][pm]) for i in range(model.nb)])
     l = -lp_answer(model, [q2(A, C)[0] for A, B, C, _, _ in cs], [C for A, B, C, _, _ in cs], M)[0].mean()
     if 'chain' in arm: l = l + chain_loss(model, cs)
     if 'onehop' in arm: l = l + stageA_loss(model)
@@ -130,23 +137,27 @@ def readout(model, cs, three=None):
 def fmt(R): return ' '.join(f"{k} {v[0]:.2f}" + (f"/{v[1]:.2f}" if k not in ('onehop',) else '') for k, v in R.items())
 
 # ---------------------------------------------------------------- run
-t0 = time.time(); base = Toy()
+import os
+ARMS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['base', 'chain', 'onehop', 'chain+onehop', 'all']
+t0 = time.time(); base = Toy(); CK = f'toy_stageA_s{SEED}.pt'
 opA = torch.optim.Adam(base.parameters(), lr=1e-3)
+if os.path.exists(CK): base.load_state_dict(torch.load(CK)); STEPS_A = 0; print(f"stage A loaded from {CK}", flush=True)
 for st in range(STEPS_A):
     l = stageA_loss(base); opA.zero_grad(); l.backward(); opA.step()
     if (st + 1) % max(1, STEPS_A // 3) == 0: print(f"stage A step {st+1}: loss {float(l):.3f} | held-out {fmt(readout(base, HOL[:100]))}  ({time.time()-t0:.0f}s)", flush=True)
 stateA = {k: v.clone() for k, v in base.state_dict().items()}
+if STEPS_A: torch.save(stateA, CK)
 res = {'stageA': {'trained': readout(base, TRN[:150]), 'heldout': readout(base, HOL, ch3)}}
 print(f"AFTER STAGE A (no two-hop training): trained {fmt(res['stageA']['trained'])}\n                                     held-out {fmt(res['stageA']['heldout'])}", flush=True)
-for arm in ('base', 'chain', 'onehop', 'chain+onehop', 'all'):
+for arm in ARMS:
     m = Toy(); m.load_state_dict(stateA)
     ps = list(m.parameters()) if arm == 'all' else [p for n, p in m.named_parameters() if n.endswith(('Wk.weight', 'Wv.weight'))]
-    op = torch.optim.Adam(ps, lr=3e-4); hist = []
+    op = torch.optim.AdamW(ps, lr=3e-4, weight_decay=0.1) if 'wd' in arm else torch.optim.Adam(ps, lr=3e-4); hist = []
     for st in range(STEPS_B):
         l = stageB_loss(m, arm); op.zero_grad(); l.backward(); op.step()
         if (st + 1) % max(1, STEPS_B // 3) == 0:
             Rt, Rh = readout(m, TRN[:150]), readout(m, HOL, ch3)
             print(f"[{arm}] step {st+1} loss {float(l):.3f}\n   trained  {fmt(Rt)}\n   HELD-OUT {fmt(Rh)}  ({time.time()-t0:.0f}s)", flush=True)
     res[arm] = {'trained': Rt, 'heldout': Rh}
-json.dump(res, open(f'toy_compose_s{SEED}.json', 'w'), indent=1)
+json.dump(res, open(f'toy_compose_s{SEED}_{"_".join(ARMS).replace("+","-")}.json', 'w'), indent=1)
 print(f"DONE {time.time()-t0:.0f}s")
