@@ -64,7 +64,11 @@ class Bottle(nn.Module):
     def dec(s, z): return s.D(z) * sd + mu
 def score1(B_, fs, steps=None):
     with torch.no_grad():
-        fd = [fs[(i + 11) % len(fs)] for i in range(len(fs))]
+        fd = []                                                            # a distractor sharing no name with the fact (no tied candidates)
+        for i, f in enumerate(fs):
+            j = (i + 11) % len(fs)
+            while {fs[j][0], fs[j][2]} & {f[0], f[2]}: j = (j + 1) % len(fs)
+            fd.append(fs[j])
         z = B_.enc(MF[[FT[f] for f in fs]] + MF[[FT[f] for f in fd]]); lg = answer_logits([[f[0], f[1]] for f in fs], B_.dec(z))
         tgt = torch.tensor([f[2] for f in fs]); acc = float((lg.argmax(-1) == tgt).float().mean())
         cand = torch.tensor([[f[2], d[0], d[2]] for f, d in zip(fs, fd)])     # names stored beside the trace, prompt name excluded
