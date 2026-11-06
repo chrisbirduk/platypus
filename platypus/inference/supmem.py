@@ -18,6 +18,7 @@ The brake is measured in eager mode before and after (the compiled-forward offse
 anchor rows from the visited slot (off by default)."""
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from platypus.private import (
     _XDG,
@@ -41,7 +42,7 @@ from platypus.inference.probes import (
     inf_probes,
 )
 from platypus.inference.infer import (
-    _kgx_ho,
+    _kgx_ho, _kgx_hold,
 )
 from platypus.inference.closed_form import (
     _ws_batch, _ws_bpc, _ws_eager, _ws_run,
@@ -330,6 +331,114 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
     finally:
         del W0_; back_()
 
+def _sup_tracecomp(model,cfg,S_,S_slot):
+    """TRACE COMPOSITION (readout only, inf_sup_tc 1; no effect on training or dreams). Can a JEPA learn to compose two memory TRACES?
+    Each text is read on its own into the last delta block's memory (store off); an encoder E (one map per head state shared by all heads,
+    then one over the heads) gives a dz-number trace. A predictor P maps (E(M_AB), E(M_BC)) to E(M_AC), the trace of the memory left by
+    reading the conclusion 'So A is connected to C.' - a LeJEPA objective: (1 - lambda) x squared prediction error + lambda x SIGReg on the
+    traces, trained fresh at every sleep on the store's own fact chains (two recorded facts sharing an entity: A-B and B-C). Chains whose
+    names belong to probe chains held out by inf_kgx_hold are never trained on; those chains are scored as HELD-OUT, their conclusion text
+    written only for scoring. Score: top-1 by cosine among the four conclusions built from the same three names (A->C, C->A, A->B, B->C;
+    chance 0.25: needs the chain's ends in the right order, not just its names), and among those plus four other chains' conclusions
+    (chance 0.125). Compared with the sum of the two premise traces, either premise's trace alone, and the untrained encoder and predictor."""
+    import time as _t9
+    t0_=_t9.time(); vis_=int(model.__dict__.get('_visit',0)); tag_="  [inference TRACE COMPOSITION]"
+    try:
+        it_=S_['it']; N9_=int(getattr(cfg,'inf_kgx_hold',0)); hon_=set()
+        if N9_>0:
+            for k_,ch_ in enumerate(inf_probes(cfg)):
+                if k_%N9_==N9_-1: hon_.update(ch_['names'])
+        okf_=lambda f_: (not f_.get('freed') and not f_.get('derived') and isinstance(f_.get('i'),int) and 0<=f_['i']<len(it_) and not it_[f_['i']].get('gone')
+                         and isinstance(f_.get('A'),str) and isinstance(f_.get('B'),str) and it_[f_['i']].get('s'))
+        F_=[f_ for f_ in S_.get('facts',[]) if okf_(f_)]; byA_={}
+        for f_ in F_: byA_.setdefault(f_['A'],[]).append(f_)
+        seen_=set(); TR_=[]
+        for f_ in F_:
+            for g_ in byA_.get(f_['B'],()):
+                A_,B_,C_=f_['A'],f_['B'],g_['B']
+                if g_ is f_ or g_['i']==f_['i'] or len({A_,B_,C_})<3 or (A_,B_,C_) in seen_ or ({A_,B_,C_}&hon_): continue
+                p1_,p2_=it_[f_['i']]['s'][:120],it_[g_['i']]['s'][:120]
+                if p1_.strip()==p2_.strip(): continue
+                seen_.add((A_,B_,C_)); TR_.append((A_,B_,C_,p1_,p2_,int(S_slot(it_[f_['i']]['d']))))
+        HO_,_=_sup_heldout(cfg,S_,S_slot,int(getattr(cfg,'inf_sup_ho_n',64)))
+        HT_=[(c_['A'],c_['B'],c_['C'],m_[0],m_[1],s_) for s_,c_,m_ in HO_]
+        if len(TR_)<32: print(f"{tag_} visit {vis_}: skipped, {len(TR_)} fact chains outside the held-out names (need 32)",flush=True); return
+        rs_=np.random.RandomState(8080+vis_); rs_.shuffle(TR_); TR_=TR_[:int(getattr(cfg,'inf_sup_tc_n',512))]
+        nv_=max(8,len(TR_)//5); VA_=TR_[:nv_]; TT_=TR_[nv_:]
+        cq_=lambda a_,c_: f"So {a_} is connected to {c_}.".encode('latin-1','replace')
+        txt_={}                                                                   # (bytes, slot) -> row
+        def tid_(b_,s_):
+            k_=(bytes(b_),int(s_))
+            if k_ not in txt_: txt_[k_]=len(txt_)
+            return txt_[k_]
+        def rows_(T_):
+            return [(tid_(p1_,s_),tid_(p2_,s_),[tid_(cq_(A_,C_),s_),tid_(cq_(C_,A_),s_),tid_(cq_(A_,B_),s_),tid_(cq_(B_,C_),s_)]) for A_,B_,C_,p1_,p2_,s_ in T_]
+        RT_,RV_,RH_=rows_(TT_),rows_(VA_),rows_(HT_)
+        keys_=list(txt_.keys()); dev_=model.embed.weight.device; Mx_=[None]*len(keys_); bk_=None
+        back_=_ws_eager(model)
+        try:
+            with torch.no_grad():
+                for s_ in sorted(set(k_[1] for k_ in keys_)):
+                    ix_=[j_ for j_,k_ in enumerate(keys_) if k_[1]==s_]
+                    for a_ in range(0,len(ix_),64):
+                        jj_=ix_[a_:a_+64]; st_=_ctx_mem_state(model,[keys_[j_][0] for j_ in jj_],s_)
+                        b3_=[b_ for b_,v_ in st_.items() if torch.is_tensor(v_) and v_.dim()==3]
+                        if not b3_: continue
+                        bk_=b3_[-1] if bk_ is None or bk_ not in b3_ else bk_; v_=st_[bk_].float(); mh_=v_.shape[0]//len(jj_)
+                        v_=v_.view(len(jj_),mh_,v_.shape[1]*v_.shape[2])
+                        for q_,j_ in enumerate(jj_): Mx_[j_]=v_[q_]
+        finally: back_()
+        if any(m_ is None for m_ in Mx_): print(f"{tag_} visit {vis_}: unavailable (no delta-block memory for some texts)",flush=True); return
+        M_=torch.stack(Mx_)                                                       # (texts, heads, dh*dh)
+        trn_=sorted({j_ for a_,b_,cs_ in RT_ for j_ in (a_,b_,cs_[0])})
+        mu_=M_[trn_].mean((0,1),keepdim=True); sd_=M_[trn_].std().clamp(min=1e-6); M_=(M_-mu_)/sd_
+        dz_=int(getattr(cfg,'inf_sup_tc_dim',32)); r_=16; mh_,dd_=M_.shape[1],M_.shape[2]; lam_=float(getattr(cfg,'inf_sup_tc_lambda',0.05))
+        fr9_=torch.random.fork_rng(devices=[dev_] if dev_.type=='cuda' else []); fr9_.__enter__()   # the readout leaves the run's random streams untouched
+        torch.manual_seed(8081+vis_)
+        E1_=nn.Linear(dd_,r_).to(dev_); E2_=nn.Linear(mh_*r_,dz_).to(dev_); P_=nn.Sequential(nn.Linear(2*dz_,128),nn.GELU(),nn.Linear(128,dz_)).to(dev_)
+        enc_=lambda X_: E2_(E1_(X_).flatten(1))
+        def score(R_,mode_):
+            if not R_: return float('nan'),float('nan')
+            with torch.no_grad():
+                Z_=enc_(M_); s4_=[];s8_=[]
+                for q_,(a_,b_,cs_) in enumerate(R_):
+                    za_,zb_=Z_[a_],Z_[b_]
+                    pr_={'P':lambda: P_(torch.cat([za_,zb_])[None])[0],'sum':lambda: za_+zb_,'ab':lambda: za_,'bc':lambda: zb_}[mode_]()
+                    oth_=[R_[(q_+o_)%len(R_)][2][0] for o_ in range(1,5)] if len(R_)>4 else []
+                    C9_=Z_[cs_+oth_]; c9_=F.cosine_similarity(pr_[None],C9_,dim=-1)
+                    s4_.append(float(int(torch.argmax(c9_[:4]))==0)); s8_.append(float(int(torch.argmax(c9_))==0))
+                return float(np.mean(s4_)),float(np.mean(s8_))
+        U_={nm_:score(R_,'P') for nm_,R_ in (('train',RT_),('val',RV_),('ho',RH_))}
+        op_=torch.optim.AdamW(list(E1_.parameters())+list(E2_.parameters())+list(P_.parameters()),lr=1e-3,weight_decay=0.05)
+        ia_=torch.tensor([a_ for a_,_,_ in RT_],device=dev_); ib_=torch.tensor([b_ for _,b_,_ in RT_],device=dev_); ic_=torch.tensor([cs_[0] for _,_,cs_ in RT_],device=dev_)
+        st9_=int(getattr(cfg,'inf_sup_tc_steps',600)); ls_=[]; best_=(-1.0,None,0)
+        for k9_ in range(st9_):
+            bi_=torch.as_tensor(rs_.choice(len(RT_),min(64,len(RT_)),replace=False),device=dev_)
+            za_,zb_,zc_=enc_(M_[ia_[bi_]]),enc_(M_[ib_[bi_]]),enc_(M_[ic_[bi_]])
+            l_=(1-lam_)*((P_(torch.cat([za_,zb_],1))-zc_)**2).sum(1).mean()+lam_*_sigreg_le(torch.cat([za_,zb_,zc_]))
+            op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_))
+            if (k9_+1)%100==0 and RV_:                                             # keep the heads that score best on the validation chains
+                v9_=score(RV_,'P')[0]
+                if v9_>best_[0]: best_=(v9_,[{k_:x_.detach().clone() for k_,x_ in m_.state_dict().items()} for m_ in (E1_,E2_,P_)],k9_+1)
+        if best_[1] is not None:
+            for m_,sd9_ in zip((E1_,E2_,P_),best_[1]): m_.load_state_dict(sd9_)
+        R9_={(nm_,md_):score(R_,md_) for nm_,R_ in (('train',RT_),('val',RV_),('ho',RH_)) for md_ in ('P','sum','ab','bc')}
+        with torch.no_grad():
+            Z_=enc_(M_); dt_=[float(F.cosine_similarity(Z_[cs_[0]],Z_[cs_[1]],dim=0)) for _,_,cs_ in RT_[:64]]
+        f2_=lambda x_: f"{x_[0]:.2f} / {x_[1]:.2f}"
+        fr9_.__exit__(None,None,None); fr9_=None
+        print(f"{tag_} visit {vis_}: {len(TT_)} training and {len(VA_)} validation fact chains (names of held-out probe chains excluded), {len(RH_)} HELD-OUT chain steps | "
+              f"last delta block memory ({mh_} heads x {dd_}) -> trace {dz_}, predictor MLP, LeJEPA lambda {lam_:g}, {st9_} steps (heads kept from step {best_[2]}), loss {ls_[0]:.3f} -> {np.mean(ls_[-20:]):.3f} | "
+              f"TOP-1 among A->C, C->A, A->B, B->C (chance 0.25) / plus 4 other chains (chance 0.125): LEARNED PREDICTOR train {f2_(R9_[('train','P')])}, validation {f2_(R9_[('val','P')])}, HELD-OUT {f2_(R9_[('ho','P')])} | "
+              f"SUM of premise traces: validation {f2_(R9_[('val','sum')])}, held-out {f2_(R9_[('ho','sum')])} | A-B trace alone: validation {f2_(R9_[('val','ab')])}, held-out {f2_(R9_[('ho','ab')])} | "
+              f"B-C trace alone: validation {f2_(R9_[('val','bc')])}, held-out {f2_(R9_[('ho','bc')])} | untrained: validation {f2_(U_['val'])}, held-out {f2_(U_['ho'])} | "
+              f"cos(trace of A->C, trace of C->A) {np.mean(dt_):.2f} | {_t9.time()-t0_:.0f} s",flush=True)
+    except Exception as e9_:
+        print(f"{tag_} visit {vis_}: unavailable ({type(e9_).__name__}: {e9_})"[:300],flush=True)
+    finally:
+        f9_=locals().get('fr9_')
+        if f9_ is not None: f9_.__exit__(None,None,None)
+
 def _jd_memread(model,cfg,S_,H_,NGT_,nh_):
     """JEPA MEMORY-READ VIEW, readouts only (inf_jd_memread 1; no effect on dream choice or training). A sentence's code is what its own
     delta-block memory returns when probed with the keys of the cue's rare names: z(t|c) = [M_t k_n] for n in N(c), per block, heads kept.
@@ -426,4 +535,5 @@ def _jd_memread(model,cfg,S_,H_,NGT_,nh_):
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
 _LATE = {
     'cfg_seq_': 'platypus.inference.jepa',
+    '_sigreg_le': 'platypus.inference.jepa',
 }
