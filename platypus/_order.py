@@ -523,6 +523,7 @@ ORDER = (
     ('inference.supmem', '_sup_chain'),
     ('inference.supmem', '_sup_lp2'),
     ('inference.supmem', '_sup_dreams'),
+    ('inference.supmem', '_jd_memread'),
     ('inference.sleep', 'inf_sleep'),
     ('inference.sleep', '_inf_sleep_body'),
     ('inference.sleep', '_inf_mem_write'),

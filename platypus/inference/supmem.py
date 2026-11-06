@@ -31,6 +31,9 @@ from platypus.conduit import (
 from platypus.inference.store import (
     _INFM,
 )
+from platypus.inference.units import (
+    _UWORD,
+)
 from platypus.inference.infer import (
     _kgx_ho,
 )
@@ -245,6 +248,99 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
         print(f"  [inference SUPERPOSED-MEMORY DREAMS] unavailable ({type(e9_).__name__}: {e9_})"[:260],flush=True)
     finally:
         del W0_; back_()
+
+def _jd_memread(model,cfg,S_,H_,NGT_,nh_):
+    """JEPA MEMORY-READ VIEW, readouts only (inf_jd_memread 1; no effect on dream choice or training). A sentence's code is what its own
+    delta-block memory returns when probed with the keys of the cue's rare names: z(t|c) = [M_t k_n] for n in N(c), per block, heads kept.
+    1. SANITY: |M_t k_n| for sentences that contain the name n against sentences that do not (AUC), split by where n sits in the sentence
+       (first half: mostly subject; second half: mostly object), with the name key read ALONE and in a FRAME (' Name is').
+    2. LEARNING-FREE BASELINE on the JEPA's held-out hard-negative task (the partner among sentences sharing a rare name with the cue):
+       rank candidates by cos(z(t|c), z(c|c)) averaged over the cue's names, top delta block and all blocks; compared with TF-IDF on names
+       and the trained JEPA by the caller. The local trunk barely reads names from memory (one-hop control about +0.01), so a weak local
+       result means the harness cannot judge this view, not that it fails."""
+    import time as _t9
+    t0_=_t9.time()
+    try:
+        df_=S_.get('df',{}); dm_=int(cfg.inf_df); sl_=int(_XDG.get('cur') or 0); cap_=200
+        rare_=lambda w_: len(w_)>=4 and w_[:1].isupper() and w_[1:].isalpha() and w_[1:].islower() and 0<df_.get(w_,0)<=dm_ and df_.get(w_.lower(),0)<=dm_
+        names_=lambda t_: list(dict.fromkeys(w_.group(0) for w_ in _UWORD.finditer(t_) if rare_(w_.group(0))))[:4]
+        J_=[j_ for j_ in range(min(nh_,len(H_))) if NGT_ is not None and j_<len(NGT_) and NGT_[j_] and names_(H_[j_][0])][:int(getattr(cfg,'inf_jd_memread_n',64))]
+        if not J_: print("  [inference JEPA DREAMS | MEMORY-READ VIEW] skipped: no held-out cue with a rare name and name-sharing negatives",flush=True); return
+        txt_=[]; tix_={}
+        def tid_(t_):
+            t_=bytes(t_[:cap_])
+            if t_ not in tix_: tix_[t_]=len(txt_); txt_.append(t_)
+            return tix_[t_]
+        tasks_=[]
+        for j_ in J_:
+            c_=H_[j_][0]; cand_=[H_[j_][1]]+list(NGT_[j_])
+            tasks_.append((tid_(c_),[tid_(x_) for x_ in cand_],names_(c_)))
+        RN_=[it_['s'] for it_ in S_.get('it',[]) if not it_.get('gone') and len(it_['s'])>=24]
+        rsn_=np.random.RandomState(5150+int(model.__dict__.get('_visit',0)))
+        nms_=list(dict.fromkeys(n_ for _,_,N_ in tasks_ for n_ in N_))
+        ctl_={}                                                                # 4 random stored sentences without the name, per name (sanity)
+        for n_ in nms_:
+            pool_=[x_ for x_ in (RN_[int(i_)] for i_ in rsn_.choice(len(RN_),min(len(RN_),40),replace=False)) if n_ not in x_][:4] if RN_ else []
+            ctl_[n_]=[tid_(x_) for x_ in pool_]
+        with torch.no_grad():
+            M_={}                                                              # per block: (len(txt_), heads, dh, dh)
+            for a_ in range(0,len(txt_),32):
+                st_=_ctx_mem_state(model,txt_[a_:a_+32],sl_)
+                for b_,v_ in st_.items():
+                    if torch.is_tensor(v_) and v_.dim()==3: M_.setdefault(b_,[]).append(v_.float())
+            nT_=len(txt_); M_={b_:torch.cat(v_) for b_,v_ in M_.items()}
+            M_={b_:v_.view(nT_,v_.shape[0]//nT_,v_.shape[1],v_.shape[2]) for b_,v_ in M_.items() if v_.shape[0]%nT_==0}
+            blocks_=[b_ for b_ in M_]; top_=blocks_[-1] if blocks_ else None
+            K_={}
+            for fr_ in ('alone','frame'):
+                tx9_=[n_ if fr_=='alone' else b' '+n_+b' is' for n_ in nms_]; ps9_=[len(n_)-1 if fr_=='alone' else len(n_) for n_ in nms_]
+                ks_=_sup_keys(model,tx9_,ps9_,sl_,False)
+                for b_,k_ in ks_.items():
+                    if b_ in M_:
+                        mh_=M_[b_].shape[1]; dh_=M_[b_].shape[-1]
+                        K_[(fr_,b_)]=F.normalize(k_.float().view(len(nms_),mh_,dh_),dim=-1)
+            ni_={n_:i_ for i_,n_ in enumerate(nms_)}
+            def read_(t_,n_,fr_,b_): return torch.einsum('hvk,hk->hv',M_[b_][t_],K_[(fr_,b_)][ni_[n_]])
+            # 1. sanity
+            out_={}
+            for fr_ in ('alone','frame'):
+                for role_ in ('subject','object'):
+                    pos_=[];neg_=[]
+                    for (c9_,_,N_) in tasks_:
+                        ct_=txt_[c9_]
+                        for n_ in N_:
+                            r_=ct_.find(n_)/max(1,len(ct_)); 
+                            if (role_=='subject')!=(r_<0.5): continue
+                            pos_.append(float(sum(read_(c9_,n_,fr_,b_).norm(dim=-1).mean() for b_ in blocks_)/len(blocks_)))
+                            neg_+=[float(sum(read_(x_,n_,fr_,b_).norm(dim=-1).mean() for b_ in blocks_)/len(blocks_)) for x_ in ctl_[n_]]
+                    if pos_ and neg_:
+                        P9_=np.array(pos_);N9_=np.array(neg_); auc_=float(((P9_[:,None]>N9_[None,:]).mean()+0.5*(P9_[:,None]==N9_[None,:]).mean()))
+                        out_[(fr_,role_)]=(auc_,float(P9_.mean()),float(N9_.mean()),len(pos_))
+            # 2. learning-free baseline
+            acc_={('frame','top'):[],('frame','all'):[],('alone','top'):[],('alone','all'):[]}; ch_=[]
+            for (c9_,C9_,N_) in tasks_:
+                ch_.append(1.0/len(C9_))
+                for fr_ in ('alone','frame'):
+                    for sc_ in ('top','all'):
+                        bs_=[top_] if sc_=='top' else blocks_
+                        sco_=[]
+                        for x_ in C9_:
+                            v_=[]
+                            for n_ in N_:
+                                zc_=torch.cat([read_(c9_,n_,fr_,b_).flatten() for b_ in bs_]); zt_=torch.cat([read_(x_,n_,fr_,b_).flatten() for b_ in bs_])
+                                v_.append(float(F.cosine_similarity(zc_,zt_,dim=0)))
+                            sco_.append(float(np.mean(v_)))
+                        acc_[(fr_,sc_)].append(float(int(np.argmax(sco_))==0))
+        f9_=lambda k_: (f"AUC {out_[k_][0]:.2f} (|read| {out_[k_][1]:.3f} with the name against {out_[k_][2]:.3f} without, n {out_[k_][3]})" if k_ in out_ else "n 0")
+        print(f"  [inference JEPA DREAMS | MEMORY-READ VIEW] {len(tasks_)} held-out cues with rare names, {len(nms_)} names, {len(blocks_)} delta blocks, slot {sl_} | "
+              f"SANITY, does a sentence's memory answer its own names: key alone - name early (subject) {f9_(('alone','subject'))}, late (object) {f9_(('alone','object'))}; "
+              f"key in a frame - early {f9_(('frame','subject'))}, late {f9_(('frame','object'))} | "
+              f"LEARNING-FREE BASELINE, partner among name-sharing candidates (chance {np.mean(ch_):.2f}): memory read in a frame, top block {np.mean(acc_[('frame','top')]):.2f}, all blocks {np.mean(acc_[('frame','all')]):.2f}; "
+              f"key alone, top block {np.mean(acc_[('alone','top')]):.2f}, all blocks {np.mean(acc_[('alone','all')]):.2f} | {_t9.time()-t0_:.0f} s",flush=True)
+        return {k_:float(np.mean(v_)) for k_,v_ in acc_.items()}
+    except Exception as e9_:
+        print(f"  [inference JEPA DREAMS | MEMORY-READ VIEW] unavailable ({type(e9_).__name__}: {e9_})"[:300],flush=True)
+
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
 _LATE = {
