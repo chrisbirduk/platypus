@@ -152,6 +152,6 @@ for nm, P in (('MLP', MLPP()), ('BILINEAR', BilP()), ('READER', Reader())):
         op.zero_grad(); l.backward(); op.step()
     a_tr = score2(P, TRN[:150]); a_ho = score2(P, HOL); a_wa = score2(P, HOL, 'wrongAB'); a_wb = score2(P, HOL, 'wrongBC')
     extra = f" | THREE-HOP (3 hops, held-out 3-fact chains) {score3(P):.2f}" if isinstance(P, Reader) else ""
-    print(f"  {nm:9s} train {a_tr[0]:.2f} | HELD-OUT {a_ho[0]:.2f} (name path {a_ho[1]:.2f}, chance 0.20) | another chain's A-B {a_wa[0]:.2f} (must fail) | "
-          f"another chain's B-C {a_wb[0]:.2f}{extra}{' | set of 4 traces, 2 chains' if isinstance(P, Reader) else ' | pair input'}  ({time.time()-t0:.0f}s)", flush=True)
+    print(f"  {nm:9s} train {a_tr[0]:.2f} | HELD-OUT {a_ho[0]:.2f} (name path {a_ho[1]:.2f}, chance 0.20) | another chain's A-B {a_wa[0]:.2f} (name path {a_wa[1]:.2f}: must fall to chance if it composes) | "
+          f"another chain's B-C {a_wb[0]:.2f} (name path {a_wb[1]:.2f}){extra}{' | set of 4 traces, 2 chains' if isinstance(P, Reader) else ' | pair input'}  ({time.time()-t0:.0f}s)", flush=True)
 print(f"DONE {time.time()-t0:.0f}s")
