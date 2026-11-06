@@ -72,9 +72,14 @@ def lp_answer(model, prompts, ans, M=None):
     return lp.gather(-1, torch.tensor(ans)[:, None]).squeeze(-1), lp
 
 # ---------------------------------------------------------------- stage A: learn to read memory
+def fresh_facts(n):
+    """random facts drawn afresh at every step (any two entities, any relation): too many to memorise, so the only way to answer is to
+    read the memory. (The first version trained on the chains' own facts, which the language-model rows put into the WEIGHTS: the model
+    then answered known facts with no memory at all and new facts not at all - it never learned to read its memory.)"""
+    a = rs.randint(E0, V, size=n); b = rs.randint(E0, V, size=n); r = rs.randint(NREL, size=n)
+    return [(int(x), R0 + int(q), int(y if y != x else E0 + (y - E0 + 1) % nent)) for x, q, y in zip(a, r, b)]
 def stageA_batch(n=64):
-    F_ = [facts[int(i)] for i in rs.randint(len(facts), size=n)]; D_ = [facts[int(i)] for i in rs.randint(len(facts), size=n)]
-    return F_, D_
+    return fresh_facts(n), fresh_facts(n)
 def stageA_loss(model):
     F_, D_ = stageA_batch()
     M = addm(model.mem([ftxt(f) for f in F_]), model.mem([ftxt(f) for f in D_]))   # the fact plus a distractor fact superposed
@@ -145,13 +150,17 @@ def fmt(R): return ' '.join(f"{k} {v[0]:.2f}" + (f"/{v[1]:.2f}" if k not in ('on
 # ---------------------------------------------------------------- run
 import os
 ARMS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['base', 'chain', 'onehop', 'chain+onehop', 'all']
-t0 = time.time(); base = Toy(); CK = f'toy_stageA_s{SEED}.pt'
+t0 = time.time(); base = Toy(); CK = f'toy_stageA_v2_s{SEED}.pt'
 opA = torch.optim.Adam(base.parameters(), lr=1e-3)
 if os.path.exists(CK): base.load_state_dict(torch.load(CK)); STEPS_A = 0; print(f"stage A loaded from {CK}", flush=True)
 for st in range(STEPS_A):
     l = stageA_loss(base); opA.zero_grad(); l.backward(); opA.step()
     if (st + 1) % max(1, STEPS_A // 3) == 0: print(f"stage A step {st+1}: loss {float(l):.3f} | held-out {fmt(readout(base, HOL[:100]))}  ({time.time()-t0:.0f}s)", flush=True)
 stateA = {k: v.clone() for k, v in base.state_dict().items()}
+with torch.no_grad():                                                     # SANITY: reading from memory, not from the weights
+    nf = fresh_facts(300); df = fresh_facts(300); P9 = torch.tensor([[f[0], f[1]] for f in nf]); T9 = torch.tensor([f[2] for f in nf])
+    ac9 = lambda M9: float((base.run(P9, M9)[0][:, -1].argmax(-1) == T9).float().mean())
+    print(f"SANITY one-hop on NEW facts: with memory (+ a distractor) {ac9(addm(base.mem([ftxt(f) for f in nf]), base.mem([ftxt(f) for f in df]))):.2f} | no memory {ac9(None):.2f} | wrong memory {ac9(base.mem([ftxt(f) for f in df])):.2f}", flush=True)
 if STEPS_A: torch.save(stateA, CK)
 res = {'stageA': {'trained': readout(base, TRN[:150]), 'heldout': readout(base, HOL, ch3)}}
 print(f"AFTER STAGE A (no two-hop training): trained {fmt(res['stageA']['trained'])}\n                                     held-out {fmt(res['stageA']['heldout'])}", flush=True)
