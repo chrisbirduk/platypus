@@ -38,26 +38,30 @@ All of the documentation in this repository, this README included, is generated 
 
 ## Novelty and prior art
 
-An honest estimate of what is new here: roughly **70% assembled from known parts, 20% recognisable twists and 10% genuinely new**. The new part is concentrated in three places:
+An honest estimate of what is new here, after three outside passes over the literature: roughly **55% assembled from known parts, 30% known ideas used in new places and 15% genuinely new**.
 
-- **The JEPA dream selector**: a joint-embedding predictive model trained only on links the system verified itself and on the measured outcome of earlier dreams, used to choose which memories to splice and consolidate.
-- **Per-sleep re-keying of weight edits**: every closed-form edit is re-solved with its current key at every sleep, so the edits do not decay as the layers below them keep learning.
-- **The handover protocol from the fast store to the weights**: release after consecutive store-off tests, deletion after a grace period, restoration and reinstatement of memories the weights lose, timed by a learned model of forgetting.
+Two published systems bracket the project. **Pan, Hahami, Siegelmann and Sompolinsky** (bioRxiv 2026; arXiv 2025) build the same hippocampus–cortex design for continual episodic memory in language models: per-episode gated LoRA adapters act as the fast store, are consolidated into the base weights by replay and are then freed, on 8B models with real post-cutoff Wikipedia and EWC and distillation baselines. They own the consolidation side. **HippoRAG** (Gutiérrez et al., NeurIPS 2024), with LightRAG and GraphRAG, builds an OpenIE graph and walks it with Personalized PageRank for single-step multi-hop retrieval, under a hippocampal-indexing framing. It owns the retrieval side. Platypus differs from both in four places: **verification** (only conclusions grounded in recorded facts, and replays that reproduce their memory traces byte for byte, are written or learned from), **release and reinstatement** (memories leave the fast store once the weights answer them alone, are deleted after a grace period and are written back if the weights lose them, timed by a model of forgetting), **abstention** (the fast store is silent on names it does not hold, so the model can say it does not know) and **inference at sleep time** (sleep links facts met in different places and stores the conclusions, rather than only consolidating what was read). Pan et al. test none of release, reinstatement, a forgetting model, sleep inference or abstention; HippoRAG retrieves at question time and does not consolidate.
 
-That is a respectable ratio for research, but it comes with two risks, and they are the first things to fix:
+**Where each mechanism stands:**
 
-1. **Prior art has been understated.** Several closely related lines of work were not credited in these documents (see [A note on this documentation](#a-note-on-this-documentation)). The ones a reviewer would notice first:
-   - **Google's sleep framework** (Behrouz, Hashemi, Javanmard and Mirrokni, 2026): a sleep phase for language models that consolidates short-term memory into longer-term weights by distillation, with a "dreaming" stage of filtered self-generated rehearsal. It is the closest published work to Platypus's sleep cycle. Platypus differs in three ways: inference happens in the store (sleep links facts met in different places and writes the conclusions to a fast memory outside the weights, rather than only consolidating what was seen), admission is verified (only conclusions grounded in recorded facts, and replays that reproduce their memory traces exactly, are written or learned from), and the handover runs both ways (memories move from the store to the weights once the weights answer them alone, and are written back if the weights lose them).
-   - **Expansion against protection is a real design fork.** The sleep framework stops forgetting by adding capacity: each sleep unlocks new low-rank experts and leaves the older parameters untouched. Platypus mostly protects shared weights instead (curvature-whitened updates, brakes that roll back harmful sleeps, a dose that retries lower). Their result suggests expansion may be the cheaper way to stop forgetting. Platypus's per-slot capacity (a private head, private units, n-gram rows and FiLM codes for each slot, with one slot per domain) is a partial version of the same idea, and growing that budget instead of protecting harder is an open option.
-   - **The ancestry of dream rehearsal**: LAMOL (Sun et al., 2020), which trains one language model both to solve tasks and to generate pseudo-samples of earlier ones for rehearsal, and Self-Synthesized Rehearsal (Huang et al., 2024), which rehearses on the model's own synthetic data, with deep generative replay (Shin et al., 2017) before them. Platypus's dream rehearsal is this idea; what it adds is the exact verification of each replay against its stored trace and the closed loop built on it.
-   - **The decay of sequential weight edits**: model editing at scale leads to gradual and then catastrophic forgetting (Gupta et al., 2024), null-space constrained editing (AlphaEdit, Fang et al., 2025) and lifelong editing with side memories (WISE, Wang et al., 2024; MEMOIR, 2025). The edit decay Platypus diagnosed, and its re-keying, should be read against this work. ROME (Meng et al., 2022) and MEMIT (Meng et al., 2023) are the editing methods the closed-form edits build on.
-   - The rest of the design draws on complementary learning systems theory, curvature-based protection against forgetting, fast-weight and delta-rule memories, JEPA objectives and half-life models of memory; these are listed under [References](#references).
-2. **The genuinely new claims are the least tested.**
-   - The JEPA selector has not yet been shown to give better dreams than random choices: the random-dream control on the GPU is still to run, and locally, dreams against no dreams left recall unchanged.
-   - Per-sleep re-keying held two-hop recall from the weights at 0.6–0.8 through three passes on the GPU, but on one seed, and in the wording the system wrote; in held-out wordings the weights keep about a third of it.
-   - The handover protocol released 193 memories and restored 10 on the GPU, but on one seed, and released memories have been tested only in written wordings.
+| Mechanism | Standing | Nearest prior work |
+|---|---|---|
+| One-scan two-step linking | **Variant** of graph retrieval, run offline under an MDL pool (a two-step truncation of the same walk) | HippoRAG; LightRAG; GraphRAG |
+| JEPA dream selector | **New twist**: self-supervised selection exists; a predictor trained on outcomes and on links the system verified itself is still unmatched | MERS (2026); ER-JEPA (2026) for the reverse direction |
+| Release → ghost → reinstate handover | The **protocol** is unmatched; the **frame** (freed fast memory consolidated into the weights) is shared | Pan et al. |
+| Compression-gated dreams | New twist (unchanged) | PMI dataset valuation (Chen and Qi); Peer-Predictive Self-Training; "Not All Synthetic Data Is Yours to Learn From" (2026) |
+| Drift-free byte-hash keys | **Holds** | Motivation: "Forgetting is Not Erasure: transport keys" (2026) |
+| Per-sleep re-keying of edits | **Holds**: the gap is named in the literature, the fix is not implemented elsewhere | "On the Limitations of Rank-One Model Editing in Multi-hop Questions" (2026) |
+| Byte-exact verified replay | **Holds**: its nearest family is latent replay, not generative replay | BinPlay; Latent Space Memory Replay; "Looking through the past" (ICCVW 2023) |
+| Frame-centred keys | New twist (holds; the problem is now documented from three angles) | MEMIT-Merge (ACL Findings 2025); "Exposing the Illusion of Erasure" (2026); "On the Limitations of Rank-One Model Editing" (2026) |
+| MDL entity and relation reader | New in this form (unchanged) | MDL in NLP for segmentation and pattern extraction (survey: Galbrun, 2020); unsupervised relation discovery and OpenIE |
+| JEPA index of the store (cg26s) | Known idea in a new place | SciJEPA (2026): a JEPA-style predictor with an EMA target and no negatives used for document retrieval; "The JEPA Paradox in Language" (2026) on why deterministic latent prediction averages alternatives, which explains why the index drops names |
 
-   Each of these needs a second seed, the matching control and the held-out evaluation before it can be claimed.
+**Component ancestry.** The abstaining fast store descends from GRACE (Hartvigsen et al., 2022), a codebook of keys with deferral radii. The forgetting model is half-life regression (Settles and Meeder, 2016). Dream rehearsal descends from deep generative replay (Shin et al., 2017), LAMOL (Sun et al., 2020) and Self-Synthesized Rehearsal (Huang et al., 2024). The sleep phase should be read against Google's sleep framework (Behrouz, Hashemi, Javanmard and Mirrokni, 2026), which consolidates by distillation into newly unlocked low-rank experts with gradient-filtered dreams; their result suggests that adding capacity may be a cheaper way to stop forgetting than protecting shared weights, and Platypus's per-slot capacity is a partial version of that idea. The decay of sequential weight edits, which re-keying addresses, is studied by Gupta et al. (2024), Cheng et al. (2025) and Wen et al. (2025, retention of edited knowledge after fine-tuning), with null-space and side-memory editing in AlphaEdit, WISE and MEMOIR; key drift and key fidelity in editing are measured in the 2026 multi-hop study above, same-subject key collisions in MEMIT-Merge, and prompt-template interference in "Exposing the Illusion of Erasure". The closed-form edits build on ROME and MEMIT.
+
+**Already credited in the code, now also listed here:** SWIL (Saxena et al., 2022); time-weighted partners (Cai, 2016; Rashid, 2016); LeJEPA (Balestriero and LeCun, 2025), including its Proposition 1 on spectral codes; Gram Newton–Schulz (Dao lab, 2026); the gradient noise scale (McCandlish et al., 2018); the composition ceiling (Wang et al., 2024); holographic reduced representations and vector-symbolic architectures (Plate; Kanerva); truth-maintenance systems (Doyle, 1979; de Kleer).
+
+**The new claims are the least tested.** The JEPA selector has not yet been shown to give better dreams than random choices (the random-dream control on the GPU is still to run). Per-sleep re-keying held two-hop recall from the weights at 0.6–0.8 through three passes on the GPU, but on one seed and in the wording the system wrote. The handover released 193 memories and restored 10 on the GPU, on one seed, tested in written wordings only. Each needs a second seed, the matching control and held-out evaluation before it can be claimed. A natural baseline for the handover claim is Pan et al.'s adapter-release design.
 
 ## Why it exists
 
@@ -775,6 +779,28 @@ Works this project draws on or compares itself with. The list is incomplete (see
 - Wang et al. (2024). [WISE: rethinking the knowledge memory for lifelong model editing of large language models](https://arxiv.org/abs/2405.14768). NeurIPS 2024.
 - MEMOIR (2025). [MEMOIR: lifelong model editing with minimal overwrite and informed retention for LLMs](https://arxiv.org/abs/2506.07899).
 - Meng, Bau, Andonian and Belinkov (2022). [Locating and editing factual associations in GPT](https://arxiv.org/abs/2202.05262) (ROME). NeurIPS 2022.
+
+**Closest systems and component ancestry** (added after a second and third outside pass over prior art)
+
+- Pan, Hahami, Siegelmann and Sompolinsky (2026). Complementary learning systems for continual episodic memory in large language models: per-episode gated LoRA adapters as a fast store, replay-consolidated into the base weights and then freed. bioRxiv 2026 (arXiv 2025).
+- Gutiérrez, Shu, Gu, Yasunaga and Su (2024). [HippoRAG: neurobiologically inspired long-term memory for large language models](https://arxiv.org/abs/2405.14831). NeurIPS 2024.
+- Guo et al. (2024). [LightRAG: simple and fast retrieval-augmented generation](https://arxiv.org/abs/2410.05779).
+- Edge et al. (2024). [From local to global: a graph RAG approach to query-focused summarization](https://arxiv.org/abs/2404.16130) (GraphRAG).
+- Hartvigsen et al. (2022). [Aging with GRACE: lifelong model editing with discrete key-value adaptors](https://arxiv.org/abs/2211.11031) (codebook with deferral radii).
+- BinPlay (binary latent autoencoder replay); Latent Space Memory Replay; "Looking through the past" (ICCVW 2023, latent matching of reconstructions) - latent and compressed replay, the nearest family to byte-exact verified replay.
+- "Forgetting is Not Erasure: transport keys" (2026) - interface drift between network stages as a cause of apparent forgetting.
+- Cheng et al. (2025) and Wen et al. (2025) - decay and retention of edited knowledge under further training.
+- "On the Limitations of Rank-One Model Editing in Multi-hop Questions" (2026) - key cosine across paraphrases, a call to mitigate representational drift.
+- MEMIT-Merge (ACL Findings 2025) - same-subject key collisions; "Exposing the Illusion of Erasure" (2026) - the prompt-template direction as interference.
+- MERS (2026) - replay-buffer selection by supervised and SimCLR embeddings; ER-JEPA (2026) - replay improving a JEPA.
+- Chen and Qi - PMI dataset valuation; Peer-Predictive Self-Training (PMI-weighted updates); "Not All Synthetic Data Is Yours to Learn From" (2026).
+- Galbrun (2020). [The minimum description length principle for pattern mining: a survey](https://arxiv.org/abs/2007.14009).
+- Saxena et al. (2022) - SWIL, similarity-weighted interleaved learning; Cai (2016) and Rashid (2016) - time-weighted partners; McCandlish, Kaplan, Amodei et al. (2018). [An empirical model of large-batch training](https://arxiv.org/abs/1812.06162) (gradient noise scale); Wang et al. (2024). [Grokked transformers are implicit reasoners](https://arxiv.org/abs/2405.15071) (the composition ceiling); Kanerva (2009). Hyperdimensional computing; Doyle (1979). A truth maintenance system; de Kleer (1986). An assumption-based TMS; Gram Newton–Schulz (Dao lab, 2026).
+
+**The JEPA index** (cg26s)
+
+- SciJEPA (2026). [Asymmetric within-document predictive learning for scientific document representation](https://arxiv.org/pdf/2608.28625) - an online encoder, predictor and EMA target with no negatives, used for retrieval; it trails a contrastive baseline unless regularised.
+- "The JEPA paradox in language: the geometry of linguistic alternatives" (2026). [arXiv 2607.23531](https://arxiv.org/pdf/2607.23531) - deterministic latent prediction averages the alternatives for a masked span.
 
 ## Licence
 
