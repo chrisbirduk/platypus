@@ -12,7 +12,16 @@ Readouts each sleep (probe chains, store off for every answer):
   ONE-HOP     answer B among 20 candidates from the weights alone, with the RETRIEVED sentence in context, with the TRUE sentence in
               context (ceiling); held-out wording with the retrieved sentence.
   TWO-HOP     by retrieval: hop 1 retrieves for 'A r0 ', reads B' from that sentence (20 candidates), hop 2 retrieves for 'B' r1 ' and
-              reads C; control: hop 2 asked about a RANDOM name instead of B' (must fall to chance); ceiling: the true sentences."""
+              reads C; control: hop 2 asked about a RANDOM name instead of B' (must fall to chance); ceiling: the true sentences.
+cg26t additions (all readouts; each off by default):
+  inf_jx_pair  share of each batch trained on PAIRED WORDINGS: two different stored sentences naming the same two names (mostly one fact
+               told twice) - the cut first sentence predicts the key of the SECOND; the store mines the pairs itself (no labels).
+  inf_jx_arm_nce > 0   a second index arm 'C' with InfoNCE at that weight (the toy: helps when facts share a subject).
+  inf_jx_gen   a third arm 'G', the GENERIC TRACE: every name the store's own name finder sees is masked before encoding (questions too);
+               the names are kept as slots. Retrieval = the sentences whose slots hold the question's name, ranked by the name-free
+               structure key (toy tools/toy_jgeneric.py: with the names masked the trace is name-invariant 1.00, keeps relation and
+               wording 1.00 and two encoders agree 0.87 against 0.43 raw).
+  The extra arms report retrieval (top-1/top-5 and hybrid, written and held-out wordings); the answer readouts use arm V."""
 import math
 import numpy as np
 import torch
@@ -24,20 +33,44 @@ from platypus.inference.probes import (
 from platypus.inference.evaluate import (
     _inf_lps,
 )
+from platypus.inference.units import (
+    _INF_NAME,
+)
 _JX = {}                                                                     # the encoder, its EMA target and predictor live here across sleeps
 class _JXEnc(nn.Module):
     """byte transformer encoder (bidirectional) -> mean over the text positions -> LayerNorm"""
     def __init__(self, d_, nl_, L_):
-        super().__init__(); self.L = L_; self.emb = nn.Embedding(257, d_); self.pos = nn.Parameter(torch.randn(L_, d_) * 0.02)
+        super().__init__(); self.L = L_; self.emb = nn.Embedding(258, d_); self.pos = nn.Parameter(torch.randn(L_, d_) * 0.02)
         lay_ = nn.TransformerEncoderLayer(d_, max(1, d_ // 64), 4 * d_, 0.0, batch_first=True, norm_first=True)
         self.tr = nn.TransformerEncoder(lay_, nl_, enable_nested_tensor=False); self.n = nn.LayerNorm(d_)
     def forward(self, X_):
         pad_ = (X_ == 256); h_ = self.tr(self.emb(X_) + self.pos[:X_.shape[1]], src_key_padding_mask=pad_)
         m_ = (~pad_).float().unsqueeze(-1); return self.n((h_ * m_).sum(1) / m_.sum(1).clamp(min=1))
 def _jx_batch(txts_, L_, dev_):
-    bs_ = [bytes(t_)[:L_] for t_ in txts_]; Lm_ = max(4, max(len(b_) for b_ in bs_)); X_ = torch.full((len(bs_), Lm_), 256, dtype=torch.long)
-    for j_, b_ in enumerate(bs_): X_[j_, :len(b_)] = torch.tensor(list(b_), dtype=torch.long)
+    """rows of bytes (or of token ids: 0-255 bytes, 257 a masked name) -> (n, len) ids, 256 = padding"""
+    bs_ = [list(t_)[:L_] for t_ in txts_]; Lm_ = max(4, max(len(b_) for b_ in bs_)); X_ = torch.full((len(bs_), Lm_), 256, dtype=torch.long)
+    for j_, b_ in enumerate(bs_): X_[j_, :len(b_)] = torch.tensor(b_, dtype=torch.long)
     return X_.to(dev_)
+def _jx_ids(s_, gen_):
+    """a sentence as ids; gen_: every name the store's name finder sees replaced by the mask id 257 (byte for byte)"""
+    s_ = bytes(s_); ids_ = list(s_)
+    if gen_:
+        for m_ in _INF_NAME.finditer(s_):
+            for k_ in range(m_.start(), m_.end()): ids_[k_] = 257
+    return ids_
+def _jx_arms(cfg):
+    """the index arms: V (V-JEPA, as cg26s), C (+ InfoNCE), G (generic trace: names masked)"""
+    A_ = [('V', float(getattr(cfg, 'inf_jx_nce', 0.0)), False)]
+    if float(getattr(cfg, 'inf_jx_arm_nce', 0.0)) > 0: A_.append(('C', float(getattr(cfg, 'inf_jx_arm_nce', 0.0)), False))
+    if int(getattr(cfg, 'inf_jx_gen', 0)): A_.append(('G', float(getattr(cfg, 'inf_jx_nce', 0.0)), True))
+    return A_
+def _jx_pairs(S_, lv_):
+    """PAIRED WORDINGS mined from the store: groups of different live sentences naming the same two names"""
+    G_ = {}
+    for i_ in lv_[-50000:]:
+        s_ = S_['it'][i_]['s']; ns_ = sorted(set(_INF_NAME.findall(s_)))
+        if len(ns_) == 2: G_.setdefault(tuple(ns_), {}).setdefault(s_, i_)
+    return [list(v_.values()) for v_ in G_.values() if len(v_) >= 2]
 def _jx_cut(s_, rs_):
     """the question form of a stored sentence: cut at a word boundary after the first two words (half the time before the last word)"""
     w_ = [i_ + 1 for i_, c_ in enumerate(s_) if c_ == 32]
@@ -48,36 +81,46 @@ def _jx_live(S_, cfg):
     return it_[-int(getattr(cfg, 'inf_jx_pool', 200000)):]
 def _jx_train(model, cfg, S_):
     dev_ = model.embed.weight.device; L_ = int(getattr(cfg, 'inf_jx_len', 128)); d_ = int(getattr(cfg, 'inf_jx_dim', 128)); nl_ = int(getattr(cfg, 'inf_jx_layers', 3))
-    if not _JX:
-        with torch.random.fork_rng(devices=[dev_] if dev_.type == 'cuda' else []):   # its own random stream: the run itself is unchanged
-            torch.manual_seed(int(getattr(cfg, 'seed', 0)) + 4242)
-            on_ = _JXEnc(d_, nl_, L_).to(dev_); tg_ = _JXEnc(d_, nl_, L_).to(dev_); tg_.load_state_dict(on_.state_dict())
-            pr_ = nn.Sequential(nn.Linear(d_, 2 * d_), nn.GELU(), nn.Linear(2 * d_, d_)).to(dev_)
-        for p_ in tg_.parameters(): p_.requires_grad_(False)
-        _JX.update(on=on_, tg=tg_, pr=pr_, op=torch.optim.AdamW(list(on_.parameters()) + list(pr_.parameters()), lr=float(getattr(cfg, 'inf_jx_lr', 5e-4)), weight_decay=0.01), steps=0)
-    on_, tg_, pr_, op_ = _JX['on'], _JX['tg'], _JX['pr'], _JX['op']; mom_ = float(getattr(cfg, 'inf_jx_mom', 0.996)); nce_ = float(getattr(cfg, 'inf_jx_nce', 0.0))
-    lv_ = _jx_live(S_, cfg); rs_ = np.random.RandomState(9100 + int(model.__dict__.get('_visit', 0))); B_ = int(getattr(cfg, 'inf_jx_rows', 64)); ls_ = []
+    lv_ = _jx_live(S_, cfg); B_ = int(getattr(cfg, 'inf_jx_rows', 64)); mom_ = float(getattr(cfg, 'inf_jx_mom', 0.996))
     if len(lv_) < B_: return None
-    on_.train(); pr_.train()
-    with torch.enable_grad():
-        for _ in range(int(getattr(cfg, 'inf_jx_steps', 200))):
-            ss_ = [S_['it'][int(i_)]['s'] for i_ in rs_.choice(lv_, B_, replace=False)]
-            with torch.no_grad(): z_ = tg_(_jx_batch(ss_, L_, dev_))
-            p_ = pr_(on_(_jx_batch([_jx_cut(s_, rs_) for s_ in ss_], L_, dev_))); l_ = (p_ - z_).abs().mean()
-            if nce_ > 0: l_ = l_ + nce_ * F.cross_entropy(-torch.cdist(p_, z_, p=1) / max(1e-3, float(z_.abs().mean()) * d_ * 0.1), torch.arange(B_, device=dev_))
-            op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_))
-            with torch.no_grad():
-                for a_, b_ in zip(tg_.parameters(), on_.parameters()): a_.mul_(mom_).add_(b_, alpha=1 - mom_)
-    on_.eval(); pr_.eval(); _JX['steps'] += len(ls_)
-    return ls_[0], float(np.mean(ls_[-20:])), len(lv_)
+    pf_ = float(getattr(cfg, 'inf_jx_pair', 0.0)); PG_ = _jx_pairs(S_, lv_) if pf_ > 0 else []; npr_ = int(round(pf_ * B_)) if PG_ else 0
+    out_ = {}
+    for ai_, (nm_, nce_, gen_) in enumerate(_jx_arms(cfg)):
+        if nm_ not in _JX:
+            with torch.random.fork_rng(devices=[dev_] if dev_.type == 'cuda' else []):   # its own random stream: the run itself is unchanged
+                torch.manual_seed(int(getattr(cfg, 'seed', 0)) + 4242 + ai_)
+                on_ = _JXEnc(d_, nl_, L_).to(dev_); tg_ = _JXEnc(d_, nl_, L_).to(dev_); tg_.load_state_dict(on_.state_dict())
+                pr_ = nn.Sequential(nn.Linear(d_, 2 * d_), nn.GELU(), nn.Linear(2 * d_, d_)).to(dev_)
+            for p_ in tg_.parameters(): p_.requires_grad_(False)
+            _JX[nm_] = dict(on=on_, tg=tg_, pr=pr_, op=torch.optim.AdamW(list(on_.parameters()) + list(pr_.parameters()), lr=float(getattr(cfg, 'inf_jx_lr', 5e-4)), weight_decay=0.01), steps=0, gen=gen_)
+        X9_ = _JX[nm_]; on_, tg_, pr_, op_ = X9_['on'], X9_['tg'], X9_['pr'], X9_['op']
+        rs_ = np.random.RandomState(9100 + int(model.__dict__.get('_visit', 0))); ls_ = []
+        on_.train(); pr_.train()
+        with torch.enable_grad():
+            for _ in range(int(getattr(cfg, 'inf_jx_steps', 200))):
+                src_ = [S_['it'][int(i_)]['s'] for i_ in rs_.choice(lv_, B_ - npr_, replace=False)]; tgt_ = list(src_)
+                for _p in range(npr_):                                         # paired wordings: the cut first sentence predicts the second
+                    g_ = PG_[int(rs_.randint(len(PG_)))]; a9_, b9_ = rs_.choice(len(g_), 2, replace=False)
+                    src_.append(S_['it'][g_[a9_]]['s']); tgt_.append(S_['it'][g_[b9_]]['s'])
+                with torch.no_grad(): z_ = tg_(_jx_batch([_jx_ids(t_, gen_) for t_ in tgt_], L_, dev_))
+                p_ = pr_(on_(_jx_batch([_jx_ids(_jx_cut(t_, rs_), gen_) for t_ in src_], L_, dev_))); l_ = (p_ - z_).abs().mean()
+                if nce_ > 0: l_ = l_ + nce_ * F.cross_entropy(-torch.cdist(p_, z_, p=1) / max(1e-3, float(z_.abs().mean()) * d_ * 0.1), torch.arange(len(src_), device=dev_))
+                op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_))
+                with torch.no_grad():
+                    for a_, b_ in zip(tg_.parameters(), on_.parameters()): a_.mul_(mom_).add_(b_, alpha=1 - mom_)
+        on_.eval(); pr_.eval(); X9_['steps'] += len(ls_); out_[nm_] = (ls_[0], float(np.mean(ls_[-20:])))
+    return out_, len(lv_), len(PG_), npr_
 @torch.no_grad()
-def _jx_keys(cfg, S_, dev_):
-    L_ = int(getattr(cfg, 'inf_jx_len', 128)); lv_ = _jx_live(S_, cfg); K_ = []
-    for a_ in range(0, len(lv_), 2048): K_.append(_JX['tg'](_jx_batch([S_['it'][i_]['s'] for i_ in lv_[a_:a_ + 2048]], L_, dev_)))
+def _jx_keys(cfg, S_, dev_, nm_='V'):
+    L_ = int(getattr(cfg, 'inf_jx_len', 128)); lv_ = _jx_live(S_, cfg); K_ = []; X9_ = _JX[nm_]
+    for a_ in range(0, len(lv_), 2048): K_.append(X9_['tg'](_jx_batch([_jx_ids(S_['it'][i_]['s'], X9_['gen']) for i_ in lv_[a_:a_ + 2048]], L_, dev_)))
     return lv_, torch.cat(K_)
 @torch.no_grad()
-def _jx_find(cfg, q_, K_, dev_, k_=5):
-    p_ = _JX['pr'](_JX['on'](_jx_batch([q_.encode('latin-1', 'replace')], int(getattr(cfg, 'inf_jx_len', 128)), dev_)))
+def _jx_pred(cfg, q_, dev_, nm_='V'):
+    X9_ = _JX[nm_]; return X9_['pr'](X9_['on'](_jx_batch([_jx_ids(q_.encode('latin-1', 'replace'), X9_['gen'])], int(getattr(cfg, 'inf_jx_len', 128)), dev_)))
+@torch.no_grad()
+def _jx_find(cfg, q_, K_, dev_, k_=5, nm_='V'):
+    p_ = _jx_pred(cfg, q_, dev_, nm_)
     return torch.topk(-(K_ - p_).abs().sum(-1), min(k_, K_.shape[0])).indices.tolist()
 def _jx_readout(model, cfg, S_, tag_):
     """retrieval, one-hop and two-hop readouts of the index (see the module note)"""
@@ -98,7 +141,7 @@ def _jx_readout(model, cfg, S_, tag_):
     def hyb_(q_, A_):                                                         # HYBRID: the sentences that name A, ranked by the JEPA key
         c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
         if not c9_: return None
-        p9_ = _JX['pr'](_JX['on'](_jx_batch([q_.encode('latin-1', 'replace')], int(getattr(cfg, 'inf_jx_len', 128)), dev_)))
+        p9_ = _jx_pred(cfg, q_, dev_, 'V')
         return c9_[int((K_[c9_] - p9_).abs().sum(-1).argmin())]
     for c_ in ch_:
         A_, B_, C_ = c_['names'][:3]; r0_, r1_ = c_['rels'][0], c_['rels'][1]; sl_ = int(t2s_.get(int(c_['facts'][0][0]), 0)); sl2_ = int(t2s_.get(int(c_['facts'][1][0]), 0))
@@ -123,18 +166,37 @@ def _jx_readout(model, cfg, S_, tag_):
         Br_ = alln_[int(rs_.randint(len(alln_)))]; q3_ = f"{Br_} {r1_} "; t3_ = _jx_find(cfg, q3_, K_, dev_, 1); R_['two_rand'].append(ans_(txt_(t3_[0]), q3_, C_, oth2_, sl2_) == C_)
         Bt_ = ans_(tr1_, q_, B_, oth_, sl_); R_['two_true'].append(ans_(tr2_, f"{Bt_} {r1_} ", C_, oth2_, sl2_) == C_)
     f_ = lambda k_: f"{np.mean(R_[k_]):.2f} (n {len(R_[k_])})" if R_[k_] else "- (n 0)"
+    ex_ = []                                                                  # the other arms: retrieval only
+    for nm_, _, gen_ in _jx_arms(cfg)[1:]:
+        _, K2_ = _jx_keys(cfg, S_, dev_, nm_); E_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'hyb', 'ho_hyb')}
+        for c_ in ch_:
+            A_, B_ = c_['names'][:2]; r0_ = c_['rels'][0]
+            if not any(has_(S_['it'][i_]['s'], A_, B_) for i_ in NX_.get(A_, [])): continue
+            c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
+            for w_, qq_ in (('', f"{A_} {r0_} "),) + ((('ho', f"{A_} {_INF_PARA[r0_]} "),) if r0_ in _INF_PARA else ()):
+                p9_ = _jx_pred(cfg, qq_, dev_, nm_)
+                if not gen_:
+                    tp_ = torch.topk(-(K2_ - p9_).abs().sum(-1), min(5, K2_.shape[0])).indices.tolist()
+                    E_[w_ + '1' if w_ else 'r1'].append(has_(txt_(tp_[0]), A_, B_)); E_[w_ + '5' if w_ else 'r5'].append(any(has_(txt_(i_), A_, B_) for i_ in tp_))
+                if c9_: E_['ho_hyb' if w_ else 'hyb'].append(has_(txt_(c9_[int((K2_[c9_] - p9_).abs().sum(-1).argmin())]), A_, B_))
+        g9_ = lambda k_: f"{np.mean(E_[k_]):.2f} (n {len(E_[k_])})" if E_[k_] else "- (n 0)"
+        ex_.append(f"ARM {nm_} ({'GENERIC: names masked, ranked among the sentences whose slots hold A' if gen_ else 'V-JEPA + InfoNCE'}): "
+                   + ("" if gen_ else f"top-1 {g9_('r1')}, top-5 {g9_('r5')}, held-out top-1 {g9_('ho1')}, top-5 {g9_('ho5')}, ") + f"HYBRID {g9_('hyb')}, held-out {g9_('ho_hyb')}")
     print(f"  [JEPA INDEX | {tag_}] {len(lv_)} stored sentences keyed | RETRIEVAL of the fact sentence for 'A r0 ': top-1 {f_('r1')}, top-5 {f_('r5')} | HELD-OUT wording top-1 {f_('ho1')}, top-5 {f_('ho5')} | "
           f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
-          f"true sentences {f_('two_true')} (chance 0.05)", flush=True)
+          f"true sentences {f_('two_true')} (chance 0.05)" + ("".join(" || " + e_ for e_ in ex_)), flush=True)
 def _jx_sleep(model, cfg, S_):
-    """inf_jx: train the index on the store, then the readouts (every inf_jx_every visits)"""
+    """inf_jx: train the index arms on the store, then the readouts (every inf_jx_every visits)"""
     try:
         r_ = _jx_train(model, cfg, S_); v_ = int(model.__dict__.get('_visit', 0))
         if r_ is None: print(f"  [JEPA INDEX] skipped: fewer stored sentences than one batch", flush=True); return
-        with torch.no_grad(): sp_ = float(_jx_keys(cfg, S_, model.embed.weight.device)[1][:4096].std(0).mean())
-        print(f"  [JEPA INDEX] visit {v_ + 1}: {int(getattr(cfg, 'inf_jx_steps', 200))} steps on {r_[2]} stored sentences (total {_JX['steps']}) | L1 {r_[0]:.3f} -> {r_[1]:.3f} | key spread {sp_:.3f} (0 = collapsed)"
-              + (f" | InfoNCE weight {float(getattr(cfg, 'inf_jx_nce', 0.0)):g}" if float(getattr(cfg, 'inf_jx_nce', 0.0)) > 0 else ""), flush=True)
+        L9_, n9_, pg9_, npr9_ = r_; dev_ = model.embed.weight.device
+        sp_ = {nm_: float(_jx_keys(cfg, S_, dev_, nm_)[1][:4096].std(0).mean()) for nm_ in L9_}
+        print(f"  [JEPA INDEX] visit {v_ + 1}: {int(getattr(cfg, 'inf_jx_steps', 200))} steps per arm on {n9_} stored sentences (total {_JX['V']['steps']}) | "
+              + " | ".join(f"arm {nm_}: L1 {a_:.3f} -> {b_:.3f}, key spread {sp_[nm_]:.3f}" for nm_, (a_, b_) in L9_.items())
+              + (f" | InfoNCE weight {float(getattr(cfg, 'inf_jx_nce', 0.0)):g}" if float(getattr(cfg, 'inf_jx_nce', 0.0)) > 0 else "")
+              + (f" | PAIRED WORDINGS: {pg9_} groups of different sentences naming the same two names, {npr9_} pair rows per batch" if float(getattr(cfg, 'inf_jx_pair', 0.0)) > 0 else ""), flush=True)
         if (v_ + 1) % max(1, int(getattr(cfg, 'inf_jx_every', 1))) == 0: _jx_readout(model, cfg, S_, f"visit {v_ + 1}")
     except Exception as e_:
         print(f"  [JEPA INDEX] unavailable ({type(e_).__name__}: {e_})"[:260], flush=True)
