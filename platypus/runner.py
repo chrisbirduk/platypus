@@ -251,6 +251,10 @@ def run(cfg):
                 model.__dict__['_pass_lr']=float(cfg.pass_lr[min(pass_i,len(cfg.pass_lr)-1)]) if cfg.pass_lr else 1.0
                 model.__dict__['_dwp']=float(cfg.dream_w_pass[min(pass_i,len(cfg.dream_w_pass)-1)]) if cfg.dream_w_pass else 1.0   # cg14
                 if not olds and float(cfg.pass_lr_noold)>0: model.__dict__['_pass_lr']=float(cfg.pass_lr_noold)   # cg13: visits with no old domain
+                if int(getattr(cfg,'nov_lr',0)):                               # cg26y NOVELTY LEARNING RATE: set once per visit from the router's own
+                    _nm_=float(getattr(cfg,'nov_lr_new',2.0)) if model.__dict__.get('_first_visit',True) else float(getattr(cfg,'nov_lr_rev',0.5))   #   new-slot decision (label-free): fast in a new domain, slow on a revisit
+                    model.__dict__['_pass_lr']=float(model.__dict__['_pass_lr'])*_nm_   #   (toy: 3.036 against 3.234 constant; as good as the true labels)
+                    print(f"  [novelty rate] {'NEW slot' if model.__dict__.get('_first_visit',True) else 'revisit'} -> learning rate x{_nm_:g} this visit (x{float(model.__dict__['_pass_lr']):g} with the pass rate)",flush=True)
                 model.__dict__['_real_w']=float(cfg.real_w_pass[min(pass_i,len(cfg.real_w_pass)-1)]) if cfg.real_w_pass else 1.0
                 model.__dict__['_pass_i']=int(pass_i)
                 _prb=probe_pre(model,cfg,olds,t,vals) if (vi in tuple(cfg.probe_visits) and olds and cfg.dream_bank and cfg.bank_targets) else None
