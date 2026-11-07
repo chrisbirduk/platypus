@@ -55,6 +55,9 @@ if os.environ.get('PLATYPUS_HINTS','1')=='0':
     cfg.cd_hint_frac=0.0; cfg.cd_hint_adapt=0.0; print('  [clean] PLATYPUS_HINTS=0: no true bytes given to the conduit generator in the closed-loop passes',flush=True)
 if os.environ.get('PLATYPUS_SLOTS','').strip().isdigit():
     cfg.infer_slots=int(os.environ['PLATYPUS_SLOTS']); print(f'  [clean] PLATYPUS_SLOTS: the router may open up to {cfg.infer_slots} slots',flush=True)
+print(f"  [hints] EFFECTIVE after the switches: cd_hint_frac {float(getattr(cfg,'cd_hint_frac',0.0)):g}, cd_hint_adapt {float(getattr(cfg,'cd_hint_adapt',0.0)):g} -> "
+      +('HINTS OFF (no true bytes given to the conduit generator)' if float(getattr(cfg,'cd_hint_frac',0.0))<=0 and float(getattr(cfg,'cd_hint_adapt',0.0))<=0 else f"hints ON (budget {float(getattr(cfg,'cd_hint_min',0.0)):g}-{float(getattr(cfg,'cd_hint_max',0.0)):g} of replayed bytes)")
+      +' | the overrides printed below are the requested set, before the switches',flush=True)   # cg26x: the printed overrides alone misled
 NAME=BUILD_NAME+NAME+' | overrides '+_OVR
 print(f"\n################ {NAME} | seed {cfg.seed} ################")
 r=run(cfg)
