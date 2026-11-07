@@ -142,7 +142,7 @@ The slow network learns general skill, and only from real text or verified repla
 
 ## Results
 
-**JEPA trace readouts (cg26u, local five-domain harness, readouts only).** cg26u keeps the cg26s index (arm V) and trains two more encoders on the same store each sleep: arm C adds InfoNCE over the batch to the L1, and arm G is the *generic trace* - the names the store's own name finder marks are masked before encoding and kept as slots, so the key carries what is said and the slots carry who it is said about. The run with every readout on matched the runs without them (mean forgetting −0.004, final BPC 2.072, against −0.008 / 2.077 for cg26t and −0.004 / 2.072 for cg26s).
+**JEPA trace readouts (cg26u, local five-domain harness, readouts only).** cg26u keeps the cg26s index (arm V) and trains two more encoders on the same store each sleep: arm C adds InfoNCE over the batch to the L1, and arm G is the *generic trace* - the names the store's own name finder marks are masked before encoding and kept as slots, so the key carries what is said and the slots carry who it is said about. The run with every cg26u readout on matched cg26s (mean forgetting −0.004, final BPC 2.072 in both; cg26t, whose index time still tripped the sleep budget, −0.008 / 2.077).
 
 | End of run (visit 10, 17.2k stored sentences, 34 chains) | Written wording top-1 | HYBRID (sentences naming A, ranked by the key) | HYBRID, held-out wording |
 |---|---|---|---|
@@ -152,6 +152,8 @@ The slow network learns general skill, and only from real text or verified repla
 | Arm G (generic trace: names masked, ranked among the sentences whose slots hold A) | | **1.00** | 0.29 |
 
 The generic trace finds the right sentence every time once the name slots have narrowed the candidates, which is the split the toys pointed to: names identify, the name-free trace says what is said. Held-out wordings are still the weak point (0.29–0.41 with the name filter, 0.12–0.15 without). Training different sentences that name the same two names to predict each other's keys (`inf_jx_pair`) did not help (held-out top-1 0.12 with it, 0.15 without), so it stays off.
+
+**Replay signal by byte class (cg26u readout).** The Baseten note on on-policy self-distillation warns that a model taught by its own distributions can put most of its signal on style tokens. In a short closed-loop run (the full local harness gives real text in both passes, so the closed-loop replay where this readout sits runs only on the GPU and in closed-loop local runs) the teacher KL on space and punctuation stayed close to their share of positions (0.14–0.31 of the KL against 0.19–0.31 of positions; above it at one visit of five, 0.25 against 0.21), names carried slightly more than their share, and the top 10% of positions carried 0.33–0.36 of the KL: no sign of the style-token bias.
 
 **Routing by a JEPA trace (cg26u readout; routing itself unchanged).** Each visit's stored sentences are joined into 1 KB windows and routed to the nearest slot prototype by a byte profile, by the arm V codes and by both. In the run the byte profile matched the domain on every revisit (1.00 at 1 and 4 windows, novelty AUC 1.00); the in-package JEPA codes did not (0.42–0.44, novelty AUC 0.55), and adding them to the bytes made routing worse (0.57–0.60). In the routing toy (`tools/toy_jroute.py`, a JEPA trained on raw text of all five domains for 3,000 steps) the JEPA routed well with enough context (0.83 at 1 KB, 0.99 at 4 KB; novelty AUC 0.95 at 4 KB), bytes and JEPA together were best, and masking names cost accuracy. The index encoder is trained on short single sentences for 200 steps a sleep, which is the likely difference; routing stays on byte statistics.
 
@@ -164,7 +166,20 @@ The generic trace finds the right sentence every time once the name slots have n
 | On-policy: the student's own samples pulled to a pre-visit snapshot, reverse KL | 2.788 | +0.303 | 3.183 |
 | The same, forward KL | 2.792 | +0.314 | 3.142 |
 
-On-policy rehearsal protects as well as stored dreams but learns new domains less well and ends worse, so stored dreams stay. `tools/toy_jlr.py` sets the learning rate from JEPA novelty with JEPA-routed slots; its results are still running (so far a shuffled control matches the novelty-scaled rate).
+On-policy rehearsal protects as well as stored dreams but learns new domains less well and ends worse, so stored dreams stay. `tools/toy_jlr.py` sets the learning rate from JEPA novelty with JEPA-routed slots; two seeds:
+
+| Learning rate (Adam, same base rate) | Final mean BPC | Mean forgetting | BPC right after first visits |
+|---|---|---|---|
+| Constant | 3.234 | +0.992 | 2.924 |
+| × novelty of each batch | 3.264 | +1.026 | 2.907 |
+| The same multipliers shuffled (control) | 3.261 | +1.007 | 2.943 |
+| ÷ novelty (control) | 3.251 | +0.997 | 2.948 |
+| × own loss / its running mean (surprise) | 3.248 | +0.984 | 2.965 |
+| Falls with the routed slot's age | 3.199 | +1.038 | 2.725 |
+| **Per visit: ×2 if its first batches open a new JEPA slot, ×0.5 on a revisit** | **3.036** | **+0.856** | **2.664** |
+| The same schedule from the true domain labels | 3.013 | +0.850 | 2.661 |
+
+Batch-by-batch novelty does nothing; one decision per visit - learn fast in a new domain, slowly in a familiar one - gains 0.2 BPC, and the label-free JEPA slot detection is within noise of the true labels. Constant ×0.5 and ×2 controls are running; the per-visit rate is a lab result, not in the package.
 
 **JEPA index of the store (cg26s, local five-domain harness, readouts only).** Each sleep a small byte-level text encoder (128 wide, 3 layers locally) is trained V-JEPA style on the sentences in the store, and every stored sentence is keyed by its moving-average target encoder; a question finds its sentence by the nearest key. The trunk is never trained by it: the run matched the run without it exactly (mean forgetting −0.004, final BPC 2.072, every readout identical).
 
@@ -739,7 +754,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **5 November.** cg26q: clean evaluation after an outside code review. Oracle options off by default at no cost; held-out readouts show two-hop recall from the weights of 0.17 in new wordings (0.46 in the written wording) and 0.69 with the fast store.
 - **6 November.** cg26r: merged-memory dreams with a contrastive chaining loss, off by default, and the preset `cg26r_merged.env` for the GPU test of whether the weights can compose. Locally, training only the key and value projections keeps the phase within its brake and makes each memory point at the right next key (own-bridge retrieval 0.21 → 0.52), but the small trunk does not read names back from memory, so composition stays at 0.00 there.
 - **6–7 November.** cg26s: a JEPA index of the sentence store (readouts only) - from the fourth sleep it finds the fact sentence for a question better than the name lookup (0.79 against 0.65 top-1 at the end of the local run), but not yet in held-out wordings; the closed-loop store fix. Toys that night: question-time retrieval by a JEPA key and two-hop chaining by retrieval work, the weights do not compose two stored facts in any form tried, and masking the names before encoding gives a generic trace that two encoders agree on twice as well as on raw text. Merged-memory dreams and distillation added nothing to consolidation and stay off.
-- **7 November.** cg26u: two more JEPA index arms - with InfoNCE (top-1 0.85 against 0.76) and a generic name-free trace that, among the sentences naming the question's subject, finds the right one every time locally; a routing readout (in the package routing stays on bytes; in a toy a JEPA trained on raw text routes well from 4 KB of context); where the replay signal sits by byte class. Toys: on-policy rehearsal protects no better than stored dreams and learns less.
+- **7 November.** cg26u: two more JEPA index arms - with InfoNCE (top-1 0.85 against 0.76) and a generic name-free trace that, among the sentences naming the question's subject, finds the right one every time locally; a routing readout (in the package routing stays on bytes; in a toy a JEPA trained on raw text routes well from 4 KB of context); where the replay signal sits by byte class. Toys: on-policy rehearsal protects no better than stored dreams and learns less; a learning rate set once per visit from JEPA novelty (fast in a new domain, slow on a revisit) gains 0.2 BPC, as much as with the true labels.
 
 ## Contributing
 
