@@ -12,6 +12,7 @@ LEARNING-RATE POLICIES (Adam, same base rate; the multiplier is clipped to [0.25
   INVERSE      rate / novelty (control: familiar text learns faster)
   SURPRISE     rate x the learner's own byte loss on the batch / its running mean (the usual loss-based alternative)
   SHUFFLED     the NOVEL multipliers in a random order (control for the mean rate and its spread)
+  HALF, DOUBLE constant x0.5 / x2; VISIT-ORACLE the NOVEL-VISIT schedule from the true domain labels (controls for NOVEL-VISIT)
 READOUTS per policy, two seeds: BPC on each domain's held-out text after every visit; FINAL mean BPC; mean FORGETTING (BPC at the end
 minus BPC right after the domain's last visit); PLASTICITY (BPC right after each first visit); routing accuracy of the slots.
 usage: python3 toy_jlr.py [seeds] [steps per visit] [jepa steps]"""
@@ -67,6 +68,9 @@ def run(policy, seed):
             elif policy == 'SURPRISE': k = lm_ / max(1e-6, Lrun)
             elif policy == 'SHUFFLED': k = shuf.pop() if shuf else 1.0
             elif policy == 'SLOT-AGE': k = 2.0 / math.sqrt(1.0 + NP_[j] / SPV)   # the routed slot's age: new domains learn faster
+            elif policy == 'HALF': k = 0.5                                  # controls for NOVEL-VISIT: constant x0.5, constant x2,
+            elif policy == 'DOUBLE': k = 2.0
+            elif policy == 'VISIT-ORACLE': k = 1.0 if st < 10 else (2.0 if di not in ORDER[:vi] else 0.5)   #   and the same schedule from the true labels
             else:                                                           # NOVEL-VISIT: decided from the visit's first 10 batches
                 if st < 10: k = 1.0
                 else:
