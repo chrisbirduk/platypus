@@ -21,7 +21,11 @@ cg26t additions (all readouts; each off by default):
                the names are kept as slots. Retrieval = the sentences whose slots hold the question's name, ranked by the name-free
                structure key (toy tools/toy_jgeneric.py: with the names masked the trace is name-invariant 1.00, keeps relation and
                wording 1.00 and two encoders agree 0.87 against 0.43 raw).
-  The extra arms report retrieval (top-1/top-5 and hybrid, written and held-out wordings); the answer readouts use arm V."""
+  The extra arms report retrieval (top-1/top-5 and hybrid, written and held-out wordings); the answer readouts use arm V.
+cg26u: inf_jx_route - JEPA ROUTING readout (routing unchanged): each visit's stored sentences, joined into ~1 KB windows, routed by a byte
+  profile, by arm V's JEPA codes and by both, to the nearest slot prototype; accuracy on revisits, agreement with the router and novelty
+  AUC for first visits (tools/toy_jroute.py: locally bytes win at 1 KB, JEPA reaches 1.00 from 4-8 windows, both detect a new domain at
+  AUC 0.95-1.00 from 4 windows; masking names hurt routing)."""
 import math
 import numpy as np
 import torch
@@ -186,6 +190,67 @@ def _jx_readout(model, cfg, S_, tag_):
           f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
           f"true sentences {f_('two_true')} (chance 0.05)" + ("".join(" || " + e_ for e_ in ex_)), flush=True)
+def _jx_bytes(bs_):
+    """byte unigram + hashed byte-pair profile, square-rooted (the routing toy's BYTES router)"""
+    out_ = np.zeros((len(bs_), 256 + 4096), dtype=np.float32)
+    for i_, b_ in enumerate(bs_):
+        a_ = np.frombuffer(bytes(b_), dtype=np.uint8).astype(np.int64)
+        if a_.size < 2: continue
+        out_[i_, :256] = np.bincount(a_, minlength=256); out_[i_, 256:] = np.bincount((a_[:-1] * 257 + a_[1:]) % 4096, minlength=4096)
+    out_[:, :256] /= out_[:, :256].sum(1, keepdims=True) + 1e-9; out_[:, 256:] /= out_[:, 256:].sum(1, keepdims=True) + 1e-9
+    return torch.tensor(np.sqrt(out_))
+@torch.no_grad()
+def _jx_route(model, cfg, S_):
+    """JEPA ROUTING READOUT (inf_jx_route; routing itself unchanged): this visit's stored sentences are joined into ~1 KB windows and coded by
+    BYTES (byte profile), JEPA (arm V's target encoder, mean over 128-byte chunks) and BYTES+JEPA (median-normalised distances added);
+    each method routes the visit, with 1 and 4 windows of context, to the nearest prototype of the slots seen so far (prototype = mean code
+    of the windows of the visits routed there). Scored against the true domain (evaluation only) and the router's own slot; NOVELTY = the
+    distance to the nearest prototype, first visits of a domain against revisits (AUC over the run so far)."""
+    v_ = int(model.__dict__.get('_visit', 0)); sl_ = int(model.__dict__.get('_cur_dom', -1)); td_ = int(model.__dict__.get('_s2t', {}).get(sl_, sl_))
+    it_ = [x_['s'] for x_ in S_['it'] if x_.get('s') and not x_.get('gone') and int(x_.get('v', -1)) == v_]
+    if len(it_) < 40: print(f"  [JEPA ROUTING | visit {v_ + 1}] skipped: {len(it_)} stored sentences from this visit", flush=True); return
+    rs_ = np.random.RandomState(9300 + v_); W_ = []
+    for _ in range(32):                                                      # 32 windows of ~1 KB from the visit's sentences
+        o_ = rs_.permutation(len(it_)); w_ = b''
+        for i_ in o_:
+            w_ += bytes(it_[i_]) + b' '
+            if len(w_) >= 1024: break
+        W_.append(w_[:1024])
+    dev_ = model.embed.weight.device; L_ = int(getattr(cfg, 'inf_jx_len', 128))
+    cs_ = [w_[i_:i_ + L_] for w_ in W_ for i_ in range(0, len(w_), L_)]; nc_ = [len(range(0, len(w_), L_)) for w_ in W_]
+    zc_ = _JX['V']['tg'](_jx_batch(cs_, L_, dev_)).float().cpu(); zj_ = torch.stack([c_.mean(0) for c_ in torch.split(zc_, nc_)])
+    F_ = {'BYTES': _jx_bytes(W_), 'JEPA': zj_}
+    R9_ = _JX.setdefault('route', {'proto': {}, 'hist': []}); P_ = R9_['proto']; seen_ = {d_ for _, d_, _ in R9_['hist']}
+    first_ = td_ not in seen_; row_ = {'v': v_, 'td': td_, 'first': first_, 'slot': sl_}
+    if P_:
+        sls_ = sorted(P_)
+        for k_ in (1, 4):
+            idx_ = torch.tensor(rs_.randint(0, len(W_), size=(16, k_)))
+            D_ = {}
+            for nm_, X_ in F_.items():
+                C_ = X_[idx_].mean(1); Pm_ = torch.stack([P_[s9_][nm_][0] / P_[s9_][nm_][1] for s9_ in sls_]); D_[nm_] = torch.cdist(C_, Pm_)
+            D_['BYTES+JEPA'] = D_['BYTES'] / D_['BYTES'].median().clamp_min(1e-9) + D_['JEPA'] / D_['JEPA'].median().clamp_min(1e-9)
+            for nm_, Dm_ in D_.items():
+                ch_ = [sls_[int(j_)] for j_ in Dm_.argmin(1)]
+                row_[(nm_, k_, 'dom')] = float(np.mean([P_[c_]['td'] == td_ for c_ in ch_])); row_[(nm_, k_, 'agree')] = float(np.mean([c_ == sl_ for c_ in ch_]))
+                row_[(nm_, k_, 'nov')] = float(Dm_.min(1).values.mean() / (Dm_.median().clamp_min(1e-9)))
+    for nm_, X_ in F_.items():                                               # this visit's windows join its slot's prototype
+        e_ = P_.setdefault(sl_, {'td': td_}); s_, n_ = e_.get(nm_, (0.0, 0)); e_[nm_] = (s_ + X_.sum(0), n_ + X_.shape[0]); e_['td'] = td_
+    R9_['hist'].append((v_, td_, row_))
+    H_ = [r_ for _, _, r_ in R9_['hist'] if ('JEPA', 1, 'dom') in r_]
+    def auc_(p9_, n9_):
+        if not p9_ or not n9_: return float('nan')
+        a9_ = np.concatenate([p9_, n9_]).argsort().argsort().astype(float) + 1
+        return (a9_[:len(p9_)].sum() - len(p9_) * (len(p9_) + 1) / 2) / (len(p9_) * len(n9_))
+    parts_ = []
+    for nm_ in ('BYTES', 'JEPA', 'BYTES+JEPA'):
+        for k_ in (1, 4):
+            rv_ = [r_[(nm_, k_, 'dom')] for r_ in H_ if not r_['first']]; ag_ = [r_[(nm_, k_, 'agree')] for r_ in H_ if not r_['first']]
+            nv_ = auc_([r_[(nm_, k_, 'nov')] for r_ in H_ if r_['first']], [r_[(nm_, k_, 'nov')] for r_ in H_ if not r_['first']])
+            parts_.append(f"{nm_} {k_} KB: revisits to their domain {np.mean(rv_) if rv_ else float('nan'):.2f} (n {len(rv_)}), agrees with the router {np.mean(ag_) if ag_ else float('nan'):.2f}, novelty AUC {nv_:.2f}")
+    now_ = " | ".join(f"{nm_} {k_} KB -> {row_[(nm_, k_, 'dom')]:.2f}" for nm_ in ('BYTES', 'JEPA', 'BYTES+JEPA') for k_ in (1, 4) if (nm_, k_, 'dom') in row_)
+    print(f"  [JEPA ROUTING | visit {v_ + 1}] true domain {td_} ({'FIRST visit' if first_ else 'revisit'}), router slot {sl_}, {len(it_)} stored sentences in {len(W_)} windows | this visit to its domain: {now_ or 'no prototypes yet'} || "
+          f"SO FAR: " + " || ".join(parts_), flush=True)
 def _jx_sleep(model, cfg, S_):
     """inf_jx: train the index arms on the store, then the readouts (every inf_jx_every visits); its time is kept out of the sleep budget"""
     t0_ = __import__('time').time()
@@ -203,6 +268,9 @@ def _jx_sleep_(model, cfg, S_):
               + (f" | InfoNCE weight {float(getattr(cfg, 'inf_jx_nce', 0.0)):g}" if float(getattr(cfg, 'inf_jx_nce', 0.0)) > 0 else "")
               + (f" | PAIRED WORDINGS: {pg9_} groups of different sentences naming the same two names, {npr9_} pair rows per batch" if float(getattr(cfg, 'inf_jx_pair', 0.0)) > 0 else ""), flush=True)
         if (v_ + 1) % max(1, int(getattr(cfg, 'inf_jx_every', 1))) == 0: _jx_readout(model, cfg, S_, f"visit {v_ + 1}")
+        if int(getattr(cfg, 'inf_jx_route', 0)):
+            try: _jx_route(model, cfg, S_)
+            except Exception as e9_: print(f"  [JEPA ROUTING] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
     except Exception as e_:
         print(f"  [JEPA INDEX] unavailable ({type(e_).__name__}: {e_})"[:260], flush=True)
 
