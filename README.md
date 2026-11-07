@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26r** (cg26q plus merged-memory dreams, off by default; `configs/presets/cg26r_merged.env` turns them on for the GPU test).
+Current build: **cg26v** (cg26u plus a diagnostic of the index's answer readouts and InfoNCE on the generic-trace arm; branch `jepa-ctx`; `configs/presets/cg26v_nohints.env` is the next GPU run: the strict closed loop with no hints, with every readout on; `cg26v.env` keeps the hints). All index options are readouts: training, routing and the defaults are unchanged. Merged-memory dreams stay off.
 
 ## A note on this documentation
 
@@ -38,26 +38,30 @@ All of the documentation in this repository, this README included, is generated 
 
 ## Novelty and prior art
 
-An honest estimate of what is new here: roughly **70% assembled from known parts, 20% recognisable twists and 10% genuinely new**. The new part is concentrated in three places:
+An honest estimate of what is new here, after three outside passes over the literature: roughly **55% assembled from known parts, 30% known ideas used in new places and 15% genuinely new**.
 
-- **The JEPA dream selector**: a joint-embedding predictive model trained only on links the system verified itself and on the measured outcome of earlier dreams, used to choose which memories to splice and consolidate.
-- **Per-sleep re-keying of weight edits**: every closed-form edit is re-solved with its current key at every sleep, so the edits do not decay as the layers below them keep learning.
-- **The handover protocol from the fast store to the weights**: release after consecutive store-off tests, deletion after a grace period, restoration and reinstatement of memories the weights lose, timed by a learned model of forgetting.
+Two published systems bracket the project. **Pan, Hahami, Siegelmann and Sompolinsky** (bioRxiv 2026; arXiv 2025) build the same hippocampus–cortex design for continual episodic memory in language models: per-episode gated LoRA adapters act as the fast store, are consolidated into the base weights by replay and are then freed, on 8B models with real post-cutoff Wikipedia and EWC and distillation baselines. They own the consolidation side. **HippoRAG** (Gutiérrez et al., NeurIPS 2024), with LightRAG and GraphRAG, builds an OpenIE graph and walks it with Personalized PageRank for single-step multi-hop retrieval, under a hippocampal-indexing framing. It owns the retrieval side. Platypus differs from both in four places: **verification** (only conclusions grounded in recorded facts, and replays that reproduce their memory traces byte for byte, are written or learned from), **release and reinstatement** (memories leave the fast store once the weights answer them alone, are deleted after a grace period and are written back if the weights lose them, timed by a model of forgetting), **abstention** (the fast store is silent on names it does not hold, so the model can say it does not know) and **inference at sleep time** (sleep links facts met in different places and stores the conclusions, rather than only consolidating what was read). Pan et al. test none of release, reinstatement, a forgetting model, sleep inference or abstention; HippoRAG retrieves at question time and does not consolidate.
 
-That is a respectable ratio for research, but it comes with two risks, and they are the first things to fix:
+**Where each mechanism stands:**
 
-1. **Prior art has been understated.** Several closely related lines of work were not credited in these documents (see [A note on this documentation](#a-note-on-this-documentation)). The ones a reviewer would notice first:
-   - **Google's sleep framework** (Behrouz, Hashemi, Javanmard and Mirrokni, 2026): a sleep phase for language models that consolidates short-term memory into longer-term weights by distillation, with a "dreaming" stage of filtered self-generated rehearsal. It is the closest published work to Platypus's sleep cycle. Platypus differs in three ways: inference happens in the store (sleep links facts met in different places and writes the conclusions to a fast memory outside the weights, rather than only consolidating what was seen), admission is verified (only conclusions grounded in recorded facts, and replays that reproduce their memory traces exactly, are written or learned from), and the handover runs both ways (memories move from the store to the weights once the weights answer them alone, and are written back if the weights lose them).
-   - **Expansion against protection is a real design fork.** The sleep framework stops forgetting by adding capacity: each sleep unlocks new low-rank experts and leaves the older parameters untouched. Platypus mostly protects shared weights instead (curvature-whitened updates, brakes that roll back harmful sleeps, a dose that retries lower). Their result suggests expansion may be the cheaper way to stop forgetting. Platypus's per-slot capacity (a private head, private units, n-gram rows and FiLM codes for each slot, with one slot per domain) is a partial version of the same idea, and growing that budget instead of protecting harder is an open option.
-   - **The ancestry of dream rehearsal**: LAMOL (Sun et al., 2020), which trains one language model both to solve tasks and to generate pseudo-samples of earlier ones for rehearsal, and Self-Synthesized Rehearsal (Huang et al., 2024), which rehearses on the model's own synthetic data, with deep generative replay (Shin et al., 2017) before them. Platypus's dream rehearsal is this idea; what it adds is the exact verification of each replay against its stored trace and the closed loop built on it.
-   - **The decay of sequential weight edits**: model editing at scale leads to gradual and then catastrophic forgetting (Gupta et al., 2024), null-space constrained editing (AlphaEdit, Fang et al., 2025) and lifelong editing with side memories (WISE, Wang et al., 2024; MEMOIR, 2025). The edit decay Platypus diagnosed, and its re-keying, should be read against this work. ROME (Meng et al., 2022) and MEMIT (Meng et al., 2023) are the editing methods the closed-form edits build on.
-   - The rest of the design draws on complementary learning systems theory, curvature-based protection against forgetting, fast-weight and delta-rule memories, JEPA objectives and half-life models of memory; these are listed under [References](#references).
-2. **The genuinely new claims are the least tested.**
-   - The JEPA selector has not yet been shown to give better dreams than random choices: the random-dream control on the GPU is still to run, and locally, dreams against no dreams left recall unchanged.
-   - Per-sleep re-keying held two-hop recall from the weights at 0.6–0.8 through three passes on the GPU, but on one seed, and in the wording the system wrote; in held-out wordings the weights keep about a third of it.
-   - The handover protocol released 193 memories and restored 10 on the GPU, but on one seed, and released memories have been tested only in written wordings.
+| Mechanism | Standing | Nearest prior work |
+|---|---|---|
+| One-scan two-step linking | **Variant** of graph retrieval, run offline under an MDL pool (a two-step truncation of the same walk) | HippoRAG; LightRAG; GraphRAG |
+| JEPA dream selector | **New twist**: self-supervised selection exists; a predictor trained on outcomes and on links the system verified itself is still unmatched | MERS (2026); ER-JEPA (2026) for the reverse direction |
+| Release → ghost → reinstate handover | The **protocol** is unmatched; the **frame** (freed fast memory consolidated into the weights) is shared | Pan et al. |
+| Compression-gated dreams | New twist (unchanged) | PMI dataset valuation (Chen and Qi); Peer-Predictive Self-Training; "Not All Synthetic Data Is Yours to Learn From" (2026) |
+| Drift-free byte-hash keys | **Holds** | Motivation: "Forgetting is Not Erasure: transport keys" (2026) |
+| Per-sleep re-keying of edits | **Holds**: the gap is named in the literature, the fix is not implemented elsewhere | "On the Limitations of Rank-One Model Editing in Multi-hop Questions" (2026) |
+| Byte-exact verified replay | **Holds**: its nearest family is latent replay, not generative replay | BinPlay; Latent Space Memory Replay; "Looking through the past" (ICCVW 2023) |
+| Frame-centred keys | New twist (holds; the problem is now documented from three angles) | MEMIT-Merge (ACL Findings 2025); "Exposing the Illusion of Erasure" (2026); "On the Limitations of Rank-One Model Editing" (2026) |
+| MDL entity and relation reader | New in this form (unchanged) | MDL in NLP for segmentation and pattern extraction (survey: Galbrun, 2020); unsupervised relation discovery and OpenIE |
+| JEPA index of the store (cg26s) | Known idea in a new place | SciJEPA (2026): a JEPA-style predictor with an EMA target and no negatives used for document retrieval; "The JEPA Paradox in Language" (2026) on why deterministic latent prediction averages alternatives, which explains why the index drops names |
 
-   Each of these needs a second seed, the matching control and the held-out evaluation before it can be claimed.
+**Component ancestry.** The abstaining fast store descends from GRACE (Hartvigsen et al., 2022), a codebook of keys with deferral radii. The forgetting model is half-life regression (Settles and Meeder, 2016). Dream rehearsal descends from deep generative replay (Shin et al., 2017), LAMOL (Sun et al., 2020) and Self-Synthesized Rehearsal (Huang et al., 2024). The sleep phase should be read against Google's sleep framework (Behrouz, Hashemi, Javanmard and Mirrokni, 2026), which consolidates by distillation into newly unlocked low-rank experts with gradient-filtered dreams; their result suggests that adding capacity may be a cheaper way to stop forgetting than protecting shared weights, and Platypus's per-slot capacity is a partial version of that idea. The decay of sequential weight edits, which re-keying addresses, is studied by Gupta et al. (2024), Cheng et al. (2025) and Wen et al. (2025, retention of edited knowledge after fine-tuning), with null-space and side-memory editing in AlphaEdit, WISE and MEMOIR; key drift and key fidelity in editing are measured in the 2026 multi-hop study above, same-subject key collisions in MEMIT-Merge, and prompt-template interference in "Exposing the Illusion of Erasure". The closed-form edits build on ROME and MEMIT.
+
+**Already credited in the code, now also listed here:** SWIL (Saxena et al., 2022); time-weighted partners (Cai, 2016; Rashid, 2016); LeJEPA (Balestriero and LeCun, 2025), including its Proposition 1 on spectral codes; Gram Newton–Schulz (Dao lab, 2026); the gradient noise scale (McCandlish et al., 2018); the composition ceiling (Wang et al., 2024); holographic reduced representations and vector-symbolic architectures (Plate; Kanerva); truth-maintenance systems (Doyle, 1979; de Kleer).
+
+**The new claims are the least tested.** The JEPA selector has not yet been shown to give better dreams than random choices (the random-dream control on the GPU is still to run). Per-sleep re-keying held two-hop recall from the weights at 0.6–0.8 through three passes on the GPU, but on one seed and in the wording the system wrote. The handover released 193 memories and restored 10 on the GPU, on one seed, tested in written wordings only. Each needs a second seed, the matching control and held-out evaluation before it can be claimed. A natural baseline for the handover claim is Pan et al.'s adapter-release design.
 
 ## Why it exists
 
@@ -137,6 +141,75 @@ The slow network learns general skill, and only from real text or verified repla
 | Name index first, JEPA second | Searching the whole store, the JEPA picks same-genre text. Restricting candidates to memories that share a rare name with the cue brings recall; the JEPA then ranks them, and is trained against those same name-sharing alternatives (hard negatives). |
 
 ## Results
+
+**JEPA index on the GPU (cg26u, seed 1, visits 1-12 of 30, then stopped).** Training matched the builds without the index (post-train BPC at visit 11: 1.647 against 1.646 for cg26q); index sleeps cost about 100-300 s more once the store passes 150k sentences.
+
+| Visit (stored sentences, chains) | 1 (33k, 12) | 4 (119k, 46) | 7 (161k, 79) | 11 (182k, 117) | 12 (180k, 117) |
+|---|---|---|---|---|---|
+| Name lookup, top-1 | 0.58 | 0.43 | 0.19 | 0.10 | 0.17 |
+| Arm V (V-JEPA), top-1 | 0.00 | 0.48 | 0.57 | 0.47 | 0.46 |
+| Arm C (+ InfoNCE), top-1 | 0.92 | 0.67 | | 0.41 | 0.46 |
+| HYBRID V / C / G | 0.92 / 1.00 / 0.67 | 0.91 / 0.91 / 0.91 | 0.94 / - / - | 0.91 / 0.82 / **0.95** | 0.87 / 0.86 / **0.94** |
+| HYBRID, held-out wording V / C / G | 0.83 / 0.92 / 0.83 | 0.83 / 0.89 / 0.78 | | 0.60 / 0.55 / 0.76 | 0.60 / 0.64 / 0.62 |
+| One-hop: weights / retrieved / true sentence in context | 0.67 / 0.50 / 0.58 | 0.26 / 0.37 / 0.43 | 0.23 / 0.29 / 0.38 | 0.22 / 0.40 / 0.63 | 0.30 / 0.37 / 0.47 |
+| Two-hop by retrieval / random-bridge control | | 0.64 / 0.64 | 0.19 / 0.25 | **0.19 / 0.11** | **0.22 / 0.16** |
+
+The arms trained with the L1 alone (V, G) collapsed in the first sleeps (key spread 0.17-0.24 against about 0.7 locally) and recovered by visit 4; InfoNCE never collapsed, so cg26v adds it to the generic arm. At full scale the name lookup fails as names gather sentences, the generic trace with the name filter is the best index (0.94-0.95), and two-hop by retrieval beats a random bridge from visit 11. Routing on revisits: bytes 1.00, JEPA codes 0.50 (n 2). Byte classes in the GPU replay: space and punctuation 0.13-0.27 of the teacher KL against 0.20-0.43 of positions; on DM Mathematics digits carry 0.37 of it from 0.13 of positions (expected in arithmetic).
+
+**Why the in-context answers look weak (cg26v diagnostic, short local run).** Every candidate readout picks the name with the highest summed byte log-probability, which favours short names: in the local check the summed pick scored 0.05 (chance) where the per-byte mean scored 0.29, three wrong picks in four were shorter than the right name, and the stored "true" sentence held the exact fact every time. The GPU in-context figures above are therefore lower bounds; cg26v prints both scorings. Comparisons between builds are unaffected (all use the same scoring), but absolute recall in every candidate readout is probably understated.
+
+**JEPA trace readouts (cg26u, local five-domain harness, readouts only).** cg26u keeps the cg26s index (arm V) and trains two more encoders on the same store each sleep: arm C adds InfoNCE over the batch to the L1, and arm G is the *generic trace* - the names the store's own name finder marks are masked before encoding and kept as slots, so the key carries what is said and the slots carry who it is said about. The run with every cg26u readout on matched cg26s (mean forgetting −0.004, final BPC 2.072 in both; cg26t, whose index time still tripped the sleep budget, −0.008 / 2.077).
+
+| End of run (visit 10, 17.2k stored sentences, 34 chains) | Written wording top-1 | HYBRID (sentences naming A, ranked by the key) | HYBRID, held-out wording |
+|---|---|---|---|
+| Name lookup (most recent sentence naming A) | 0.65 | | |
+| Arm V (cg26s index) | 0.76 | 0.91 | 0.38 |
+| Arm C (V-JEPA + InfoNCE) | **0.85** | 0.91 | **0.41** |
+| Arm G (generic trace: names masked, ranked among the sentences whose slots hold A) | | **1.00** | 0.29 |
+
+The generic trace finds the right sentence every time once the name slots have narrowed the candidates, which is the split the toys pointed to: names identify, the name-free trace says what is said. Held-out wordings are still the weak point (0.29–0.41 with the name filter, 0.12–0.15 without). Training different sentences that name the same two names to predict each other's keys (`inf_jx_pair`) did not help (held-out top-1 0.12 with it, 0.15 without), so it stays off.
+
+**Replay signal by byte class (cg26u readout).** The Baseten note on on-policy self-distillation warns that a model taught by its own distributions can put most of its signal on style tokens. In a short closed-loop run (the full local harness gives real text in both passes, so the closed-loop replay where this readout sits runs only on the GPU and in closed-loop local runs) the teacher KL on space and punctuation stayed close to their share of positions (0.14–0.31 of the KL against 0.19–0.31 of positions; above it at one visit of five, 0.25 against 0.21), names carried slightly more than their share, and the top 10% of positions carried 0.33–0.36 of the KL: no sign of the style-token bias.
+
+**Routing by a JEPA trace (cg26u readout; routing itself unchanged).** Each visit's stored sentences are joined into 1 KB windows and routed to the nearest slot prototype by a byte profile, by the arm V codes and by both. In the run the byte profile matched the domain on every revisit (1.00 at 1 and 4 windows, novelty AUC 1.00); the in-package JEPA codes did not (0.42–0.44, novelty AUC 0.55), and adding them to the bytes made routing worse (0.57–0.60). In the routing toy (`tools/toy_jroute.py`, a JEPA trained on raw text of all five domains for 3,000 steps) the JEPA routed well with enough context (0.83 at 1 KB, 0.99 at 4 KB; novelty AUC 0.95 at 4 KB), bytes and JEPA together were best, and masking names cost accuracy. The index encoder is trained on short single sentences for 200 steps a sleep, which is the likely difference; routing stays on byte statistics.
+
+**Replay protection and rate toys (no effect on the package).** `tools/toy_opd.py` learns the five domains in the harness's visit order with a small byte model, protected only by its own dreams, at a matched rehearsal budget (two seeds):
+
+| Rehearsal | Final mean BPC | Mean forgetting | BPC right after first visits |
+|---|---|---|---|
+| None | 3.279 | +1.033 | 2.929 |
+| Stored dreams with their stored distributions (as Platypus) | **2.700** | **+0.299** | 3.027 |
+| On-policy: the student's own samples pulled to a pre-visit snapshot, reverse KL | 2.788 | +0.303 | 3.183 |
+| The same, forward KL | 2.792 | +0.314 | 3.142 |
+
+On-policy rehearsal protects as well as stored dreams but learns new domains less well and ends worse, so stored dreams stay. `tools/toy_jlr.py` sets the learning rate from JEPA novelty with JEPA-routed slots; two seeds:
+
+| Learning rate (Adam, same base rate) | Final mean BPC | Mean forgetting | BPC right after first visits |
+|---|---|---|---|
+| Constant | 3.234 | +0.992 | 2.924 |
+| × novelty of each batch | 3.264 | +1.026 | 2.907 |
+| The same multipliers shuffled (control) | 3.261 | +1.007 | 2.943 |
+| ÷ novelty (control) | 3.251 | +0.997 | 2.948 |
+| × own loss / its running mean (surprise) | 3.248 | +0.984 | 2.965 |
+| Falls with the routed slot's age | 3.199 | +1.038 | 2.725 |
+| **Per visit: ×2 if its first batches open a new JEPA slot, ×0.5 on a revisit** | **3.036** | **+0.856** | **2.664** |
+| The same schedule from the true domain labels | 3.013 | +0.850 | 2.661 |
+| Constant ×0.5 (control) | 3.346 | +0.833 | 3.318 |
+| Constant ×2 (control) | 3.247 | +1.085 | 2.659 |
+
+Batch-by-batch novelty does nothing; one decision per visit - learn fast in a new domain, slowly in a familiar one - gains 0.2 BPC, and the label-free JEPA slot detection is within noise of the true labels. Neither rate alone does it: constant ×2 learns new domains as fast but forgets most, constant ×0.5 forgets as little but learns new domains worst - the switch between them is what helps. The per-visit rate is a lab result, not yet in the package.
+
+**JEPA index of the store (cg26s, local five-domain harness, readouts only).** Each sleep a small byte-level text encoder (128 wide, 3 layers locally) is trained V-JEPA style on the sentences in the store, and every stored sentence is keyed by its moving-average target encoder; a question finds its sentence by the nearest key. The trunk is never trained by it: the run matched the run without it exactly (mean forgetting −0.004, final BPC 2.072, every readout identical).
+
+| Visit (stored sentences) | 1 (1.8k) | 3 (5.4k) | 5 | 8 | 10 (17.2k) |
+|---|---|---|---|---|---|
+| Index: true fact sentence top-1 / top-5 | 0.50 / 0.83 | 0.63 / 0.89 | 0.77 / 1.00 | 0.76 / 0.88 | **0.79 / 0.94** |
+| Name lookup (most recent sentence naming A) | 1.00 | 0.84 | 0.60 | 0.61 | 0.65 |
+| Index, held-out wording top-1 / top-5 | 0.00 / 0.00 | 0.00 / 0.00 | 0.03 / 0.07 | 0.12 / 0.15 | 0.15 / 0.15 |
+
+From visit 4 the index beats the name lookup, which falls as names gather several sentences. In a held-out wording it is weak: it is trained only to complete a sentence from its own start, so it is tied to the wording (cg26t adds paired-wording training and a name-free generic arm). The answer readouts (one-hop with the retrieved or the true sentence in context, two-hop by retrieval) cannot be read locally: the small local trunk does not use context, so all of them equal the weights-only answer; they are meant for the GPU, where in-context two-hop is 0.95. In toys (`tools/toy_jsel.py`) the same kind of index picked the right trace 0.88–0.98 against 0.05–0.35 by answer confidence, and two-hop by retrieval reached 0.41 against 0.02–0.03 with a random bridge.
+
+**Closed-loop store fix (cg26s).** In closed-loop passes the fast store reads the verified replays; that read used to need `nrem_res` > 0 or `cd_store_cap` > 0, so with the local settings the store stopped reading after pass 1 (8,850 sentences frozen, 17 of 58 chains found against 40 with real text). Fixed, the closed-loop store tracks the real-text one (36 of 58 by visit 8 in both). The GPU preset (`nrem_res` 256) was not affected.
 
 **Clean evaluation (cg26q, local five-domain harness).** An outside code review found that several readouts and training options let the planted benchmark leak in: REM subjects drawn from the probe facts, dream cues chosen by the benchmark's gold entities, JEPA batches balanced by the planted label, probes asked in the exact wording the system wrote its conclusions in, through the true domain's slot, with the bridge entity left out of the candidates. cg26q turns all of these off by default (`PLATYPUS_CLEAN=0` restores cg26p) and adds held-out readouts: two wordings never used for writing, the bridge among the candidates, and no slot given (the answer is scored over every slot in use).
 
@@ -523,6 +596,12 @@ Useful options:
 | `inf_cf_apply`, `inf_cf_center`, `inf_cf_scale`, `inf_cf_brake`, `inf_cf_budget`, `inf_cf_n` | Closed-form edits: on, frame directions removed from the keys (1), strength (0.5), brake per edit (0.015 BPC), cumulative budget (0.05 BPC), conclusions per edit (32) |
 | `inf_cf_maxgrow`, `inf_cf_min_others`, `inf_cf_decay` | Closed-form edits: accumulated edits kept within this multiple of the unedited matrix (1.5); live conclusions kept back from each edit to centre the keys on (16); share of the accumulated edits taken back each sleep (0, off) |
 | `inf_cf_resolve`, `inf_release_strict`, `inf_cf_layerdrift`, `inf_key_anchor` | Re-solve every edited conclusion with its current key at every sleep (on in cg26p); release only if the weights also answer in this many other wordings (1 in cg26p); per-block drift readout (on); key anchor strength in trunk replay (off) |
+| `inf_jx`, `inf_jx_steps`, `inf_jx_rows`, `inf_jx_dim`, `inf_jx_layers`, `inf_jx_len`, `inf_jx_lr`, `inf_jx_mom` | JEPA index (cg26s, off; on in `cg26s.env`): each sleep a byte-level encoder is trained V-JEPA style on the stored sentences (a cut sentence predicts what the moving-average target makes of the whole, L1) and every stored sentence is keyed; readouts only. Steps per sleep (200; 400 on the GPU), batch (64), width (128; 256), layers (3; 4), bytes per sentence (128), rate (5e-4), target momentum (0.996) |
+| `inf_jx_nce`, `inf_jx_n`, `inf_jx_every`, `inf_jx_pool` | JEPA index: InfoNCE weight added to the L1 (0), probe chains scored (60; 120), readout every N visits (1), most recent stored sentences keyed (200000) |
+| `inf_jx_arm_nce`, `inf_jx_gen`, `inf_jx_pair` | JEPA index arms (cg26u, off; on in `cg26u.env` except pairs): arm C, a second encoder with this InfoNCE weight added to the L1 (0; 0.25); arm G, the generic trace with the store's names masked and kept as slots (0; 1); paired-wording training, the share of each batch given to different sentences that name the same two names (0) |
+| `inf_jx_gen_nce`, `inf_jx_ctxdiag` | cg26v (off; on in `cg26v.env`): InfoNCE weight on the generic arm (0; 0.25); the CONTEXT DIAGNOSTIC of the answer readouts - summed against per-byte scoring, the planted fact sentence in context, whether the stored true sentence holds the fact, wrong picks shorter than the right name, two examples |
+| `inf_jx_route` | JEPA routing readout (cg26u, off; on in `cg26u.env`): each visit's stored sentences routed by bytes, by the index codes and by both, at 1 and 4 windows of 1 KB; routing itself unchanged |
+| `cd_klclass` | Replay signal by byte class (cg26u, off; 25 in `cg26u.env`): every Nth conduit call, the share of replay positions, teacher KL and byte loss on space and punctuation, digits, function words, names and other words, and the KL share of the top 10% of positions |
 | `inf_sup`, `inf_sup_lr_abs`, `inf_sup_steps`, `inf_sup_params`, `inf_sup_wgrad` | Merged-memory dreams (cg26r, off): each concluded chain's two premises are read separately into the delta-block memories, the memories are added, and the trunk is trained to answer the two-hop question from that superposed memory under its own brake; absolute rate, steps, `kv` to train only the key and value projections, gradient through the premise reads |
 | `inf_sup_chain`, `inf_sup_chain_mode`, `inf_sup_chain_tau` | Chaining loss for the merged-memory dreams: the value the A–B memory returns for A's question must match the key B produces as a subject; `nce` (contrastive among the batch's bridges) or `cos` |
 | `inf_kgx`, `inf_kgx_hold` | Held-out composition: every Nth chain is never concluded, and the end-of-run readout asks whether the weights answer it anyway |
@@ -693,6 +772,9 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
 - **5 November.** cg26q: clean evaluation after an outside code review. Oracle options off by default at no cost; held-out readouts show two-hop recall from the weights of 0.17 in new wordings (0.46 in the written wording) and 0.69 with the fast store.
 - **6 November.** cg26r: merged-memory dreams with a contrastive chaining loss, off by default, and the preset `cg26r_merged.env` for the GPU test of whether the weights can compose. Locally, training only the key and value projections keeps the phase within its brake and makes each memory point at the right next key (own-bridge retrieval 0.21 → 0.52), but the small trunk does not read names back from memory, so composition stays at 0.00 there.
+- **6–7 November.** cg26s: a JEPA index of the sentence store (readouts only) - from the fourth sleep it finds the fact sentence for a question better than the name lookup (0.79 against 0.65 top-1 at the end of the local run), but not yet in held-out wordings; the closed-loop store fix. Toys that night: question-time retrieval by a JEPA key and two-hop chaining by retrieval work, the weights do not compose two stored facts in any form tried, and masking the names before encoding gives a generic trace that two encoders agree on twice as well as on raw text. Merged-memory dreams and distillation added nothing to consolidation and stay off.
+- **7 November.** cg26u: two more JEPA index arms - with InfoNCE (top-1 0.85 against 0.76) and a generic name-free trace that, among the sentences naming the question's subject, finds the right one every time locally; a routing readout (in the package routing stays on bytes; in a toy a JEPA trained on raw text routes well from 4 KB of context); where the replay signal sits by byte class. Toys: on-policy rehearsal protects no better than stored dreams and learns less; a learning rate set once per visit from JEPA novelty (fast in a new domain, slow on a revisit) gains 0.2 BPC, as much as with the true labels.
+- **7 November.** cg26u on the GPU (12 of 30 visits): the JEPA index and its generic name-free trace find the fact sentence where the name lookup fails (hybrid 0.94-0.95 against lookup 0.10-0.17); two-hop by retrieval beats a random bridge from visit 11; the in-context answer readouts are held down by summed byte scoring, which favours short names. cg26v adds a diagnostic for that and InfoNCE on the generic arm; next GPU run: the strict closed loop with no hints.
 
 ## Contributing
 
@@ -775,6 +857,28 @@ Works this project draws on or compares itself with. The list is incomplete (see
 - Wang et al. (2024). [WISE: rethinking the knowledge memory for lifelong model editing of large language models](https://arxiv.org/abs/2405.14768). NeurIPS 2024.
 - MEMOIR (2025). [MEMOIR: lifelong model editing with minimal overwrite and informed retention for LLMs](https://arxiv.org/abs/2506.07899).
 - Meng, Bau, Andonian and Belinkov (2022). [Locating and editing factual associations in GPT](https://arxiv.org/abs/2202.05262) (ROME). NeurIPS 2022.
+
+**Closest systems and component ancestry** (added after a second and third outside pass over prior art)
+
+- Pan, Hahami, Siegelmann and Sompolinsky (2026). Complementary learning systems for continual episodic memory in large language models: per-episode gated LoRA adapters as a fast store, replay-consolidated into the base weights and then freed. bioRxiv 2026 (arXiv 2025).
+- Gutiérrez, Shu, Gu, Yasunaga and Su (2024). [HippoRAG: neurobiologically inspired long-term memory for large language models](https://arxiv.org/abs/2405.14831). NeurIPS 2024.
+- Guo et al. (2024). [LightRAG: simple and fast retrieval-augmented generation](https://arxiv.org/abs/2410.05779).
+- Edge et al. (2024). [From local to global: a graph RAG approach to query-focused summarization](https://arxiv.org/abs/2404.16130) (GraphRAG).
+- Hartvigsen et al. (2022). [Aging with GRACE: lifelong model editing with discrete key-value adaptors](https://arxiv.org/abs/2211.11031) (codebook with deferral radii).
+- BinPlay (binary latent autoencoder replay); Latent Space Memory Replay; "Looking through the past" (ICCVW 2023, latent matching of reconstructions) - latent and compressed replay, the nearest family to byte-exact verified replay.
+- "Forgetting is Not Erasure: transport keys" (2026) - interface drift between network stages as a cause of apparent forgetting.
+- Cheng et al. (2025) and Wen et al. (2025) - decay and retention of edited knowledge under further training.
+- "On the Limitations of Rank-One Model Editing in Multi-hop Questions" (2026) - key cosine across paraphrases, a call to mitigate representational drift.
+- MEMIT-Merge (ACL Findings 2025) - same-subject key collisions; "Exposing the Illusion of Erasure" (2026) - the prompt-template direction as interference.
+- MERS (2026) - replay-buffer selection by supervised and SimCLR embeddings; ER-JEPA (2026) - replay improving a JEPA.
+- Chen and Qi - PMI dataset valuation; Peer-Predictive Self-Training (PMI-weighted updates); "Not All Synthetic Data Is Yours to Learn From" (2026).
+- Galbrun (2020). [The minimum description length principle for pattern mining: a survey](https://arxiv.org/abs/2007.14009).
+- Saxena et al. (2022) - SWIL, similarity-weighted interleaved learning; Cai (2016) and Rashid (2016) - time-weighted partners; McCandlish, Kaplan, Amodei et al. (2018). [An empirical model of large-batch training](https://arxiv.org/abs/1812.06162) (gradient noise scale); Wang et al. (2024). [Grokked transformers are implicit reasoners](https://arxiv.org/abs/2405.15071) (the composition ceiling); Kanerva (2009). Hyperdimensional computing; Doyle (1979). A truth maintenance system; de Kleer (1986). An assumption-based TMS; Gram Newton–Schulz (Dao lab, 2026).
+
+**The JEPA index** (cg26s)
+
+- SciJEPA (2026). [Asymmetric within-document predictive learning for scientific document representation](https://arxiv.org/pdf/2608.28625) - an online encoder, predictor and EMA target with no negatives, used for retrieval; it trails a contrastive baseline unless regularised.
+- "The JEPA paradox in language: the geometry of linguistic alternatives" (2026). [arXiv 2607.23531](https://arxiv.org/pdf/2607.23531) - deterministic latent prediction averages the alternatives for a masked span.
 
 ## Licence
 

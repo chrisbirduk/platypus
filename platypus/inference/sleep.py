@@ -51,6 +51,9 @@ from platypus.inference.closed_form import (
 from platypus.inference.supmem import (
     _sup_dreams,
 )
+from platypus.inference.jindex import (
+    _jx_sleep,
+)
 
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     """timing wrapper: wall time of the whole sleep and of the linking step"""
@@ -87,6 +90,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
             except Exception as e9_: print(f"  [inference PLATONIC PROBE] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if int(getattr(cfg,'inf_cf_apply',0)): _cf_apply(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26l closed-form consolidation (kept under its brake)
         if float(getattr(cfg,'inf_sup',0))>0: _sup_dreams(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # MERGED-MEMORY DREAMS (inference.supmem, under their own brake)
+        if int(getattr(cfg,'inf_jx',0)): _jx_sleep(model,cfg,_inf_store(model))     # cg26s JEPA INDEX (inference.jindex): readouts only, the trunk is not trained
         if cai9_ is not None:                                                   # CAI TEST: after the whole sleep (inference, REM, writes, replay, closed-form edits)
             try:
                 td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); _cai_report(model,cfg,td9_,cai9_,_cai_score(model,cfg))
@@ -113,7 +117,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
                     print(f"  [inference MEMORY GUARD] peak {pk_:.1f} GB > {gq_:.0%} of {tot_:.0f} GB: next 2 sleeps lean (latent readouts off, CLS samples halved); caches dropped: {', '.join(dr_) or 'none'}",flush=True)
                 elif model.__dict__.get('_mem_tight'): model.__dict__['_mem_tight']-=1
             except Exception: pass
-        tb_=float(getattr(cfg,'inf_sleep_budget',0.0)); tt9_=__import__('time').time()-t0_
+        tb_=float(getattr(cfg,'inf_sleep_budget',0.0)); tt9_=__import__('time').time()-t0_-float(model.__dict__.pop('_jx_secs',0.0))   # (the JEPA index readouts do not count)
         if tb_>0:                                                               # cg26h SLEEP TIME BUDGET: a sleep longer than tb_ seconds skips the optional readouts next time
             if tt9_>tb_: model.__dict__['_skip_ro']=1; print(f"  [inference SLEEP BUDGET] sleep took {tt9_:.0f}s > {tb_:.0f}s: optional readouts skipped at the next sleep",flush=True)
             else: model.__dict__.pop('_skip_ro',None)

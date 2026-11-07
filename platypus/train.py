@@ -864,6 +864,12 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 if GPp_ and GPp_[0]>0: print(f"    [protected gate] {GPp_[0]} calls | overlap with the KL selection {GPp_[1]/GPp_[0]:.2f}, with the surprise selection {GPp_[2]/GPp_[0]:.2f} | context novelty of the kept pieces x{GPp_[3]/GPp_[0]:.2f} the mean")
                 if GKp_ and GKp_[0]>0: print(f"    [KL gate] {GKp_[0]} calls | overlap with the surprise selection {GKp_[1]/GKp_[0]:.2f} | share of the KL signal the surprise selection would keep {GKp_[2]/GKp_[0]:.2f}")
                 if GSp_ and GSp_[0]>0: print(f"    [diversity gate] {GSp_[0]} calls | overlap with the surprise selection {GSp_[1]/GSp_[0]:.2f} | gradient energy kept: diversity {GSp_[2]/GSp_[0]:.2f}, surprise would keep {GSp_[3]/GSp_[0]:.2f}")
+                KCp_=model.__dict__.pop('_klc',None)
+                if KCp_ and any(isinstance(k_,int) for k_ in KCp_):              # REPLAY SIGNAL BY BYTE CLASS (cd_klclass)
+                    tP_=sum(KCp_[k_][0] for k_ in range(5) if k_ in KCp_) or 1.0; tK_=sum(KCp_[k_][1] for k_ in range(5) if k_ in KCp_) or 1e-12; tE_=sum(KCp_[k_][2] for k_ in range(5) if k_ in KCp_) or 1e-12
+                    print("    [replay signal by byte class] share of teaching positions / of the teacher KL / of the byte loss: "
+                          +" | ".join(f"{_KLC_CLS[k_]} {KCp_[k_][0]/tP_:.2f} / {KCp_[k_][1]/tK_:.2f} / {KCp_[k_][2]/tE_:.2f}" for k_ in range(5) if k_ in KCp_)
+                          +(f" | the top 10% of positions carry {np.mean(KCp_['top']):.2f} of the KL" if KCp_.get('top') else "")+f" | {KCp_['calls']} conduit calls, every {int(cfg.cd_klclass)}th sampled",flush=True)
                 EVp_=model.__dict__.pop('_evid',None)
                 if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{', all positions' if cfg.cd_evid_all else ''})"+(' - INACTIVE: with cd_bytes_all the conduit trains next-byte targets on the verified bytes, the blend is not used' if (getattr(cfg,'cd_bytes_all',False) and float(getattr(cfg,'cd_bytes_w',1.0))>=1.0) else ''))   # FIX (review): readout said it trains
                 if st_: k_=max(1,st_[1]); print(f"    [conduit replay] KL {st_[0]/k_:.4f} | exact segments {st_[2]/k_:.2f} | tries/segment {st_[3]/k_:.2f} | true byte fidelity {st_[4]/k_:.2f} (diagnostic) | exactness test agrees with truth {st_[6]/k_:.3f} | eps {st_[5]/k_:.1e} over {st_[1]} steps"
@@ -1219,6 +1225,7 @@ _LATE = {
     '_CDR': 'platypus.losses',
     '_CDT': 'platypus.conduit',
     '_HINT': 'platypus.conduit',
+    '_KLC_CLS': 'platypus.losses',
     '_PRF': 'platypus.profiling',
     '_V97': 'platypus.conduit',
     '_cd_lrf': 'platypus.losses',
