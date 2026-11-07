@@ -117,7 +117,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
                     print(f"  [inference MEMORY GUARD] peak {pk_:.1f} GB > {gq_:.0%} of {tot_:.0f} GB: next 2 sleeps lean (latent readouts off, CLS samples halved); caches dropped: {', '.join(dr_) or 'none'}",flush=True)
                 elif model.__dict__.get('_mem_tight'): model.__dict__['_mem_tight']-=1
             except Exception: pass
-        tb_=float(getattr(cfg,'inf_sleep_budget',0.0)); tt9_=__import__('time').time()-t0_
+        tb_=float(getattr(cfg,'inf_sleep_budget',0.0)); tt9_=__import__('time').time()-t0_-float(model.__dict__.pop('_jx_secs',0.0))   # (the JEPA index readouts do not count)
         if tb_>0:                                                               # cg26h SLEEP TIME BUDGET: a sleep longer than tb_ seconds skips the optional readouts next time
             if tt9_>tb_: model.__dict__['_skip_ro']=1; print(f"  [inference SLEEP BUDGET] sleep took {tt9_:.0f}s > {tb_:.0f}s: optional readouts skipped at the next sleep",flush=True)
             else: model.__dict__.pop('_skip_ro',None)
