@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26r** (cg26q plus merged-memory dreams, off by default; `configs/presets/cg26r_merged.env` turns them on for the GPU test).
+Current build: **cg26s** (cg26r plus the JEPA index readouts and the closed-loop store fix, branch `jepa-index`; `configs/presets/cg26s.env` turns the readouts on for the GPU run). Merged-memory dreams stay off.
 
 ## A note on this documentation
 
@@ -141,6 +141,18 @@ The slow network learns general skill, and only from real text or verified repla
 | Name index first, JEPA second | Searching the whole store, the JEPA picks same-genre text. Restricting candidates to memories that share a rare name with the cue brings recall; the JEPA then ranks them, and is trained against those same name-sharing alternatives (hard negatives). |
 
 ## Results
+
+**JEPA index of the store (cg26s, local five-domain harness, readouts only).** Each sleep a small byte-level text encoder (128 wide, 3 layers locally) is trained V-JEPA style on the sentences in the store, and every stored sentence is keyed by its moving-average target encoder; a question finds its sentence by the nearest key. The trunk is never trained by it: the run matched the run without it exactly (mean forgetting −0.004, final BPC 2.072, every readout identical).
+
+| Visit (stored sentences) | 1 (1.8k) | 3 (5.4k) | 5 | 8 | 10 (17.2k) |
+|---|---|---|---|---|---|
+| Index: true fact sentence top-1 / top-5 | 0.50 / 0.83 | 0.63 / 0.89 | 0.77 / 1.00 | 0.76 / 0.88 | **0.79 / 0.94** |
+| Name lookup (most recent sentence naming A) | 1.00 | 0.84 | 0.60 | 0.61 | 0.65 |
+| Index, held-out wording top-1 / top-5 | 0.00 / 0.00 | 0.00 / 0.00 | 0.03 / 0.07 | 0.12 / 0.15 | 0.15 / 0.15 |
+
+From visit 4 the index beats the name lookup, which falls as names gather several sentences. In a held-out wording it is weak: it is trained only to complete a sentence from its own start, so it is tied to the wording (cg26t adds paired-wording training and a name-free generic arm). The answer readouts (one-hop with the retrieved or the true sentence in context, two-hop by retrieval) cannot be read locally: the small local trunk does not use context, so all of them equal the weights-only answer; they are meant for the GPU, where in-context two-hop is 0.95. In toys (`tools/toy_jsel.py`) the same kind of index picked the right trace 0.88–0.98 against 0.05–0.35 by answer confidence, and two-hop by retrieval reached 0.41 against 0.02–0.03 with a random bridge.
+
+**Closed-loop store fix (cg26s).** In closed-loop passes the fast store reads the verified replays; that read used to need `nrem_res` > 0 or `cd_store_cap` > 0, so with the local settings the store stopped reading after pass 1 (8,850 sentences frozen, 17 of 58 chains found against 40 with real text). Fixed, the closed-loop store tracks the real-text one (36 of 58 by visit 8 in both). The GPU preset (`nrem_res` 256) was not affected.
 
 **Clean evaluation (cg26q, local five-domain harness).** An outside code review found that several readouts and training options let the planted benchmark leak in: REM subjects drawn from the probe facts, dream cues chosen by the benchmark's gold entities, JEPA batches balanced by the planted label, probes asked in the exact wording the system wrote its conclusions in, through the true domain's slot, with the bridge entity left out of the candidates. cg26q turns all of these off by default (`PLATYPUS_CLEAN=0` restores cg26p) and adds held-out readouts: two wordings never used for writing, the bridge among the candidates, and no slot given (the answer is scored over every slot in use).
 
@@ -527,6 +539,8 @@ Useful options:
 | `inf_cf_apply`, `inf_cf_center`, `inf_cf_scale`, `inf_cf_brake`, `inf_cf_budget`, `inf_cf_n` | Closed-form edits: on, frame directions removed from the keys (1), strength (0.5), brake per edit (0.015 BPC), cumulative budget (0.05 BPC), conclusions per edit (32) |
 | `inf_cf_maxgrow`, `inf_cf_min_others`, `inf_cf_decay` | Closed-form edits: accumulated edits kept within this multiple of the unedited matrix (1.5); live conclusions kept back from each edit to centre the keys on (16); share of the accumulated edits taken back each sleep (0, off) |
 | `inf_cf_resolve`, `inf_release_strict`, `inf_cf_layerdrift`, `inf_key_anchor` | Re-solve every edited conclusion with its current key at every sleep (on in cg26p); release only if the weights also answer in this many other wordings (1 in cg26p); per-block drift readout (on); key anchor strength in trunk replay (off) |
+| `inf_jx`, `inf_jx_steps`, `inf_jx_rows`, `inf_jx_dim`, `inf_jx_layers`, `inf_jx_len`, `inf_jx_lr`, `inf_jx_mom` | JEPA index (cg26s, off; on in `cg26s.env`): each sleep a byte-level encoder is trained V-JEPA style on the stored sentences (a cut sentence predicts what the moving-average target makes of the whole, L1) and every stored sentence is keyed; readouts only. Steps per sleep (200; 400 on the GPU), batch (64), width (128; 256), layers (3; 4), bytes per sentence (128), rate (5e-4), target momentum (0.996) |
+| `inf_jx_nce`, `inf_jx_n`, `inf_jx_every`, `inf_jx_pool` | JEPA index: InfoNCE weight added to the L1 (0), probe chains scored (60; 120), readout every N visits (1), most recent stored sentences keyed (200000) |
 | `inf_sup`, `inf_sup_lr_abs`, `inf_sup_steps`, `inf_sup_params`, `inf_sup_wgrad` | Merged-memory dreams (cg26r, off): each concluded chain's two premises are read separately into the delta-block memories, the memories are added, and the trunk is trained to answer the two-hop question from that superposed memory under its own brake; absolute rate, steps, `kv` to train only the key and value projections, gradient through the premise reads |
 | `inf_sup_chain`, `inf_sup_chain_mode`, `inf_sup_chain_tau` | Chaining loss for the merged-memory dreams: the value the A–B memory returns for A's question must match the key B produces as a subject; `nce` (contrastive among the batch's bridges) or `cos` |
 | `inf_kgx`, `inf_kgx_hold` | Held-out composition: every Nth chain is never concluded, and the end-of-run readout asks whether the weights answer it anyway |
@@ -697,6 +711,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **5 November.** The single-file build split into the `platypus` package (42 modules) with identical behaviour on the local harness; `python -m platypus` runs it.
 - **5 November.** cg26q: clean evaluation after an outside code review. Oracle options off by default at no cost; held-out readouts show two-hop recall from the weights of 0.17 in new wordings (0.46 in the written wording) and 0.69 with the fast store.
 - **6 November.** cg26r: merged-memory dreams with a contrastive chaining loss, off by default, and the preset `cg26r_merged.env` for the GPU test of whether the weights can compose. Locally, training only the key and value projections keeps the phase within its brake and makes each memory point at the right next key (own-bridge retrieval 0.21 → 0.52), but the small trunk does not read names back from memory, so composition stays at 0.00 there.
+- **6–7 November.** cg26s: a JEPA index of the sentence store (readouts only) - from the fourth sleep it finds the fact sentence for a question better than the name lookup (0.79 against 0.65 top-1 at the end of the local run), but not yet in held-out wordings; the closed-loop store fix. Toys that night: question-time retrieval by a JEPA key and two-hop chaining by retrieval work, the weights do not compose two stored facts in any form tried, and masking the names before encoding gives a generic trace that two encoders agree on twice as well as on raw text. Merged-memory dreams and distillation added nothing to consolidation and stay off.
 
 ## Contributing
 
