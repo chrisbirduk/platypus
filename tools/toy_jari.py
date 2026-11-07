@@ -142,9 +142,9 @@ def evaluate(model, store, chains, rx, by):
     return {k: float(np.mean(v)) for k, v in R.items()}
 print(f"TOY AUDIT-SUPERVISED JEPA INDEX, {SEEDS} seeds, {STEPS} steps, arms {ARMS}", flush=True)
 RES = {a: [] for a in ARMS}
-for seed in range(SEEDS):
+for seed in range(int(os.environ.get('JARI_SEED0', 0)), int(os.environ.get('JARI_SEED0', 0)) + SEEDS):   # JARI_SEED0: resume at a later seed
     store, conc, held, rx, by = world(100 + seed)
-    if seed == 0: print(f"  store {len(store)} sentences ({len(conc)} concluded chains, {len(held)} held out); sentences naming an A: median {int(np.median([len(by[c['A']]) for c in held]))}", flush=True)
+    if seed == int(os.environ.get('JARI_SEED0', 0)): print(f"  store {len(store)} sentences ({len(conc)} concluded chains, {len(held)} held out); sentences naming an A: median {int(np.median([len(by[c['A']]) for c in held]))}", flush=True)
     for arm in ARMS:
         ta = time.time(); m = train(arm, store, conc, rx, by, seed); RES[arm].append((evaluate(m, store, held, rx, by), evaluate(m, store, conc, rx, by)))
         h, t = RES[arm][-1]
