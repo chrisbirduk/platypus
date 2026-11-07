@@ -178,8 +178,10 @@ On-policy rehearsal protects as well as stored dreams but learns new domains les
 | Falls with the routed slot's age | 3.199 | +1.038 | 2.725 |
 | **Per visit: ×2 if its first batches open a new JEPA slot, ×0.5 on a revisit** | **3.036** | **+0.856** | **2.664** |
 | The same schedule from the true domain labels | 3.013 | +0.850 | 2.661 |
+| Constant ×0.5 (control) | 3.346 | +0.833 | 3.318 |
+| Constant ×2 (control) | 3.247 | +1.085 | 2.659 |
 
-Batch-by-batch novelty does nothing; one decision per visit - learn fast in a new domain, slowly in a familiar one - gains 0.2 BPC, and the label-free JEPA slot detection is within noise of the true labels. Constant ×0.5 and ×2 controls are running; the per-visit rate is a lab result, not in the package.
+Batch-by-batch novelty does nothing; one decision per visit - learn fast in a new domain, slowly in a familiar one - gains 0.2 BPC, and the label-free JEPA slot detection is within noise of the true labels. Neither rate alone does it: constant ×2 learns new domains as fast but forgets most, constant ×0.5 forgets as little but learns new domains worst - the switch between them is what helps. The per-visit rate is a lab result, not yet in the package.
 
 **JEPA index of the store (cg26s, local five-domain harness, readouts only).** Each sleep a small byte-level text encoder (128 wide, 3 layers locally) is trained V-JEPA style on the sentences in the store, and every stored sentence is keyed by its moving-average target encoder; a question finds its sentence by the nearest key. The trunk is never trained by it: the run matched the run without it exactly (mean forgetting −0.004, final BPC 2.072, every readout identical).
 
