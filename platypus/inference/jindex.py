@@ -66,7 +66,8 @@ def _jx_arms(cfg):
     """the index arms: V (V-JEPA, as cg26s), C (+ InfoNCE), G (generic trace: names masked)"""
     A_ = [('V', float(getattr(cfg, 'inf_jx_nce', 0.0)), False)]
     if float(getattr(cfg, 'inf_jx_arm_nce', 0.0)) > 0: A_.append(('C', float(getattr(cfg, 'inf_jx_arm_nce', 0.0)), False))
-    if int(getattr(cfg, 'inf_jx_gen', 0)): A_.append(('G', float(getattr(cfg, 'inf_jx_nce', 0.0)), True))
+    if int(getattr(cfg, 'inf_jx_gen', 0)):                                     # G's InfoNCE weight: inf_jx_gen_nce if set (cg26v: on the GPU the
+        A_.append(('G', float(getattr(cfg, 'inf_jx_gen_nce', 0.0)) or float(getattr(cfg, 'inf_jx_nce', 0.0)), True))   #   L1-only arms collapsed in the first sleeps)
     return A_
 def _jx_pairs(S_, lv_):
     """PAIRED WORDINGS mined from the store: groups of different live sentences naming the same two names"""
@@ -137,10 +138,16 @@ def _jx_readout(model, cfg, S_, tag_):
     for i_ in lv_:
         for m_ in set(rx_.findall(S_['it'][i_]['s'])): NX_.setdefault(m_.decode('latin-1'), []).append(i_)
     has_ = lambda s_, a_, b_: {a_.encode('latin-1'), b_.encode('latin-1')} <= set(rx_.findall(s_))   # both names, as whole words
+    def lps_(ctx_, q_, cs_, sl_):
+        if isinstance(ctx_, bytes): ctx_ = ctx_.decode('latin-1', 'replace')
+        return _inf_lps(model, cfg, (ctx_ + ' ' + q_) if ctx_ else q_, cs_, sl_, False)
     def ans_(ctx_, q_, tgt_, oth_, sl_):
-        cs_ = [tgt_] + oth_; ps_ = (ctx_.decode('latin-1', 'replace') + ' ' + q_) if ctx_ else q_
-        return cs_[int(np.argmax(_inf_lps(model, cfg, ps_, cs_, sl_, False)))]
+        cs_ = [tgt_] + oth_; return cs_[int(np.argmax(lps_(ctx_, q_, cs_, sl_)))]
+    def ans2_(ctx_, q_, tgt_, oth_, sl_):                                     # CONTEXT DIAGNOSTIC: the pick by summed and by MEAN byte log-probability
+        cs_ = [tgt_] + oth_; lp_ = lps_(ctx_, q_, cs_, sl_); nb_ = np.array([len((c9_ + '.').encode('latin-1')) for c9_ in cs_])
+        return cs_[int(np.argmax(lp_))], cs_[int(np.argmax(lp_ / nb_))]
     R_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'name', 'hyb', 'ho_hyb', 'w', 'ret', 'true', 'ho_ret', 'h1', 'two', 'two_rand', 'two_true')}
+    DG_ = {k_: [] for k_ in ('w_m', 'true_m', 'fact', 'fact_m', 'true_is_fact', 'short', 'ex')} if int(getattr(cfg, 'inf_jx_ctxdiag', 0)) else None
     pos_ = {i_: j_ for j_, i_ in enumerate(lv_)}
     def hyb_(q_, A_):                                                         # HYBRID: the sentences that name A, ranked by the JEPA key
         c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
@@ -158,6 +165,13 @@ def _jx_readout(model, cfg, S_, tag_):
         R_['hyb'].append(hb_ is not None and has_(txt_(hb_), A_, B_))
         oth_ = list(rs_.choice([x_ for x_ in alln_ if x_ not in c_['names']], 19, replace=False))
         R_['w'].append(ans_(None, q_, B_, oth_, sl_) == B_); R_['ret'].append(ans_(txt_(top_[0]), q_, B_, oth_, sl_) == B_); R_['true'].append(ans_(tr1_, q_, B_, oth_, sl_) == B_)
+        if DG_ is not None:                                                   # which sentence is 'true', and does the scoring favour short names?
+            fs_ = c_['facts'][0][1]; ws_, wm_ = ans2_(None, q_, B_, oth_, sl_); ts_, tm_ = ans2_(tr1_, q_, B_, oth_, sl_); fs2_, fm_ = ans2_(fs_, q_, B_, oth_, sl_)
+            DG_['w_m'].append(wm_ == B_); DG_['true_m'].append(tm_ == B_); DG_['fact'].append(fs2_ == B_); DG_['fact_m'].append(fm_ == B_)
+            DG_['true_is_fact'].append(f"{A_} {r0_} {B_}".encode('latin-1') in tr1_)
+            for p9_ in (ts_, fs2_):
+                if p9_ != B_: DG_['short'].append(len(p9_) < len(B_))
+            if len(DG_['ex']) < 2: DG_['ex'].append(f"Q '{q_}' -> {B_} | true sentence '{tr1_[:90].decode('latin-1', 'replace')}' picked {ts_} (mean {tm_}) | fact '{fs_}' picked {fs2_} (mean {fm_})")
         if r0_ in _INF_PARA:
             qh_ = f"{A_} {_INF_PARA[r0_]} "; th_ = _jx_find(cfg, qh_, K_, dev_); R_['ho1'].append(has_(txt_(th_[0]), A_, B_)); R_['ho5'].append(any(has_(txt_(i_), A_, B_) for i_ in th_))
             R_['ho_ret'].append(ans_(txt_(th_[0]), qh_, B_, oth_, sl_) == B_)
@@ -171,7 +185,7 @@ def _jx_readout(model, cfg, S_, tag_):
         Bt_ = ans_(tr1_, q_, B_, oth_, sl_); R_['two_true'].append(ans_(tr2_, f"{Bt_} {r1_} ", C_, oth2_, sl2_) == C_)
     f_ = lambda k_: f"{np.mean(R_[k_]):.2f} (n {len(R_[k_])})" if R_[k_] else "- (n 0)"
     ex_ = []                                                                  # the other arms: retrieval only
-    for nm_, _, gen_ in _jx_arms(cfg)[1:]:
+    for nm_, nc9_, gen_ in _jx_arms(cfg)[1:]:
         _, K2_ = _jx_keys(cfg, S_, dev_, nm_); E_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'hyb', 'ho_hyb')}
         for c_ in ch_:
             A_, B_ = c_['names'][:2]; r0_ = c_['rels'][0]
@@ -184,8 +198,13 @@ def _jx_readout(model, cfg, S_, tag_):
                     E_[w_ + '1' if w_ else 'r1'].append(has_(txt_(tp_[0]), A_, B_)); E_[w_ + '5' if w_ else 'r5'].append(any(has_(txt_(i_), A_, B_) for i_ in tp_))
                 if c9_: E_['ho_hyb' if w_ else 'hyb'].append(has_(txt_(c9_[int((K2_[c9_] - p9_).abs().sum(-1).argmin())]), A_, B_))
         g9_ = lambda k_: f"{np.mean(E_[k_]):.2f} (n {len(E_[k_])})" if E_[k_] else "- (n 0)"
-        ex_.append(f"ARM {nm_} ({'GENERIC: names masked, ranked among the sentences whose slots hold A' if gen_ else 'V-JEPA + InfoNCE'}): "
+        ex_.append(f"ARM {nm_} ({('GENERIC: names masked' + (', + InfoNCE' if nc9_ > 0 else '') + ', ranked among the sentences whose slots hold A') if gen_ else 'V-JEPA + InfoNCE'}): "
                    + ("" if gen_ else f"top-1 {g9_('r1')}, top-5 {g9_('r5')}, held-out top-1 {g9_('ho1')}, top-5 {g9_('ho5')}, ") + f"HYBRID {g9_('hyb')}, held-out {g9_('ho_hyb')}")
+    if DG_ is not None and DG_['w_m']:
+        d9_ = lambda k_: f"{np.mean(DG_[k_]):.2f} (n {len(DG_[k_])})" if DG_[k_] else "- (n 0)"
+        ex_.append(f"CONTEXT DIAGNOSTIC (one-hop, 20 candidates; sum = summed byte log-probability as above, mean = per byte): weights only sum {f_('w')} / mean {d9_('w_m')} | "
+                   f"TRUE sentence sum {f_('true')} / mean {d9_('true_m')} (it holds the exact fact 'A r0 B' {d9_('true_is_fact')}) | the PLANTED FACT sentence itself sum {d9_('fact')} / mean {d9_('fact_m')} | "
+                   f"wrong picks with context that are SHORTER names than B {d9_('short')} | e.g. " + " || e.g. ".join(DG_['ex']))
     print(f"  [JEPA INDEX | {tag_}] {len(lv_)} stored sentences keyed | RETRIEVAL of the fact sentence for 'A r0 ': top-1 {f_('r1')}, top-5 {f_('r5')} | HELD-OUT wording top-1 {f_('ho1')}, top-5 {f_('ho5')} | "
           f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
