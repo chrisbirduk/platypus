@@ -6,7 +6,7 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-Current build: **cg26u** (cg26s plus more JEPA trace readouts: two more index encoder arms, one of them a generic name-free trace, routing by a JEPA trace and where the replay signal sits by byte class; branch `jepa-trace`; `configs/presets/cg26u.env` turns the readouts on for the GPU run). All are readouts: training, routing and the defaults are unchanged. Merged-memory dreams stay off.
+Current build: **cg26v** (cg26u plus a diagnostic of the index's answer readouts and InfoNCE on the generic-trace arm; branch `jepa-ctx`; `configs/presets/cg26v_nohints.env` is the next GPU run: the strict closed loop with no hints, with every readout on; `cg26v.env` keeps the hints). All index options are readouts: training, routing and the defaults are unchanged. Merged-memory dreams stay off.
 
 ## A note on this documentation
 
@@ -141,6 +141,22 @@ The slow network learns general skill, and only from real text or verified repla
 | Name index first, JEPA second | Searching the whole store, the JEPA picks same-genre text. Restricting candidates to memories that share a rare name with the cue brings recall; the JEPA then ranks them, and is trained against those same name-sharing alternatives (hard negatives). |
 
 ## Results
+
+**JEPA index on the GPU (cg26u, seed 1, visits 1-12 of 30, then stopped).** Training matched the builds without the index (post-train BPC at visit 11: 1.647 against 1.646 for cg26q); index sleeps cost about 100-300 s more once the store passes 150k sentences.
+
+| Visit (stored sentences, chains) | 1 (33k, 12) | 4 (119k, 46) | 7 (161k, 79) | 11 (182k, 117) | 12 (180k, 117) |
+|---|---|---|---|---|---|
+| Name lookup, top-1 | 0.58 | 0.43 | 0.19 | 0.10 | 0.17 |
+| Arm V (V-JEPA), top-1 | 0.00 | 0.48 | 0.57 | 0.47 | 0.46 |
+| Arm C (+ InfoNCE), top-1 | 0.92 | 0.67 | | 0.41 | 0.46 |
+| HYBRID V / C / G | 0.92 / 1.00 / 0.67 | 0.91 / 0.91 / 0.91 | 0.94 / - / - | 0.91 / 0.82 / **0.95** | 0.87 / 0.86 / **0.94** |
+| HYBRID, held-out wording V / C / G | 0.83 / 0.92 / 0.83 | 0.83 / 0.89 / 0.78 | | 0.60 / 0.55 / 0.76 | 0.60 / 0.64 / 0.62 |
+| One-hop: weights / retrieved / true sentence in context | 0.67 / 0.50 / 0.58 | 0.26 / 0.37 / 0.43 | 0.23 / 0.29 / 0.38 | 0.22 / 0.40 / 0.63 | 0.30 / 0.37 / 0.47 |
+| Two-hop by retrieval / random-bridge control | | 0.64 / 0.64 | 0.19 / 0.25 | **0.19 / 0.11** | **0.22 / 0.16** |
+
+The arms trained with the L1 alone (V, G) collapsed in the first sleeps (key spread 0.17-0.24 against about 0.7 locally) and recovered by visit 4; InfoNCE never collapsed, so cg26v adds it to the generic arm. At full scale the name lookup fails as names gather sentences, the generic trace with the name filter is the best index (0.94-0.95), and two-hop by retrieval beats a random bridge from visit 11. Routing on revisits: bytes 1.00, JEPA codes 0.50 (n 2). Byte classes in the GPU replay: space and punctuation 0.13-0.27 of the teacher KL against 0.20-0.43 of positions; on DM Mathematics digits carry 0.37 of it from 0.13 of positions (expected in arithmetic).
+
+**Why the in-context answers look weak (cg26v diagnostic, short local run).** Every candidate readout picks the name with the highest summed byte log-probability, which favours short names: in the local check the summed pick scored 0.05 (chance) where the per-byte mean scored 0.29, three wrong picks in four were shorter than the right name, and the stored "true" sentence held the exact fact every time. The GPU in-context figures above are therefore lower bounds; cg26v prints both scorings. Comparisons between builds are unaffected (all use the same scoring), but absolute recall in every candidate readout is probably understated.
 
 **JEPA trace readouts (cg26u, local five-domain harness, readouts only).** cg26u keeps the cg26s index (arm V) and trains two more encoders on the same store each sleep: arm C adds InfoNCE over the batch to the L1, and arm G is the *generic trace* - the names the store's own name finder marks are masked before encoding and kept as slots, so the key carries what is said and the slots carry who it is said about. The run with every cg26u readout on matched cg26s (mean forgetting −0.004, final BPC 2.072 in both; cg26t, whose index time still tripped the sleep budget, −0.008 / 2.077).
 
@@ -583,6 +599,7 @@ Useful options:
 | `inf_jx`, `inf_jx_steps`, `inf_jx_rows`, `inf_jx_dim`, `inf_jx_layers`, `inf_jx_len`, `inf_jx_lr`, `inf_jx_mom` | JEPA index (cg26s, off; on in `cg26s.env`): each sleep a byte-level encoder is trained V-JEPA style on the stored sentences (a cut sentence predicts what the moving-average target makes of the whole, L1) and every stored sentence is keyed; readouts only. Steps per sleep (200; 400 on the GPU), batch (64), width (128; 256), layers (3; 4), bytes per sentence (128), rate (5e-4), target momentum (0.996) |
 | `inf_jx_nce`, `inf_jx_n`, `inf_jx_every`, `inf_jx_pool` | JEPA index: InfoNCE weight added to the L1 (0), probe chains scored (60; 120), readout every N visits (1), most recent stored sentences keyed (200000) |
 | `inf_jx_arm_nce`, `inf_jx_gen`, `inf_jx_pair` | JEPA index arms (cg26u, off; on in `cg26u.env` except pairs): arm C, a second encoder with this InfoNCE weight added to the L1 (0; 0.25); arm G, the generic trace with the store's names masked and kept as slots (0; 1); paired-wording training, the share of each batch given to different sentences that name the same two names (0) |
+| `inf_jx_gen_nce`, `inf_jx_ctxdiag` | cg26v (off; on in `cg26v.env`): InfoNCE weight on the generic arm (0; 0.25); the CONTEXT DIAGNOSTIC of the answer readouts - summed against per-byte scoring, the planted fact sentence in context, whether the stored true sentence holds the fact, wrong picks shorter than the right name, two examples |
 | `inf_jx_route` | JEPA routing readout (cg26u, off; on in `cg26u.env`): each visit's stored sentences routed by bytes, by the index codes and by both, at 1 and 4 windows of 1 KB; routing itself unchanged |
 | `cd_klclass` | Replay signal by byte class (cg26u, off; 25 in `cg26u.env`): every Nth conduit call, the share of replay positions, teacher KL and byte loss on space and punctuation, digits, function words, names and other words, and the KL share of the top 10% of positions |
 | `inf_sup`, `inf_sup_lr_abs`, `inf_sup_steps`, `inf_sup_params`, `inf_sup_wgrad` | Merged-memory dreams (cg26r, off): each concluded chain's two premises are read separately into the delta-block memories, the memories are added, and the trunk is trained to answer the two-hop question from that superposed memory under its own brake; absolute rate, steps, `kv` to train only the key and value projections, gradient through the premise reads |
@@ -757,6 +774,7 @@ Headline milestones; details are in each build's `NAME` and in the commit logs.
 - **6 November.** cg26r: merged-memory dreams with a contrastive chaining loss, off by default, and the preset `cg26r_merged.env` for the GPU test of whether the weights can compose. Locally, training only the key and value projections keeps the phase within its brake and makes each memory point at the right next key (own-bridge retrieval 0.21 → 0.52), but the small trunk does not read names back from memory, so composition stays at 0.00 there.
 - **6–7 November.** cg26s: a JEPA index of the sentence store (readouts only) - from the fourth sleep it finds the fact sentence for a question better than the name lookup (0.79 against 0.65 top-1 at the end of the local run), but not yet in held-out wordings; the closed-loop store fix. Toys that night: question-time retrieval by a JEPA key and two-hop chaining by retrieval work, the weights do not compose two stored facts in any form tried, and masking the names before encoding gives a generic trace that two encoders agree on twice as well as on raw text. Merged-memory dreams and distillation added nothing to consolidation and stay off.
 - **7 November.** cg26u: two more JEPA index arms - with InfoNCE (top-1 0.85 against 0.76) and a generic name-free trace that, among the sentences naming the question's subject, finds the right one every time locally; a routing readout (in the package routing stays on bytes; in a toy a JEPA trained on raw text routes well from 4 KB of context); where the replay signal sits by byte class. Toys: on-policy rehearsal protects no better than stored dreams and learns less; a learning rate set once per visit from JEPA novelty (fast in a new domain, slow on a revisit) gains 0.2 BPC, as much as with the true labels.
+- **7 November.** cg26u on the GPU (12 of 30 visits): the JEPA index and its generic name-free trace find the fact sentence where the name lookup fails (hybrid 0.94-0.95 against lookup 0.10-0.17); two-hop by retrieval beats a random bridge from visit 11; the in-context answer readouts are held down by summed byte scoring, which favours short names. cg26v adds a diagnostic for that and InfoNCE on the generic arm; next GPU run: the strict closed loop with no hints.
 
 ## Contributing
 
