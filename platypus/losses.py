@@ -25,6 +25,9 @@ from platypus.conduit import (
     _cd_gen, _cd_hints, _cd_kdist, _cd_mis, _cd_rows, _cd_slices, _cd_vcheck, _cd_weights, _cdt, _fok_dom, _fok_thr_gpu, _nrem_loss, _prot_minv,
     _recon_loss_mark, _rp_tags, _rs_pick, _sig_update, _store_score, _uh_load, _uh_save,
 )
+from platypus.inference.units import (
+    _INF_NAME,
+)
 from platypus.inference.store import (
     bpc,
 )
@@ -130,6 +133,24 @@ def cd_loss(model,cfg,x,dom):
 def _cd_loss(model,cfg,x,dom):
     _MIS32['on']=bool(cfg.cd_mis32)
     return _cd_loss_(model,cfg,x,dom)
+_KLC_FUNC={b'the',b'of',b'and',b'to',b'a',b'in',b'is',b'was',b'that',b'for',b'on',b'with',b'as',b'by',b'it',b'at',b'from',b'an',b'be',b'this',b'are',b'or',b'were',b'which',b'not',b'his',b'her',b'he',b'she',b'they',b'their',b'its',b'have',b'has',b'had'}
+_KLC_CLS=('space and punctuation','digits','function words','names','other words')
+def _klc_note(KC_,bj_,klp_,ce_,wp_):
+    """accumulate the replay KL (teacher vs student) and the byte loss on the verified bytes, by the class of the target byte"""
+    import re as _re
+    Y_=bj_[:,1:].detach().cpu().numpy().astype('uint8'); K_=(klp_*wp_).detach().float().cpu().numpy(); E_=(ce_*wp_).detach().float().cpu().numpy(); W_=(wp_>0).detach().cpu().numpy()
+    cls_=np.zeros(Y_.shape,dtype=np.int8)
+    for i_ in range(Y_.shape[0]):
+        b_=Y_[i_].tobytes(); c_=np.full(len(b_),0,dtype=np.int8)
+        for j_,v_ in enumerate(b_):
+            if 48<=v_<=57: c_[j_]=1
+        for m_ in _re.finditer(rb'[A-Za-z]+',b_): c_[m_.start():m_.end()]=4 if m_.group(0).lower() not in _KLC_FUNC else 2
+        for m_ in _INF_NAME.finditer(b_): c_[m_.start():m_.end()]=3
+        cls_[i_]=c_
+    for k_ in range(5):
+        s_=cls_==k_; a_=KC_.setdefault(k_,[0.0,0.0,0.0]); a_[0]+=float((s_&W_).sum()); a_[1]+=float(K_[s_].sum()); a_[2]+=float(E_[s_].sum())
+    kv_=np.sort(K_[W_])[::-1]
+    if kv_.size: KC_.setdefault('top',[]).append(float(kv_[:max(1,kv_.size//10)].sum()/max(1e-12,kv_.sum())))
 def _cd_loss_(model,cfg,x,dom):
     """CONDUIT REPLAY (see cd_w): trace -> exactness-checked free replay (frozen teacher) -> KL into the student reading ordinary text."""
     ph_=model.__dict__.get('_sleep_phase')
@@ -442,6 +463,11 @@ def _cd_loss_(model,cfg,x,dom):
         tg2=torch.log(((1-lam_)*pt_+lam_*oh_).clamp_min(1e-12))
         EV_=model.__dict__.setdefault('_evid',[0.0,0.0]); EV_[0]+=(dis_.float()*wp_).sum().detach(); EV_[1]+=wp_.sum().detach()
     klp_=(tg2.exp()*(tg2-lp)).sum(-1)
+    if int(getattr(cfg,'cd_klclass',0))>0:                                     # REPLAY SIGNAL BY BYTE CLASS (readout): where the teacher KL and the byte loss sit
+        KC_=model.__dict__.setdefault('_klc',{'calls':0})                       #   (a self-distillation warning sign is the signal sitting on style tokens)
+        KC_['calls']+=1
+        if KC_['calls']%int(getattr(cfg,'cd_klclass',0))==1:
+            with torch.no_grad(): _klc_note(KC_,bj_,klp_,-(lp.gather(-1,bj_[:,1:,None]).squeeze(-1)),wp_)
     KLR_=0.0; NPR_=0
     if int(cfg.cd_reuse_k)>0 and cfg.cd_reuse_mode!='loop':                     # SPACED REPLAY REUSE
         RB_=model.__dict__.setdefault('_rbuf',{}); st_r=model.__dict__.get('_rstep',0)+1; model.__dict__['_rstep']=st_r
