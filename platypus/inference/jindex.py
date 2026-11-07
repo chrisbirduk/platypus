@@ -187,7 +187,12 @@ def _jx_readout(model, cfg, S_, tag_):
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
           f"true sentences {f_('two_true')} (chance 0.05)" + ("".join(" || " + e_ for e_ in ex_)), flush=True)
 def _jx_sleep(model, cfg, S_):
-    """inf_jx: train the index arms on the store, then the readouts (every inf_jx_every visits)"""
+    """inf_jx: train the index arms on the store, then the readouts (every inf_jx_every visits); its time is kept out of the sleep budget"""
+    t0_ = __import__('time').time()
+    try:
+        _jx_sleep_(model, cfg, S_)
+    finally: model.__dict__['_jx_secs'] = model.__dict__.get('_jx_secs', 0.0) + __import__('time').time() - t0_
+def _jx_sleep_(model, cfg, S_):
     try:
         r_ = _jx_train(model, cfg, S_); v_ = int(model.__dict__.get('_visit', 0))
         if r_ is None: print(f"  [JEPA INDEX] skipped: fewer stored sentences than one batch", flush=True); return
