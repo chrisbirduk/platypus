@@ -43,12 +43,13 @@ def _mem_hint_table(model,cfg):
     except Exception: return None
     it_=S_.get('it',[]); n_=len(it_); T_=model.__dict__.get('_mht')
     if T_ is not None and n_-T_[0]<200: return T_[1]
-    k_=int(getattr(cfg,'cd_mem_k',8)); D_={}
+    k_=int(getattr(cfg,'cd_mem_k',8)); k0_=int(getattr(cfg,'cd_mem_kmin',4)); D_={}
     for t_ in it_[-int(getattr(cfg,'cd_mem_n',4000)):]:
         if t_.get('gone'): continue
         s_=t_['s']
-        for i_ in range(0,len(s_)-k_):
-            D_[s_[i_:i_+k_]]=(s_,i_+k_)
+        for kk_ in range(k0_,k_+1):                                             # every anchor length from cd_mem_kmin to cd_mem_k (longest tried first at lookup)
+            for i_ in range(0,len(s_)-kk_):
+                D_[s_[i_:i_+kk_]]=(s_,i_+kk_)
     model.__dict__['_mht']=(n_,D_); return D_
 def _mem_hints(model,cfg,rows_,fl_,ban_,L):
     """for each row (verified prefix bytes, first wrong byte at fl_): the stored sentence whose k bytes match the k verified bytes before fl_
@@ -58,12 +59,15 @@ def _mem_hints(model,cfg,rows_,fl_,ban_,L):
     k_=int(getattr(cfg,'cd_mem_k',8)); h_=int(getattr(cfg,'cd_mem_hint',0)); R_=rows_.detach().to('cpu',torch.uint8).numpy(); F_=fl_.detach().cpu().numpy(); B_=ban_.detach().cpu().numpy()
     hm_=torch.zeros(R_.shape[0],L,dtype=torch.bool); hb_=torch.zeros(R_.shape[0],L,dtype=torch.long); nf_=0
     for r_ in range(R_.shape[0]):
-        f_=int(F_[r_]); _MH['tried']+=1
-        if f_<k_ or f_>=L: continue
-        e_=D_.get(bytes(R_[r_,f_-k_:f_]))
-        if e_ is None: continue
+        f_=int(F_[r_]); _MH['tried']+=1; e_=None
+        if f_>=L: continue
+        if f_<int(getattr(cfg,'cd_mem_kmin',4)): _MH['early']=_MH.get('early',0)+1; continue   # no anchor: the replay failed in its first bytes
+        for kk_ in range(min(k_,f_),int(getattr(cfg,'cd_mem_kmin',4))-1,-1):    # the longest verified anchor the store knows
+            e_=D_.get(bytes(R_[r_,f_-kk_:f_]))
+            if e_ is not None: break
+        if e_ is None: _MH['nomatch']=_MH.get('nomatch',0)+1; continue
         s_,j_=e_; c_=s_[j_:j_+h_]
-        if not c_ or c_[0]==int(B_[r_]): continue
+        if not c_ or c_[0]==int(B_[r_]): _MH['same']=_MH.get('same',0)+1; continue   # the store says the same wrong byte
         c_=c_[:L-f_]; hm_[r_,f_:f_+len(c_)]=True; hb_[r_,f_:f_+len(c_)]=torch.tensor(list(c_)); nf_+=1; _MH['bytes']+=len(c_)
     _MH['found']+=nf_; _MH['calls']+=1
     if nf_==0: return None
