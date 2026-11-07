@@ -74,7 +74,7 @@ def run(policy, seed):
     fin = bpc(m)
     return float(np.mean(fin)), float(np.mean([fin[i] - after[i] for i in range(len(DOMS))])), float(np.mean(list(first_after.values()))), time.time() - tw
 print(f"TOY ON-POLICY REHEARSAL, {SEEDS} seeds, {SPV} steps per visit, visit order {ORDER}; rehearsal {RB} rows x {RL} bytes per step, weight {RW}", flush=True)
-for policy in ['NONE', 'STORED', 'ONPOLICY', 'ONPOL-FWD']:
+for policy in os.environ.get('OPD_POLICIES', 'NONE,STORED,ONPOLICY,ONPOL-FWD').split(','):
     R = np.array([run(policy, s) for s in range(SEEDS)])
     print(f"  {policy:10s} | final mean BPC {R[:,0].mean():.3f} (seeds {' '.join(f'{v:.3f}' for v in R[:,0])}) | mean forgetting {R[:,1].mean():+.3f} "
           f"(seeds {' '.join(f'{v:+.3f}' for v in R[:,1])}) | plasticity (BPC after first visits) {R[:,2].mean():.3f} | {R[:,3].mean():.0f}s per run  ({time.time()-t0:.0f}s)", flush=True)

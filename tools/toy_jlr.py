@@ -87,7 +87,7 @@ def _route_acc(routed):
     return float(np.mean([lab[s] == d for d, s in routed])), len(lab)
 NOVMULT = {}
 RES = {}
-for policy in ['CONST', 'NOVEL', 'NOVEL-VISIT', 'SLOT-AGE', 'INVERSE', 'SURPRISE', 'SHUFFLED']:
+for policy in os.environ.get('JLR_POLICIES', 'CONST,NOVEL,NOVEL-VISIT,SLOT-AGE,INVERSE,SURPRISE,SHUFFLED').split(','):   # SHUFFLED needs NOVEL earlier in the list
     for seed in range(SEEDS):
         f, g, p, (ra, ns), ml = run(policy, seed)
         if policy == 'NOVEL': NOVMULT[seed] = ml
