@@ -372,8 +372,16 @@ def _inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,fil
         model.__dict__.setdefault('_xfer_rb',[]).append(int(b1_-b0_>eps_))
     return info_
 _SCORE_LEN={'n':0}                                                              # >0: score prompts up to this many bytes (CLS schema / ceiling only)
+def _score_norm(cfg,sm_,nb_,dec_=False,raw_=False):
+    """cg26w CANDIDATE SCORING: a candidate name's summed byte log-probability favours SHORT names when the model is unsure (cg26v diagnostic:
+    summed pick 0.05 = chance against 0.29 per byte; 3 wrong picks in 4 shorter than the right name). READOUTS score by the per-byte MEAN
+    (inf_score, 'mean'; 'sum' restores cg26v); DECISIONS (release, restore, freeing, rewriting, refresh order) keep their own scoring
+    (inf_score_dec, 'sum'), so training is unchanged. raw_: (summed, bytes scored)"""
+    if raw_: return sm_,nb_
+    m_=str(getattr(cfg,'inf_score_dec','sum') if dec_ else getattr(cfg,'inf_score','mean'))
+    return sm_/np.maximum(nb_,1.0) if m_=='mean' else sm_
 @torch.no_grad()
-def _inf_score1(model,cfg,prompt_,cands_,slot_,store_):
+def _inf_score1(model,cfg,prompt_,cands_,slot_,store_,dec_=False):
     if store_: prompt_=_cue_fix(cfg,prompt_)                                     # cg26m CUE REPAIR (question time, store on)
     seqs=[(prompt_+c_+'.').encode('latin-1')[-max(int(cfg.seq_len),_SCORE_LEN['n']):] for c_ in cands_]; L_=max(len(s_) for s_ in seqs); dev_=model.embed.weight.device
     X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
@@ -382,7 +390,8 @@ def _inf_score1(model,cfg,prompt_,cands_,slot_,store_):
     try: lp_=F.log_softmax(model(X_[:,:-1],slot_).float(),-1)
     finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM.pop('force',None); model.train(was_)
     n0_=[len(s_)-len((c_+'.').encode()) for s_,c_ in zip(seqs,cands_)]
-    return int(np.argmax([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))]))
+    sm_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+    return int(np.argmax(_score_norm(cfg,sm_,np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64),dec_)))
 @torch.no_grad()
 def _cai_score(model,cfg):
     """CAI TEST (readout only): per chain, two-hop 'So A is connected to' against 19 fixed distractors, from the weights alone and with the fast store"""
