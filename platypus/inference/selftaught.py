@@ -33,7 +33,7 @@ def _inf_free(model,cfg,S_,allc_,S_slot,Lr_,filler,fwd,feats,rs_,dev_,beta_):
     chk_=[live_[i_] for i_ in rs_.choice(len(live_),min(len(live_),int(getattr(cfg,'inf_xfer_check',64))),replace=False)]; fr_=0
     for c_ in chk_:
         oth_=[n_ for n_ in nm_ if n_ not in (c_['A'],c_['C'])]; cs_=[c_['C']]+list(rs_.choice(oth_,19,replace=False))
-        if _inf_score1(model,cfg,f"So {c_['A']} is connected to ",cs_,int(S_slot(c_['d'])),False)!=0: continue
+        if _inf_score1(model,cfg,f"So {c_['A']} is connected to ",cs_,int(S_slot(c_['d'])),False,dec_=True)!=0: continue   # (freeing decision)
         c_['freed']=True; fr_+=1
         for sn_ in [f"So {c_['A']} is connected to {c_['C']}.",f"So {c_['C']} is connected to {c_['A']}."]+([c_['s']] if c_['typed'] else []):
             it_=(sn_+' ').encode('latin-1')[:Lr_-2]; w_=bytearray(it_)+bytearray(filler(c_['d'])[:Lr_]); w_+=b' '*(Lr_-len(w_)); w_=w_[:Lr_]

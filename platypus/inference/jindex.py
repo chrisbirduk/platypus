@@ -138,16 +138,16 @@ def _jx_readout(model, cfg, S_, tag_):
     for i_ in lv_:
         for m_ in set(rx_.findall(S_['it'][i_]['s'])): NX_.setdefault(m_.decode('latin-1'), []).append(i_)
     has_ = lambda s_, a_, b_: {a_.encode('latin-1'), b_.encode('latin-1')} <= set(rx_.findall(s_))   # both names, as whole words
-    def lps_(ctx_, q_, cs_, sl_):
+    def lps_(ctx_, q_, cs_, sl_, raw_=False):
         if isinstance(ctx_, bytes): ctx_ = ctx_.decode('latin-1', 'replace')
-        return _inf_lps(model, cfg, (ctx_ + ' ' + q_) if ctx_ else q_, cs_, sl_, False)
-    def ans_(ctx_, q_, tgt_, oth_, sl_):
+        return _inf_lps(model, cfg, (ctx_ + ' ' + q_) if ctx_ else q_, cs_, sl_, False, raw_=raw_)
+    def ans_(ctx_, q_, tgt_, oth_, sl_):                                      # (scored as every readout: inf_score, per-byte mean since cg26w)
         cs_ = [tgt_] + oth_; return cs_[int(np.argmax(lps_(ctx_, q_, cs_, sl_)))]
     def ans2_(ctx_, q_, tgt_, oth_, sl_):                                     # CONTEXT DIAGNOSTIC: the pick by summed and by MEAN byte log-probability
-        cs_ = [tgt_] + oth_; lp_ = lps_(ctx_, q_, cs_, sl_); nb_ = np.array([len((c9_ + '.').encode('latin-1')) for c9_ in cs_])
+        cs_ = [tgt_] + oth_; lp_, nb_ = lps_(ctx_, q_, cs_, sl_, True)
         return cs_[int(np.argmax(lp_))], cs_[int(np.argmax(lp_ / nb_))]
     R_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'name', 'hyb', 'ho_hyb', 'w', 'ret', 'true', 'ho_ret', 'h1', 'two', 'two_rand', 'two_true')}
-    DG_ = {k_: [] for k_ in ('w_m', 'true_m', 'fact', 'fact_m', 'true_is_fact', 'short', 'ex')} if int(getattr(cfg, 'inf_jx_ctxdiag', 0)) else None
+    DG_ = {k_: [] for k_ in ('w_s', 'true_s', 'w_m', 'true_m', 'fact', 'fact_m', 'true_is_fact', 'short', 'ex')} if int(getattr(cfg, 'inf_jx_ctxdiag', 0)) else None
     pos_ = {i_: j_ for j_, i_ in enumerate(lv_)}
     def hyb_(q_, A_):                                                         # HYBRID: the sentences that name A, ranked by the JEPA key
         c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
@@ -167,7 +167,7 @@ def _jx_readout(model, cfg, S_, tag_):
         R_['w'].append(ans_(None, q_, B_, oth_, sl_) == B_); R_['ret'].append(ans_(txt_(top_[0]), q_, B_, oth_, sl_) == B_); R_['true'].append(ans_(tr1_, q_, B_, oth_, sl_) == B_)
         if DG_ is not None:                                                   # which sentence is 'true', and does the scoring favour short names?
             fs_ = c_['facts'][0][1]; ws_, wm_ = ans2_(None, q_, B_, oth_, sl_); ts_, tm_ = ans2_(tr1_, q_, B_, oth_, sl_); fs2_, fm_ = ans2_(fs_, q_, B_, oth_, sl_)
-            DG_['w_m'].append(wm_ == B_); DG_['true_m'].append(tm_ == B_); DG_['fact'].append(fs2_ == B_); DG_['fact_m'].append(fm_ == B_)
+            DG_['w_s'].append(ws_ == B_); DG_['true_s'].append(ts_ == B_); DG_['w_m'].append(wm_ == B_); DG_['true_m'].append(tm_ == B_); DG_['fact'].append(fs2_ == B_); DG_['fact_m'].append(fm_ == B_)
             DG_['true_is_fact'].append(f"{A_} {r0_} {B_}".encode('latin-1') in tr1_)
             for p9_ in (ts_, fs2_):
                 if p9_ != B_: DG_['short'].append(len(p9_) < len(B_))
@@ -202,8 +202,8 @@ def _jx_readout(model, cfg, S_, tag_):
                    + ("" if gen_ else f"top-1 {g9_('r1')}, top-5 {g9_('r5')}, held-out top-1 {g9_('ho1')}, top-5 {g9_('ho5')}, ") + f"HYBRID {g9_('hyb')}, held-out {g9_('ho_hyb')}")
     if DG_ is not None and DG_['w_m']:
         d9_ = lambda k_: f"{np.mean(DG_[k_]):.2f} (n {len(DG_[k_])})" if DG_[k_] else "- (n 0)"
-        ex_.append(f"CONTEXT DIAGNOSTIC (one-hop, 20 candidates; sum = summed byte log-probability as above, mean = per byte): weights only sum {f_('w')} / mean {d9_('w_m')} | "
-                   f"TRUE sentence sum {f_('true')} / mean {d9_('true_m')} (it holds the exact fact 'A r0 B' {d9_('true_is_fact')}) | the PLANTED FACT sentence itself sum {d9_('fact')} / mean {d9_('fact_m')} | "
+        ex_.append(f"CONTEXT DIAGNOSTIC (one-hop, 20 candidates; sum = summed byte log-probability, mean = per byte): weights only sum {d9_('w_s')} / mean {d9_('w_m')} | "
+                   f"TRUE sentence sum {d9_('true_s')} / mean {d9_('true_m')} (it holds the exact fact 'A r0 B' {d9_('true_is_fact')}) | the PLANTED FACT sentence itself sum {d9_('fact')} / mean {d9_('fact_m')} | "
                    f"wrong picks with context that are SHORTER names than B {d9_('short')} | e.g. " + " || e.g. ".join(DG_['ex']))
     print(f"  [JEPA INDEX | {tag_}] {len(lv_)} stored sentences keyed | RETRIEVAL of the fact sentence for 'A r0 ': top-1 {f_('r1')}, top-5 {f_('r5')} | HELD-OUT wording top-1 {f_('ho1')}, top-5 {f_('ho5')} | "
           f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "

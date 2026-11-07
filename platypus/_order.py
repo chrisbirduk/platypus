@@ -555,6 +555,7 @@ ORDER = (
     ('inference.readouts', '_inf_conc_row'),
     ('inference.readouts', '_inf_xfer'),
     ('inference.readouts', '_SCORE_LEN'),
+    ('inference.readouts', '_score_norm'),
     ('inference.readouts', '_inf_score1'),
     ('inference.readouts', '_cai_score'),
     ('inference.readouts', '_cai_report'),

@@ -215,7 +215,7 @@ def _inf_eval1(model,cfg,S_,tag):
         _inf_abstain_sources(S_,cr_ok_,tag)
     if _INF.get('corr') and int(getattr(cfg,'inf_eval_hard',0)): print("  [inference eval | store activity] mean max |logit correction| per probe position: "+" | ".join(f"{k_} {v_:.3f}" for k_,v_ in act_.items()),flush=True)
     return res
-def _inf_lps(model,cfg,prompt_,cands_,slot_,store_):
+def _inf_lps(model,cfg,prompt_,cands_,slot_,store_,dec_=False,raw_=False):
     """cg26g: summed log-probability of each candidate completion (as _inf_score1, which returns only the argmax)"""
     seqs=[(prompt_+c_+'.').encode('latin-1')[-max(int(cfg.seq_len),_SCORE_LEN['n']):] for c_ in cands_]; L_=max(len(s_) for s_ in seqs); dev_=model.embed.weight.device
     X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
@@ -228,7 +228,8 @@ def _inf_lps(model,cfg,prompt_,cands_,slot_,store_):
         if f0_=='__none__': _INFM.pop('force',None)
         else: _INFM['force']=f0_
     n0_=[len(s_)-len((c_+'.').encode()) for s_,c_ in zip(seqs,cands_)]
-    return np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+    sm_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+    return _score_norm(cfg,sm_,np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64),dec_,raw_)
 def _cls_measure(model,cfg,S_slot):
     """cg26g CLS MEASUREMENT, every sleep whatever the dream mode (so the no-replay and random-dream controls report the same numbers):
     TEMPORAL GRADIENT on an unbiased random sample - two-hop with the store OFF vs ON by age of the conclusion (visits since first seen);
@@ -247,7 +248,7 @@ def _cls_measure(model,cfg,S_slot):
     def sc_(c_,on_):
         o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
         if len(o_)<4: return None
-        lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),on_)
+        lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),on_,dec_=True)   # (release / restore decision)
         return bool(int(np.argmax(lp_))==0), float(lp_[0]-np.max(lp_[1:]))
     bk_={'this visit':[],'1 back':[],'2-3 back':[],'4+ back':[]}
     for c_ in lv_:
@@ -322,7 +323,7 @@ def _cls_measure(model,cfg,S_slot):
             if g_['delv']>=vis_: continue                                       # GHOST READOUT: deleted conclusions, store off - still answered from the weights alone?
             o_=[x_ for x_ in Cp_ if x_!=g_['C']]; rs_.shuffle(o_)
             if len(o_)<4: continue
-            lp_=_inf_lps(model,cfg,f"So {g_['A']} is connected to ",[g_['C']]+o_[:9],int(S_slot(g_['d'])),False); g_['lt']=vis_; a9_=vis_-g_['delv']
+            lp_=_inf_lps(model,cfg,f"So {g_['A']} is connected to ",[g_['C']]+o_[:9],int(S_slot(g_['d'])),False,dec_=True); g_['lt']=vis_; a9_=vis_-g_['delv']
             gr_.setdefault('1' if a9_<=1 else '2-3' if a9_<=3 else '4+',[]).append(float(int(np.argmax(lp_))==0))
             g_['fl']=0 if int(np.argmax(lp_))==0 else g_.get('fl',0)+1
         K9_=int(getattr(cfg,'inf_ghost_reinstate',0)); nri_=0; nsd_=0
@@ -496,9 +497,9 @@ def _rem_exam(model,cfg,S_,S_slot):
             cd_=[C_]+o_[:9]                                                     # FIX: ranked against stored conclusion ends only - the cortex's own greedy
             st_['gknown']=st_.get('gknown',0)+int(bool(g0_) and g0_!=C_ and g0_ in Cset_)   #   answer always wins its own ranking (local: 14 of 14 'wrong' by 8-16 nats)
             if len(cd_)<5: continue
-            lo_=_inf_lps(model,cfg,pr_,cd_,sl_,False); ln_=_inf_lps(model,cfg,pr_,cd_,sl_,True)
+            lo_=_inf_lps(model,cfg,pr_,cd_,sl_,False,dec_=True); ln_=_inf_lps(model,cfg,pr_,cd_,sl_,True,dec_=True)   # (already PMI-corrected below; may steer REM)
             k0_=int(np.argmax(lo_)); mo_=float(lo_[0]-np.max(lo_[1:]))
-            pm_=lo_-_inf_lps(model,cfg,"So Someone is connected to ",cd_,sl_,False)   # FIX: specific to the cue (pointwise mutual information) - summed log-probabilities
+            pm_=lo_-_inf_lps(model,cfg,"So Someone is connected to ",cd_,sl_,False,dec_=True)   # FIX: specific to the cue (pointwise mutual information) - summed log-probabilities
             j9_=1+int(np.argmax(pm_[1:])); top_=cd_[k0_]                         #   of different names mostly reflect their length and frequency (local: 14 of 14 'wrong')
             st_['pmi']=st_.get('pmi',0.0)+float(pm_[0])
             cat_='right' if (k0_==0 and mo_>=mg_ and g0_==C_) else 'wrong' if (float(pm_[j9_]-pm_[0])>=mg_ and float(pm_[j9_])>=mg_) else 'unsure'
@@ -605,6 +606,7 @@ def _rem_analogy(model,cfg,S_,S_slot):
 _LATE = {
     '_INF_PARA': 'platypus.inference.qtime',
     '_SCORE_LEN': 'platypus.inference.readouts',
+    '_score_norm': 'platypus.inference.readouts',
     '_compact': 'platypus.inference.selftaught',
     '_hl_model': 'platypus.inference.decay',
     '_hl_x': 'platypus.inference.decay',

@@ -570,13 +570,13 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             if c_.get('rel_pending') and not c_.get('released') and not c_.get('freed'):
                 o_=[x_ for x_ in Cq_ if x_!=c_['C']]; rq_.shuffle(o_); ok_=False   # FIX (review): re-tested NOW, after the visit of training since the decision
                 if len(o_)>=4:
-                    lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),False); ok_=bool(int(np.argmax(lp_))==0 and lp_[0]-np.max(lp_[1:])>=float(getattr(cfg,'inf_release_margin',1.0)))
+                    lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),False,dec_=True); ok_=bool(int(np.argmax(lp_))==0 and lp_[0]-np.max(lp_[1:])>=float(getattr(cfg,'inf_release_margin',1.0)))
                 c_.pop('rel_pending',None)
                 srl9_=int(getattr(cfg,'inf_release_strict',0))
                 if ok_ and srl9_>0 and len(o_)>=4:                              # STRICTER RELEASE: the weights must also answer in srl9_ of the other wordings
                     nw9_=0
                     for pw9_ in _CF_VARY:
-                        lw9_=_inf_lps(model,cfg,pw9_.format(A=c_['A']),[c_['C']]+o_[:9],int(S_slot(c_['d'])),False); nw9_+=int(int(np.argmax(lw9_))==0)
+                        lw9_=_inf_lps(model,cfg,pw9_.format(A=c_['A']),[c_['C']]+o_[:9],int(S_slot(c_['d'])),False,dec_=True); nw9_+=int(int(np.argmax(lw9_))==0)
                     if nw9_<srl9_: ok_=False; st_['strict']=st_.get('strict',0)+1
                 if not ok_: ncx_+=1; continue
                 _inf_conc_fade(c_,S_slot,Lr_,filler,feats,dev_,beta_); c_['released']=True; c_['gist']=True; c_['relv']=vis2_; nr_+=1
@@ -614,7 +614,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
         if old_ and len(nm_)>=25:
             for c_ in [old_[i_] for i_ in rs_.choice(len(old_),min(len(old_),nmt_),replace=False)]:
                 oth_=[n_ for n_ in nm_ if n_ not in (c_['A'],c_['C'])]; cs_=[c_['C']]+list(rs_.choice(oth_,19,replace=False))
-                ok_=_inf_score1(model,cfg,f"So {c_['A']} is connected to ",cs_,int(S_slot(c_['d'])),True)==0; ck_.append(ok_)
+                ok_=_inf_score1(model,cfg,f"So {c_['A']} is connected to ",cs_,int(S_slot(c_['d'])),True,dec_=True)==0; ck_.append(ok_)
                 if not ok_: c_['n']=0; fail_+=1
         ainfo_+=f" | MAINTENANCE: {fail_} of {len(ck_)} stored conclusions no longer recalled (store recall {np.mean(ck_) if ck_ else float('nan'):.2f}) -> rewritten first"
     rc_=[];ra_=[]; wn_=0

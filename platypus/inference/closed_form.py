@@ -45,12 +45,12 @@ def _ws_bpc(model,cfg,vals,t,ts,olds_):
     nb_=int(cfg.pu_cons_eval) or 4; sk_=int(getattr(cfg,'brake_eval_skip',0))
     b_=bpc(model,vals[t],ts,n=nb_,skip=sk_); o_=float(np.mean([bpc(model,vals[d_],s_,n=nb_,skip=sk_) for d_,s_ in olds_])) if olds_ else float('nan')
     return b_,o_
-def _ws_twohop(model,cfg,L_,Cp_,S_slot,rs_,pt_="So {A} is connected to "):
+def _ws_twohop(model,cfg,L_,Cp_,S_slot,rs_,pt_="So {A} is connected to ",dec_=False):
     ok_=[]
     for c_ in L_:
         o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
         if len(o_)<4: continue
-        lp_=_inf_lps(model,cfg,pt_.format(A=c_['A']),[c_['C']]+o_[:9],int(S_slot(c_['d'])),False); ok_.append(float(int(np.argmax(lp_))==0))
+        lp_=_inf_lps(model,cfg,pt_.format(A=c_['A']),[c_['C']]+o_[:9],int(S_slot(c_['d'])),False,dec_=dec_); ok_.append(float(int(np.argmax(lp_))==0))
     return float(np.mean(ok_)) if ok_ else float('nan')
 _CF_VARY=("{A} has a connection with ","One of the people connected to {A} is ")
 @torch.no_grad()
@@ -146,7 +146,7 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             ed9_=sorted([c_ for c_ in lv_ if c_.get('cfe') is not None],key=lambda c_: int(c_.get('cfr',c_['cfe'])))[:3*ro9_]
             if ed9_:
                 rm9_=str(getattr(cfg,'inf_cf_refresh_mode','weak'))
-                sc9_=[(tw_([c_]),i_) for i_,c_ in enumerate(ed9_)]
+                sc9_=[(_ws_twohop(model,cfg,[c_],Cp_,S_slot,np.random.RandomState(3),dec_=True),i_) for i_,c_ in enumerate(ed9_)]   # (refresh order: a decision)
                 if rm9_=='weak': sc9_.sort()                                 # 'weak': the weakest of the least recently fitted; 'old': simply the least recently fitted
                 RF_=[ed9_[i_] for _,i_ in sc9_[:ro9_]]
                 rinfo_=f" | REFRESH ({rm9_}): {len(RF_)} earlier edited conclusions re-fitted ({'weakest of the '+str(len(ed9_))+' ' if rm9_=='weak' else ''}least recently fitted; weights-only before {sum(v_ for v_,_ in sc9_[:ro9_])/max(1,len(RF_)):.2f})"
