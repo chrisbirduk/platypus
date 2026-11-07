@@ -322,7 +322,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             model.__dict__['_dsm']=1.0; _ds_t=0.0
             if _ds_on: xh_,yh_=get(); model.__dict__['_dsH']=(xh_,yh_); model.__dict__['_dsS']=[]; model.__dict__['_dsM']=[]; model.__dict__['_dsJ']=[]
         x,y=get()
-        if cfg.inf_on and float(model.__dict__.get('_real_w',1.0))>0: inf_store_add(model,cfg,x,int(model.__dict__.get('_cur_dom',dom_id)))   # cg20 store
+        if cfg.inf_on and (float(model.__dict__.get('_real_w',1.0))>0 or int(getattr(cfg,'cd_store_text',0))): inf_store_add(model,cfg,x,int(model.__dict__.get('_cur_dom',dom_id)))   # cg20 store (cg26z cd_store_text: the store - the hippocampus - also reads the text in closed-loop passes; the trunk still learns only from verified replays)
         if cfg.nrem_real and float(model.__dict__.get('_real_w',1.0))>0:            # nrem_real DIAGNOSTIC: keep random pass-1 rows per domain
             with torch.no_grad():
                 P1_=model.__dict__.setdefault('_p1win',{}); td1_=int(model.__dict__.get('_cur_dom',dom_id)); E1_=P1_.setdefault(td1_,{'r':[],'seen':0})
@@ -874,6 +874,8 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{', all positions' if cfg.cd_evid_all else ''})"+(' - INACTIVE: with cd_bytes_all the conduit trains next-byte targets on the verified bytes, the blend is not used' if (getattr(cfg,'cd_bytes_all',False) and float(getattr(cfg,'cd_bytes_w',1.0))>=1.0) else ''))   # FIX (review): readout said it trains
                 if st_: k_=max(1,st_[1]); print(f"    [conduit replay] KL {st_[0]/k_:.4f} | exact segments {st_[2]/k_:.2f} | tries/segment {st_[3]/k_:.2f} | true byte fidelity {st_[4]/k_:.2f} (diagnostic) | exactness test agrees with truth {st_[6]/k_:.3f} | eps {st_[5]/k_:.1e} over {st_[1]} steps"
                                +(f" | replay training on exact replays {st_[7]/max(1,st_[8])/LOG2:.4f} BPC ({int(st_[8])} steps)" if len(st_)>8 and st_[8] else "")+_rs_msg())
+                MHp_=_MH
+                if MHp_['calls']: print(f"    [memory hints] {MHp_['found']} of {MHp_['tried']} repairs got bytes from the fast store ({MHp_['bytes']} bytes, k {int(getattr(cfg,'cd_mem_k',8))}, up to {int(getattr(cfg,'cd_mem_hint',0))} per repair); {MHp_['calls']} calls",flush=True); MHp_.update(calls=0,tried=0,found=0,bytes=0)
                 if _HINT['calls']:                                                 # cg12b hints
                     tb_=max(1,_HINT['tot']); wr_=float(_HINT['wrong'])
                     print(f"    [hints] {float(_HINT['bytes'])/tb_:.3f} of replayed bytes hinted ({float(_HINT['pieces'])/(tb_/max(1,int(cfg.cd_seg))):.2f} of pieces) | "
@@ -1226,6 +1228,7 @@ _LATE = {
     '_CDT': 'platypus.conduit',
     '_HINT': 'platypus.conduit',
     '_KLC_CLS': 'platypus.losses',
+    '_MH': 'platypus.losses',
     '_PRF': 'platypus.profiling',
     '_V97': 'platypus.conduit',
     '_cd_lrf': 'platypus.losses',

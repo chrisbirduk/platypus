@@ -32,8 +32,42 @@ from platypus.inference.store import (
     bpc,
 )
 from platypus.inference.sentences import (
-    inf_store_add,
+    _inf_store, inf_store_add,
 )
+
+_MH = {'calls': 0, 'tried': 0, 'found': 0, 'bytes': 0}                         # cg26z memory-hint counters (printed per phase)
+def _mem_hint_table(model,cfg):
+    """cg26z MEMORY HINTS: a k-gram index (k = cd_mem_k bytes) over the fast store's most recent sentences - the model's OWN episodic memory,
+    rebuilt when the store has grown by 200+ sentences; maps k verified bytes to the bytes that followed them in a stored sentence"""
+    try: S_=_inf_store(model)
+    except Exception: return None
+    it_=S_.get('it',[]); n_=len(it_); T_=model.__dict__.get('_mht')
+    if T_ is not None and n_-T_[0]<200: return T_[1]
+    k_=int(getattr(cfg,'cd_mem_k',8)); D_={}
+    for t_ in it_[-int(getattr(cfg,'cd_mem_n',4000)):]:
+        if t_.get('gone'): continue
+        s_=t_['s']
+        for i_ in range(0,len(s_)-k_):
+            D_[s_[i_:i_+k_]]=(s_,i_+k_)
+    model.__dict__['_mht']=(n_,D_); return D_
+def _mem_hints(model,cfg,rows_,fl_,ban_,L):
+    """for each row (verified prefix bytes, first wrong byte at fl_): the stored sentence whose k bytes match the k verified bytes before fl_
+    supplies up to cd_mem_hint bytes from fl_ on, if its first byte differs from the byte the replay got wrong. Returns (mask, bytes) or None."""
+    D_=_mem_hint_table(model,cfg)
+    if not D_: return None
+    k_=int(getattr(cfg,'cd_mem_k',8)); h_=int(getattr(cfg,'cd_mem_hint',0)); R_=rows_.detach().to('cpu',torch.uint8).numpy(); F_=fl_.detach().cpu().numpy(); B_=ban_.detach().cpu().numpy()
+    hm_=torch.zeros(R_.shape[0],L,dtype=torch.bool); hb_=torch.zeros(R_.shape[0],L,dtype=torch.long); nf_=0
+    for r_ in range(R_.shape[0]):
+        f_=int(F_[r_]); _MH['tried']+=1
+        if f_<k_ or f_>=L: continue
+        e_=D_.get(bytes(R_[r_,f_-k_:f_]))
+        if e_ is None: continue
+        s_,j_=e_; c_=s_[j_:j_+h_]
+        if not c_ or c_[0]==int(B_[r_]): continue
+        c_=c_[:L-f_]; hm_[r_,f_:f_+len(c_)]=True; hb_[r_,f_:f_+len(c_)]=torch.tensor(list(c_)); nf_+=1; _MH['bytes']+=len(c_)
+    _MH['found']+=nf_; _MH['calls']+=1
+    if nf_==0: return None
+    return hm_.to(rows_.device),hb_.to(rows_.device)
 
 def _nrem_loss_v1(model,cfg,dom):
     """NREM v1: re-teach the visit's reservoir windows (stored bytes + stored teacher targets), highest remaining signal first; retire consolidated ones.
@@ -243,7 +277,10 @@ def _cd_loss_(model,cfg,x,dom):
                                     nd_=((j_<L)&act_).nonzero().flatten()
                                     if len(nd_)==0: break
                                     rr_=pc_[nd_]; fl_=j_[nd_]; fo_=best[a_+rr_]; bn_=fo_.gather(1,fl_[:,None]).squeeze(1)
-                                    sR_=_cd_rows(st_,rr_,m_); Yr,lpr=_cd_gen(model,cfg,sR_,len(rr_),L,dom,M,0.0,g_,forced=fo_,flen=fl_,ban=bn_,hint=((hn_[0][rr_],hn_[1][rr_]) if hn_ is not None else None))
+                                    hr9_=((hn_[0][rr_],hn_[1][rr_]) if hn_ is not None else None)
+                                    if hr9_ is None and int(getattr(cfg,'cd_mem_hint',0))>0:   # cg26z MEMORY HINTS: no true bytes - the bytes after the first wrong one come from the
+                                        hr9_=_mem_hints(model,cfg,fo_,fl_,bn_,L)                #   model's own fast store (its sentence matching the verified bytes before it)
+                                    sR_=_cd_rows(st_,rr_,m_); Yr,lpr=_cd_gen(model,cfg,sR_,len(rr_),L,dom,M,0.0,g_,forced=fo_,flen=fl_,ban=bn_,hint=hr9_)
                                     tries+=len(rr_); er_,jr_=_cd_vcheck(model,cfg,Yr,sR_,len(rr_),L,eps); bt_=jr_>fl_; ix_=a_+rr_   # v9.8: selects on the GPU
                                     best[ix_]=torch.where(bt_[:,None],Yr,best[ix_]); tgb[ix_]=torch.where(bt_[:,None,None],lpr,tgb[ix_])   #   (no boolean-mask
                                     beste[ix_]=torch.where(bt_,er_,beste[ix_]); JV_[ix_]=torch.where(bt_,jr_,JV_[ix_])                   #   indexing: no CPU wait)
