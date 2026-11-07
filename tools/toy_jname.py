@@ -204,7 +204,7 @@ def identity(lm, J, n=50, reps=6):
         A, B = F.normalize(torch.stack(A), dim=-1), F.normalize(torch.stack(B), dim=-1); out[k] = float(((A @ B.T).argmax(1) == torch.arange(n)).float().mean())
     return out
 print(f"TOY TEXT JEPA NAME DETECTION, seed {SEED}, {STEPS} steps; {len(TRN_N)} training names, {len(TST_N)} test names (never seen)", flush=True)
-lm = train_lm(STEPS)
+lm = train_lm(min(STEPS, int(os.environ.get('JN_LM_STEPS', 3000))))   # the byte LM stays at 3000 steps when the JEPA trains longer
 CK = [int(x) for x in os.environ.get('JN_CKPTS', '').split(',') if x]      # checkpoints: a compact readout during training
 def ckpt(J, st, ls):
     rT, _ = detection(lm, J, TRAIN_T, n=100); rH, _ = detection(lm, J, HELD_T, n=100); idn = identity(lm, J)
