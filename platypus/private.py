@@ -10,6 +10,8 @@ from platypus.protection import (
 )
 
 def ngp_init(model,cfg):
+    if not tuple(cfg.ngp or ()):                                                  # ngp=(): no private n-gram tables (issue #23 ablation)
+        model.__dict__['_ngp']=None; model.__dict__['_ngp_opt']=None; return
     dev=model.embed.weight.device; T={}
     for d in range(_nslots(cfg)):
         T[d]=[nn.Embedding(int(cfg.ngp_rows),cfg.d_model,sparse=True).to(dev) for _ in cfg.ngp]

@@ -1,4 +1,5 @@
 """One visit of training (train_domain) and its step-level helpers."""
+from platypus.common import _fail
 import math
 import numpy as np
 import time
@@ -264,7 +265,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 try:
                     rg_=[e for e in ka_ if e.key.startswith('R:')]; rg_.sort(key=lambda e:-e.device_time_total if hasattr(e,'device_time_total') else -e.cuda_time_total)
                     print("  [profile] NAMED REGIONS (GPU time incl. everything inside, per 10 steps):\n"+"\n".join(f"    {e.key[2:]:20} {((e.device_time_total if hasattr(e,'device_time_total') else e.cuda_time_total)/1e3):9.1f} ms  ({e.count} calls)" for e in rg_))
-                except Exception as ex: print(f"  [profile] region table unavailable ({repr(ex)[:100]})")
+                except Exception as ex: _fail('train:267'); print(f"  [profile] region table unavailable ({repr(ex)[:100]})")
                 _PRF['on']=False; _prof_=None
         if step>=_L: break
         if model.__dict__.get('_sldb') is not None: cfg.dream_batch=model.__dict__.pop('_sldb')   # (safety: never carried past a step)
@@ -322,7 +323,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             model.__dict__['_dsm']=1.0; _ds_t=0.0
             if _ds_on: xh_,yh_=get(); model.__dict__['_dsH']=(xh_,yh_); model.__dict__['_dsS']=[]; model.__dict__['_dsM']=[]; model.__dict__['_dsJ']=[]
         x,y=get()
-        if cfg.inf_on and float(model.__dict__.get('_real_w',1.0))>0: inf_store_add(model,cfg,x,int(model.__dict__.get('_cur_dom',dom_id)))   # cg20 store
+        if cfg.inf_on and (float(model.__dict__.get('_real_w',1.0))>0 or int(getattr(cfg,'cd_store_text',0))): inf_store_add(model,cfg,x,int(model.__dict__.get('_cur_dom',dom_id)))   # cg20 store (cg26z cd_store_text: the store - the hippocampus - also reads the text in closed-loop passes; the trunk still learns only from verified replays)
         if cfg.nrem_real and float(model.__dict__.get('_real_w',1.0))>0:            # nrem_real DIAGNOSTIC: keep random pass-1 rows per domain
             with torch.no_grad():
                 P1_=model.__dict__.setdefault('_p1win',{}); td1_=int(model.__dict__.get('_cur_dom',dom_id)); E1_=P1_.setdefault(td1_,{'r':[],'seen':0})
@@ -874,6 +875,8 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{', all positions' if cfg.cd_evid_all else ''})"+(' - INACTIVE: with cd_bytes_all the conduit trains next-byte targets on the verified bytes, the blend is not used' if (getattr(cfg,'cd_bytes_all',False) and float(getattr(cfg,'cd_bytes_w',1.0))>=1.0) else ''))   # FIX (review): readout said it trains
                 if st_: k_=max(1,st_[1]); print(f"    [conduit replay] KL {st_[0]/k_:.4f} | exact segments {st_[2]/k_:.2f} | tries/segment {st_[3]/k_:.2f} | true byte fidelity {st_[4]/k_:.2f} (diagnostic) | exactness test agrees with truth {st_[6]/k_:.3f} | eps {st_[5]/k_:.1e} over {st_[1]} steps"
                                +(f" | replay training on exact replays {st_[7]/max(1,st_[8])/LOG2:.4f} BPC ({int(st_[8])} steps)" if len(st_)>8 and st_[8] else "")+_rs_msg())
+                MHp_=_MH
+                if MHp_['calls']: print(f"    [memory hints] {MHp_['found']} of {MHp_['tried']} repairs got bytes from the fast store ({MHp_['bytes']} bytes, anchor {int(getattr(cfg,'cd_mem_kmin',4))}-{int(getattr(cfg,'cd_mem_k',8))} bytes, up to {int(getattr(cfg,'cd_mem_hint',0))} per repair) | no anchor (failed in the first bytes) {MHp_.get('early',0)}, anchor not in the store {MHp_.get('nomatch',0)}, store agrees with the wrong byte {MHp_.get('same',0)}; {MHp_['calls']} calls",flush=True); MHp_.update(calls=0,tried=0,found=0,bytes=0,early=0,nomatch=0,same=0)
                 if _HINT['calls']:                                                 # cg12b hints
                     tb_=max(1,_HINT['tot']); wr_=float(_HINT['wrong'])
                     print(f"    [hints] {float(_HINT['bytes'])/tb_:.3f} of replayed bytes hinted ({float(_HINT['pieces'])/(tb_/max(1,int(cfg.cd_seg))):.2f} of pieces) | "
@@ -1161,7 +1164,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
     if dom_id in tuple(cfg.state_spec_diag or ()) and n_old>0 and not cfg.topic_mode:
         was_=model.training; model.eval()
         try: state_spectrum_diag(model, cfg, olds)
-        except Exception as e_: print(f"  [state spectrum] diagnostic skipped ({type(e_).__name__}: {e_})")   # never stops a run
+        except Exception as e_: _fail('train:1166'); print(f"  [state spectrum] diagnostic skipped ({type(e_).__name__}: {e_})")   # never stops a run
         model.train(was_)
     sst_=model.__dict__.pop('_strandstat',None); scn_=model.__dict__.pop('_strandcnt',None)
     if scn_:
@@ -1226,6 +1229,7 @@ _LATE = {
     '_CDT': 'platypus.conduit',
     '_HINT': 'platypus.conduit',
     '_KLC_CLS': 'platypus.losses',
+    '_MH': 'platypus.losses',
     '_PRF': 'platypus.profiling',
     '_V97': 'platypus.conduit',
     '_cd_lrf': 'platypus.losses',

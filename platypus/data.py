@@ -64,6 +64,17 @@ def stream_bytes(domain,seed,n):
         if fp and os.path.exists(fp): _BYTES_CACHE[key]=open(fp,'rb').read()
         else: _BYTES_CACHE[key]=_stream_bytes(domain,seed,n); _cache_put(key,_BYTES_CACHE[key])
     return _BYTES_CACHE[key]
+def overlap_check(val, train, k=128):
+    """issue #30: training text that also occurs in the validation text. Every k-byte string of the validation text is hashed; the training
+    text is scanned in k-byte steps; low-variety chunks (fewer than 16 distinct bytes: runs of spaces, digits, rules) are skipped. Document
+    leakage shows as many hits; shared boilerplate as a few."""
+    if not val or not train: return 0, 0
+    V_={hash(val[i:i+k]) for i in range(0, len(val)-k+1)}; n_=h_=0
+    for i in range(0, len(train)-k+1, k):
+        c_=train[i:i+k]
+        if len(set(c_))<16: continue
+        n_+=1; h_+=int(hash(c_) in V_)
+    return h_, n_
 def prefetch_pile(reqs, seed=2026, max_docs=8_000_000):
     """ONE streaming pass collecting several (new) domains at once - a separate scan per domain and split would read the Pile many
     times over for the rarer subsets. reqs: [(domain, val_key, train_key)]; per domain, whole documents go to validation until it is

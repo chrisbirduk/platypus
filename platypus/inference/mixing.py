@@ -1,4 +1,5 @@
 """Mixing (splice) dreams: proposal, judging, dreaming."""
+from platypus.common import _fail
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -63,7 +64,7 @@ def _inf_mix(model,cfg,S_,ts):
             if kb9_>0:
                 Q_=Q_[:len(Q_)-kb9_]+list(rs_.choice(bn9_,kb9_,replace=False)); model.__dict__['_benchcue']=(kb9_,len(bn9_))
             else: model.__dict__['_benchcue']=(0,len(bn9_))
-        except Exception as e9_: print(f"  [inference MIXING] benchmark cues unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        except Exception as e9_: _fail('inference.mixing:66'); print(f"  [inference MIXING] benchmark cues unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     kr_=int(getattr(cfg,'inf_mix_kr',2)); kn_=int(getattr(cfg,'inf_mix_kn',2))
     P_=[]; CX_=[]
     T_=lambda i_: it_[i_]['s'] if i_>=0 else CX_[-i_-1][0]; D_=lambda i_: it_[i_]['d'] if i_>=0 else -1
@@ -86,7 +87,7 @@ def _inf_mix(model,cfg,S_,ts):
                             if any(w_.group(0) in qn9_ for w_ in _UWORD.finditer(it_[i_]['s'])): hit9_.append(i_)
                     hit9_=hit9_[-1000:]; sh9_=set(hit9_); C_=hit9_+[i_ for i_ in C_ if i_ not in sh9_][:max(0,1500-len(hit9_))]
                     model.__dict__['_nameidx']=(len(qn9_),len(hit9_))
-                except Exception as e9_: print(f"  [inference MIXING] name index unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+                except Exception as e9_: _fail('inference.mixing:89'); print(f"  [inference MIXING] name index unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
             dev_=model.embed.weight.device; L0_=int(cfg.seq_len)
             def emb_(ids_):
                 E_=[]
@@ -101,7 +102,7 @@ def _inf_mix(model,cfg,S_,ts):
             SC_=None
             if int(getattr(cfg,'inf_mix_spectral',0)):
                 try: SC_=_spec_codes(model,cfg,S_)
-                except Exception as e9_: print(f"  [inference MIXING] spectral codes failed ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+                except Exception as e9_: _fail('inference.mixing:104'); print(f"  [inference MIXING] spectral codes failed ({type(e9_).__name__}: {e9_})"[:200],flush=True)
             if SC_ is not None: model.__dict__['_SCcur']=SC_
             if SC_ is not None:                                                 # SPECTRAL PROPOSER (closed-form JEPA on sentence co-occurrence): partners = passages whose
                 sim_=_spec_pass(SC_,[it_[i_]['s'] for i_ in Q_])@_spec_pass(SC_,[it_[i_]['s'] for i_ in C_]).T; tag9_='spectral'   #   word codes point the same way
@@ -135,7 +136,7 @@ def _inf_mix(model,cfg,S_,ts):
                         sl8_=F.normalize(w8_(Zq_)@M8_,dim=-1)@F.normalize(w8_(Zc_),dim=-1).T
                     for a_,q_ in enumerate(Q_):
                         for j_ in sl8_[a_].topk(kn_).indices.tolist(): P_.append((q_,int(C_[j_]),'latent-linear'))
-                except Exception as e8_: print(f"  [inference MIXING] latent proposer unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
+                except Exception as e8_: _fail('inference.mixing:138'); print(f"  [inference MIXING] latent proposer unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
             if int(getattr(cfg,'inf_jd',0)):                                    # cg26 JEPA PROPOSER (NREM): partners = stored sentences whose target code the trained JEPA
                 try:                                                            #   predictor expects from the cue
                     sj_=_jd_scores(model,cfg,[it_[i_]['s'] for i_ in Q_],[it_[i_]['s'] for i_ in C_])
@@ -168,7 +169,7 @@ def _inf_mix(model,cfg,S_,ts):
                                 for a_,q_ in enumerate(Q_):
                                     for j_ in sw_[a_].topk(min(kw_,len(C_))).indices.tolist(): P_.append((q_,int(C_[j_]),'jepa-wide')); nw_+=1; nwn_+=int(bool(Mk7_[a_,j_]))
                                 print(f"  [inference MIXING | JEPA-WIDE] {nw_} partners chosen by the JEPA among {len(C_)} candidates per cue (name bonus {bw_:g}); {nwn_} of them share a rare name with the cue",flush=True)
-                except Exception as e8_: print(f"  [inference MIXING] JEPA proposer unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
+                except Exception as e8_: _fail('inference.mixing:171'); print(f"  [inference MIXING] JEPA proposer unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
             if int(getattr(cfg,'inf_mix_seq',0)):                                # cg26g SEQUENCE REPLAY (first step): the cue with the sentence stored right after it (else right
                 okq_=lambda j_: 0<=j_<len(it_) and not it_[j_].get('gone') and not it_[j_].get('sup') and it_[j_].get('k') in ('real','ver') and len(it_[j_]['s'])>=ml9_   #   before) in
                 nsq_=0                                                          #   the same visit and domain - episodes in order, judged by the same test
@@ -177,7 +178,7 @@ def _inf_mix(model,cfg,S_,ts):
                         if okq_(j_) and it_[j_].get('v')==it_[q_].get('v') and it_[j_]['d']==it_[q_]['d'] and it_[j_]['s'].strip()!=it_[q_]['s'].strip():
                             P_.append((q_,j_,'sequence')); nsq_+=1; break
                 model.__dict__['_seqn']=nsq_
-        except Exception as e_: print(f"  [inference MIXING] neighbour proposer unavailable ({type(e_).__name__}: {e_}) - random mixing only",flush=True)
+        except Exception as e_: _fail('inference.mixing:180'); print(f"  [inference MIXING] neighbour proposer unavailable ({type(e_).__name__}: {e_}) - random mixing only",flush=True)
     kx_=int(getattr(cfg,'inf_mix_cortex',0))
     try: _cx_ok=kx_>0 and isinstance(model.__dict__.get('_bank',{}),dict)
     except Exception: _cx_ok=False
@@ -212,7 +213,7 @@ def _inf_mix(model,cfg,S_,ts):
                               for i_,b6_ in zip(hit6_,bp6_):
                                   if b6_<=thr6_: CX_.append((it_[i_]['s'],int(it_[i_]['d']),'fam',int(i_))); nk6_+=1
                           model.__dict__['_cxname']=(len(qn6_),len(hit6_),nk6_)
-                      except Exception as e6_: print(f"  [inference MIXING] name-indexed REM traces unavailable ({type(e6_).__name__}: {e6_})"[:200],flush=True)
+                      except Exception as e6_: _fail('inference.mixing:215'); print(f"  [inference MIXING] name-indexed REM traces unavailable ({type(e6_).__name__}: {e6_})"[:200],flush=True)
           if cxs_ in ('bank','both'):                                           # (cg25 'both': the trunk's own generations AND the familiar remote sentences, tagged apart)
             for s9_,X9_ in BK9_.items():                                          #   produce about old material) - nearest by spectral word codes - and the pair is spliced
               if int(s9_)==int(ts): continue
@@ -250,7 +251,7 @@ def _inf_mix(model,cfg,S_,ts):
                       sl8_=F.normalize(w8_(Zq8_)@M8_,dim=-1)@F.normalize(w8_(Zx8_),dim=-1).T
                   for a_,q_ in enumerate(Q_):
                       for j_ in sl8_[a_].topk(min(kx_,len(CX_))).indices.tolist(): P_.append((q_,-(int(j_)+1),'cortex-latent'))
-              except Exception as e8_: print(f"  [inference MIXING] latent cortex matcher unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
+              except Exception as e8_: _fail('inference.mixing:253'); print(f"  [inference MIXING] latent cortex matcher unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
           if CX_ and int(getattr(cfg,'inf_jd',0)):                              # cg26 JEPA CORTEX MATCHER (REM): the trained JEPA chooses traces for the cue
               try:
                   sj8_=_jd_scores(model,cfg,[it_[i_]['s'] for i_ in Q_],[c_[0] for c_ in CX_])
@@ -274,7 +275,7 @@ def _inf_mix(model,cfg,S_,ts):
                               for j_ in sjn5_[a_].topk(min(kx_,len(CX_))).indices.tolist():
                                   if float(sjn5_[a_,j_])>float('-inf'): P_.append((q_,-(int(j_)+1),'cortex-jepa-name')); np5_+=1
                           model.__dict__['_cxjn']=(int(Mk5_.any(1).sum()),len(Q_),np5_)
-              except Exception as e8_: print(f"  [inference MIXING] JEPA cortex matcher unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
+              except Exception as e8_: _fail('inference.mixing:277'); print(f"  [inference MIXING] JEPA cortex matcher unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
           P_=[(a_,b_,(t_+'-fam') if (b_<0 and str(t_).startswith('cortex') and len(CX_[-b_-1])>2 and CX_[-b_-1][2]=='fam') else t_) for a_,b_,t_ in P_]
           if CX_ and int(getattr(cfg,'inf_mix_cxshow',0)):                       # cg25: what the cortical traces look like (coherent memories, or garbled generations?)
               ex8_=[]
@@ -283,7 +284,7 @@ def _inf_mix(model,cfg,S_,ts):
                   for c_ in [L8_[int(i_)] for i_ in rs_.choice(len(L8_),min(2,len(L8_)),replace=False)] if L8_ else []: ex8_.append(f"{src8_}: {c_[0][:90]!r}")
               print(f"  [inference MIXING | CORTICAL TRACES] {sum(1 for c_ in CX_ if len(c_)>2 and c_[2]=='bank')} dream-bank generations, {sum(1 for c_ in CX_ if len(c_)>2 and c_[2]=='fam')} familiar remote sentences | e.g. "+" || ".join(ex8_),flush=True)
           model.__dict__['_cxinfo']=(len(CX_),len(BK9_))
-      except Exception as e9_: print(f"  [inference MIXING] cortex fragments unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True); P_=[p_ for p_ in P_ if p_[2]!='cortex']
+      except Exception as e9_: _fail('inference.mixing:286'); print(f"  [inference MIXING] cortex fragments unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True); P_=[p_ for p_ in P_ if p_[2]!='cortex']
     nd0_=len(P_); P_=[p_ for p_ in P_ if T_(p_[0]).strip()!=T_(p_[1]).strip()]   # cg26e: never pair a sentence with an identical copy (pass-1 text vs pass-2 replay)
     jq_=float(getattr(cfg,'inf_mix_neardup',0.0))
     if jq_>0:                                                                   # cg26g NEAR-DUPLICATES: pairs sharing more than jq_ of their character 4-grams are dropped
@@ -378,7 +379,7 @@ def _inf_mix(model,cfg,S_,ts):
                     print(f"  [inference MIXING | JEPA FINAL SELECTION] {len(cf9_)} accepted pairs from {len(set(s_ for _,_,s_ in cf9_))} sources over {len(byq9_)} cues -> {len(sel9_)} dreamed (top {kf9_} per cue by {'JEPA rank and judge-gain rank averaged' if fair_ else 'JEPA score'}) | "
                           f"accepted by source: {dict(_Cn9(s_ for _,_,s_ in cf9_))} | dreamed by source: {dict(_Cn9(s_ for _,_,s_ in sel9_))}",flush=True)
                     dd9_=sel9_+([z_ for z_ in dd9_ if z_[2]=='sequence'] if 'sequence' in sk9_ else [])   # sequence pairs keep their own path (and cap)
-            except Exception as e9_: print(f"  [inference MIXING | JEPA FINAL SELECTION] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+            except Exception as e9_: _fail('inference.mixing:381'); print(f"  [inference MIXING | JEPA FINAL SELECTION] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
         qc9_=float(getattr(cfg,'inf_mix_seq_cap',0.0))
         if qc9_>0:                                                              # cg26h SEQUENCE CAP: neighbouring sentences pass the test easily (cg26h GPU visit 1: 17 of 31
             sq9_=[z_ for z_ in dd9_ if z_[2]=='sequence']; ot9_=[z_ for z_ in dd9_ if z_[2]!='sequence']   #   accepted, 17 of 19 dreams) - at most qc9_ x the other dreams (min 2)
@@ -396,7 +397,7 @@ def _inf_mix(model,cfg,S_,ts):
                 g08_=_jd_pair_gain(model,cfg,S_,rc8_)
                 for r8_,g8_ in zip(rc8_,g08_): r8_['g0']=g8_
                 S_.setdefault('jd_pend',[]).extend(rc8_); del S_['jd_pend'][:-600]
-            except Exception as e8_: print(f"  [inference MIXING | OUTCOME RECORD] unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
+            except Exception as e8_: _fail('inference.mixing:399'); print(f"  [inference MIXING | OUTCOME RECORD] unavailable ({type(e8_).__name__}: {e8_})"[:200],flush=True)
     # ---- readout: are the accepted pairs related? (benchmark gold and planted chains), against every pair tested
     def rel_(a_,b_):
         sa_,sb_=T_(a_),T_(b_); out_=None

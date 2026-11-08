@@ -81,6 +81,56 @@ def bpc_inferred_modes(model, get, domain, ncand, modes, cfg, n=15):
                 L[m].append(float(-lp[:,-Ts_:].gather(-1,y[:,-Ts_:].unsqueeze(-1)).mean())); A[m].append(float((post[...,-Ts_:].argmax(0)==domain).float().mean()))
     model.train(); return {m:(float(np.mean(L[m]))/LOG2, float(np.mean(A[m]))) for m in modes}
 
+@torch.no_grad()
+def mix_text_eval(model, vals, seen_d, slot_of, cfg, tag=''):
+    """MIXED-TEXT READOUT (mix_eval N; readout only, training unchanged): can several slots be active at once? N windows each spliced
+    from two seen domains in alternating segments of mix_seg bytes (a b a b ...), scored with every slot in use, mixed per position by:
+    ROUTED one slot for the window (the first segment's domain, as a visit is routed); ORACLE the true slot at each position; POST-CUM the
+    causal head-likelihood posterior over the whole window so far (heads.inferred_logp_multi 'heads'); POST-64 the same over the last 64
+    bytes only, so it can switch; TOP2 of POST-64; UNIFORM an equal mixture. PURE: the same modes on unspliced windows of one domain."""
+    import random as _r
+    if len(seen_d) < 2: return None
+    N_=int(getattr(cfg,'mix_eval',0)); sg0_=int(getattr(cfg,'mix_seg',256)); Ts_=int(cfg.seq_len); sg_=sg0_; W_=64
+    rr_=_r.Random(int(cfg.seed)*7919+len(seen_d)); was_=model.training; model.eval()
+    slots_=sorted(set(int(slot_of(q)) for q in seen_d)); K_=len(slots_); si_={s:i for i,s in enumerate(slots_)}
+    acc_={'MIXED':{}, 'PURE':{}}; ws_={'MIXED':{}, 'PURE':{}}; n_=0
+    def _modes(LP, Y_, lab, a_):
+        D_,B_,T_=LP.shape[:3]
+        l_=LP.gather(-1,Y_[None,...,None].expand(D_,-1,-1,1))[...,0]                          # (D,B,T): log-likelihood of each scored byte
+        ll_=torch.cat([torch.zeros_like(l_[...,:1]),l_[...,:-1]],-1)                            # the weights at t use bytes before t only
+        cum_=torch.cumsum(ll_,-1); win_=cum_-torch.cat([torch.zeros_like(cum_[...,:W_]),cum_[...,:-W_]],-1)
+        pc_=F.log_softmax(cum_*float(getattr(cfg,'hs_temp',1.0)),0); pw_=F.log_softmax(win_,0)
+        v2_,i2_=pw_.topk(min(2,D_),0); t2_=torch.full_like(pw_,-1e9).scatter(0,i2_,v2_); t2_=t2_-torch.logsumexp(t2_,0,keepdim=True)
+        oh_=lambda idx: torch.where(F.one_hot(idx,D_).permute(2,0,1).bool(),0.0,-1e9)
+        W={'ROUTED':oh_(torch.full((B_,T_),a_,dtype=torch.long,device=LP.device)),'ORACLE':oh_(lab),'POST-CUM':pc_,'POST-64':pw_,'TOP2':t2_,
+           'UNIFORM':torch.full_like(pw_,-float(np.log(D_)))}
+        out_={}
+        for k,w in W.items():
+            lp_=torch.logsumexp(w.unsqueeze(-1)+LP,0)
+            out_[k]=(float(-lp_[:,-Ts_:].gather(-1,Y_[:,-Ts_:,None]).mean())/LOG2, float((w[:,:,-Ts_:].exp()>0.1).float().sum(0).mean()))
+        return out_
+    for i_ in range(max(1,N_//4)):
+        a,b=rr_.sample(list(seen_d),2)
+        xa,ya=vals[a](); xb,yb=vals[b]()
+        B_=min(xa.shape[0],xb.shape[0],4); xa,ya,xb,yb=xa[:B_],ya[:B_],xb[:B_],yb[:B_]; T_=xa.shape[1]
+        sg_=max(4,min(sg0_,min(T_,Ts_)//2)); W_=min(64,max(8,sg_//4)); Ts_=min(Ts_,T_)                # short local windows: at least one switch inside the scored part
+        segb_=(((torch.arange(T_,device=xa.device)-(T_-Ts_)).clamp(min=0)//sg_)%2==1)                # segments counted from the start of the scored part
+        ia_,ib_=si_[int(slot_of(a))],si_[int(slot_of(b))]
+        labm_=torch.where(segb_,torch.tensor(ib_,device=xa.device),torch.tensor(ia_,device=xa.device)).expand(B_,-1)
+        for kind,(X_,Y_,lab_) in (('MIXED',(torch.where(segb_,xb,xa),torch.where(segb_,yb,ya),labm_)),
+                                  ('PURE',(xa,ya,torch.full((B_,T_),ia_,dtype=torch.long,device=xa.device)))):
+            LP=torch.stack([F.log_softmax(model(X_,s).float(),-1) for s in slots_])
+            for k,(bp,na) in _modes(LP,Y_,lab_,ia_).items():
+                acc_[kind].setdefault(k,[]).append(bp); ws_[kind].setdefault(k,[]).append(na)
+        n_+=B_
+    if was_: model.train()
+    for kind in ('MIXED','PURE'):
+        r_={k:float(np.mean(v)) for k,v in acc_[kind].items()}
+        print(f"  [mixed text{tag}] {kind}: {n_} windows of {Ts_} scored bytes"+(f", two seen domains in alternating {sg_}-byte segments, posterior window {W_} bytes" if kind=='MIXED' else ", one domain")
+              +f", {K_} slots in use | BPC (mean slots with weight > 0.1): "+' | '.join(f"{k} {r_[k]:.3f} ({np.mean(ws_[kind][k]):.1f})" for k in r_)
+              +(f" || gain over ROUTED: ORACLE {r_['ROUTED']-r_['ORACLE']:+.3f}, POST-64 {r_['ROUTED']-r_['POST-64']:+.3f}, UNIFORM {r_['ROUTED']-r_['UNIFORM']:+.3f}" if kind=='MIXED' else ''),flush=True)
+    return acc_
+
 def bpc_inferred(model, get, domain, ncand, mode, cfg, n=15):
     if hasattr(get,'reset'): get.reset()
     model.eval(); L=[]; A=[]

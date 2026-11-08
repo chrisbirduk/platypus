@@ -1,4 +1,5 @@
 """Closed-form edits of the last block MLP: layer states, drift, application."""
+from platypus.common import _fail
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -45,12 +46,12 @@ def _ws_bpc(model,cfg,vals,t,ts,olds_):
     nb_=int(cfg.pu_cons_eval) or 4; sk_=int(getattr(cfg,'brake_eval_skip',0))
     b_=bpc(model,vals[t],ts,n=nb_,skip=sk_); o_=float(np.mean([bpc(model,vals[d_],s_,n=nb_,skip=sk_) for d_,s_ in olds_])) if olds_ else float('nan')
     return b_,o_
-def _ws_twohop(model,cfg,L_,Cp_,S_slot,rs_,pt_="So {A} is connected to "):
+def _ws_twohop(model,cfg,L_,Cp_,S_slot,rs_,pt_="So {A} is connected to ",dec_=False):
     ok_=[]
     for c_ in L_:
         o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
         if len(o_)<4: continue
-        lp_=_inf_lps(model,cfg,pt_.format(A=c_['A']),[c_['C']]+o_[:9],int(S_slot(c_['d'])),False); ok_.append(float(int(np.argmax(lp_))==0))
+        lp_=_inf_lps(model,cfg,pt_.format(A=c_['A']),[c_['C']]+o_[:9],int(S_slot(c_['d'])),False,dec_=dec_); ok_.append(float(int(np.argmax(lp_))==0))
     return float(np.mean(ok_)) if ok_ else float('nan')
 _CF_VARY=("{A} has a connection with ","One of the people connected to {A} is ")
 @torch.no_grad()
@@ -146,7 +147,7 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             ed9_=sorted([c_ for c_ in lv_ if c_.get('cfe') is not None],key=lambda c_: int(c_.get('cfr',c_['cfe'])))[:3*ro9_]
             if ed9_:
                 rm9_=str(getattr(cfg,'inf_cf_refresh_mode','weak'))
-                sc9_=[(tw_([c_]),i_) for i_,c_ in enumerate(ed9_)]
+                sc9_=[(_ws_twohop(model,cfg,[c_],Cp_,S_slot,np.random.RandomState(3),dec_=True),i_) for i_,c_ in enumerate(ed9_)]   # (refresh order: a decision)
                 if rm9_=='weak': sc9_.sort()                                 # 'weak': the weakest of the least recently fitted; 'old': simply the least recently fitted
                 RF_=[ed9_[i_] for _,i_ in sc9_[:ro9_]]
                 rinfo_=f" | REFRESH ({rm9_}): {len(RF_)} earlier edited conclusions re-fitted ({'weakest of the '+str(len(ed9_))+' ' if rm9_=='weak' else ''}least recently fitted; weights-only before {sum(v_ for v_,_ in sc9_[:ro9_])/max(1,len(RF_)):.2f})"
@@ -167,10 +168,10 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
     try:
         if int(getattr(cfg,'inf_cf_diag',0)):                                   # CF DECAY DIAGNOSTIC (readout only), before this sleep's edit
             try: _cf_diag(model,cfg,lv_,mo_,cap_,S_slot,vis_)
-            except Exception as e8_: print(f"  [inference CF DECAY DIAGNOSTIC] unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
+            except Exception as e8_: _fail('inference.closed_form:170'); print(f"  [inference CF DECAY DIAGNOSTIC] unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
         if int(getattr(cfg,'inf_cf_layerdrift',0)):                             # STEP 0: per-block drift of edited conclusions (readout only)
             try: _cf_layer_drift(model,cfg,lv_,S_slot,vis_)
-            except Exception as e8_: print(f"  [inference LAYER DRIFT] unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
+            except Exception as e8_: _fail('inference.closed_form:173'); print(f"  [inference LAYER DRIFT] unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
         e0_=tw_(E_); v0_=tv_(E_); n0_=tw_(N_) if N_ else float('nan'); b0_,o0_=_ws_bpc(model,cfg,vals,t,ts,olds_)
         rl_=[x_ for x_ in S_['it'] if x_.get('k')=='real' and not x_.get('gone') and len(x_['s'])>=40]; gk_=[]
         for j_ in rs_.choice(len(rl_),min(64,len(rl_)),replace=False) if rl_ else []:
@@ -240,6 +241,7 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             c_.pop('cf_refit',None)
         if RF_: rinfo_+=f", after {tw_(RF_):.2f}"
         cum_[0]+=kept_[1]; cum_[1]+=kept_[2]; cum_[2]+=1
+        model.__dict__['_cf_E']=En_[kept_[0]].detach()                         # issue #28: record the accumulated edit right after the weights carry it, so a later failure
         if int(getattr(cfg,'inf_cf_diag',0)):                                   # CF DECAY DIAGNOSTIC: each edited conclusion's key, its own signal, and the matrix on its key now
             Wn9_=mo_.weight.detach().float(); En8_=En_[kept_[0]].float(); Bn9_=Wn9_-En8_; dE9_=En8_-E9_.float()
             for c9_,K9_ in kd9_:
@@ -251,12 +253,13 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
                 for c9_,_ in [x_ for x_ in kd9_ if id(x_[0]) not in rfid9_][:24]:
                     L9_=_cf_layer_states(model,c9_,S_slot)
                     if L9_ is not None: c9_['_cfL']=L9_; c9_['_cfLv']=vis_
-            except Exception as e8_: print(f"  [inference LAYER DRIFT] states unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
+            except Exception as e8_: _fail('inference.closed_form:254'); print(f"  [inference LAYER DRIFT] states unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
         model.__dict__['_cf_E']=En_[kept_[0]].detach(); cinfo_+=f" | ACCUMULATED EDITS |E| {float(En_[kept_[0]].norm()):.2f} vs rest of the matrix {nb9_:.2f}"+(f" (cap {mg_:g}x)" if mg_>0 else "")+dinfo_
         print(f"  [inference CLOSED-FORM CONSOLIDATION APPLIED] KEPT at x{kept_[0]:g} (brake {bk_}; tries: "+" | ".join(tr_)+f") | {len(E_)} conclusions edited (lambda {lam_:g}, |dW| {float(kept_[0]*dW_.norm()):.2f} vs |W| {float(W0_.norm()):.1f}) | "
               f"two-hop from the weights, fitted wording: edited {e0_:.2f} -> {e1_:.2f}, control (not edited) {n0_:.2f} -> {n1_:.2f} | OTHER WORDINGS: edited {v0_:.2f} -> {v1_:.2f} | "
               f"cumulative cost of {cum_[2]} kept edits (rolled back {cum_[3]}): visited {cum_[0]:+.4f}, old domains {cum_[1]:+.4f}"+(f" (budget {bud_:g})" if bud_>0 else "")+cinfo_+rinfo_+f" | PERSISTENCE: {pers_}",flush=True)
     except Exception as e9_:
+        _fail('inference.closed_form:259')
         if kept_ is None:
             with torch.no_grad(): mo_.weight.copy_(W0_)
         print(f"  [inference CLOSED-FORM CONSOLIDATION APPLIED] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
@@ -315,7 +318,7 @@ def _ws_closed_form(model,cfg,S_,vals,olds_,t,ts,S_slot):
         print(f"  [inference CLOSED-FORM CONSOLIDATION] (tried on a copy, restored) block {li_ % len(model.blocks)} MLP output, {len(E_)} conclusions written in one least-squares step "
               f"({len(K_)} answer positions, preservation lambda {lam_:g} on {0 if Kg_ is None else len(Kg_)} real-text keys, |dW| {float(dW_.norm()):.3f} vs |W| {float(W0_.norm()):.1f}) | before: "
               f"two-hop from the weights edited {e0_:.2f}, not edited {n0_:.2f} | "+" | ".join(f"scale {a_:g}: edited {r_[0]:.2f}, not edited {r_[1]:.2f}, visited BPC {r_[2]:+.4f}, old domains {r_[3]:+.4f}" for a_,r_ in res9_.items()),flush=True)
-    except Exception as e9_: print(f"  [inference CLOSED-FORM CONSOLIDATION] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+    except Exception as e9_: _fail('inference.closed_form:318'); print(f"  [inference CLOSED-FORM CONSOLIDATION] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
     finally:
         cap_['delta']=None; hk_.remove()
         with torch.no_grad(): mo_.weight.copy_(W0_)
@@ -369,7 +372,7 @@ def _ws_direction(model,cfg,S_,vals,olds_,t,ts,S_slot):
         print(f"  [inference DIRECTION DIAGNOSTIC] top direction of the passage codes: {sh0_:.0%} of variance, effective rank {er0_:.1f} | written along it (variance share): "
               +", ".join(f"block {k_[0]} {'mixer' if k_[1]=='Wout' else 'MLP'} {v_:.2f}" for k_,v_ in top_)
               +f" | removed from block {bi_} {'mixer' if nm_=='Wout' else 'MLP'} output (on a copy, restored): "+" | ".join(f"scale {a_:g}: rank {e_:.1f}, top share {s_:.0%}, visited BPC {bv_:+.4f}, old domains {ov_:+.4f}" for a_,e_,s_,bv_,ov_ in res_),flush=True)
-    except Exception as e9_: print(f"  [inference DIRECTION DIAGNOSTIC] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+    except Exception as e9_: _fail('inference.closed_form:372'); print(f"  [inference DIRECTION DIAGNOSTIC] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
     finally:
         for hk_ in hks_: hk_.remove()
         back_()

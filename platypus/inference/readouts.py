@@ -1,4 +1,5 @@
 """End-of-run readouts: dual pathway, CLS probes, ceiling, transfer."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -44,7 +45,7 @@ def inf_final_bpc(model,cfg,vals,S_):
           +" ".join(f"{a_:.3f}/{b_:.3f}" for a_,b_ in zip(r_[False],r_[True]))+f" | store used in BPC during training: {_INFM.get('bpc_on',True)}",flush=True)
     if int(getattr(cfg,'inf_cls_probe',0)):
         try: _inf_cls_probe(model,cfg)
-        except Exception as e_: print(f"  [CLS PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
+        except Exception as e_: _fail('inference.readouts:47'); print(f"  [CLS PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
     if _INF.get('known_c'):
         try:                                                                    # END OF RUN: weights-only two-hop, known-word vs invented chain ends
             ch_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('upd')]; rsx_=np.random.RandomState(5151); sl_=lambda c_: int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0]))
@@ -56,13 +57,13 @@ def inf_final_bpc(model,cfg,vals,S_):
                     for st0_ in (False,True): a_[st0_].append(_inf_score1(model,cfg,f"So {c_['names'][0]} is connected to ",cd_,sl_(c_),st0_)==0)
                 out_.append(f"{nm0_} (n {len(grp_)}): weights only {np.mean(a_[False]) if a_[False] else float('nan'):.2f}, with the store {np.mean(a_[True]) if a_[True] else float('nan'):.2f}")
             print("  [inference KNOWN-WORD PROBES | END OF RUN] two-hop, candidates from the same kind (chance 0.10): "+" | ".join(out_),flush=True)
-        except Exception as e_: print(f"  [inference KNOWN-WORD PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
+        except Exception as e_: _fail('inference.readouts:59'); print(f"  [inference KNOWN-WORD PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
     if int(getattr(cfg,'inf_dual_probe',0)) and _LM.get('M') is not None:
         try: _inf_dual_probe(model,cfg)
-        except Exception as e_: print(f"  [inference DUAL PATHWAY] failed: {type(e_).__name__}: {e_}",flush=True)
+        except Exception as e_: _fail('inference.readouts:62'); print(f"  [inference DUAL PATHWAY] failed: {type(e_).__name__}: {e_}",flush=True)
     if int(getattr(cfg,'inf_lm_probe',0)):
         try: _inf_lm_probe(model,cfg)
-        except Exception as e_: print(f"  [inference CLS PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
+        except Exception as e_: _fail('inference.readouts:65'); print(f"  [inference CLS PROBES] failed: {type(e_).__name__}: {e_}",flush=True)
 def _inf_dual_probe(model,cfg):
     """DUAL PATHWAY ARBITRATION. Two-hop questions 'So A is connected to' on chains the system concluded, cue intact or damaged. EXACT pathway:
     the model with the fast store (exact byte keys) - a distribution over 10 candidates from its log-probs. OVERLAPPING pathway: the link memory
@@ -148,7 +149,7 @@ def _gpu_mem_report(tag):
         top_=sorted(big_.items(),key=lambda kv_:-kv_[1][1])[:10]
         print(f"  [GPU MEMORY | {tag}] allocated {al_:.1f} GiB, reserved {rv_:.1f} GiB | largest live tensors (count x shape dtype: GiB): "
               +" | ".join(f"{v_[0]} x {list(k_[0])} {k_[1]}: {v_[1]/2**30:.2f}" for k_,v_ in top_),flush=True)
-    except Exception as e_: print(f"  [GPU MEMORY | {tag}] unavailable ({type(e_).__name__})",flush=True)
+    except Exception as e_: _fail('inference.readouts:151'); print(f"  [GPU MEMORY | {tag}] unavailable ({type(e_).__name__})",flush=True)
 def _inf_cls_probe(model,cfg):
     """END-OF-RUN CLS PROBES. (1) LESION BY AGE: two-hop with the store ON vs OFF for chains concluded early vs late (complementary learning
     predicts older memories survive the lesion better once consolidation works). (2) PARTIAL CUES: two-hop with the store when the subject's
@@ -220,6 +221,7 @@ def _inf_cls_probe(model,cfg):
             cfg._ceil2_lean=lean_
             try: _inf_ceiling2(model,cfg,nm,sl0_,acc,rs_); break
             except Exception as e_:
+                _fail('inference.readouts:222')
                 oom_='out of memory' in str(e_).lower() and torch.cuda.is_available()
                 import traceback as _tb; print(f"  [inference CEILING LONG] FAILED{' (retrying lean)' if oom_ and not lean_ else ''}: {type(e_).__name__}: {str(e_)[:200]} | {_tb.format_exc()[-300:]!r}",flush=True)
                 if not oom_: break
@@ -231,6 +233,7 @@ def _inf_cls_probe(model,cfg):
     if int(getattr(cfg,'inf_ceiling',0)):
         try: _inf_ceiling(model,cfg,nm,sl0_,acc,candn,rs_)
         except Exception as e_:
+            _fail('inference.readouts:233')
             import traceback as _tb; print(f"  [inference CEILING TEST] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
     _SCORE_LEN['n']=0
     print(f"  [inference CLS PROBES | SCHEMA TEST, IN CONTEXT] {len(ic_)} of {NS_} brand-new chains fit the window whole, both premises in the prompt, store off: two-hop {bic_:.2f} (chance 0.10)",flush=True)
@@ -372,8 +375,16 @@ def _inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,fil
         model.__dict__.setdefault('_xfer_rb',[]).append(int(b1_-b0_>eps_))
     return info_
 _SCORE_LEN={'n':0}                                                              # >0: score prompts up to this many bytes (CLS schema / ceiling only)
+def _score_norm(cfg,sm_,nb_,dec_=False,raw_=False):
+    """cg26w CANDIDATE SCORING: a candidate name's summed byte log-probability favours SHORT names when the model is unsure (cg26v diagnostic:
+    summed pick 0.05 = chance against 0.29 per byte; 3 wrong picks in 4 shorter than the right name). READOUTS score by the per-byte MEAN
+    (inf_score, 'mean'; 'sum' restores cg26v); DECISIONS (release, restore, freeing, rewriting, refresh order) keep their own scoring
+    (inf_score_dec, 'sum'), so training is unchanged. raw_: (summed, bytes scored)"""
+    if raw_: return sm_,nb_
+    m_=str(getattr(cfg,'inf_score_dec','sum') if dec_ else getattr(cfg,'inf_score','mean'))
+    return sm_/np.maximum(nb_,1.0) if m_=='mean' else sm_
 @torch.no_grad()
-def _inf_score1(model,cfg,prompt_,cands_,slot_,store_):
+def _inf_score1(model,cfg,prompt_,cands_,slot_,store_,dec_=False):
     if store_: prompt_=_cue_fix(cfg,prompt_)                                     # cg26m CUE REPAIR (question time, store on)
     seqs=[(prompt_+c_+'.').encode('latin-1')[-max(int(cfg.seq_len),_SCORE_LEN['n']):] for c_ in cands_]; L_=max(len(s_) for s_ in seqs); dev_=model.embed.weight.device
     X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
@@ -382,7 +393,8 @@ def _inf_score1(model,cfg,prompt_,cands_,slot_,store_):
     try: lp_=F.log_softmax(model(X_[:,:-1],slot_).float(),-1)
     finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM.pop('force',None); model.train(was_)
     n0_=[len(s_)-len((c_+'.').encode()) for s_,c_ in zip(seqs,cands_)]
-    return int(np.argmax([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))]))
+    sm_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+    return int(np.argmax(_score_norm(cfg,sm_,np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64),dec_)))
 @torch.no_grad()
 def _cai_score(model,cfg):
     """CAI TEST (readout only): per chain, two-hop 'So A is connected to' against 19 fixed distractors, from the weights alone and with the fast store"""

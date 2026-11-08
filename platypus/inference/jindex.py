@@ -26,6 +26,7 @@ cg26u: inf_jx_route - JEPA ROUTING readout (routing unchanged): each visit's sto
   profile, by arm V's JEPA codes and by both, to the nearest slot prototype; accuracy on revisits, agreement with the router and novelty
   AUC for first visits (tools/toy_jroute.py: locally bytes win at 1 KB, JEPA reaches 1.00 from 4-8 windows, both detect a new domain at
   AUC 0.95-1.00 from 4 windows; masking names hurt routing)."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -76,6 +77,24 @@ def _jx_pairs(S_, lv_):
         s_ = S_['it'][i_]['s']; ns_ = sorted(set(_INF_NAME.findall(s_)))
         if len(ns_) == 2: G_.setdefault(tuple(ns_), {}).setdefault(s_, i_)
     return [list(v_.values()) for v_ in G_.values() if len(v_) >= 2]
+def _jx_audit_pairs(S_, lv_):
+    """cg26x AUDIT PAIRS (after ARI, Tchuindjo, Shah and Khattab 2026): from every live, unretracted conclusion the system VERIFIED, the
+    question form 'So A is connected to ' -> premise A-B and 'So B is connected to ' -> premise B-C (its 'src' sentences, the ones the audit
+    re-read), with HARD NEGATIVES = other live sentences naming the same name (from the most recent 50k live sentences). Label-free: the
+    audit is the judge; no planted probe is read."""
+    lvs_ = set(lv_); P_ = []
+    for c_ in S_.get('conc', []):
+        if c_.get('retracted') or not isinstance(c_.get('src'), tuple) or len(c_['src']) != 2: continue
+        ia_, ic_ = c_['src']
+        if not (isinstance(ia_, int) and isinstance(ic_, int) and ia_ in lvs_ and ic_ in lvs_): continue
+        if isinstance(c_.get('A'), str) and isinstance(c_.get('B'), str):
+            P_.append((f"So {c_['A']} is connected to ", ia_, c_['A'])); P_.append((f"So {c_['B']} is connected to ", ic_, c_['B']))
+    if not P_: return [], {}
+    nm_ = {n_.encode('latin-1', 'replace') for _, _, n_ in P_}; NG_ = {}
+    for i_ in lv_[-50000:]:
+        for m_ in set(_INF_NAME.findall(S_['it'][i_]['s'])):
+            if m_ in nm_: NG_.setdefault(m_.decode('latin-1'), []).append(i_)
+    return P_, NG_
 def _jx_cut(s_, rs_):
     """the question form of a stored sentence: cut at a word boundary after the first two words (half the time before the last word)"""
     w_ = [i_ + 1 for i_, c_ in enumerate(s_) if c_ == 32]
@@ -90,6 +109,8 @@ def _jx_train(model, cfg, S_):
     if len(lv_) < B_: return None
     pf_ = float(getattr(cfg, 'inf_jx_pair', 0.0)); PG_ = _jx_pairs(S_, lv_) if pf_ > 0 else []; npr_ = int(round(pf_ * B_)) if PG_ else 0
     out_ = {}
+    aw_ = float(getattr(cfg, 'inf_jx_gen_aud', 0.0)); AP_, ANG_ = _jx_audit_pairs(S_, lv_) if aw_ > 0 else ([], {})
+    _JX['aud_n'] = len(AP_)
     for ai_, (nm_, nce_, gen_) in enumerate(_jx_arms(cfg)):
         if nm_ not in _JX:
             with torch.random.fork_rng(devices=[dev_] if dev_.type == 'cuda' else []):   # its own random stream: the run itself is unchanged
@@ -110,6 +131,14 @@ def _jx_train(model, cfg, S_):
                 with torch.no_grad(): z_ = tg_(_jx_batch([_jx_ids(t_, gen_) for t_ in tgt_], L_, dev_))
                 p_ = pr_(on_(_jx_batch([_jx_ids(_jx_cut(t_, rs_), gen_) for t_ in src_], L_, dev_))); l_ = (p_ - z_).abs().mean()
                 if nce_ > 0: l_ = l_ + nce_ * F.cross_entropy(-torch.cdist(p_, z_, p=1) / max(1e-3, float(z_.abs().mean()) * d_ * 0.1), torch.arange(len(src_), device=dev_))
+                if gen_ and aw_ > 0 and len(AP_) >= 16:                         # AUDIT PAIRS (generic arm only: masked names cannot be memorised)
+                    sel_ = [AP_[int(j_)] for j_ in rs_.choice(len(AP_), 16, replace=False)]; tg9_ = [S_['it'][i_]['s'] for _, i_, _ in sel_]
+                    for _, i_, n_ in sel_:                                     #   2 hard negatives each: other sentences naming the same name
+                        ng_ = [j_ for j_ in ANG_.get(n_, []) if j_ != i_]
+                        tg9_ += [S_['it'][ng_[int(k_)]]['s'] for k_ in rs_.choice(len(ng_), min(2, len(ng_)), replace=False)] if ng_ else []
+                    with torch.no_grad(): za_ = tg_(_jx_batch([_jx_ids(t_, gen_) for t_ in tg9_], L_, dev_))
+                    pa_ = pr_(on_(_jx_batch([_jx_ids(q_.encode('latin-1', 'replace'), gen_) for q_, _, _ in sel_], L_, dev_)))
+                    l_ = l_ + aw_ * F.cross_entropy(-torch.cdist(pa_, za_, p=1) / max(1e-3, float(za_.abs().mean()) * d_ * 0.1), torch.arange(len(sel_), device=dev_))
                 op_.zero_grad(); l_.backward(); op_.step(); ls_.append(float(l_))
                 with torch.no_grad():
                     for a_, b_ in zip(tg_.parameters(), on_.parameters()): a_.mul_(mom_).add_(b_, alpha=1 - mom_)
@@ -138,22 +167,28 @@ def _jx_readout(model, cfg, S_, tag_):
     for i_ in lv_:
         for m_ in set(rx_.findall(S_['it'][i_]['s'])): NX_.setdefault(m_.decode('latin-1'), []).append(i_)
     has_ = lambda s_, a_, b_: {a_.encode('latin-1'), b_.encode('latin-1')} <= set(rx_.findall(s_))   # both names, as whole words
-    def lps_(ctx_, q_, cs_, sl_):
+    def lps_(ctx_, q_, cs_, sl_, raw_=False):
         if isinstance(ctx_, bytes): ctx_ = ctx_.decode('latin-1', 'replace')
-        return _inf_lps(model, cfg, (ctx_ + ' ' + q_) if ctx_ else q_, cs_, sl_, False)
-    def ans_(ctx_, q_, tgt_, oth_, sl_):
+        return _inf_lps(model, cfg, (ctx_ + ' ' + q_) if ctx_ else q_, cs_, sl_, False, raw_=raw_)
+    def ans_(ctx_, q_, tgt_, oth_, sl_):                                      # (scored as every readout: inf_score, per-byte mean since cg26w)
         cs_ = [tgt_] + oth_; return cs_[int(np.argmax(lps_(ctx_, q_, cs_, sl_)))]
-    def ans2_(ctx_, q_, tgt_, oth_, sl_):                                     # CONTEXT DIAGNOSTIC: the pick by summed and by MEAN byte log-probability
-        cs_ = [tgt_] + oth_; lp_ = lps_(ctx_, q_, cs_, sl_); nb_ = np.array([len((c9_ + '.').encode('latin-1')) for c9_ in cs_])
-        return cs_[int(np.argmax(lp_))], cs_[int(np.argmax(lp_ / nb_))]
-    R_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'name', 'hyb', 'ho_hyb', 'w', 'ret', 'true', 'ho_ret', 'h1', 'two', 'two_rand', 'two_true')}
-    DG_ = {k_: [] for k_ in ('w_m', 'true_m', 'fact', 'fact_m', 'true_is_fact', 'short', 'ex')} if int(getattr(cfg, 'inf_jx_ctxdiag', 0)) else None
+    def ans2_(ctx_, q_, tgt_, oth_, sl_, nul_=None):                         # CONTEXT DIAGNOSTIC: the pick by summed and by MEAN byte log-probability,
+        cs_ = [tgt_] + oth_; lp_, nb_ = lps_(ctx_, q_, cs_, sl_, True)          #   and (nul_ given) by the NEUTRAL-CUE difference: summed log-probability
+        out_ = (cs_[int(np.argmax(lp_))], cs_[int(np.argmax(lp_ / nb_))])      #   minus that after 'Someone r0 ' (cancels each name's own prior: length,
+        return out_ + ((cs_[int(np.argmax(lp_ - nul_))],) if nul_ is not None else ())   #   frequency; as the REM self-exam's pointwise mutual information)
+    R_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'name', 'hyb', 'ho_hyb', 'w', 'ret', 'ret_g', 'true', 'ho_ret', 'h1', 'two', 'two_rand', 'two_true')}
+    DG_ = {k_: [] for k_ in ('w_s', 'true_s', 'w_m', 'true_m', 'w_p', 'true_p', 'fact', 'fact_m', 'true_is_fact', 'short', 'ex')} if int(getattr(cfg, 'inf_jx_ctxdiag', 0)) else None
     pos_ = {i_: j_ for j_, i_ in enumerate(lv_)}
     def hyb_(q_, A_):                                                         # HYBRID: the sentences that name A, ranked by the JEPA key
         c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
         if not c9_: return None
         p9_ = _jx_pred(cfg, q_, dev_, 'V')
         return c9_[int((K_[c9_] - p9_).abs().sum(-1).argmin())]
+    KG_ = _jx_keys(cfg, S_, dev_, 'G')[1] if 'G' in _JX else None              # cg26x: the GENERIC hybrid's sentence, as question-time retrieval would use it
+    def hybg_(q_, A_):
+        c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
+        if not c9_ or KG_ is None: return None
+        return c9_[int((KG_[c9_] - _jx_pred(cfg, q_, dev_, 'G')).abs().sum(-1).argmin())]
     for c_ in ch_:
         A_, B_, C_ = c_['names'][:3]; r0_, r1_ = c_['rels'][0], c_['rels'][1]; sl_ = int(t2s_.get(int(c_['facts'][0][0]), 0)); sl2_ = int(t2s_.get(int(c_['facts'][1][0]), 0))
         tr1_ = next((S_['it'][i_]['s'] for i_ in reversed(NX_.get(A_, [])) if has_(S_['it'][i_]['s'], A_, B_)), None)
@@ -165,9 +200,14 @@ def _jx_readout(model, cfg, S_, tag_):
         R_['hyb'].append(hb_ is not None and has_(txt_(hb_), A_, B_))
         oth_ = list(rs_.choice([x_ for x_ in alln_ if x_ not in c_['names']], 19, replace=False))
         R_['w'].append(ans_(None, q_, B_, oth_, sl_) == B_); R_['ret'].append(ans_(txt_(top_[0]), q_, B_, oth_, sl_) == B_); R_['true'].append(ans_(tr1_, q_, B_, oth_, sl_) == B_)
+        if KG_ is not None:
+            with torch.no_grad(): hg_ = hybg_(q_, A_)
+            if hg_ is not None: R_['ret_g'].append(ans_(txt_(hg_), q_, B_, oth_, sl_) == B_)
         if DG_ is not None:                                                   # which sentence is 'true', and does the scoring favour short names?
-            fs_ = c_['facts'][0][1]; ws_, wm_ = ans2_(None, q_, B_, oth_, sl_); ts_, tm_ = ans2_(tr1_, q_, B_, oth_, sl_); fs2_, fm_ = ans2_(fs_, q_, B_, oth_, sl_)
-            DG_['w_m'].append(wm_ == B_); DG_['true_m'].append(tm_ == B_); DG_['fact'].append(fs2_ == B_); DG_['fact_m'].append(fm_ == B_)
+            nul_ = lps_(None, f"Someone {r0_} ", [B_] + oth_, sl_, True)[0]
+            fs_ = c_['facts'][0][1]; ws_, wm_, wp_ = ans2_(None, q_, B_, oth_, sl_, nul_); ts_, tm_, tp_ = ans2_(tr1_, q_, B_, oth_, sl_, nul_); fs2_, fm_ = ans2_(fs_, q_, B_, oth_, sl_)
+            DG_['w_p'].append(wp_ == B_); DG_['true_p'].append(tp_ == B_)
+            DG_['w_s'].append(ws_ == B_); DG_['true_s'].append(ts_ == B_); DG_['w_m'].append(wm_ == B_); DG_['true_m'].append(tm_ == B_); DG_['fact'].append(fs2_ == B_); DG_['fact_m'].append(fm_ == B_)
             DG_['true_is_fact'].append(f"{A_} {r0_} {B_}".encode('latin-1') in tr1_)
             for p9_ in (ts_, fs2_):
                 if p9_ != B_: DG_['short'].append(len(p9_) < len(B_))
@@ -186,7 +226,8 @@ def _jx_readout(model, cfg, S_, tag_):
     f_ = lambda k_: f"{np.mean(R_[k_]):.2f} (n {len(R_[k_])})" if R_[k_] else "- (n 0)"
     ex_ = []                                                                  # the other arms: retrieval only
     for nm_, nc9_, gen_ in _jx_arms(cfg)[1:]:
-        _, K2_ = _jx_keys(cfg, S_, dev_, nm_); E_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'hyb', 'ho_hyb')}
+        _, K2_ = _jx_keys(cfg, S_, dev_, nm_); E_ = {k_: [] for k_ in ('r1', 'r5', 'ho1', 'ho5', 'hyb', 'ho_hyb', 'hyb_c', 'hyb_n', 'ho_c', 'ho_n')}
+        CA_ = {c_.get('A') for c_ in S_.get('conc', []) if not c_.get('retracted')} | {c_.get('B') for c_ in S_.get('conc', []) if not c_.get('retracted')}
         for c_ in ch_:
             A_, B_ = c_['names'][:2]; r0_ = c_['rels'][0]
             if not any(has_(S_['it'][i_]['s'], A_, B_) for i_ in NX_.get(A_, [])): continue
@@ -196,17 +237,19 @@ def _jx_readout(model, cfg, S_, tag_):
                 if not gen_:
                     tp_ = torch.topk(-(K2_ - p9_).abs().sum(-1), min(5, K2_.shape[0])).indices.tolist()
                     E_[w_ + '1' if w_ else 'r1'].append(has_(txt_(tp_[0]), A_, B_)); E_[w_ + '5' if w_ else 'r5'].append(any(has_(txt_(i_), A_, B_) for i_ in tp_))
-                if c9_: E_['ho_hyb' if w_ else 'hyb'].append(has_(txt_(c9_[int((K2_[c9_] - p9_).abs().sum(-1).argmin())]), A_, B_))
+                if c9_:
+                    ok9_ = has_(txt_(c9_[int((K2_[c9_] - p9_).abs().sum(-1).argmin())]), A_, B_); E_['ho_hyb' if w_ else 'hyb'].append(ok9_)
+                    E_[('ho_' if w_ else 'hyb_') + ('c' if A_ in CA_ else 'n')].append(ok9_)   # split: chains the system concluded (audit pairs possible) / not
         g9_ = lambda k_: f"{np.mean(E_[k_]):.2f} (n {len(E_[k_])})" if E_[k_] else "- (n 0)"
-        ex_.append(f"ARM {nm_} ({('GENERIC: names masked' + (', + InfoNCE' if nc9_ > 0 else '') + ', ranked among the sentences whose slots hold A') if gen_ else 'V-JEPA + InfoNCE'}): "
-                   + ("" if gen_ else f"top-1 {g9_('r1')}, top-5 {g9_('r5')}, held-out top-1 {g9_('ho1')}, top-5 {g9_('ho5')}, ") + f"HYBRID {g9_('hyb')}, held-out {g9_('ho_hyb')}")
+        ex_.append(f"ARM {nm_} ({('GENERIC: names masked' + (', + InfoNCE' if nc9_ > 0 else '') + (', + audit pairs' if float(getattr(cfg, 'inf_jx_gen_aud', 0.0)) > 0 else '') + ', ranked among the sentences whose slots hold A') if gen_ else 'V-JEPA + InfoNCE'}): "
+                   + ("" if gen_ else f"top-1 {g9_('r1')}, top-5 {g9_('r5')}, held-out top-1 {g9_('ho1')}, top-5 {g9_('ho5')}, ") + f"HYBRID {g9_('hyb')}, held-out {g9_('ho_hyb')}" + (f" | AUDIT PAIRS {int(_JX.get('aud_n', 0))} (weight {float(getattr(cfg, 'inf_jx_gen_aud', 0.0)):g}): HYBRID on chains the system concluded {g9_('hyb_c')}, held-out {g9_('ho_c')} | NOT concluded {g9_('hyb_n')}, held-out {g9_('ho_n')}" if gen_ else ""))
     if DG_ is not None and DG_['w_m']:
         d9_ = lambda k_: f"{np.mean(DG_[k_]):.2f} (n {len(DG_[k_])})" if DG_[k_] else "- (n 0)"
-        ex_.append(f"CONTEXT DIAGNOSTIC (one-hop, 20 candidates; sum = summed byte log-probability as above, mean = per byte): weights only sum {f_('w')} / mean {d9_('w_m')} | "
-                   f"TRUE sentence sum {f_('true')} / mean {d9_('true_m')} (it holds the exact fact 'A r0 B' {d9_('true_is_fact')}) | the PLANTED FACT sentence itself sum {d9_('fact')} / mean {d9_('fact_m')} | "
+        ex_.append(f"CONTEXT DIAGNOSTIC (one-hop, 20 candidates; sum = summed byte log-probability, mean = per byte, neutral = summed minus after the neutral cue 'Someone r0 '): weights only sum {d9_('w_s')} / mean {d9_('w_m')} / neutral {d9_('w_p')} | "
+                   f"TRUE sentence sum {d9_('true_s')} / mean {d9_('true_m')} / neutral {d9_('true_p')} (it holds the exact fact 'A r0 B' {d9_('true_is_fact')}) | the PLANTED FACT sentence itself sum {d9_('fact')} / mean {d9_('fact_m')} | "
                    f"wrong picks with context that are SHORTER names than B {d9_('short')} | e.g. " + " || e.g. ".join(DG_['ex']))
     print(f"  [JEPA INDEX | {tag_}] {len(lv_)} stored sentences keyed | RETRIEVAL of the fact sentence for 'A r0 ': top-1 {f_('r1')}, top-5 {f_('r5')} | HELD-OUT wording top-1 {f_('ho1')}, top-5 {f_('ho5')} | "
-          f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | "
+          f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | GENERIC-HYBRID sentence in context {f_('ret_g')} | "
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
           f"true sentences {f_('two_true')} (chance 0.05)" + ("".join(" || " + e_ for e_ in ex_)), flush=True)
 def _jx_bytes(bs_):
@@ -289,8 +332,9 @@ def _jx_sleep_(model, cfg, S_):
         if (v_ + 1) % max(1, int(getattr(cfg, 'inf_jx_every', 1))) == 0: _jx_readout(model, cfg, S_, f"visit {v_ + 1}")
         if int(getattr(cfg, 'inf_jx_route', 0)):
             try: _jx_route(model, cfg, S_)
-            except Exception as e9_: print(f"  [JEPA ROUTING] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
+            except Exception as e9_: _fail('inference.jindex:334'); print(f"  [JEPA ROUTING] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
     except Exception as e_:
+        _fail('inference.jindex:335')
         print(f"  [JEPA INDEX] unavailable ({type(e_).__name__}: {e_})"[:260], flush=True)
 
 # names used at run time from modules that load after this one

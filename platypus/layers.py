@@ -1,4 +1,5 @@
 """Output heads and the delta-rule core: WY solve, chunked and blocked kernels, DeltaBlock."""
+from platypus.common import _fail
 import contextlib
 import math
 import os
@@ -36,6 +37,7 @@ def _fla_get():
             try:
                 from fla.ops.gated_delta_rule import chunk_gated_delta_rule as f_; _FLA['fn']=f_; _FLA['err']=None; break
             except Exception as e:
+                _fail('layers:38')
                 _FLA['err']=repr(e)[:300]
                 if attempt==0 and isinstance(e,ModuleNotFoundError) and torch.cuda.is_available() and os.environ.get('FLA_AUTO_INSTALL','1')!='0':
                     import subprocess, importlib, sys as _sys    # kernels only (fla-core, no dependencies: never touches torch/triton)
@@ -306,6 +308,7 @@ def _delta_core(k, v, bt, la, mh, beta_p, B, T, kern='torch', q=None, s0=None, c
             g=la.float() if la is not None else torch.zeros(B,T,mh,device=k.device)
             try: o,_=fn(qs,kd,vd,g,be,scale=1.0,use_qk_l2norm_in_kernel=True)
             except Exception as e:
+                _fail('layers:308')
                 _FLA['broken']=True; print(f"  [kernel] Triton kernel failed at shape {tuple(k.shape)} ({repr(e)[:150]}); torch solve from now on")
                 return _delta_core(k,v,bt,la,mh,beta_p,B,T,'torch',q,s0)
             o=o[:,:-1]
@@ -321,6 +324,7 @@ def _delta_core(k, v, bt, la, mh, beta_p, B, T, kern='torch', q=None, s0=None, c
             try: o,_=(fn(qs.to(dt),kf.to(dt),vf.to(dt),g.to(dt),be.to(dt),scale=1.0) if h0_ is None else
                       fn(qs.to(dt),kf.to(dt),vf.to(dt),g.to(dt),be.to(dt),scale=1.0,initial_state=h0_))   # o_t = S_t k_{t+1}
             except Exception as e:                                              # any later failure: torch solve from now on
+                _fail('layers:323')
                 _FLA['broken']=True; print(f"  [kernel] Triton kernel failed at shape {tuple(k.shape)} ({repr(e)[:150]}); torch solve from now on")
                 return _delta_core(k,v,bt,la,mh,beta_p,B,T,'torch',q,s0)
             o=o.float()[:,:-1]                                                  # S_{t-1} k_t for t = 1..T-1
@@ -489,7 +493,7 @@ def setup_kernel(model, cfg):
                             if it==1: torch.cuda.synchronize(); t0=time.perf_counter()
                             o_=_delta_core(xs[0],xs[1],xs[2],xs[3],mh,None,B,T,'torch'); (o_*ww).sum().backward()
                         torch.cuda.synchronize(); tm[f]=(time.perf_counter()-t0)/2*1e3; outs_[f]=o_.detach()
-                    except Exception as ex: print(f"  [delta solve] {nm_(f)} failed at {mh}x{dh} ({repr(ex)[:100]})"); torch.cuda.empty_cache()
+                    except Exception as ex: _fail('layers:492'); print(f"  [delta solve] {nm_(f)} failed at {mh}x{dh} ({repr(ex)[:100]})"); torch.cuda.empty_cache()
                 ref_=outs_.get(('full',))
                 err_={f:(0.0 if f==('full',) or ref_ is None else float((outs_[f]-ref_).norm()/(ref_.norm()+1e-30))) for f in outs_}
                 ok_=[f for f in tm if err_[f]<=5e-3]                           # every form must match the fp32 full solve
@@ -512,8 +516,8 @@ def setup_kernel(model, cfg):
                     if tng:
                         bng=min(tng,key=tng.get); sel['Cng']=bng[1] if bng[0]=='chunk' else 0; sel['Bng']=(bng[1],bng[2]) if bng[0]=='blk' else None
                         print(f"  [delta solve] no-grad forward per block ({Bn_}x{T}, {mh} heads x {dh}, bank targets): "+" | ".join(f"{nm_(f)} {t:.0f} ms" for f,t in tng.items())+f" -> {nm_(bng)}")
-                except Exception as ex: print(f"  [delta solve] no-grad timing failed ({repr(ex)[:120]})"); torch.cuda.empty_cache()
-            except Exception as ex: print(f"  [delta solve] timing failed at {mh}x{dh} ({repr(ex)[:120]}): full solve"); torch.cuda.empty_cache()
+                except Exception as ex: _fail('layers:515'); print(f"  [delta solve] no-grad timing failed ({repr(ex)[:120]})"); torch.cuda.empty_cache()
+            except Exception as ex: _fail('layers:516'); print(f"  [delta solve] timing failed at {mh}x{dh} ({repr(ex)[:120]}): full solve"); torch.cuda.empty_cache()
             by_[dh]=sel
         _CHUNK['by']=by_
         S0_=_CHUNK['by'].get(model.blocks[0].d_state//getattr(model.blocks[0],'mh',1)) or next(iter(_CHUNK['by'].values()),{'C':0,'B':None,'Cng':0,'Bng':None})

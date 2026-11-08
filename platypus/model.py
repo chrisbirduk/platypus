@@ -1,4 +1,5 @@
 """The Model."""
+from platypus.common import _fail
 import contextlib
 import math
 import torch
@@ -115,6 +116,7 @@ class Model(nn.Module):
         if f_ is not None and not _COMPILED.get('failed'):
             try: return f_(x,route=route,nstat=nstat)
             except Exception as e:
+                _fail('model:117')
                 _COMPILED['failed']=True; print(f"  [compile] compiled forward failed ({repr(e)[:160]}); eager from now on")
         return s._features_eager(x,route,nstat)
     def _features_eager(s,x,route=None,nstat=None):

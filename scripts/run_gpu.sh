@@ -99,6 +99,14 @@ python3 - "$RUN_DIR/manifest.json" "$status" "$start" <<'PY'
 import json, sys, time, datetime
 p, status, start = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 m = json.load(open(p))
+import re, os
+fl_ = None
+lg_ = os.path.join(os.path.dirname(p), "run.log")
+if os.path.exists(lg_):
+    for ln_ in open(lg_, errors="replace"):
+        mm_ = re.match(r"FAILURES: (none|\d+)(.*)", ln_)
+        if mm_: fl_ = {"count": 0 if mm_.group(1) == "none" else int(mm_.group(1)), "detail": mm_.group(2).strip(" -")[:4000]}
+m.update(failures=fl_)   # issue #28: handlers that printed and continued during the run
 m.update(exit_status=status, wall_seconds=int(time.time()) - start,
          finished_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"))
 json.dump(m, open(p, "w"), indent=2)

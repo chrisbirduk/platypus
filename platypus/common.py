@@ -24,6 +24,10 @@ def _nslots(cfg):
     """slots the router may open (infer_slots; default: one per domain)"""
     return max(len(PILE_DOMAINS),int(getattr(cfg,"infer_slots",0) or 0))
 LOG2=math.log(2)
+_FAILS=[]                                    # issue #28: every print-and-continue exception handler records here; the run summary prints FAILURES: n
+def _fail(where):
+    import sys as _s9
+    e_=_s9.exc_info()[1]; _FAILS.append((where,type(e_).__name__ if e_ is not None else '?',str(e_)[:160] if e_ is not None else ''))
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
 _LATE = {

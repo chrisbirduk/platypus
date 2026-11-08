@@ -1,4 +1,5 @@
 """Probe evaluation, CLS measurements and REM examination."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -45,25 +46,26 @@ def inf_eval(model,cfg,S_,tag):
             print(f"  [inference eval | fast store use] {d_[1]}/{d_[0]} probe positions store-keyed, mean max |logit correction| there {d_[2]/max(1,d_[1]):.3f} | names in the store {len(_INFM.get('names',{}))}",flush=True)
             if int(getattr(cfg,'inf_cue_repair',0)):
                 try: _cue_readout(model,cfg,S_)
-                except Exception as e9_: print(f"  [inference CUE REPAIR] readout unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+                except Exception as e9_: _fail('inference.evaluate:48'); print(f"  [inference CUE REPAIR] readout unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         finally: _INF['corr']=False
     if int(getattr(cfg,'inf_splice',0)) and ('END' in tag or (int(model.__dict__.get('_visit',0))+1)%max(1,int(getattr(cfg,'inf_splice_every',1)))==0):
         try: inf_splice(model,cfg,tag)
-        except Exception as e_: print(f"  [inference splice-and-appraise] skipped: {e_!r}"[:300],flush=True)
+        except Exception as e_: _fail('inference.evaluate:52'); print(f"  [inference splice-and-appraise] skipped: {e_!r}"[:300],flush=True)
     if int(getattr(cfg,'inf_eval_qtime',0)) and not _INF.get('corr') and ('END' in tag or (int(model.__dict__.get('_visit',0))+1)%max(1,int(getattr(cfg,'inf_qt_every',getattr(cfg,'inf_splice_every',1))))==0):
         try: inf_qtime2(model,cfg,tag)
-        except Exception as e_: print(f"  [inference question-time chaining] skipped: {e_!r}"[:300],flush=True)
+        except Exception as e_: _fail('inference.evaluate:55'); print(f"  [inference question-time chaining] skipped: {e_!r}"[:300],flush=True)
         if int(getattr(cfg,'inf_idmem',0)):
             try: inf_idmem(model,cfg,S_,tag)
-            except Exception as e_: print(f"  [inference IDENTIFIER MEMORY] skipped: {e_!r}"[:300],flush=True)
+            except Exception as e_: _fail('inference.evaluate:58'); print(f"  [inference IDENTIFIER MEMORY] skipped: {e_!r}"[:300],flush=True)
         if int(getattr(cfg,'inf_eval_qtime3',0)):
             try:
                 for nc0_ in sorted(set([0,int(getattr(cfg,'inf_qt_comp',2))])):
                     cfg.inf_qt_comp=nc0_; inf_qtime3(model,cfg,tag)
-            except Exception as e_: print(f"  [inference multi-hop question-time] skipped: {e_!r}"[:300],flush=True)
+            except Exception as e_: _fail('inference.evaluate:63'); print(f"  [inference multi-hop question-time] skipped: {e_!r}"[:300],flush=True)
     if int(getattr(cfg,'inf_kgx',0)) and 'END' in tag:                         # GRAPH INTO WEIGHTS readouts (no state change: names restored, nothing written)
         try: _kgx_readout(model,cfg,S_)
         except Exception as e9_:
+            _fail('inference.evaluate:66')
             import traceback as _tb; print(f"  [GRAPH INTO WEIGHTS] unavailable ({type(e9_).__name__}: {e9_}) {_tb.format_exc()[-400:]!r}"[:700],flush=True)
     return r_
 @torch.no_grad()
@@ -87,12 +89,107 @@ def _inf_eval1(model,cfg,S_,tag):
                 finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
                 s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
                 tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
-            sc2_=list(tot_-math.log(len(sls_)))
+            sc2_=list(_score_norm(cfg,tot_-math.log(len(sls_)),np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64)))   # issue #24: per byte (inf_score)
             out.append(int(np.argmax(sc2_)))
             if _INF.get('cal_on'):
                 pp_=np.exp(np.array(sc2_)-max(sc2_)); pp_=pp_/pp_.sum(); A0_=_INF['cal_on'][len(_INF['calrec'])] if len(_INF['calrec'])<len(_INF['cal_on']) else ('','','')
                 _INF['calrec'].append((int(np.argmax(sc2_))==0,float(pp_.max()),float(pp_[0]),int(A0_[0].encode('latin-1') in (_INFM.get('names') or {})),A0_[0],cs_[int(np.argmax(sc2_))],A0_[1],A0_[2]))
         return out
+    def openh(prompts,targets,slot):
+        """OPEN-ENDED (issue #24, inf_eval_open): greedy bytes after the prompt, no candidate list; right if they spell the target name and
+        the next byte is not a letter. slot -1: the next-byte distributions of every slot in use, equally mixed (no slot given). Batched:
+        rows are right-padded, each row reads its own last position (causal, so padding after it does not matter)."""
+        if not prompts: return []
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+        B_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):] for p_ in prompts]
+        n_=max(len(t_.encode('latin-1')) for t_ in targets)+1; G_=[[] for _ in B_]
+        for _ in range(n_):
+            R_=[b_+g_ for b_,g_ in zip(B_,G_)]; L_=max(len(r_) for r_ in R_); X_=torch.zeros(len(R_),L_,dtype=torch.long,device=dev_)
+            for j_,r_ in enumerate(R_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+            ix_=torch.tensor([len(r_)-1 for r_ in R_],device=dev_); lp9_=None
+            for sl9_ in sls_:
+                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(R_),device=dev_),ix_],-1)
+                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
+            for j_,v_ in enumerate(lp9_.argmax(-1).tolist()): G_[j_].append(int(v_))
+        hit_=[]
+        for g_,t_ in zip(G_,targets):
+            o_=bytes(g_).decode('latin-1'); hit_.append(int(o_[:len(t_)]==t_ and (len(o_)==len(t_) or not o_[len(t_)].isalpha())))
+        return hit_
+    def beamh(prompts,targets,slot,B_=8):
+        """BEAM (inf_eval_beam): name-level beam search after the prompt, no candidate list. Beams of letters; a beam ends when it writes a
+        non-letter after at least one letter; finished names ranked by total log-probability (terminator included). Right if the best is the
+        target. slot -1: every slot in use, equally mixed. All prompts' beams in one batch per step."""
+        if not prompts: return []
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+        P_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):] for p_ in prompts]
+        isl_=lambda b_: 65<=b_<=90 or 97<=b_<=122
+        live_=[[([],0.0)] for _ in P_]; fin_=[[] for _ in P_]; T_=max(len(t_) for t_ in targets)+2
+        for st_ in range(T_):
+            rows_=[(i_,g_,sc_) for i_,bm_ in enumerate(live_) for g_,sc_ in bm_]
+            if not rows_: break
+            R_=[P_[i_]+g_ for i_,g_,_ in rows_]; L_=max(len(r_) for r_ in R_); X_=torch.zeros(len(R_),L_,dtype=torch.long,device=dev_)
+            for j_,r_ in enumerate(R_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+            ix_=torch.tensor([len(r_)-1 for r_ in R_],device=dev_); lp9_=None
+            for sl9_ in sls_:
+                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(R_),device=dev_),ix_],-1)
+                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
+            lp9_=(lp9_-math.log(len(sls_))).cpu()
+            cand_=[[] for _ in P_]
+            for j_,(i_,g_,sc_) in enumerate(rows_):
+                v_,b9_=lp9_[j_].topk(B_)
+                for vv_,bb_ in zip(v_.tolist(),b9_.tolist()):
+                    if isl_(bb_): cand_[i_].append((g_+[bb_],sc_+vv_))
+                    elif g_: fin_[i_].append((bytes(g_).decode('latin-1'),sc_+vv_))
+            for i_ in range(len(P_)):
+                fin_[i_].sort(key=lambda x_: -x_[1]); best_=fin_[i_][0][1] if len(fin_[i_])>=B_ else -1e18
+                live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:B_] if c_[1]>best_]
+        return [int(bool(f_) and max(f_,key=lambda x_: x_[1])[0]==t_) for f_,t_ in zip(fin_,targets)]
+    def seqlp(p_,cs_,slot):
+        """summed log-probability (nats) of each continuation c + '.' after prompt p_, mixed over slots like score(); and its byte count"""
+        if _INF.get('corr'): p_=_cue_fix(cfg,p_)
+        seqs=[(p_+c_+'.').encode('latin-1')[-int(cfg.seq_len):] for c_ in cs_]; L_=max(len(s_) for s_ in seqs)
+        X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
+        for j_,s_ in enumerate(seqs): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
+        n0_=[len(s_)-len((c_+'.').encode('latin-1')) for s_,c_ in zip(seqs,cs_)]
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0]); tot_=None
+        for sl9_ in sls_:
+            sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+            try: lp_=F.log_softmax(model(X_[:,:-1],sl9_).float(),-1)
+            finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+            s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+            tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
+        return tot_-math.log(len(sls_)), np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64), lp_
+    def opendiag(items):
+        """OPEN-ENDED DIAGNOSTIC (inf_eval_open_diag): where does the true name sit in the model's own distribution? first-byte rank at the
+        answer position; per-byte log2-probability of the true name and of the greedy output; SEARCH ERRORS (the true name is more probable as
+        a whole than what greedy wrote: fixable by search); rank of the true name among 200 probe names (an open list, per byte)"""
+        import re as _re9
+        fr_=[]; tl_=[]; gl_=[]; se_=[]; rk_=[]; rr9_=np.random.RandomState(4321)
+        for p_,t_,slot in items:
+            sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+            b_=list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):]; G_=[]; lp0_=None
+            for st_ in range(14):
+                X_=torch.tensor([b_+G_],dtype=torch.long,device=dev_); lp9_=None
+                for sl9_ in sls_:
+                    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                    try: l_=F.log_softmax(model(X_,sl9_)[0,-1].float(),-1)
+                    finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                    lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
+                if st_==0: lp0_=lp9_
+                G_.append(int(lp9_.argmax()))
+            fr_.append(int((lp0_>lp0_[t_.encode('latin-1')[0]]).sum())+1)
+            gs_=bytes(G_).decode('latin-1'); m9_=_re9.match(r'[A-Za-z]+',gs_); gn_=m9_.group(0) if m9_ else gs_[:1]
+            oth_=[x_ for x_ in rr9_.choice(alln_,min(len(alln_),260),replace=False) if x_!=t_][:199]
+            sm_,nb_,_=seqlp(p_,[t_,gn_]+oth_,slot)
+            tl_.append(sm_[0]/nb_[0]/math.log(2)); gl_.append(sm_[1]/nb_[1]/math.log(2)); se_.append(int(gn_!=t_ and sm_[0]>sm_[1]))
+            pb_=np.delete(sm_/nb_,1); rk_.append(int((pb_>pb_[0]).sum())+1)
+        a_=np.array; fr_,rk_=a_(fr_),a_(rk_)
+        return (f"first byte rank median {np.median(fr_):.0f} (top-1 {np.mean(fr_<=1):.2f}, top-3 {np.mean(fr_<=3):.2f}) | log2-probability per byte: true name {np.mean(tl_):.2f}, greedy output {np.mean(gl_):.2f} | "
+                f"SEARCH ERRORS (true name more probable than the greedy output) {np.mean(se_):.2f} | rank among 200 probe names median {np.median(rk_):.0f} (top-1 {np.mean(rk_<=1):.2f}, top-10 {np.mean(rk_<=10):.2f})")
     try:
         UPD_=float(getattr(cfg,'inf_upd_frac',0.0))>0
         KINDS_=('one-hop','two-hop','typed two-hop','three-hop')+(('UPDATED one-hop','UPDATED two-hop','NOISE-CONTRADICTED one-hop') if UPD_ else ())+(('reworded two-hop','context two-hop','pronoun two-hop') if (int(getattr(cfg,'inf_eval_hard',0)) and ('END' in tag or _INF.get('corr'))) else ())+(('IN-CONTEXT two-hop','IN-CONTEXT decoy bridge','IN-CONTEXT three-hop') if (int(getattr(cfg,'inf_eval_ctx',0)) and not _INF.get('corr')) else ())+(('CTX2 order AB','CTX2 order BA','CTX2 decoy AB','CTX2 decoy BA') if (int(getattr(cfg,'inf_eval_ctx2',0)) and not _INF.get('corr')) else ())
@@ -150,6 +247,22 @@ def _inf_eval1(model,cfg,S_,tag):
                 if kind.startswith('HELD-OUT'): _INF.setdefault('brg',{}).setdefault(kind,[]).extend([int(1<=h_<=(2 if 'three' in kind else 1)) for h_ in hh_])
                 if _INF.get('cal_on') is not None and kind=='two-hop' and _INF.get('corr'): _INF.setdefault('calrec_all',[]).extend(_INF['calrec']); _INF['cal_on']=None
             res[kind]=(float(np.mean(hits)) if hits else float('nan'),len(hits)); d_=_INFM.get('dbg',[0,0,0.0]); act_[kind]=d_[2]/max(1,d_[0])
+            if int(getattr(cfg,'inf_eval_open',0)) and kind in ('one-hop','two-hop','HELD-OUT two-hop','HELD-OUT typed two-hop') and pr_:
+                oh_=[]
+                for sl in sorted(set(sl_)):
+                    ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; oh_+=openh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl)
+                res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_))
+                if int(getattr(cfg,'inf_eval_beam',0)):
+                    bh_=[]
+                    for sl in sorted(set(sl_)):
+                        ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; bh_+=beamh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl,int(getattr(cfg,'inf_eval_beam',8)))
+                    res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
+                dg9_=int(getattr(cfg,'inf_eval_open_diag',0))
+                if dg9_ and kind in ('one-hop','HELD-OUT two-hop') and (dg9_>=2 or 'END' in tag):
+                    try:
+                        print(f"  [inference OPEN-ENDED DIAGNOSTIC | {tag}] {kind} (n {min(40,len(pr_))}"
+                              +(", no slot given" if kind.startswith('HELD-OUT') else ", slot given")+"): "+opendiag([(pr_[i_],cd_[i_][0],sl_[i_]) for i_ in range(min(40,len(pr_)))]),flush=True)
+                    except Exception as e9_: _fail('inference.evaluate:opendiag'); print(f"  [inference OPEN-ENDED DIAGNOSTIC] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
             if kind.startswith('CTX2'): cp0_=_INF['copy'].pop(kind,[]); res[kind+f" (picked another in-context name {np.mean(cp0_) if cp0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith('HELD-OUT'): bg0_=_INF.setdefault('brg',{}).pop(kind,[]); res[kind+f" (picked a bridge {np.mean(bg0_) if bg0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith(('UPDATED','NOISE')): st0_=_INF.setdefault('stale',{}).pop(kind,[]); res[kind+(' (STALE: old answer preferred' if kind.startswith('UPDATED') else ' (WRONG FLIP: false contradiction preferred')+f" {np.mean(st0_) if st0_ else float('nan'):.2f})"]=res.pop(kind)
@@ -215,7 +328,7 @@ def _inf_eval1(model,cfg,S_,tag):
         _inf_abstain_sources(S_,cr_ok_,tag)
     if _INF.get('corr') and int(getattr(cfg,'inf_eval_hard',0)): print("  [inference eval | store activity] mean max |logit correction| per probe position: "+" | ".join(f"{k_} {v_:.3f}" for k_,v_ in act_.items()),flush=True)
     return res
-def _inf_lps(model,cfg,prompt_,cands_,slot_,store_):
+def _inf_lps(model,cfg,prompt_,cands_,slot_,store_,dec_=False,raw_=False):
     """cg26g: summed log-probability of each candidate completion (as _inf_score1, which returns only the argmax)"""
     seqs=[(prompt_+c_+'.').encode('latin-1')[-max(int(cfg.seq_len),_SCORE_LEN['n']):] for c_ in cands_]; L_=max(len(s_) for s_ in seqs); dev_=model.embed.weight.device
     X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
@@ -228,7 +341,8 @@ def _inf_lps(model,cfg,prompt_,cands_,slot_,store_):
         if f0_=='__none__': _INFM.pop('force',None)
         else: _INFM['force']=f0_
     n0_=[len(s_)-len((c_+'.').encode()) for s_,c_ in zip(seqs,cands_)]
-    return np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+    sm_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+    return _score_norm(cfg,sm_,np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64),dec_,raw_)
 def _cls_measure(model,cfg,S_slot):
     """cg26g CLS MEASUREMENT, every sleep whatever the dream mode (so the no-replay and random-dream controls report the same numbers):
     TEMPORAL GRADIENT on an unbiased random sample - two-hop with the store OFF vs ON by age of the conclusion (visits since first seen);
@@ -247,7 +361,7 @@ def _cls_measure(model,cfg,S_slot):
     def sc_(c_,on_):
         o_=[x_ for x_ in Cp_ if x_!=c_['C']]; rs_.shuffle(o_)
         if len(o_)<4: return None
-        lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),on_)
+        lp_=_inf_lps(model,cfg,f"So {c_['A']} is connected to ",[c_['C']]+o_[:9],int(S_slot(c_['d'])),on_,dec_=True)   # (release / restore decision)
         return bool(int(np.argmax(lp_))==0), float(lp_[0]-np.max(lp_[1:]))
     bk_={'this visit':[],'1 back':[],'2-3 back':[],'4+ back':[]}
     for c_ in lv_:
@@ -286,7 +400,7 @@ def _cls_measure(model,cfg,S_slot):
             if npq9_>=10:
                 sdq9_=float(np.std(lh9_))
                 if sdq9_>=0.1: thq9_=max(float(np.quantile(pr9_,1.0-pq9_)),2.0*float(np.median(pr9_)),pmn9_)
-        except Exception as e7_: print(f"  [inference CLS | RELEASE TIMING] relative predicted-recall rule unavailable ({type(e7_).__name__}: {e7_})"[:200],flush=True)
+        except Exception as e7_: _fail('inference.evaluate:317'); print(f"  [inference CLS | RELEASE TIMING] relative predicted-recall rule unavailable ({type(e7_).__name__}: {e7_})"[:200],flush=True)
     G9_=int(getattr(cfg,'inf_delete_grace',2)); dl_on_=bool(int(getattr(cfg,'inf_delete',0)) and int(getattr(cfg,'inf_release',0)))
     for c_ in trk_:
         tst_=int(getattr(cfg,'inf_release_test',0))                            # (local test only: judge with the store ON, so the release / restore path runs)
@@ -322,7 +436,7 @@ def _cls_measure(model,cfg,S_slot):
             if g_['delv']>=vis_: continue                                       # GHOST READOUT: deleted conclusions, store off - still answered from the weights alone?
             o_=[x_ for x_ in Cp_ if x_!=g_['C']]; rs_.shuffle(o_)
             if len(o_)<4: continue
-            lp_=_inf_lps(model,cfg,f"So {g_['A']} is connected to ",[g_['C']]+o_[:9],int(S_slot(g_['d'])),False); g_['lt']=vis_; a9_=vis_-g_['delv']
+            lp_=_inf_lps(model,cfg,f"So {g_['A']} is connected to ",[g_['C']]+o_[:9],int(S_slot(g_['d'])),False,dec_=True); g_['lt']=vis_; a9_=vis_-g_['delv']
             gr_.setdefault('1' if a9_<=1 else '2-3' if a9_<=3 else '4+',[]).append(float(int(np.argmax(lp_))==0))
             g_['fl']=0 if int(np.argmax(lp_))==0 else g_.get('fl',0)+1
         K9_=int(getattr(cfg,'inf_ghost_reinstate',0)); nri_=0; nsd_=0
@@ -346,7 +460,7 @@ def _cls_measure(model,cfg,S_slot):
               if hlc_ else "decay model not calibrated yet (needs to beat a constant rate out of sample at 2 sleeps running): the fixed rule (consecutive passing sleeps) decides"),flush=True)
     if int(getattr(cfg,'inf_hl',0)):
         try: _hl_model(model,cfg,S_,obs9_,vis_)
-        except Exception as e9_: print(f"  [inference DECAY MODEL] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        except Exception as e9_: _fail('inference.evaluate:377'); print(f"  [inference DECAY MODEL] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     if int(getattr(cfg,'inf_schema_speed',0)):                                  # cg26i SCHEMA SPEED (readout): do conclusions the trunk already predicts well (lower half of trunk
         tb9_=[c_ for c_ in lv_+[x_ for x_ in allc_ if x_.get('released') or x_.get('deleted') is not None] if 'tbits' in c_]   #   bits) pass store-off and reach release
         if len(tb9_)>=6:                                                        #   sooner than misfits (Tse et al. 2007)?
@@ -459,7 +573,7 @@ def _plat_select(model,cfg,S_,S_slot):
                 l_=(F.cross_entropy(lg_[0],X_[0,1:],reduction='none')*M_[0,1:]).sum()/M_[0,1:].sum().clamp(min=1)
                 gP_=flat_(torch.autograd.grad(l_,prm_,allow_unused=True))
                 sc_[int(j_)]=(float(-F.cosine_similarity(gP_,vS_,dim=0)),float(F.cosine_similarity(gP_,vR_,dim=0)),src_)
-    except Exception as e9_: print(f"  [inference PLATONIC SELECTION] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True); return
+    except Exception as e9_: _fail('inference.evaluate:490'); print(f"  [inference PLATONIC SELECTION] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True); return
     finally: model.train(was_); back_()
     if not sc_: return
     W_={j_:(4.0 if (a_>0 and b_>-0.05) else 0.25 if a_<0 else 1.0) for j_,(a_,b_,_) in sc_.items()}
@@ -496,9 +610,9 @@ def _rem_exam(model,cfg,S_,S_slot):
             cd_=[C_]+o_[:9]                                                     # FIX: ranked against stored conclusion ends only - the cortex's own greedy
             st_['gknown']=st_.get('gknown',0)+int(bool(g0_) and g0_!=C_ and g0_ in Cset_)   #   answer always wins its own ranking (local: 14 of 14 'wrong' by 8-16 nats)
             if len(cd_)<5: continue
-            lo_=_inf_lps(model,cfg,pr_,cd_,sl_,False); ln_=_inf_lps(model,cfg,pr_,cd_,sl_,True)
+            lo_=_inf_lps(model,cfg,pr_,cd_,sl_,False,dec_=True); ln_=_inf_lps(model,cfg,pr_,cd_,sl_,True,dec_=True)   # (already PMI-corrected below; may steer REM)
             k0_=int(np.argmax(lo_)); mo_=float(lo_[0]-np.max(lo_[1:]))
-            pm_=lo_-_inf_lps(model,cfg,"So Someone is connected to ",cd_,sl_,False)   # FIX: specific to the cue (pointwise mutual information) - summed log-probabilities
+            pm_=lo_-_inf_lps(model,cfg,"So Someone is connected to ",cd_,sl_,False,dec_=True)   # FIX: specific to the cue (pointwise mutual information) - summed log-probabilities
             j9_=1+int(np.argmax(pm_[1:])); top_=cd_[k0_]                         #   of different names mostly reflect their length and frequency (local: 14 of 14 'wrong')
             st_['pmi']=st_.get('pmi',0.0)+float(pm_[0])
             cat_='right' if (k0_==0 and mo_>=mg_ and g0_==C_) else 'wrong' if (float(pm_[j9_]-pm_[0])>=mg_ and float(pm_[j9_])>=mg_) else 'unsure'
@@ -605,6 +719,7 @@ def _rem_analogy(model,cfg,S_,S_slot):
 _LATE = {
     '_INF_PARA': 'platypus.inference.qtime',
     '_SCORE_LEN': 'platypus.inference.readouts',
+    '_score_norm': 'platypus.inference.readouts',
     '_compact': 'platypus.inference.selftaught',
     '_hl_model': 'platypus.inference.decay',
     '_hl_x': 'platypus.inference.decay',
