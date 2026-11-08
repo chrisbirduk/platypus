@@ -25,7 +25,7 @@ def bank_drift(model, cfg, raw_vals_fn, seen_d, slot_of, vis, tag, summary=False
     from platypus.inference.selcmp import _codes
     from platypus.inference.residual import _bits_rows
     try:
-        B = model.__dict__.setdefault('_bank', {'ref': {}, 'p0': {}, 'c0': {}, 'b0': {}, 'pts': []})
+        B = model.__dict__.setdefault('_tbank', {'ref': {}, 'p0': {}, 'c0': {}, 'b0': {}, 'pts': []})
         if not B['ref']:
             rv = raw_vals_fn(); rs = np.random.RandomState(int(cfg.seed) + 2221)
             for d in range(len(rv)):
