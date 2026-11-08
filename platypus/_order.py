@@ -236,6 +236,7 @@ ORDER = (
     ('ngrams', '_hist_len'),
     ('ngrams', '_dream_route_rows'),
     ('ngrams', 'route_scales'),
+    ('model', 'CaseEmbed'),
     ('model', 'Model'),
     ('meta', 'MetaController'),
     ('meta', 'flow_importance'),
