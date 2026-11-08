@@ -704,7 +704,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             lo_=[f0_ for f0_ in fl_ if f0_.get('n',0)<int(cfg.inf_target)] or fl_
             lo_=sorted(lo_,key=lambda f0_: (not f0_.get('derived'),-f0_.get('rep',1),f0_.get('n',0)))[:max(4*fxs_,256)]
             sel_+=[(lo_[i_],'c') for i_ in rs_.choice(len(lo_),fxs_)]
-        W9s_=int(getattr(cfg,'inf_conc_wordings',0)); rw9s_=np.random.RandomState(int(cfg.seed)+7411+int(model.__dict__.get('_visit',0)))
+        W9s_=int(getattr(cfg,'inf_conc_wordings_store',0)); rw9s_=np.random.RandomState(int(cfg.seed)+7411+int(model.__dict__.get('_visit',0)))
         for c_,kd_ in sel_:
             if kd_!='s': c_['n']=c_.get('n',0)+1
             if c_.get('fact'): sn_=c_['s']                                       # a recorded one-hop fact (NREM replay)
@@ -823,7 +823,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     print(f"  [inference sleep | FAST STORE] keyed positions written {_INFM.get('wpos',0)} | {int(cfg.inf_steps)} write steps ({kc_} conclusion rows + {ka_} anchor rows) on {len(allc_)} conclusions | "
           f"keyed conclusion bytes after writing {rc_[0] if rc_ else float('nan'):.3f} (first step), {np.mean(rc_[-5:]) if rc_ else float('nan'):.3f} (last steps) bits | anchor KL(store||model) {np.mean(ra_[-5:]) if ra_ else float('nan'):.4f} | "
           f"|M| {float(_INFM['M'].norm()):.1f}{ainfo_} | trunk weight sum {float(sum(p0_.detach().double().abs().sum() for p0_ in model.parameters())):.6e}{' | gates '+str([round(float(g0_),2) for g0_ in _INFM['gates']]) if _INFM['key']=='slowgate' else ''}{xinfo_} | held-out BPC (store on) visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}"
-          +(f" | WORDINGS (inf_conc_wordings) store rows so far {model.__dict__.get('_nwords',0)}" if int(getattr(cfg,'inf_conc_wordings',0)) else ""),flush=True)
+          +(f" | WORDINGS (inf_conc_wordings_store) store rows so far {model.__dict__.get('_nwords',0)}" if int(getattr(cfg,'inf_conc_wordings_store',0)) else ""),flush=True)
     if int(cfg.inf_eval_every)>0 and (int(model.__dict__.get('_visit',0))+1)%int(cfg.inf_eval_every)==0: inf_eval(model,cfg,S_,f"visit {int(model.__dict__.get('_visit',0))+1}")
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
