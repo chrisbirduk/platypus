@@ -117,6 +117,48 @@ def _inf_eval1(model,cfg,S_,tag):
         for g_,t_ in zip(G_,targets):
             o_=bytes(g_).decode('latin-1'); hit_.append(int(o_[:len(t_)]==t_ and (len(o_)==len(t_) or not o_[len(t_)].isalpha())))
         return hit_
+    def seqlp(p_,cs_,slot):
+        """summed log-probability (nats) of each continuation c + '.' after prompt p_, mixed over slots like score(); and its byte count"""
+        if _INF.get('corr'): p_=_cue_fix(cfg,p_)
+        seqs=[(p_+c_+'.').encode('latin-1')[-int(cfg.seq_len):] for c_ in cs_]; L_=max(len(s_) for s_ in seqs)
+        X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
+        for j_,s_ in enumerate(seqs): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
+        n0_=[len(s_)-len((c_+'.').encode('latin-1')) for s_,c_ in zip(seqs,cs_)]
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0]); tot_=None
+        for sl9_ in sls_:
+            sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+            try: lp_=F.log_softmax(model(X_[:,:-1],sl9_).float(),-1)
+            finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+            s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
+            tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
+        return tot_-math.log(len(sls_)), np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64), lp_
+    def opendiag(items):
+        """OPEN-ENDED DIAGNOSTIC (inf_eval_open_diag): where does the true name sit in the model's own distribution? first-byte rank at the
+        answer position; per-byte log2-probability of the true name and of the greedy output; SEARCH ERRORS (the true name is more probable as
+        a whole than what greedy wrote: fixable by search); rank of the true name among 200 probe names (an open list, per byte)"""
+        import re as _re9
+        fr_=[]; tl_=[]; gl_=[]; se_=[]; rk_=[]; rr9_=np.random.RandomState(4321)
+        for p_,t_,slot in items:
+            sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+            b_=list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):]; G_=[]; lp0_=None
+            for st_ in range(14):
+                X_=torch.tensor([b_+G_],dtype=torch.long,device=dev_); lp9_=None
+                for sl9_ in sls_:
+                    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                    try: l_=F.log_softmax(model(X_,sl9_)[0,-1].float(),-1)
+                    finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                    lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
+                if st_==0: lp0_=lp9_
+                G_.append(int(lp9_.argmax()))
+            fr_.append(int((lp0_>lp0_[t_.encode('latin-1')[0]]).sum())+1)
+            gs_=bytes(G_).decode('latin-1'); m9_=_re9.match(r'[A-Za-z]+',gs_); gn_=m9_.group(0) if m9_ else gs_[:1]
+            oth_=[x_ for x_ in rr9_.choice(alln_,min(len(alln_),260),replace=False) if x_!=t_][:199]
+            sm_,nb_,_=seqlp(p_,[t_,gn_]+oth_,slot)
+            tl_.append(sm_[0]/nb_[0]/math.log(2)); gl_.append(sm_[1]/nb_[1]/math.log(2)); se_.append(int(gn_!=t_ and sm_[0]>sm_[1]))
+            pb_=np.delete(sm_/nb_,1); rk_.append(int((pb_>pb_[0]).sum())+1)
+        a_=np.array; fr_,rk_=a_(fr_),a_(rk_)
+        return (f"first byte rank median {np.median(fr_):.0f} (top-1 {np.mean(fr_<=1):.2f}, top-3 {np.mean(fr_<=3):.2f}) | log2-probability per byte: true name {np.mean(tl_):.2f}, greedy output {np.mean(gl_):.2f} | "
+                f"SEARCH ERRORS (true name more probable than the greedy output) {np.mean(se_):.2f} | rank among 200 probe names median {np.median(rk_):.0f} (top-1 {np.mean(rk_<=1):.2f}, top-10 {np.mean(rk_<=10):.2f})")
     try:
         UPD_=float(getattr(cfg,'inf_upd_frac',0.0))>0
         KINDS_=('one-hop','two-hop','typed two-hop','three-hop')+(('UPDATED one-hop','UPDATED two-hop','NOISE-CONTRADICTED one-hop') if UPD_ else ())+(('reworded two-hop','context two-hop','pronoun two-hop') if (int(getattr(cfg,'inf_eval_hard',0)) and ('END' in tag or _INF.get('corr'))) else ())+(('IN-CONTEXT two-hop','IN-CONTEXT decoy bridge','IN-CONTEXT three-hop') if (int(getattr(cfg,'inf_eval_ctx',0)) and not _INF.get('corr')) else ())+(('CTX2 order AB','CTX2 order BA','CTX2 decoy AB','CTX2 decoy BA') if (int(getattr(cfg,'inf_eval_ctx2',0)) and not _INF.get('corr')) else ())
@@ -179,6 +221,12 @@ def _inf_eval1(model,cfg,S_,tag):
                 for sl in sorted(set(sl_)):
                     ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; oh_+=openh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl)
                 res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_))
+                dg9_=int(getattr(cfg,'inf_eval_open_diag',0))
+                if dg9_ and kind in ('one-hop','HELD-OUT two-hop') and (dg9_>=2 or 'END' in tag):
+                    try:
+                        print(f"  [inference OPEN-ENDED DIAGNOSTIC | {tag}] {kind} (n {min(40,len(pr_))}"
+                              +(", no slot given" if kind.startswith('HELD-OUT') else ", slot given")+"): "+opendiag([(pr_[i_],cd_[i_][0],sl_[i_]) for i_ in range(min(40,len(pr_)))]),flush=True)
+                    except Exception as e9_: _fail('inference.evaluate:opendiag'); print(f"  [inference OPEN-ENDED DIAGNOSTIC] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
             if kind.startswith('CTX2'): cp0_=_INF['copy'].pop(kind,[]); res[kind+f" (picked another in-context name {np.mean(cp0_) if cp0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith('HELD-OUT'): bg0_=_INF.setdefault('brg',{}).pop(kind,[]); res[kind+f" (picked a bridge {np.mean(bg0_) if bg0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith(('UPDATED','NOISE')): st0_=_INF.setdefault('stale',{}).pop(kind,[]); res[kind+(' (STALE: old answer preferred' if kind.startswith('UPDATED') else ' (WRONG FLIP: false contradiction preferred')+f" {np.mean(st0_) if st0_ else float('nan'):.2f})"]=res.pop(kind)
