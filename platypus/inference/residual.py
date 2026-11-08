@@ -191,7 +191,7 @@ def pair_judge_readout(model, cfg, slot_of, tag):
         for dk, docs in sorted(G['docs'].items()):
             sl = int(slot_of(int(dk))) if callable(slot_of) else 0
             for doc in docs:
-                b = doc.encode('utf-8', 'replace')[:3000]; sents = [s for s in re.split(rb'(?<=[.!?])\s+', b) if s]
+                b = doc.encode('utf-8', 'replace')[:3000]; sents = [s[:300] for s in re.split(rb'(?<=[.!?])\s+', b) if s]   # bounded rows (memory)
                 ments = [[(m.start(), m.end(), t2e[m.group(0)]) for m in WR.finditer(s) if m.group(0) in t2e] for s in sents]
                 ents = sorted({e for ms in ments for _, _, e in ms}); names = {}
                 for ms, s in zip(ments, sents):
@@ -209,6 +209,8 @@ def pair_judge_readout(model, cfg, slot_of, tag):
                                 for e2 in [alt[k] for k in rs.choice(len(alt), min(3, len(alt)), replace=False)]:
                                     s2 = s[:xa] + names[e2] + s[xc:]; d = len(names[e2]) - (xc - xa)
                                     rows += [s, s2]; meta += [('a', (min(ex, ey), max(ex, ey)), ya, yc, ya + d, yc + d)]
+                if len(meta) > 90:                                                # at most 30 pairs x 3 substitutes per paragraph (memory)
+                    keep = sorted(rs.choice(len(meta), 90, replace=False)); meta = [meta[k] for k in keep]; rows = [r for k in keep for r in rows[2 * k:2 * k + 2]]
                 if rows:
                     bits = _bits_rows(model, rows, sl, False); acc = {}
                     for k, mt in enumerate(meta):
@@ -229,6 +231,8 @@ def pair_judge_readout(model, cfg, slot_of, tag):
                                 if not oth: continue
                                 ri = oth[rs.randint(len(oth))]; n0 = len(sents[xi]) + 1; n1 = len(sents[ri]) + 1
                                 rows += [sents[xi] + b' ' + sents[yi], sents[ri] + b' ' + sents[yi]]; meta.append(((ex, ey), n0, n1))
+                if len(meta) > 60:                                                # at most 60 sentence pairs per paragraph (memory)
+                    keep = sorted(rs.choice(len(meta), 60, replace=False)); meta = [meta[k] for k in keep]; rows = [r for k in keep for r in rows[2 * k:2 * k + 2]]
                 if rows:
                     bits = _bits_rows(model, rows, sl, False)
                     for k, (p, n0, n1) in enumerate(meta): mc.append((p in REL, float(bits[2 * k][n0:].mean() - bits[2 * k + 1][n1:].mean())))
