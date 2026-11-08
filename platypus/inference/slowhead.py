@@ -29,8 +29,10 @@ def slow_init(model, cfg):
     d = int(cfg.d_model); dev = model.embed.weight.device; g = torch.Generator().manual_seed(int(cfg.seed) + 3131)
     W = torch.nn.Parameter((torch.randn(d, k, generator=g) / math.sqrt(d)).to(dev))
     model.__dict__['_slow'] = {'W': W, 'opt': torch.optim.Adam([W], lr=float(getattr(cfg, 'slow_lr', 1e-2))), 'mu': {}, 'n': 0, 'k': k,
-                               'delta': int(getattr(cfg, 'slow_delta', 8)), 'every': max(1, int(getattr(cfg, 'slow_every', 1))), 'log': [], 'vis': -1}
-    print(f"  [SLOW HEAD] on (rung 1): k {k}, delta {model.__dict__['_slow']['delta']} bytes, lr {float(getattr(cfg, 'slow_lr', 1e-2)):g}, "
+                               'delta': int(getattr(cfg, 'slow_delta', 8)), 'every': max(1, int(getattr(cfg, 'slow_every', 1))), 'log': [], 'vis': -1,
+                               'seg': int(getattr(cfg, 'slow_seg', 16)), 'iters': max(1, int(getattr(cfg, 'slow_iters', 4)))}
+    st0 = model.__dict__['_slow']
+    print(f"  [SLOW HEAD] on (rung 1): k {k}, " + (f"SEGMENT slowness: pooled {st0['seg']}-byte segments predicting the next" if st0['seg'] > 0 else f"delta {st0['delta']} bytes") + f", {st0['iters']} iteration(s) per step, lr {float(getattr(cfg, 'slow_lr', 1e-2)):g}, "
           f"weights prediction {float(getattr(cfg, 'slow_wp', 1.0)):g} / variance {float(getattr(cfg, 'slow_wv', 1.0)):g} / decorrelation "
           f"{float(getattr(cfg, 'slow_wc', 1.0)):g}; stop-gradient (the trunk is unchanged)", flush=True)
 
@@ -59,10 +61,15 @@ def slow_update(model, cfg, x, h, dom):
     try:
         st['n'] += 1
         if st['n'] % st['every']: return
-        with torch.enable_grad():
-            hc = _centre(st, x, h.detach().float(), int(dom), True)
-            z = hc @ st['W']; D = st['delta']
-            if z.shape[1] <= D: return
+        hc = _centre(st, x, h.detach().float(), int(dom), True); P = st['seg']; D = st['delta']
+        if P > 0:                                                                  # v2 SEGMENT slowness: mean code of P bytes predicts the next segment's (closed form on
+            n_ = hc.shape[1] // P                                                  #   pooled segments reaches slowness 0.84 over 32 directions locally, against 0.93
+            if n_ < 2: return                                                      #   for single bytes 8 apart; v1 stalled at 0.986)
+            hc = hc[:, :n_ * P].reshape(hc.shape[0], n_, P, -1).mean(2); D = 1
+        if hc.shape[1] <= D: return
+        for _ in range(st['iters']):
+          with torch.enable_grad():
+            z = hc @ st['W']
             zf = z.reshape(-1, z.shape[-1]); mu = zf.mean(0); std = torch.sqrt(zf.var(0) + 1e-4)
             zn = (z - mu) / std                                                   # SCALE-FREE slowness (as SFA: unit variance): 2 (1 - temporal correlation)
             pred = ((zn[:, D:] - zn[:, :-D]) ** 2).mean()                          #   per unit, so shrinking the code cannot lower it
@@ -77,7 +84,7 @@ def slow_update(model, cfg, x, h, dom):
         vis = int(model.__dict__.get('_visit', 0))
         if vis != st['vis'] and len(st['log']) >= 20:
             L = st['log'][-200:]; m = lambda j: sum(r[j] for r in L) / len(L)
-            print(f"  [SLOW HEAD | visit {vis}] {st['n']} updates | slowness (change over {D} bytes / unrelated) {m(3):.3f} | unit spread {m(1):.2f} | "
+            print(f"  [SLOW HEAD | visit {vis}] {st['n']} updates | slowness (change " + (f"to the next {P}-byte segment" if P > 0 else f"over {D} bytes") + f" / unrelated) {m(3):.3f} | unit spread {m(1):.2f} | "
                   f"mean |correlation| between units {m(2):.3f} | prediction {m(0):.3f}", flush=True)
             st['vis'] = vis
     except Exception:
