@@ -658,4 +658,6 @@ ORDER = (
     ('profiling', '_rf'),
     ('profiling', '_labelled'),
     ('profiling', '_nm'),
+    ('inference.gisttest', '_gist_codes'),
+    ('inference.gisttest', 'gist_test'),
 )

@@ -479,6 +479,9 @@ def run(cfg):
         print(f"  {PILE_DOMAINS[p][:12]:12} | post {post[p]:.3f} | final {final:.3f} | forget {f:+.3f}")
     mf=float(np.mean(fg)); mb=float(np.mean([bpc_m[-1][p] for p in range(len(PILE_DOMAINS))]))
     if cfg.inf_on: inf_eval(model,cfg,_inf_store(model),"END OF RUN"); inf_final_bpc(model,cfg,vals,_S)
+    if int(getattr(cfg,'gist_test',0)):                                          # GIST TEST: does a learned gist code carry information the trunk lacks?
+        from platypus.inference.gisttest import gist_test
+        gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S)
     _pf9=__import__('sys').modules.get('platypus.profiling')
     if _pf9 is not None: _pf9._ft_total()
     print(f"\nMEAN FORGETTING: {mf:+.3f} | MEAN FINAL BPC: {mb:.3f}")
