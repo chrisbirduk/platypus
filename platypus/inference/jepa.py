@@ -1,4 +1,5 @@
 """JEPA dream selector and latent readouts."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -182,7 +183,7 @@ def _inf_jepa(model,cfg,S_,ts):
               +(f" | with the predictor hop1 {res_[True][0]:.2f} hop2 {res_[True][1]:.2f}" if True in res_ else "")+(f" | closed-form linear predictor hop1 {res_['lin'][0]:.2f} hop2 {res_['lin'][1]:.2f}" if 'lin' in res_ else ""),flush=True)
         if any(int(getattr(cfg,k_,0)) for k_ in ('inf_jepa_views','inf_jepa_geom','inf_jepa_next','inf_jepa_shadow','inf_jepa_consol')):
             try: _jx_readouts(model,cfg,S_,ts,fa_,mem_,Zr_)
-            except Exception as e_: print(f"  [inference LATENT READOUT] FAILED: {type(e_).__name__}: {str(e_)[:200]}",flush=True)
+            except Exception as e_: _fail('inference.jepa:185'); print(f"  [inference LATENT READOUT] FAILED: {type(e_).__name__}: {str(e_)[:200]}",flush=True)
     finally:
         _XDG['cur']=sc_; model.train(was_)
 def _pca_wh(ev_,eV_,k_,n_,drop_=0):
@@ -722,7 +723,7 @@ def _jd_train(model,cfg,S_):
                 for j_,L_ in enumerate(NGT_):
                     for h_ in range(len(L_)): NI_[j_,h_]=o_; o_+=1
             else: hn_=0
-        except Exception as e_: print(f"  [inference JEPA DREAMS | TRAIN] hard negatives unavailable ({type(e_).__name__}: {e_})"[:200],flush=True); hn_=0
+        except Exception as e_: _fail('inference.jepa:725'); print(f"  [inference JEPA DREAMS | TRAIN] hard negatives unavailable ({type(e_).__name__}: {e_})"[:200],flush=True); hn_=0
     ZA_=_jd_codes(model,cfg,[a_ for a_,_ in P2_]); ZB_=_jd_codes(model,cfg,[b_ for _,b_ in P2_]); kd_=int(getattr(cfg,'inf_jd_drop',3))
     sm9_=float(getattr(cfg,'inf_jd_statm',0.0))
     if sm9_>0:                                                                  # cg26j RUNNING INPUT STATISTICS: mean, variance and covariance are averaged across sleeps

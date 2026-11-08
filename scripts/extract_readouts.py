@@ -28,7 +28,13 @@ def recall(line):
     """one-hop / two-hop / three-hop values from an eval line."""
     out = {}
     for key, pat in (("one_hop", r"\| one-hop " + NUM), ("two_hop", r"\| two-hop " + NUM),
-                     ("typed_two_hop", r"typed two-hop " + NUM), ("three_hop", r"three-hop " + NUM)):
+                     ("typed_two_hop", r"typed two-hop " + NUM), ("three_hop", r"three-hop " + NUM),
+                     # issue #24: the honest measures - unwritten wording, bridge among the candidates, no slot given; and no candidate list at all
+                     ("held_out_two_hop", r"\| HELD-OUT two-hop \(picked a bridge [0-9.na]+\) " + NUM),
+                     ("held_out_typed_two_hop", r"\| HELD-OUT typed two-hop \(picked a bridge [0-9.na]+\) " + NUM),
+                     ("held_out_three_hop", r"\| HELD-OUT three-hop \(picked a bridge [0-9.na]+\) " + NUM),
+                     ("open_one_hop", r"OPEN one-hop \(greedy, no candidates\) " + NUM),
+                     ("open_held_out_two_hop", r"OPEN HELD-OUT two-hop \(greedy, no candidates\) " + NUM)):
         m = re.search(pat, line.replace("(chance 0.05): one-hop", "(chance 0.05): | one-hop"))
         if m:
             out[key] = f(m.group(1))
@@ -137,6 +143,22 @@ def parse(path):
             if m:
                 r["final"].update(forgetting=f(m.group(1)), bpc=f(m.group(2)))
                 continue
+            m = re.search(r"HEADLINE \(label-free.*?FORGETTING ([+-]?[0-9.]+) \| FINAL BPC " + NUM, s)
+            if m:
+                r["final"].update(label_free_forgetting=f(m.group(1)), label_free_bpc=f(m.group(2)))
+                continue
+            m = re.search(r"\[inferred heads: heads\] final BPC " + NUM + r" forget ([+-]?[0-9.]+)", s)
+            if m:
+                r["final"].setdefault("label_free_bpc", f(m.group(1))); r["final"].setdefault("label_free_forgetting", f(m.group(2)))
+                continue
+            m = re.match(r"FAILURES: (none|\d+)", s)
+            if m:
+                r["final"]["failures"] = 0 if m.group(1) == "none" else int(m.group(1))
+                continue
+            m = re.search(r"\[data\] train/validation overlap.*\| total (\d+)", s)
+            if m:
+                r["data_overlap"] = int(m.group(1))
+                continue
             m = re.match(r"WALL (\d+)s", s)
             if m:
                 r["final"]["wall_s"] = int(m.group(1))
@@ -160,7 +182,16 @@ def summary(r):
     best2 = max((v.get("weights", {}).get("two_hop") or 0 for v in vs.values()), default=None)
     wrong = sum(x["wrong"] for v in vs.values() for x in v.get("cue_repair", {}).values())
     route = r["routing"]
+    fin = r["final"] or {}
     return {
+        # HEADLINES (issues #23, #24): slot inferred from the text; held-out wording with no slot given
+        "HEADLINE_label_free_bpc": fin.get("label_free_bpc"),
+        "HEADLINE_label_free_forgetting": fin.get("label_free_forgetting"),
+        "HEADLINE_held_out_two_hop_weights_last": vs.get(last, {}).get("weights", {}).get("held_out_two_hop") if last else None,
+        "HEADLINE_held_out_two_hop_store_last": vs.get(last, {}).get("store", {}).get("held_out_two_hop") if last else None,
+        "open_held_out_two_hop_store_last": vs.get(last, {}).get("store", {}).get("open_held_out_two_hop") if last else None,
+        "failures": fin.get("failures"),
+        "data_overlap": r.get("data_overlap"),
         "last_visit": last,
         "routing_correct_where_printed": f"{sum(x['ok'] for x in route)} of {len(route)}" if route else None,
         "weights_two_hop_last": vs.get(last, {}).get("weights", {}).get("two_hop") if last else None,

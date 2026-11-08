@@ -1,4 +1,5 @@
 """run(cfg): the whole continual-learning run."""
+from platypus.common import _fail
 import numpy as np
 import time
 import torch
@@ -45,7 +46,7 @@ from platypus.importance import (
     fold_domain_covariance, install_cov_hooks, rebuild_old_cov, revisit_begin, revisit_end, update_importance,
 )
 from platypus.data import (
-    _RUN_T0, _inject_facts, _using_hf_stream, fact_eval, locality_metrics, make_loader, prefetch_pile, stream_bytes,
+    _RUN_T0, _inject_facts, _using_hf_stream, fact_eval, locality_metrics, make_loader, overlap_check, prefetch_pile, stream_bytes,
 )
 from platypus.heads import (
     bpc_inferred, bpc_inferred_modes, mix_text_eval,
@@ -111,6 +112,16 @@ def run(cfg):
     if cfg.pu_k>0: print(f"  [private trunk units] {cfg.pu_k} private MLP units per domain in every block")
     for i_,b in enumerate(model.blocks): b.__dict__['_xdg_i']=i_
     ngp_init(model, cfg); print(f"  [private n-grams] per-domain hashed tables, orders {tuple(cfg.ngp)}, {cfg.ngp_rows} rows each, before each domain's own head")
+    try:                                                                         # PARAMETER COUNT (issue #23): shared trunk vs the parts private to each slot
+        nps_=lambda ps_: int(sum(p_.numel() for p_ in ps_))
+        pu1_=sum(int(b.pu_in[0].numel()+b.pu_b[0].numel()+b.pu_out[0].numel()) for b in model.blocks if hasattr(b,'pu_in'))
+        ng1_=len(tuple(cfg.ngp))*int(cfg.ngp_rows)*int(cfg.d_model) if cfg.ngp else 0
+        hd1_=nps_(model.heads[0].parameters()); fc1_=int(model.film_codes[0].numel()) if hasattr(model,'film_codes') else 0; ns_=len(model.heads)
+        tot_=nps_(model.parameters()); shng_=nps_(model.ngram.parameters()) if hasattr(model,'ngram') else 0
+        priv_reg_=ns_*(hd1_+fc1_+pu1_)                                         # registered private parameters (the private n-gram tables live outside .parameters())
+        print(f"  [parameters] shared trunk {(tot_-priv_reg_-shng_)/1e6:.1f}M + shared input n-gram tables {shng_/1e6:.1f}M | PRIVATE per slot {(pu1_+ng1_+hd1_+fc1_)/1e6:.1f}M "
+              f"(trunk units {pu1_/1e6:.1f}M, n-gram tables {ng1_/1e6:.1f}M, head {hd1_/1e6:.2f}M), x {ns_} slots = {ns_*(pu1_+ng1_+hd1_+fc1_)/1e6:.1f}M",flush=True)
+    except Exception as e_: _fail('runner:123'); print(f"  [parameters] unavailable ({type(e_).__name__}: {e_})")
     for b in model.blocks: b._surp_on=bool(cfg.surprise_mod); b.__dict__['_lean']=bool(cfg.lean_stats)
     _DSPLIT['on']=bool(cfg.dream_mom>0 or cfg.muon_mom_dream>0)
     _init_sd=None
@@ -148,7 +159,7 @@ def run(cfg):
         shard_=max(shard_,int(cfg.steps_per_task*cfg.batch_size*(cfg.seq_len+1)*1.01))      # document joins
     TRN_=shard_*(npass_ if fresh_ else 1)
     if _using_hf_stream():                           # new domains (fresh-pass data: ALL domains) collected together in one streaming pass
-        prefetch_pile([(d,(d,vseed_(i),500_000),(d,tseed_(i),TRN_)) for i,d in enumerate(PILE_DOMAINS) if (fresh_ or d not in BASE_DOMAINS)])
+        prefetch_pile([(d,(d,vseed_(i),500_000),(d,tseed_(i),TRN_)) for i,d in enumerate(PILE_DOMAINS)])   # issue #30: every domain document-disjoint (base domains too)
     if fresh_:                                       # UNSEEN TEXT EVERY PASS: disjoint shards, loaders built per pass
         raw_tr_=[stream_bytes(d,tseed_(i),TRN_) for i,d in enumerate(PILE_DOMAINS)]; trp_={}
         print("  [data] fresh text every pass: per domain "+", ".join(f"{d[:10]} {len(r)//npass_/1e6:.1f}MB x{npass_}" for d,r in zip(PILE_DOMAINS,raw_tr_)))
@@ -170,6 +181,12 @@ def run(cfg):
                     ftr_[(t,p)]=make_loader(raw_,cfg,no_revisit=cfg.no_revisit,lanes=bool(cfg.ctx_carry or cfg.ctx_lanes),jump=int(cfg.ctx_jump),keep=bool(cfg.ctx_jump_keep))
                 return ftr_[(t,p)]
     vals=[make_loader(stream_bytes(d,vseed_(i),500_000),cfg,fixed_seed=4242+i,span=1+int(cfg.eval_ctx)) for i,d in enumerate(PILE_DOMAINS)]
+    if int(getattr(cfg,'data_overlap_check',1)):                                 # issue #30: validation text must not appear in the training text
+        try:
+            ov_=[(d,)+overlap_check(stream_bytes(d,vseed_(i),500_000),(raw_tr_[i] if fresh_ else stream_bytes(d,tseed_(i),TRN_))) for i,d in enumerate(PILE_DOMAINS)]
+            print("  [data] train/validation overlap (128-byte training chunks also found in the validation text): "
+                  +", ".join(f"{d[:10]} {h_}/{n_}" for d,h_,n_ in ov_)+f" | total {sum(x_[1] for x_ in ov_)} of {sum(x_[2] for x_ in ov_)} ({'NONE' if not sum(x_[1] for x_ in ov_) else ('boilerplate level' if sum(x_[1] for x_ in ov_)<=0.001*max(1,sum(x_[2] for x_ in ov_)) else 'LEAK: validation text is in the training text')})",flush=True)
+        except Exception as e_: _fail('runner:overlap'); print(f"  [data] train/validation overlap check unavailable ({type(e_).__name__}: {e_})")
     NDOM=len(PILE_DOMAINS); schedule=[d for _ in range(max(1,cfg.n_passes)) for d in range(NDOM)]     # REPEATED PASSES over all domains
     if cfg.pass_shuffle:
         _rp=np.random.RandomState(cfg.seed*7919+13); schedule=list(range(NDOM))+[int(d) for _ in range(max(1,cfg.n_passes)-1) for d in _rp.permutation(NDOM)]
@@ -355,7 +372,7 @@ def run(cfg):
                     alt_m.setdefault(mode,{})[(vi,prev)]=r_
         if int(getattr(cfg,'mix_eval',0)) and end_pass:   # MIXED-TEXT READOUT: several slots active at once (readout only)
             try: mix_text_eval(model,vals,seen_d,_S,cfg,tag=f' | visit {vi+1}')
-            except Exception as e_: print(f"  [mixed text] skipped: {repr(e_)[:160]}")
+            except Exception as e_: _fail('runner:368'); print(f"  [mixed text] skipped: {repr(e_)[:160]}")
         post[t]=bpc_m[vi][t]; last_visit[t]=vi; post_hist.setdefault(pass_i,{})[t]=post[t]
         print(f"  post-train BPC: {post[t]:.3f}  (width {model.blocks[0].d_state})"
               +(f" | before this visit {pre_visit[t][pass_i]:.3f}, after previous visit {post_hist[pass_i-1][t]:.3f}" if (pass_i>0 and pass_i in pre_visit.get(t,{}) and t in post_hist.get(pass_i-1,{})) else ""))
@@ -465,6 +482,15 @@ def run(cfg):
     _pf9=__import__('sys').modules.get('platypus.profiling')
     if _pf9 is not None: _pf9._ft_total()
     print(f"\nMEAN FORGETTING: {mf:+.3f} | MEAN FINAL BPC: {mb:.3f}")
+    _F9=__import__('platypus.common',fromlist=['_FAILS'])._FAILS                  # issue #28: every print-and-continue handler that fired during the run
+    if _F9:
+        cnt9_={}
+        for w_,t_,m_ in _F9: cnt9_.setdefault((w_,t_),[0,m_])[0]+=1
+        print(f"FAILURES: {len(_F9)} ({len(cnt9_)} distinct) - "+" | ".join(f"{w_} {t_} x{c_[0]}: {c_[1][:80]}" for (w_,t_),c_ in sorted(cnt9_.items(),key=lambda x_: -x_[1][0])[:20]),flush=True)
+    else: print("FAILURES: none",flush=True)
+    if 'heads' in alt:                                                            # HEADLINE (issue #23): the slot inferred from the text itself
+        print(f"HEADLINE (label-free: each test window's slot inferred from the text, heads posterior): FORGETTING {alt['heads']['forget']:+.3f} | FINAL BPC {alt['heads']['bpc']:.3f} "
+              f"|| with the slot given (task-incremental): {mf:+.3f} / {mb:.3f}",flush=True)
     if cfg.recon_diag: (replay_diag if cfg.recon_mark else recon_fidelity)(model,cfg,vals,NDOM,_S)
     orc_=None
     if cfg.oracle_mem:                                                                # ORACLE LINEAR MEMORY

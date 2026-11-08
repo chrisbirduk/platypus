@@ -1,4 +1,5 @@
 """One visit of training (train_domain) and its step-level helpers."""
+from platypus.common import _fail
 import math
 import numpy as np
 import time
@@ -264,7 +265,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 try:
                     rg_=[e for e in ka_ if e.key.startswith('R:')]; rg_.sort(key=lambda e:-e.device_time_total if hasattr(e,'device_time_total') else -e.cuda_time_total)
                     print("  [profile] NAMED REGIONS (GPU time incl. everything inside, per 10 steps):\n"+"\n".join(f"    {e.key[2:]:20} {((e.device_time_total if hasattr(e,'device_time_total') else e.cuda_time_total)/1e3):9.1f} ms  ({e.count} calls)" for e in rg_))
-                except Exception as ex: print(f"  [profile] region table unavailable ({repr(ex)[:100]})")
+                except Exception as ex: _fail('train:267'); print(f"  [profile] region table unavailable ({repr(ex)[:100]})")
                 _PRF['on']=False; _prof_=None
         if step>=_L: break
         if model.__dict__.get('_sldb') is not None: cfg.dream_batch=model.__dict__.pop('_sldb')   # (safety: never carried past a step)
@@ -1163,7 +1164,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
     if dom_id in tuple(cfg.state_spec_diag or ()) and n_old>0 and not cfg.topic_mode:
         was_=model.training; model.eval()
         try: state_spectrum_diag(model, cfg, olds)
-        except Exception as e_: print(f"  [state spectrum] diagnostic skipped ({type(e_).__name__}: {e_})")   # never stops a run
+        except Exception as e_: _fail('train:1166'); print(f"  [state spectrum] diagnostic skipped ({type(e_).__name__}: {e_})")   # never stops a run
         model.train(was_)
     sst_=model.__dict__.pop('_strandstat',None); scn_=model.__dict__.pop('_strandcnt',None)
     if scn_:

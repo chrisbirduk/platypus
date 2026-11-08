@@ -1,4 +1,5 @@
 """Probe evaluation, CLS measurements and REM examination."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -45,25 +46,26 @@ def inf_eval(model,cfg,S_,tag):
             print(f"  [inference eval | fast store use] {d_[1]}/{d_[0]} probe positions store-keyed, mean max |logit correction| there {d_[2]/max(1,d_[1]):.3f} | names in the store {len(_INFM.get('names',{}))}",flush=True)
             if int(getattr(cfg,'inf_cue_repair',0)):
                 try: _cue_readout(model,cfg,S_)
-                except Exception as e9_: print(f"  [inference CUE REPAIR] readout unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+                except Exception as e9_: _fail('inference.evaluate:48'); print(f"  [inference CUE REPAIR] readout unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         finally: _INF['corr']=False
     if int(getattr(cfg,'inf_splice',0)) and ('END' in tag or (int(model.__dict__.get('_visit',0))+1)%max(1,int(getattr(cfg,'inf_splice_every',1)))==0):
         try: inf_splice(model,cfg,tag)
-        except Exception as e_: print(f"  [inference splice-and-appraise] skipped: {e_!r}"[:300],flush=True)
+        except Exception as e_: _fail('inference.evaluate:52'); print(f"  [inference splice-and-appraise] skipped: {e_!r}"[:300],flush=True)
     if int(getattr(cfg,'inf_eval_qtime',0)) and not _INF.get('corr') and ('END' in tag or (int(model.__dict__.get('_visit',0))+1)%max(1,int(getattr(cfg,'inf_qt_every',getattr(cfg,'inf_splice_every',1))))==0):
         try: inf_qtime2(model,cfg,tag)
-        except Exception as e_: print(f"  [inference question-time chaining] skipped: {e_!r}"[:300],flush=True)
+        except Exception as e_: _fail('inference.evaluate:55'); print(f"  [inference question-time chaining] skipped: {e_!r}"[:300],flush=True)
         if int(getattr(cfg,'inf_idmem',0)):
             try: inf_idmem(model,cfg,S_,tag)
-            except Exception as e_: print(f"  [inference IDENTIFIER MEMORY] skipped: {e_!r}"[:300],flush=True)
+            except Exception as e_: _fail('inference.evaluate:58'); print(f"  [inference IDENTIFIER MEMORY] skipped: {e_!r}"[:300],flush=True)
         if int(getattr(cfg,'inf_eval_qtime3',0)):
             try:
                 for nc0_ in sorted(set([0,int(getattr(cfg,'inf_qt_comp',2))])):
                     cfg.inf_qt_comp=nc0_; inf_qtime3(model,cfg,tag)
-            except Exception as e_: print(f"  [inference multi-hop question-time] skipped: {e_!r}"[:300],flush=True)
+            except Exception as e_: _fail('inference.evaluate:63'); print(f"  [inference multi-hop question-time] skipped: {e_!r}"[:300],flush=True)
     if int(getattr(cfg,'inf_kgx',0)) and 'END' in tag:                         # GRAPH INTO WEIGHTS readouts (no state change: names restored, nothing written)
         try: _kgx_readout(model,cfg,S_)
         except Exception as e9_:
+            _fail('inference.evaluate:66')
             import traceback as _tb; print(f"  [GRAPH INTO WEIGHTS] unavailable ({type(e9_).__name__}: {e9_}) {_tb.format_exc()[-400:]!r}"[:700],flush=True)
     return r_
 @torch.no_grad()
@@ -87,12 +89,34 @@ def _inf_eval1(model,cfg,S_,tag):
                 finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
                 s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum()) for j_ in range(len(seqs))])
                 tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
-            sc2_=list(tot_-math.log(len(sls_)))
+            sc2_=list(_score_norm(cfg,tot_-math.log(len(sls_)),np.array([len(seqs[j_])-n0_[j_] for j_ in range(len(seqs))],dtype=np.float64)))   # issue #24: per byte (inf_score)
             out.append(int(np.argmax(sc2_)))
             if _INF.get('cal_on'):
                 pp_=np.exp(np.array(sc2_)-max(sc2_)); pp_=pp_/pp_.sum(); A0_=_INF['cal_on'][len(_INF['calrec'])] if len(_INF['calrec'])<len(_INF['cal_on']) else ('','','')
                 _INF['calrec'].append((int(np.argmax(sc2_))==0,float(pp_.max()),float(pp_[0]),int(A0_[0].encode('latin-1') in (_INFM.get('names') or {})),A0_[0],cs_[int(np.argmax(sc2_))],A0_[1],A0_[2]))
         return out
+    def openh(prompts,targets,slot):
+        """OPEN-ENDED (issue #24, inf_eval_open): greedy bytes after the prompt, no candidate list; right if they spell the target name and
+        the next byte is not a letter. slot -1: the next-byte distributions of every slot in use, equally mixed (no slot given). Batched:
+        rows are right-padded, each row reads its own last position (causal, so padding after it does not matter)."""
+        if not prompts: return []
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+        B_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):] for p_ in prompts]
+        n_=max(len(t_.encode('latin-1')) for t_ in targets)+1; G_=[[] for _ in B_]
+        for _ in range(n_):
+            R_=[b_+g_ for b_,g_ in zip(B_,G_)]; L_=max(len(r_) for r_ in R_); X_=torch.zeros(len(R_),L_,dtype=torch.long,device=dev_)
+            for j_,r_ in enumerate(R_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+            ix_=torch.tensor([len(r_)-1 for r_ in R_],device=dev_); lp9_=None
+            for sl9_ in sls_:
+                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(R_),device=dev_),ix_],-1)
+                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
+            for j_,v_ in enumerate(lp9_.argmax(-1).tolist()): G_[j_].append(int(v_))
+        hit_=[]
+        for g_,t_ in zip(G_,targets):
+            o_=bytes(g_).decode('latin-1'); hit_.append(int(o_[:len(t_)]==t_ and (len(o_)==len(t_) or not o_[len(t_)].isalpha())))
+        return hit_
     try:
         UPD_=float(getattr(cfg,'inf_upd_frac',0.0))>0
         KINDS_=('one-hop','two-hop','typed two-hop','three-hop')+(('UPDATED one-hop','UPDATED two-hop','NOISE-CONTRADICTED one-hop') if UPD_ else ())+(('reworded two-hop','context two-hop','pronoun two-hop') if (int(getattr(cfg,'inf_eval_hard',0)) and ('END' in tag or _INF.get('corr'))) else ())+(('IN-CONTEXT two-hop','IN-CONTEXT decoy bridge','IN-CONTEXT three-hop') if (int(getattr(cfg,'inf_eval_ctx',0)) and not _INF.get('corr')) else ())+(('CTX2 order AB','CTX2 order BA','CTX2 decoy AB','CTX2 decoy BA') if (int(getattr(cfg,'inf_eval_ctx2',0)) and not _INF.get('corr')) else ())
@@ -150,6 +174,11 @@ def _inf_eval1(model,cfg,S_,tag):
                 if kind.startswith('HELD-OUT'): _INF.setdefault('brg',{}).setdefault(kind,[]).extend([int(1<=h_<=(2 if 'three' in kind else 1)) for h_ in hh_])
                 if _INF.get('cal_on') is not None and kind=='two-hop' and _INF.get('corr'): _INF.setdefault('calrec_all',[]).extend(_INF['calrec']); _INF['cal_on']=None
             res[kind]=(float(np.mean(hits)) if hits else float('nan'),len(hits)); d_=_INFM.get('dbg',[0,0,0.0]); act_[kind]=d_[2]/max(1,d_[0])
+            if int(getattr(cfg,'inf_eval_open',0)) and kind in ('one-hop','two-hop','HELD-OUT two-hop','HELD-OUT typed two-hop') and pr_:
+                oh_=[]
+                for sl in sorted(set(sl_)):
+                    ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; oh_+=openh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl)
+                res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_))
             if kind.startswith('CTX2'): cp0_=_INF['copy'].pop(kind,[]); res[kind+f" (picked another in-context name {np.mean(cp0_) if cp0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith('HELD-OUT'): bg0_=_INF.setdefault('brg',{}).pop(kind,[]); res[kind+f" (picked a bridge {np.mean(bg0_) if bg0_ else float('nan'):.2f})"]=res.pop(kind)
             if kind.startswith(('UPDATED','NOISE')): st0_=_INF.setdefault('stale',{}).pop(kind,[]); res[kind+(' (STALE: old answer preferred' if kind.startswith('UPDATED') else ' (WRONG FLIP: false contradiction preferred')+f" {np.mean(st0_) if st0_ else float('nan'):.2f})"]=res.pop(kind)
@@ -287,7 +316,7 @@ def _cls_measure(model,cfg,S_slot):
             if npq9_>=10:
                 sdq9_=float(np.std(lh9_))
                 if sdq9_>=0.1: thq9_=max(float(np.quantile(pr9_,1.0-pq9_)),2.0*float(np.median(pr9_)),pmn9_)
-        except Exception as e7_: print(f"  [inference CLS | RELEASE TIMING] relative predicted-recall rule unavailable ({type(e7_).__name__}: {e7_})"[:200],flush=True)
+        except Exception as e7_: _fail('inference.evaluate:317'); print(f"  [inference CLS | RELEASE TIMING] relative predicted-recall rule unavailable ({type(e7_).__name__}: {e7_})"[:200],flush=True)
     G9_=int(getattr(cfg,'inf_delete_grace',2)); dl_on_=bool(int(getattr(cfg,'inf_delete',0)) and int(getattr(cfg,'inf_release',0)))
     for c_ in trk_:
         tst_=int(getattr(cfg,'inf_release_test',0))                            # (local test only: judge with the store ON, so the release / restore path runs)
@@ -347,7 +376,7 @@ def _cls_measure(model,cfg,S_slot):
               if hlc_ else "decay model not calibrated yet (needs to beat a constant rate out of sample at 2 sleeps running): the fixed rule (consecutive passing sleeps) decides"),flush=True)
     if int(getattr(cfg,'inf_hl',0)):
         try: _hl_model(model,cfg,S_,obs9_,vis_)
-        except Exception as e9_: print(f"  [inference DECAY MODEL] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        except Exception as e9_: _fail('inference.evaluate:377'); print(f"  [inference DECAY MODEL] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     if int(getattr(cfg,'inf_schema_speed',0)):                                  # cg26i SCHEMA SPEED (readout): do conclusions the trunk already predicts well (lower half of trunk
         tb9_=[c_ for c_ in lv_+[x_ for x_ in allc_ if x_.get('released') or x_.get('deleted') is not None] if 'tbits' in c_]   #   bits) pass store-off and reach release
         if len(tb9_)>=6:                                                        #   sooner than misfits (Tse et al. 2007)?
@@ -460,7 +489,7 @@ def _plat_select(model,cfg,S_,S_slot):
                 l_=(F.cross_entropy(lg_[0],X_[0,1:],reduction='none')*M_[0,1:]).sum()/M_[0,1:].sum().clamp(min=1)
                 gP_=flat_(torch.autograd.grad(l_,prm_,allow_unused=True))
                 sc_[int(j_)]=(float(-F.cosine_similarity(gP_,vS_,dim=0)),float(F.cosine_similarity(gP_,vR_,dim=0)),src_)
-    except Exception as e9_: print(f"  [inference PLATONIC SELECTION] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True); return
+    except Exception as e9_: _fail('inference.evaluate:490'); print(f"  [inference PLATONIC SELECTION] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True); return
     finally: model.train(was_); back_()
     if not sc_: return
     W_={j_:(4.0 if (a_>0 and b_>-0.05) else 0.25 if a_<0 else 1.0) for j_,(a_,b_,_) in sc_.items()}

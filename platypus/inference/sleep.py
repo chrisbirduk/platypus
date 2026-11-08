@@ -1,4 +1,5 @@
 """Sleep: NREM, REM, store writes, replay into the trunk."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -71,7 +72,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         cai9_=None
         if int(getattr(cfg,'inf_cai',0)):                                       # CAI TEST (readout only): per-chain two-hop before this sleep
             try: cai9_=_cai_score(model,cfg)
-            except Exception as e9_: print(f"  [CAI TEST] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+            except Exception as e9_: _fail('inference.sleep:74'); print(f"  [CAI TEST] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         r9_=_inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot)
         if ds9_>0 and _INFM.get('M') is not None:                               # cg26i FAST-STORE DOWNSCALING (after the synaptic-homeostasis idea): rows of the fast store that no
             with torch.no_grad():                                               #   write keyed this sleep shrink by inf_store_downscale; rehearsed rows keep their strength
@@ -87,16 +88,16 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
                     print(f"  [inference PLATONIC PROBE] {a9_['n']} fixed linked pairs, trunk codes (store off) | "+(f"before this sleep's replay: {_plat_fmt(b9_)} | " if b9_ else "")+f"after: {_plat_fmt(a9_)}"
                           +(f" | change: separation {a9_['sep']-b9_['sep']:+.4f}, alignment {a9_['mknn']-b9_['mknn']:+.3f}, rank {a9_['rank']-b9_['rank']:+.2f}" if b9_ and b9_['n']==a9_['n'] else "")
                           +(f" | since the first probe: separation {a9_['sep']-H9_[0][2]['sep']:+.3f}, alignment {a9_['mknn']-H9_[0][2]['mknn']:+.3f}" if len(H9_)>1 else ""),flush=True)
-            except Exception as e9_: print(f"  [inference PLATONIC PROBE] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+            except Exception as e9_: _fail('inference.sleep:90'); print(f"  [inference PLATONIC PROBE] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if int(getattr(cfg,'inf_cf_apply',0)): _cf_apply(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26l closed-form consolidation (kept under its brake)
         if float(getattr(cfg,'inf_sup',0))>0: _sup_dreams(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # MERGED-MEMORY DREAMS (inference.supmem, under their own brake)
         if int(getattr(cfg,'inf_jx',0)): _jx_sleep(model,cfg,_inf_store(model))     # cg26s JEPA INDEX (inference.jindex): readouts only, the trunk is not trained
         if cai9_ is not None:                                                   # CAI TEST: after the whole sleep (inference, REM, writes, replay, closed-form edits)
             try:
                 td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); _cai_report(model,cfg,td9_,cai9_,_cai_score(model,cfg))
-            except Exception as e9_: print(f"  [CAI TEST] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+            except Exception as e9_: _fail('inference.sleep:97'); print(f"  [CAI TEST] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         try: _cls_measure(model,cfg,S_slot)
-        except Exception as e9_: print(f"  [inference CLS] measurement unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        except Exception as e9_: _fail('inference.sleep:99'); print(f"  [inference CLS] measurement unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
         ev9_=max(1,int(getattr(cfg,'inf_ws_every',2))); vv9_=int(model.__dict__.get('_visit',0))
         if int(getattr(cfg,'inf_cf_try',0)) and vv9_%ev9_==ev9_-1: _ws_closed_form(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26k readouts on a copy
         if int(getattr(cfg,'inf_dir_diag',0)) and vv9_%ev9_==ev9_-1: _ws_direction(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)
@@ -107,7 +108,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
             if gs_ is not None: torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
         except Exception: pass
         try: _mem_ledger(model,cfg)
-        except Exception as e9_: print(f"  [inference MEMORY LEDGER] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
+        except Exception as e9_: _fail('inference.sleep:110'); print(f"  [inference MEMORY LEDGER] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
         gq_=float(getattr(cfg,'inf_mem_guard',0.0))
         if gs_ is not None and gq_>0:                                           # cg26h MEMORY GUARD: if the peak of the visit or the sleep passed gq_ of the device, the next
             try:                                                                #   sleeps run lean - latent readouts skipped, CLS samples halved, rebuildable caches dropped
@@ -171,28 +172,30 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
     if int(getattr(cfg,'inf_jd',0)):
         try: _jd_train(model,cfg,S_)                                            # cg26 JEPA DREAM SELECTOR (trained every sleep, before the splicing it chooses for)
         except Exception as e_:
+            _fail('inference.sleep:173')
             import traceback as _tb; print(f"  [inference JEPA DREAMS | TRAIN] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
         if int(getattr(cfg,'inf_jd_lidar',0)):
             try: _jd_lidar(model,cfg,S_)
-            except Exception as e9_: print(f"  [inference JEPA DREAMS | LiDAR] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
-        try: pass
-        except Exception as e_:
-            import traceback as _tb; print(f"  [inference JEPA DREAMS | TRAIN] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
+            except Exception as e9_: _fail('inference.sleep:177'); print(f"  [inference JEPA DREAMS | LiDAR] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
     if int(getattr(cfg,'inf_splicemix',0)):
         try: _inf_mix(model,cfg,S_,ts)                                          # cg25: wrapped (a failure skips this sleep's splicing instead of ending the run)
         except Exception as e_:
+            _fail('inference.sleep:183')
             import traceback as _tb; print(f"  [inference MIXING] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
     if int(getattr(cfg,'inf_remgen',0)):
         try: _inf_remgen(model,cfg,S_,ts,S_slot)
         except Exception as e_:
+            _fail('inference.sleep:187')
             import traceback as _tb; print(f"  [inference REM GENERATION FROM ATTENDED SPANS] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-600:]!r}",flush=True)
     if int(getattr(cfg,'inf_iso',0)):
         try: _inf_isotropy(model,cfg,S_,ts)
         except Exception as e_:
+            _fail('inference.sleep:191')
             import traceback as _tb; print(f"  [inference ISOTROPY (SIGReg on the trunk)] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
     if not model.__dict__.get('_mem_tight') and not model.__dict__.get('_skip_ro') and (int(getattr(cfg,'inf_jepa',0)) or int(getattr(cfg,'inf_jepa_probe',0))) and (int(getattr(cfg,'inf_jepa',0)) or int(model.__dict__.get('_visit',0))%max(1,int(getattr(cfg,'inf_jepa_every',1)))==0):
         try: _inf_jepa(model,cfg,S_,ts)                                         # (cg25: the readout-only probe every inf_jepa_every sleeps - sleep time)
         except Exception as e_:
+            _fail('inference.sleep:195')
             import traceback as _tb; print(f"  [inference LATENT SPLICE DREAMS] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-600:]!r}",flush=True)          # (inf_splicemix: NOT inf_mix, which is the conclusion-row share)
     if _units_on(cfg) and _UNITS.get('all'):
         pnb_=set(n_.encode() for n_ in pn_); df0_=S_['df']; mx0_=int(cfg.inf_df)
@@ -245,14 +248,14 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
         if cm_=='mem' or not allc_: return r0_
         if int(getattr(cfg,'inf_rem_exam',0)):                                # cg26l REM SELF-EXAM (store off) before the trunk replay it steers
             try: _rem_exam(model,cfg,S_,S_slot)
-            except Exception as e9_: print(f"  [inference REM SELF-EXAM] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+            except Exception as e9_: _fail('inference.sleep:248'); print(f"  [inference REM SELF-EXAM] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if int(getattr(cfg,'inf_plat_probe',0)):                              # cg26l PLATONIC PROBE before the trunk replay
             try: S_['_platb']=_plat_readout(model,cfg,S_)
-            except Exception as e9_: print(f"  [inference PLATONIC PROBE] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True); S_['_platb']=None
+            except Exception as e9_: _fail('inference.sleep:251'); print(f"  [inference PLATONIC PROBE] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True); S_['_platb']=None
         if int(getattr(cfg,'inf_plat_select',0)): _plat_select(model,cfg,S_,S_slot)
         if int(getattr(cfg,'inf_rem_ana',0)):                                 # cg26l REM ANALOGY DREAMS
             try: _rem_analogy(model,cfg,S_,S_slot)
-            except Exception as e9_: print(f"  [inference REM ANALOGY] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+            except Exception as e9_: _fail('inference.sleep:255'); print(f"  [inference REM ANALOGY] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         cx_=float(getattr(cfg,'inf_cons_mix',0) or 0)                          # cg21b: the TRUNK replay can have its own conclusion share (the fast store keeps inf_mix)
         if cx_>0: kc_=max(1,int(round(R_*cx_))); ka_=R_-kc_ if (kept_ or ring_) else 0
         # CONCLUSION REPLAY INTO THE TRUNK (inf_cons 'both'): the hippocampus (fast store) keeps answering; in the same sleep the trunk is taught
@@ -611,7 +614,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             t2c_,_=_inf_truth(cfg); ne9_=len(S_.get('_capev',[])); net_=sum(1 for a_,c9_ in S_.get('_capev',[]) if (a_,c9_) in t2c_)
             print(f"  [inference CAPACITY] fast store: {len(live9_)-ev9_} live conclusions + {len(fx9_)} facts, {len(_INFM.get('names',{}))} names, rows in use {nz9_:.0%}, |M| {float(M9_.norm()) if M9_ is not None else float('nan'):.1f}"
                   +(f" | BUDGET {cb9_}: {ev9_} evicted by value this sleep ({ne9_} in all, {net_} of them true probe conclusions)" if cb9_>0 else ""),flush=True)
-        except Exception as e9_: print(f"  [inference CAPACITY] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+        except Exception as e9_: _fail('inference.sleep:614'); print(f"  [inference CAPACITY] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
     nmt_=int(getattr(cfg,'inf_mem_maint',0))
     if nmt_>0 and _INFM.get('mu') is not None:                                  # STORE MAINTENANCE: the trunk keeps learning, so the store's keys drift;
         old_=[c_ for c_ in allc_ if not c_.get('freed') and not c_.get('released') and c_.get('n',0)>0]   # FIX (review): released ones are erased on purpose       #   stored conclusions it no longer recalls are rewritten first
@@ -755,7 +758,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
         ainfo_+=f" | HARM PRUNING: {len(acc_)} stored names measured on {len(pick_)} recent real windows, {len(cut_)} keys removed as net-harmful (probe names among them {sum(1 for x_ in cut_ if x_ in pn0_)}), total pruned names {len(PN_)}"
     if int(getattr(cfg,'inf_rem_shadow',0)) and ord_=='nrem':                  # SHADOW REM: lookup recombination after the writes, counted only
         try: _inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),'SHADOW after NREM writes (counted, not written; "already known" = found by discovery)',shadow_=True)
-        except Exception as e_: print(f"  [inference REM recombination] skipped: {e_!r}"[:300],flush=True)
+        except Exception as e_: _fail('inference.sleep:758'); print(f"  [inference REM recombination] skipped: {e_!r}"[:300],flush=True)
     _inf_sync(cfg,'store writes'); xinfo_=_inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,filler,fwd,rs_,dev_,nb_,fa_)
     xinfo_+=_inf_free(model,cfg,S_,allc_,S_slot,Lr_,filler,fwd,feats,rs_,dev_,beta_)
     xinfo_+=_inf_prune(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_)

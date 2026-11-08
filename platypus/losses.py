@@ -1,4 +1,5 @@
 """Conduit losses, replay diagnostics, reconstruction fidelity and oracle readouts."""
+from platypus.common import _fail
 import math
 import numpy as np
 import os
@@ -166,7 +167,7 @@ def cd_loss(model,cfg,x,dom):
                 print("  [conduit profile] top operations by "+("GPU" if cu_ else "CPU")+" time:\n"+ka_.table(sort_by=('self_cuda_time_total' if cu_ else 'self_cpu_time_total'),row_limit=14))
                 print("  [conduit profile] top operations by CPU time (launch / Python overhead):\n"+ka_.table(sort_by='self_cpu_time_total',row_limit=10))
                 return r_
-            except Exception as e_: print(f"  [conduit profile] failed ({repr(e_)[:160]})")
+            except Exception as e_: _fail('losses:169'); print(f"  [conduit profile] failed ({repr(e_)[:160]})")
     with _rp_tags(model): return _cd_loss(model,cfg,x,dom)
 def _cd_loss(model,cfg,x,dom):
     _MIS32['on']=bool(cfg.cd_mis32)

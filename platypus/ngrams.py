@@ -1,4 +1,5 @@
 """Hashed n-gram embeddings and count features, the main optimiser and compilation."""
+from platypus.common import _fail
 import torch
 import torch.nn.functional as F
 
@@ -77,7 +78,7 @@ def setup_compile(model, cfg):
     try:
         import torch._dynamo as _dyn; _dyn.config.cache_size_limit=max(64,_dyn.config.cache_size_limit)
         _COMPILED[id(model)]=torch.compile(model._features_eager, dynamic=True); print("  [compile] model forward compiled (torch.compile, dynamic shapes)")
-    except Exception as e: print(f"  [compile] not available ({repr(e)[:120]}); eager")
+    except Exception as e: _fail('ngrams:80'); print(f"  [compile] not available ({repr(e)[:120]}); eager")
 
 def _opt_params(model):
     """Parameters of the main optimiser (the n-gram tables have their own lazy optimiser when ngram_sparse)."""

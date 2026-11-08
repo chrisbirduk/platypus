@@ -26,6 +26,7 @@ cg26u: inf_jx_route - JEPA ROUTING readout (routing unchanged): each visit's sto
   profile, by arm V's JEPA codes and by both, to the nearest slot prototype; accuracy on revisits, agreement with the router and novelty
   AUC for first visits (tools/toy_jroute.py: locally bytes win at 1 KB, JEPA reaches 1.00 from 4-8 windows, both detect a new domain at
   AUC 0.95-1.00 from 4 windows; masking names hurt routing)."""
+from platypus.common import _fail
 import math
 import numpy as np
 import torch
@@ -331,8 +332,9 @@ def _jx_sleep_(model, cfg, S_):
         if (v_ + 1) % max(1, int(getattr(cfg, 'inf_jx_every', 1))) == 0: _jx_readout(model, cfg, S_, f"visit {v_ + 1}")
         if int(getattr(cfg, 'inf_jx_route', 0)):
             try: _jx_route(model, cfg, S_)
-            except Exception as e9_: print(f"  [JEPA ROUTING] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
+            except Exception as e9_: _fail('inference.jindex:334'); print(f"  [JEPA ROUTING] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
     except Exception as e_:
+        _fail('inference.jindex:335')
         print(f"  [JEPA INDEX] unavailable ({type(e_).__name__}: {e_})"[:260], flush=True)
 
 # names used at run time from modules that load after this one

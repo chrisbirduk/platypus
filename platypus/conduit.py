@@ -1,4 +1,5 @@
 """Conduit dreams: replay rows, hints, CUDA-graph and slot-memory generation, NREM losses."""
+from platypus.common import _fail
 import contextlib
 import math
 import numpy as np
@@ -384,6 +385,7 @@ def _cdg_step(model,cfg,P_,t,Yw,cur,m,dom,padded):
                 raise RuntimeError(f'self-check failed at byte {t}: max logit difference {d_/sc_:.2e} of the largest logit, same top byte {ag_:.4f}')
         return lg,e_['new'],True
     except Exception as ex_:
+        _fail('conduit:386')
         _CDG['off']=repr(ex_)[:300]; _CDG['g'].clear(); _CDG['pool']=None
         if Yw.is_cuda: torch.cuda.synchronize(); torch.cuda.empty_cache()          # free the graphs' memory before carrying on eagerly
         print(f"  [cd graph] OFF from here on (eager generation, unchanged results): {_CDG['off']}",flush=True)
@@ -530,6 +532,7 @@ def _cd_gen_slot(model,cfg,st0,m,L,dom,M,temp,g_,forced=None,flen=None,ban=None,
                             raise RuntimeError(f'self-check failed at byte {t}: logit difference {d_/sc_:.2e}, same top byte {ag_:.4f}, memory difference {ds_:.1e}')
                         del slc,Yc
                 except Exception as ex_:
+                    _fail('conduit:532')
                     _CDG['off']=repr(ex_)[:300]; _CG5['g'].clear(); _CG5['key']=None; _CG5['pool']=None
                     if dev.type=='cuda': torch.cuda.synchronize(); torch.cuda.empty_cache()
                     print(f"  [cd graph] OFF from here on (eager slot generation, unchanged results): {_CDG['off']}",flush=True)

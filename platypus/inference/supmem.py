@@ -13,6 +13,7 @@ inf_sup_chain_tau) or 'cos'.
 Readout per sleep, before and after, store off: two-hop from the superposed memory, from no memory, from a random memory (another chain's
 premises) and with the premises as text; a one-hop control (premise prefix -> B from that premise's memory against none); the chaining
 margin and own-bridge retrieval. A training step that runs out of GPU memory is retried with half the rows."""
+from platypus.common import _fail
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -243,6 +244,7 @@ def _sup_dreams(model,cfg,S_,vals,olds_,t,ts,S_slot):
                 f"({'own bridge retrieved among the sampled chains' if str(getattr(cfg,'inf_sup_chain_mode','cos'))=='nce' else 'control, another chain bridge'}: {P0_['chain_ctl']:.3f} -> {P1_['chain_ctl']:.3f}); "
                 f"in training {lch_[0]:.3f} -> {np.mean(lch_[-10:]):.3f}, weight {float(getattr(cfg,'inf_sup_chain',0)):g}" if lch_ else ""),flush=True)
     except Exception as e9_:
+        _fail('inference.supmem:245')
         with torch.no_grad():
             for p_,w_ in zip(P_,W0_): p_.copy_(w_)
         print(f"  [inference SUPERPOSED-MEMORY DREAMS] unavailable ({type(e9_).__name__}: {e9_})"[:260],flush=True)
@@ -339,6 +341,7 @@ def _jd_memread(model,cfg,S_,H_,NGT_,nh_):
               f"key alone, top block {np.mean(acc_[('alone','top')]):.2f}, all blocks {np.mean(acc_[('alone','all')]):.2f} | {_t9.time()-t0_:.0f} s",flush=True)
         return {k_:float(np.mean(v_)) for k_,v_ in acc_.items()}
     except Exception as e9_:
+        _fail('inference.supmem:341')
         print(f"  [inference JEPA DREAMS | MEMORY-READ VIEW] unavailable ({type(e9_).__name__}: {e9_})"[:300],flush=True)
 
 
