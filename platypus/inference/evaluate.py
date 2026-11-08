@@ -117,6 +117,37 @@ def _inf_eval1(model,cfg,S_,tag):
         for g_,t_ in zip(G_,targets):
             o_=bytes(g_).decode('latin-1'); hit_.append(int(o_[:len(t_)]==t_ and (len(o_)==len(t_) or not o_[len(t_)].isalpha())))
         return hit_
+    def beamh(prompts,targets,slot,B_=8):
+        """BEAM (inf_eval_beam): name-level beam search after the prompt, no candidate list. Beams of letters; a beam ends when it writes a
+        non-letter after at least one letter; finished names ranked by total log-probability (terminator included). Right if the best is the
+        target. slot -1: every slot in use, equally mixed. All prompts' beams in one batch per step."""
+        if not prompts: return []
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+        P_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):] for p_ in prompts]
+        isl_=lambda b_: 65<=b_<=90 or 97<=b_<=122
+        live_=[[([],0.0)] for _ in P_]; fin_=[[] for _ in P_]; T_=max(len(t_) for t_ in targets)+2
+        for st_ in range(T_):
+            rows_=[(i_,g_,sc_) for i_,bm_ in enumerate(live_) for g_,sc_ in bm_]
+            if not rows_: break
+            R_=[P_[i_]+g_ for i_,g_,_ in rows_]; L_=max(len(r_) for r_ in R_); X_=torch.zeros(len(R_),L_,dtype=torch.long,device=dev_)
+            for j_,r_ in enumerate(R_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+            ix_=torch.tensor([len(r_)-1 for r_ in R_],device=dev_); lp9_=None
+            for sl9_ in sls_:
+                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(R_),device=dev_),ix_],-1)
+                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
+            lp9_=(lp9_-math.log(len(sls_))).cpu()
+            cand_=[[] for _ in P_]
+            for j_,(i_,g_,sc_) in enumerate(rows_):
+                v_,b9_=lp9_[j_].topk(B_)
+                for vv_,bb_ in zip(v_.tolist(),b9_.tolist()):
+                    if isl_(bb_): cand_[i_].append((g_+[bb_],sc_+vv_))
+                    elif g_: fin_[i_].append((bytes(g_).decode('latin-1'),sc_+vv_))
+            for i_ in range(len(P_)):
+                fin_[i_].sort(key=lambda x_: -x_[1]); best_=fin_[i_][0][1] if len(fin_[i_])>=B_ else -1e18
+                live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:B_] if c_[1]>best_]
+        return [int(bool(f_) and max(f_,key=lambda x_: x_[1])[0]==t_) for f_,t_ in zip(fin_,targets)]
     def seqlp(p_,cs_,slot):
         """summed log-probability (nats) of each continuation c + '.' after prompt p_, mixed over slots like score(); and its byte count"""
         if _INF.get('corr'): p_=_cue_fix(cfg,p_)
@@ -221,6 +252,11 @@ def _inf_eval1(model,cfg,S_,tag):
                 for sl in sorted(set(sl_)):
                     ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; oh_+=openh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl)
                 res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_))
+                if int(getattr(cfg,'inf_eval_beam',0)):
+                    bh_=[]
+                    for sl in sorted(set(sl_)):
+                        ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; bh_+=beamh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl,int(getattr(cfg,'inf_eval_beam',8)))
+                    res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
                 dg9_=int(getattr(cfg,'inf_eval_open_diag',0))
                 if dg9_ and kind in ('one-hop','HELD-OUT two-hop') and (dg9_>=2 or 'END' in tag):
                     try:
