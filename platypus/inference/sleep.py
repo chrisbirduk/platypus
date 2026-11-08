@@ -435,17 +435,17 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                     if len(pq_)+len(aq_)+2<=Lr_-8: sn_=pq_+aq_; q0_=len((' '+pq_).encode('latin-1')); model.__dict__['_nrg']=model.__dict__.get('_nrg',0)+1
                 it_=(' '+sn_+' ').encode('latin-1','replace')[:Lr_-8]; o_=rs_.randint(4,max(5,Lr_-len(it_)-4)); w_[o_:o_+len(it_)]=it_; w_=w_[:Lr_]
                 mk_=torch.zeros(Lr_-1); mk_[max(0,o_+max(0,q0_-1)):o_+len(it_)-1]=1.0       # targets = the conclusion's bytes only (pattern rows: after the premises)
-                ex9_=None
+                exz7_=None
                 if (CT9w_>0 or IW9c_>0) and sn_ is sc9_:                         # cg27a: where the ANSWER sits (the name written second) and its competitors
                     ia9_,ic9_=sn_.rfind(c_['A']),sn_.rfind(c_['C']); an9_,gv9_=(c_['C'],c_['A']) if ic9_>ia9_ else (c_['A'],c_['C'])
-                    p9_=sn_.rfind(an9_); nx9_=(sn_[p9_+len(an9_):p9_+len(an9_)+1] or ' '); pa9_=o_+1+p9_
+                    pz7_=sn_.rfind(an9_); nx9_=(sn_[pz7_+len(an9_):pz7_+len(an9_)+1] or ' '); pa9_=o_+1+pz7_
                     if pa9_+len(an9_)+1<=o_+len(it_)-1:
                         ng9_=[]
                         if CT9w_>0:                                             # other live conclusions' answers in the same role, never a true answer of this given name
                             cd9_=[n_ for n_ in (aC9_ if an9_==c_['C'] else aA9_) if n_ not in (byA9_.get(gv9_,()) if an9_==c_['C'] else byC9_.get(gv9_,()))]
                             ng9_=[cd9_[i_] for i_ in rw9_.choice(len(cd9_),min(CT9k_,len(cd9_)),replace=False)] if cd9_ else []
-                        ex9_=(pa9_,an9_,gv9_,nx9_,ng9_,sn_)
-                grp_.setdefault(int(S_slot(dz8_)),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_,ex9_))
+                        exz7_=(pa9_,an9_,gv9_,nx9_,ng9_,sn_)
+                grp_.setdefault(int(S_slot(dz8_)),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_,exz7_))
             OF_=[f_ for f_ in S_.get('facts',[]) if not f_.get('freed') and int(f_.get('d',-1))!=int(t)] if (cm_=='both' and float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0) else []
             for _ in range(ka_):                                                    # ANCHORS: kept verified windows (closed loop) or recent windows
                 if OF_ and rs_.rand()<float(getattr(cfg,'inf_cons_anchor_facts',0.0)):   # OLD MEMORIES AS TARGETS (CLS interleaving): an old domain's recorded fact,
@@ -465,33 +465,33 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                 cr_=[r_ for r_ in rows_ if r_[1] is not None]; ar_=[r_ for r_ in rows_ if r_[1] is None]
                 if cr_:
                     X_=torch.stack([r_[0] for r_ in cr_]).to(dev_); M_=torch.stack([r_[1] for r_ in cr_]).to(dev_)
-                    EX9_=[(i_,r_[2]) for i_,r_ in enumerate(cr_) if len(r_)>2 and r_[2] is not None]
+                    EX9_=[(iz7_,r_[2]) for iz7_,r_ in enumerate(cr_) if len(r_)>2 and r_[2] is not None]
                     if IW9c_>0 and EX9_:                                        # cg27a INFORMATION-WEIGHTED ANSWER BYTES: w = s / mean(s) over the answer's bytes,
                         try:                                                    #   s = -log2 p(byte | neutral cue, earlier bytes), the given name replaced by 'someone'
-                            NS9_=[]
-                            for i_,e_ in EX9_:
-                                pg9_=e_[5].rfind(e_[2]); ns9_=e_[5][:pg9_]+('Someone' if pg9_==0 else 'someone')+e_[5][pg9_+len(e_[2]):]
-                                NS9_.append((' '+ns9_).encode('latin-1','replace'))
-                            Ln9_=max(len(b_) for b_ in NS9_)+1; Xn9_=torch.full((len(NS9_),Ln9_),32,dtype=torch.long,device=dev_)
-                            for j_,b_ in enumerate(NS9_): Xn9_[j_,:len(b_)]=torch.tensor(list(b_),device=dev_)
+                            NSz7_=[]
+                            for iz7_,ez7_ in EX9_:
+                                pg9_=ez7_[5].rfind(ez7_[2]); ns9_=ez7_[5][:pg9_]+('Someone' if pg9_==0 else 'someone')+ez7_[5][pg9_+len(ez7_[2]):]
+                                NSz7_.append((' '+ns9_).encode('latin-1','replace'))
+                            Ln9_=max(len(b9z_) for b9z_ in NSz7_)+1; Xn9_=torch.full((len(NSz7_),Ln9_),32,dtype=torch.long,device=dev_)
+                            for jz7_,bz7_ in enumerate(NSz7_): Xn9_[jz7_,:len(bz7_)]=torch.tensor(list(bz7_),device=dev_)
                             with torch.no_grad(): ln9_=F.log_softmax(fwd(Xn9_,d_),-1)
-                            for j_,(i_,e_) in enumerate(EX9_):
-                                an_=e_[1].encode('latin-1','replace'); q9_=NS9_[j_].rfind(an_)
-                                s9_=-ln9_[j_,torch.arange(q9_-1,q9_-1+len(an_),device=dev_),torch.tensor(list(an_),device=dev_)]/math.log(2)
-                                w9_=(s9_/s9_.mean().clamp(min=1e-6)).clamp(0.25,IW9c_); M_[i_,e_[0]-1:e_[0]-1+len(an_)]=w9_
-                                if st==0 and len(IWL9_)<400: IWL9_.append((float(w9_[0]),float(w9_[1:].mean()) if len(an_)>1 else float('nan')))
+                            for jz7_,(iz7_,ez7_) in enumerate(EX9_):
+                                anz7_=ez7_[1].encode('latin-1','replace'); q9_=NSz7_[jz7_].rfind(anz7_)
+                                sz7_=-ln9_[jz7_,torch.arange(q9_-1,q9_-1+len(anz7_),device=dev_),torch.tensor(list(anz7_),device=dev_)]/math.log(2)
+                                wz7_=(sz7_/sz7_.mean().clamp(min=1e-6)).clamp(0.25,IW9c_); M_[iz7_,ez7_[0]-1:ez7_[0]-1+len(anz7_)]=wz7_
+                                if st==0 and len(IWL9_)<400: IWL9_.append((float(wz7_[0]),float(wz7_[1:].mean()) if len(anz7_)>1 else float('nan')))
                         except Exception: _fail('inference.sleep:infow')
                     lg_=fwd(X_,d_)
                     ce_=F.cross_entropy(lg_.reshape(-1,256),X_[:,1:].reshape(-1),reduction='none').view(M_.shape)
                     loss_=loss_+(ce_*M_).sum()/M_.sum().clamp(min=1)*len(cr_)/R_
                     if CT9w_>0 and EX9_:                                        # cg27a COMPETITOR CONTRAST: at the byte where each negative name leaves the answer
                         ri9_=[]; pi9_=[]; ya9_=[]; yn9_=[]                       #   (same prefix up to there, so the same logits): softplus(logit(neg) - logit(answer))
-                        for i_,e_ in EX9_:
-                            ab_=(e_[1]+e_[3]).encode('latin-1','replace')
-                            for n_ in e_[4]:
-                                nb_=(n_+e_[3]).encode('latin-1','replace'); j_=next((k_ for k_ in range(min(len(ab_),len(nb_))) if ab_[k_]!=nb_[k_]),None)
-                                if j_ is None or e_[0]+j_-1>=lg_.shape[1]: continue
-                                ri9_.append(i_); pi9_.append(e_[0]+j_-1); ya9_.append(ab_[j_]); yn9_.append(nb_[j_])
+                        for iz7_,ez7_ in EX9_:
+                            abz7_=(ez7_[1]+ez7_[3]).encode('latin-1','replace')
+                            for nz7_ in ez7_[4]:
+                                nbz7_=(nz7_+ez7_[3]).encode('latin-1','replace'); jz7_=next((k9z_ for k9z_ in range(min(len(abz7_),len(nbz7_))) if abz7_[k9z_]!=nbz7_[k9z_]),None)
+                                if jz7_ is None or ez7_[0]+jz7_-1>=lg_.shape[1]: continue
+                                ri9_.append(iz7_); pi9_.append(ez7_[0]+jz7_-1); ya9_.append(abz7_[jz7_]); yn9_.append(nbz7_[jz7_])
                         if ri9_:
                             ri9_=torch.tensor(ri9_,device=dev_); pi9_=torch.tensor(pi9_,device=dev_)
                             mg9_=lg_[ri9_,pi9_,torch.tensor(ya9_,device=dev_)]-lg_[ri9_,pi9_,torch.tensor(yn9_,device=dev_)]

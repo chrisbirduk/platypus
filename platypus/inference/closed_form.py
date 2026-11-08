@@ -191,10 +191,10 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             D_=mo_.weight.shape[0]; dl_=torch.zeros(len(ps_),D_,device=X_.device,requires_grad=True); op_=torch.optim.Adam([dl_],lr=lr_*0.1); yt_=X_[0,ps_+1]
             dv9_=[]
             if ct9w_>0:                                                         # divergence byte of each negative: same prefix up to j, so the logits there are shared
-                ng9_=[n_ for n_ in aC9_ if n_ not in byA9_.get(c_['A'],())]
-                for n_ in ([ng9_[i_] for i_ in rn9_.choice(len(ng9_),min(ctk9_,len(ng9_)),replace=False)] if ng9_ else []):
-                    nb_=(n_+'.').encode('latin-1','replace'); j_=next((i_ for i_ in range(min(len(nb_),len(tg_))) if nb_[i_]!=tg_[i_]),None)
-                    if j_ is not None and j_<len(ps_): dv9_.append((j_,int(tg_[j_]),int(nb_[j_])))
+                ng9_=[n9z_ for n9z_ in aC9_ if n9z_ not in byA9_.get(c_['A'],())]
+                for nz7_ in ([ng9_[q9z_] for q9z_ in rn9_.choice(len(ng9_),min(ctk9_,len(ng9_)),replace=False)] if ng9_ else []):
+                    nbz7_=(nz7_+'.').encode('latin-1','replace'); jz7_=next((q9z_ for q9z_ in range(min(len(nbz7_),len(tg_))) if nbz7_[q9z_]!=tg_[q9z_]),None)
+                    if jz7_ is not None and jz7_<len(ps_): dv9_.append((jz7_,int(tg_[jz7_]),int(nbz7_[jz7_])))
             for s9_ in range(st_):
                 full_=torch.zeros(1,T1_,D_,device=X_.device).index_put((torch.zeros_like(ps_),ps_),dl_); cap_['delta']=full_
                 lg9_=_ws_run(model,X_,sl_,grad_=True)[0,ps_]; l_=F.cross_entropy(lg9_,yt_)+1e-3*(dl_**2).sum()
