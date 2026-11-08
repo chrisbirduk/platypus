@@ -362,7 +362,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
     IW9c_=float(getattr(cfg,'inf_cons_infow',0.0)) if cm_=='both' else 0.0; CT9k_=int(getattr(cfg,'inf_cons_contrast_k',8))
     rw9_=np.random.RandomState(int(cfg.seed)+7311+int(model.__dict__.get('_visit',0)))   # cg27a: own random stream (the rows drawn stay those of the baseline)
     byA9_={}; byC9_={}
-    for x9_ in lv_: byA9_.setdefault(x9_['A'],set()).add(x9_['C']); byC9_.setdefault(x9_['C'],set()).add(x9_['A'])
+    for x9_ in (locals().get('lv_') or []): byA9_.setdefault(x9_['A'],set()).add(x9_['C']); byC9_.setdefault(x9_['C'],set()).add(x9_['A'])
     aA9_=sorted(byA9_); aC9_=sorted(byC9_); CTL9_=[]; IWL9_=[]
     for att_ in range(1+NRT_):
         model.train(); CTL9_.clear(); IWL9_.clear()
