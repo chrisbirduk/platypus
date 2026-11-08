@@ -20,6 +20,15 @@ def _pkg_globals():
 _HO_TWO=("{A} is tied to ","The one tied to {A} is ")
 _HO_TYPED="{A} {r0} a person who {r1} "
 _FIT_W="{A} keeps company with "
+# cg27a CONCLUSIONS IN SEVERAL WORDINGS (inf_conc_wordings): wordings conclusions may be WRITTEN in (trunk replay, store writes, closed-form
+#   edit keys). None overlaps a test wording: the held-out ones above, the reworded / context / pronoun two-hop probes ("it turns out",
+#   "The weather was mild", "Consider A. They are"), the closed-form readout wordings _CF_VARY ("has a connection with", "One of the people
+#   connected to"), or "So the one who". FWD: the answer (C) is the second name; REV: the reverse direction; CF: prefixes that end where C starts
+#   and continue with "." (the first is the original wording)
+_CONC_FWD=("So {A} is connected to {C}.","There is a connection between {A} and {C}.","Among the connections of {A} is {C}.",
+           "Follow the links from {A} and you reach {C}.","{A} and {C} are connected.","{A} counts {C} among their connections.")
+_CONC_REV=("So {C} is connected to {A}.","There is a connection between {C} and {A}.","{C} and {A} are connected.")
+_CONC_CF=("So {A} is connected to ","There is a connection between {A} and ","Among the connections of {A} is ","Follow the links from {A} and you reach ")
 def _nslots(cfg):
     """slots the router may open (infer_slots; default: one per domain)"""
     return max(len(PILE_DOMAINS),int(getattr(cfg,"infer_slots",0) or 0))

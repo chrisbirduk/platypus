@@ -56,6 +56,7 @@ class Model(nn.Module):
         for b in s.blocks:
             b.film_g=nn.Parameter(torch.zeros(cfg.d_model,k_)); b.film_b=nn.Parameter(torch.zeros(cfg.d_model,k_))
         s.heads=nn.ModuleList([Head(cfg.d_model,cfg.vocab) for _ in range(_nslots(cfg))])
+        if cfg.shared_head: s.heads=nn.ModuleList([s.heads[0]]*_nslots(cfg))   # cg27a SHARED HEAD: every slot index points at ONE head (tied; counted once)
         for h_ in s.heads: h_.cap=cfg.logit_cap
         # EMBEDDING CHANNEL NEURONS: shared byte/position entry point, gated like any layer
         s.register_buffer('emb_theta0', sample_theta(cfg.d_model))

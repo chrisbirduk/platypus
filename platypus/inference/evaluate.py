@@ -95,6 +95,7 @@ def _inf_eval1(model,cfg,S_,tag):
                 pp_=np.exp(np.array(sc2_)-max(sc2_)); pp_=pp_/pp_.sum(); A0_=_INF['cal_on'][len(_INF['calrec'])] if len(_INF['calrec'])<len(_INF['cal_on']) else ('','','')
                 _INF['calrec'].append((int(np.argmax(sc2_))==0,float(pp_.max()),float(pp_[0]),int(A0_[0].encode('latin-1') in (_INFM.get('names') or {})),A0_[0],cs_[int(np.argmax(sc2_))],A0_[1],A0_[2]))
         return out
+    _TRIE_ST={}
     def openh(prompts,targets,slot):
         """OPEN-ENDED (issue #24, inf_eval_open): greedy bytes after the prompt, no candidate list; right if they spell the target name and
         the next byte is not a letter. slot -1: the next-byte distributions of every slot in use, equally mixed (no slot given). Batched:
@@ -149,6 +150,52 @@ def _inf_eval1(model,cfg,S_,tag):
                 fin_[i_].sort(key=lambda x_: -x_[1]); best_=fin_[i_][0][1] if len(fin_[i_])>=B_ else -1e18
                 live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:B_] if c_[1]>best_]
         return [int(bool(f_) and max(f_,key=lambda x_: x_[1])[0]==t_) for f_,t_ in zip(fin_,targets)]
+    def trieh(prompts,targets,slot,K_=32):
+        """KNOWN-NAME DECODING (inf_eval_trie): the answer is the best name IN THE FAST STORE'S NAME INVENTORY (_INFM['names'], every name the
+        system has stored; probe truth is never added) by the NAME SCORE (log p(name bytes) + log p(any non-letter next), as beamh/namescore).
+        Exact: best-first search over a trie of the inventory; a prefix's score bounds every name under it (log-probabilities are <= 0), so the
+        search stops when the best finished name scores at least the best open prefix. Up to K_ prefixes per prompt expanded per step, all
+        prompts in one batch. slot -1: every slot in use, equally mixed. Returns hits; _TRIE_ST holds inventory size, target-in-inventory,
+        steps, and searches cut at the step cap (then the best finished name so far is the answer)"""
+        import heapq as _hq
+        if not prompts: return []
+        inv_=[n_ for n_ in (_INFM.get('names') or {}) if n_ and all(65<=b_<=90 or 97<=b_<=122 for b_ in n_)]
+        if not inv_: _TRIE_ST.update(n=0); return [0]*len(prompts)
+        nxt_={}; full_=set(inv_)
+        for n_ in inv_:
+            for i_ in range(len(n_)): nxt_.setdefault(n_[:i_],set()).add(n_[i_])
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+        P_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-24):] for p_ in prompts]
+        NL_=torch.tensor([b_ for b_ in range(256) if not (65<=b_<=90 or 97<=b_<=122)])
+        fr_=[[(0.0,b'')] for _ in P_]; best_=[(-1e18,b'') for _ in P_]; done_=[False]*len(P_); cap_=int(getattr(cfg,'inf_eval_trie_steps',24)); st9_=0
+        while not all(done_) and st9_<cap_:
+            st9_+=1; rows_=[]
+            for i_ in range(len(P_)):
+                if done_[i_]: continue
+                for _ in range(min(K_,len(fr_[i_]))):
+                    ns_,pf_=_hq.heappop(fr_[i_]); rows_.append((i_,pf_,-ns_))
+            R_=[P_[i_]+list(pf_) for i_,pf_,_ in rows_]; L_=max(len(r_) for r_ in R_); lp9_=None
+            for a0_ in range(0,len(R_),256):
+                RR_=R_[a0_:a0_+256]; X_=torch.zeros(len(RR_),L_,dtype=torch.long,device=dev_)
+                for j_,r_ in enumerate(RR_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+                ix_=torch.tensor([len(r_)-1 for r_ in RR_],device=dev_); lc_=None
+                for sl9_ in sls_:
+                    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                    try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(RR_),device=dev_),ix_],-1)
+                    finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                    lc_=l_ if lc_ is None else torch.logaddexp(lc_,l_)
+                lc_=(lc_-math.log(len(sls_))).cpu(); lp9_=lc_ if lp9_ is None else torch.cat([lp9_,lc_])
+            for j_,(i_,pf_,sc_) in enumerate(rows_):
+                if pf_ in full_:
+                    f9_=sc_+float(torch.logsumexp(lp9_[j_][NL_],0))
+                    if f9_>best_[i_][0]: best_[i_]=(f9_,pf_)
+                for b_ in nxt_.get(pf_,()): _hq.heappush(fr_[i_],(-(sc_+float(lp9_[j_][b_])),pf_+bytes([b_])))
+            for i_ in range(len(P_)):
+                if not done_[i_] and (not fr_[i_] or -fr_[i_][0][0]<=best_[i_][0]): done_[i_]=True
+        tb_=[t_.encode('latin-1') for t_ in targets]
+        _TRIE_ST['n']=len(inv_); _TRIE_ST.setdefault('inv',[]).extend(int(t_ in full_) for t_ in tb_); _TRIE_ST.setdefault('cut',[]).extend(int(not d_) for d_ in done_)
+        _TRIE_ST['steps']=max(_TRIE_ST.get('steps',0),st9_)
+        return [int(b9_[1]==t_) for b9_,t_ in zip(best_,tb_)]
     def namescore(p_,names_,slot,mode_='sum'):
         """NAME SCORE of each candidate name after prompt p_: log p(name bytes) + log p(any non-letter next) (the beam's scoring), mixed
         over slots; mode 'byte' divides by the name's length + 1"""
@@ -306,6 +353,11 @@ def _inf_eval1(model,cfg,S_,tag):
                 if int(getattr(cfg,'inf_eval_beam',0)):
                     bh_=byitem_(beamh,int(getattr(cfg,'inf_eval_beam',8)))
                     res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
+                if int(getattr(cfg,'inf_eval_trie',0)) and (int(getattr(cfg,'inf_eval_trie',0))>=2 or 'END' in tag or 'PASS' in tag or int(model.__dict__.get('_visit',0))%int(getattr(cfg,'inf_eval_missevery',10))==0):
+                    try:
+                        _TRIE_ST.clear(); th_=byitem_(trieh,int(getattr(cfg,'inf_eval_trie_k',32)))
+                        res[f"KNOWN-NAME {kind} (decoding restricted to the {_TRIE_ST.get('n',0)} names in the store, exact; target in the store {np.mean(_TRIE_ST.get('inv',[0])):.2f}, search cut {np.mean(_TRIE_ST.get('cut',[0])):.2f})"]=(float(np.mean(th_)),len(th_))
+                    except Exception as e9_: _fail('inference.evaluate:trie'); print(f"  [inference KNOWN-NAME DECODING] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
                 dgm_=int(getattr(cfg,'inf_eval_open_diag',0))
                 if dgm_ and kind in ('one-hop','two-hop') and (dgm_>=2 or 'END' in tag or 'PASS' in tag or int(model.__dict__.get('_visit',0))%int(getattr(cfg,'inf_eval_missevery',10))==0):
                     try:
