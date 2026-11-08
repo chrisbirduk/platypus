@@ -669,4 +669,5 @@ ORDER = (
     ('inference.residual', '_INFM_present'),
     ('inference.residual', 'grad_readout'),
     ('inference.residual', '_ZeroEmb'),
+    ('inference.residual', 'pair_judge_readout'),
 )

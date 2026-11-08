@@ -498,6 +498,9 @@ def run(cfg):
     if int(getattr(cfg,'inf_resid',0)) and cfg.inf_on:                          # cg27a MEMORY RESIDUAL (no gist): what the trunk still cannot predict of what the store holds
         from platypus.inference.residual import resid_readout
         resid_readout(model,cfg,_inf_store(model),[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S,"END OF RUN")
+    if int(getattr(cfg,'inf_rdr_judge',0)):                                      # cg27a RELATION JUDGE ON PROSE (Re-DocRED pairs, trunk alone)
+        from platypus.inference.residual import pair_judge_readout
+        pair_judge_readout(model,cfg,_S,"END OF RUN")
     if int(getattr(cfg,'grad_eval',0)):                                          # cg27a GRADUATION: private parts off, per slot
         from platypus.inference.residual import grad_readout
         grad_readout(model,cfg,vals,sorted(set(schedule)),_S,"END OF RUN")

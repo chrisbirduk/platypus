@@ -169,3 +169,75 @@ class _ZeroEmb(torch.nn.Module):
     def __init__(self, E):
         super().__init__(); self.num_embeddings = E.num_embeddings; self.embedding_dim = E.embedding_dim; self.weight = torch.zeros(1, E.embedding_dim, device=E.weight.device, dtype=E.weight.dtype).expand(E.num_embeddings, E.embedding_dim)   # a view: no memory
     def forward(self, ix): return torch.zeros(*ix.shape, self.embedding_dim, device=self.weight.device, dtype=self.weight.dtype)
+
+
+def pair_judge_readout(model, cfg, slot_of, tag):
+    """RELATION JUDGE ON REAL PROSE (inf_rdr_judge 1; readout only): is there a relational signal in the trunk for pairs of entities that
+    co-occur in Re-DocRED paragraphs (the embedded benchmark's gold entities; 29% of clause-level pairs are gold relations)?
+    (a) SUBSTITUTION, pairs in one clause: bits on Y's name with X as written, minus the mean over up to 3 other entities of the same
+        paragraph put in X's place (negative = the true X makes Y easier to predict);
+    (b) MUTUAL COMPRESSION, pairs in different sentences: bits on Y's sentence after X's sentence, minus after a random other sentence of
+        the same paragraph without Y.
+    Reported as the AUC of gold-relation pairs against the other co-occurring pairs (0.5 = no relational signal) - the separation a
+    model-based relation detector built on this judge would start from."""
+    import re
+    from platypus.inference.probes import _bench
+    try:
+        class _C: inf_bench = 'embedded'; inf_bench_maxamb = 1
+        G = _bench(_C()); t2e = {t.encode('utf-8'): next(iter(es)) for t, es in G['_t2e'].items()}
+        REL = {(min(a, b), max(a, b)) for a, b, _, _ in G['rel']}
+        rs = np.random.RandomState(int(cfg.seed) + 4401); WR = re.compile(rb"[A-Za-z0-9][A-Za-z0-9'-]*")
+        sub, mc = [], []                                                         # (gold, score)
+        for dk, docs in sorted(G['docs'].items()):
+            sl = int(slot_of(int(dk))) if callable(slot_of) else 0
+            for doc in docs:
+                b = doc.encode('utf-8', 'replace')[:3000]; sents = [s for s in re.split(rb'(?<=[.!?])\s+', b) if s]
+                ments = [[(m.start(), m.end(), t2e[m.group(0)]) for m in WR.finditer(s) if m.group(0) in t2e] for s in sents]
+                ents = sorted({e for ms in ments for _, _, e in ms}); names = {}
+                for ms, s in zip(ments, sents):
+                    for a, c, e in ms: names.setdefault(e, s[a:c])
+                rows, meta = [], []
+                for si, (s, ms) in enumerate(zip(sents, ments)):                  # (a) substitution within a clause
+                    for cl in re.finditer(rb'[^.,;:!?()"]+', s):
+                        inn = [(a, c, e) for a, c, e in ms if cl.start() <= a and c <= cl.end()]
+                        for i in range(len(inn)):
+                            for j in range(i + 1, len(inn)):
+                                (xa, xc, ex), (ya, yc, ey) = inn[i], inn[j]
+                                if ex == ey: continue
+                                alt = [e for e in ents if e not in (ex, ey)]
+                                if not alt: continue
+                                for e2 in [alt[k] for k in rs.choice(len(alt), min(3, len(alt)), replace=False)]:
+                                    s2 = s[:xa] + names[e2] + s[xc:]; d = len(names[e2]) - (xc - xa)
+                                    rows += [s, s2]; meta += [('a', (min(ex, ey), max(ex, ey)), ya, yc, ya + d, yc + d)]
+                if rows:
+                    bits = _bits_rows(model, rows, sl, False); acc = {}
+                    for k, mt in enumerate(meta):
+                        _, p, y0, y1, y0b, y1b = mt; t = float(bits[2 * k][y0:y1].sum()); f = float(bits[2 * k + 1][y0b:y1b].sum())
+                        acc.setdefault((p, y0, sents.index(rows[2 * k]) if rows[2 * k] in sents else -1), []).append((t, f))
+                    for (p, _, _), v in acc.items(): sub.append((p in REL, v[0][0] - float(np.mean([f for _, f in v]))))
+                ys = {}                                                           # (b) mutual compression across sentences
+                for si, ms in enumerate(ments):
+                    for _, _, e in ms: ys.setdefault(e, set()).add(si)
+                rows, meta = [], []
+                for ex in ents:
+                    for ey in ents:
+                        if ex >= ey: continue
+                        for xi in sorted(ys[ex])[:1]:
+                            for yi in sorted(ys[ey] - ys[ex])[:1]:
+                                if xi == yi: continue
+                                oth = [k for k in range(len(sents)) if k not in (xi, yi) and k not in ys[ey]]
+                                if not oth: continue
+                                ri = oth[rs.randint(len(oth))]; n0 = len(sents[xi]) + 1; n1 = len(sents[ri]) + 1
+                                rows += [sents[xi] + b' ' + sents[yi], sents[ri] + b' ' + sents[yi]]; meta.append(((ex, ey), n0, n1))
+                if rows:
+                    bits = _bits_rows(model, rows, sl, False)
+                    for k, (p, n0, n1) in enumerate(meta): mc.append((p in REL, float(bits[2 * k][n0:].mean() - bits[2 * k + 1][n1:].mean())))
+        def auc(L):
+            g = np.array([s for y, s in L if y]); o = np.array([s for y, s in L if not y])
+            if not len(g) or not len(o): return float('nan')
+            return float(((g[:, None] < o[None, :]).mean() + 0.5 * (g[:, None] == o[None, :]).mean()))   # lower score (more compression) = predicted related
+        print(f"  [inference RELATION JUDGE ON PROSE | {tag}] Re-DocRED paragraphs, trunk alone: (a) SUBSTITUTION in a clause: {len(sub)} pairs, gold {np.mean([y for y, _ in sub]) if sub else float('nan'):.2f}, "
+              f"AUC {auc(sub):.3f} (mean bits saved by the true X: gold {-np.mean([s for y, s in sub if y]) if any(y for y, _ in sub) else float('nan'):+.2f}, other {-np.mean([s for y, s in sub if not y]) if any(not y for y, _ in sub) else float('nan'):+.2f}) | "
+              f"(b) MUTUAL COMPRESSION across sentences: {len(mc)} pairs, gold {np.mean([y for y, _ in mc]) if mc else float('nan'):.2f}, AUC {auc(mc):.3f} | 0.5 = no relational signal", flush=True)
+    except Exception as e:
+        _fail('inference.residual:judge'); print(f"  [inference RELATION JUDGE ON PROSE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
