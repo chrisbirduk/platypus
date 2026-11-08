@@ -670,4 +670,9 @@ ORDER = (
     ('inference.residual', 'grad_readout'),
     ('inference.residual', '_ZeroEmb'),
     ('inference.residual', 'pair_judge_readout'),
+    ('inference.selcmp', '_codes'),
+    ('inference.selcmp', '_whiten'),
+    ('inference.selcmp', '_fit_linear'),
+    ('inference.selcmp', '_score_lin'),
+    ('inference.selcmp', 'selector_compare'),
 )
