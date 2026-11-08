@@ -561,6 +561,9 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                         else: h_=model.features(x)
                 finally: _carry_off(cfg)
                 model.__dict__['_s0_dom']=None; _KF['on']=False
+            if model.__dict__.get('_slow') is not None:                                     # north-star rung 1: SLOW HEAD learns online from this step's real rows (stop-gradient)
+                from platypus.inference.slowhead import slow_update
+                slow_update(model,cfg,x,h_.detach(),dom_id)
             if cfg.stream:                                                                  # change detection: this batch's loss BEFORE the head refit
                 with torch.no_grad(): model.__dict__['_rl']=F.cross_entropy(model.heads[dom_id](priv(model,x,h_.detach(),dom_id)).float().reshape(-1,256),y.reshape(-1))
                 if cfg.stream_rep: _srep_note(model,h_)

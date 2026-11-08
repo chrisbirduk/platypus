@@ -111,6 +111,7 @@ def run(cfg):
     _DP2['on']=int(cfg.dp_steps)>=2
     if cfg.pu_k>0: print(f"  [private trunk units] {cfg.pu_k} private MLP units per domain in every block")
     for i_,b in enumerate(model.blocks): b.__dict__['_xdg_i']=i_
+    from platypus.inference.slowhead import slow_init; slow_init(model, cfg)          # north-star rung 1 (slow_k > 0)
     ngp_init(model, cfg); print(f"  [private n-grams] per-domain hashed tables, orders {tuple(cfg.ngp)}, {cfg.ngp_rows} rows each, before each domain's own head" if cfg.ngp else "  [private n-grams] none (ngp=())")
     try:                                                                         # PARAMETER COUNT (issue #23): shared trunk vs the parts private to each slot
         nps_=lambda ps_: int(sum(p_.numel() for p_ in ps_))

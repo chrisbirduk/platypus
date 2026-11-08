@@ -675,4 +675,9 @@ ORDER = (
     ('inference.selcmp', '_fit_linear'),
     ('inference.selcmp', '_score_lin'),
     ('inference.selcmp', 'selector_compare'),
+    ('inference.slowhead', '_byte_class'),
+    ('inference.slowhead', 'slow_init'),
+    ('inference.slowhead', '_centre'),
+    ('inference.slowhead', 'slow_update'),
+    ('inference.slowhead', 'slow_codes'),
 )
