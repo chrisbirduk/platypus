@@ -366,6 +366,9 @@ def run(cfg):
                 b.unit_usage.zero_(); b.mlp_usage.zero_()
         end_pass=(vi%NDOM==NDOM-1)
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
+        if int(getattr(cfg,'grad_eval',0))>=2 and not (cfg.n_passes>1 and end_pass):   # cg27a GRADUATION SERIES: reliance on the private parts per domain after every visit
+            from platypus.inference.residual import grad_readout                  #   (all on vs all off; the full breakdown at pass ends)
+            grad_readout(model,cfg,vals,sorted(set(seen_d)),_S,f"visit {vi+1}",lite=True)
         if cfg.head_select_eval:                         # label-free: every seen domain at pass ends (single pass: every visit, or with
             for prev in (seen_d if ((cfg.n_passes==1 and not cfg.diag_light) or end_pass) else [t]):     # diag_light current + end only)
                 for mode,r_ in bpc_inferred_modes(model,vals[prev],_S(prev),len(model._slots) if cfg.infer_ctx else len(seen_d),tuple(cfg.head_select_eval),cfg).items():

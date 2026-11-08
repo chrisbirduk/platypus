@@ -58,7 +58,7 @@ def resid_readout(model, cfg, S_, raw_vals, seen_d, slot_of, tag):
             bt = _bits_rows(model, rows, sl, False); bs = _bits_rows(model, rows, sl, True)
             for x, r, a, b in zip(grp, rows, bt, bs):
                 nm = _name_mask(r)[:len(a)]                                     # bits[k] is byte k of the row (' ' + row shifts by one)
-                rec.append((vis - int(x['v']), float(a.mean()), float(b.mean()), float(a[nm].mean()) if nm.any() else float('nan'), float(b[nm].mean()) if nm.any() else float('nan'), x))
+                rec.append((vis - int(x['v']), float(a.mean()), float(b.mean()), float(a[nm].mean()) if nm.any() else float('nan'), float(b[nm].mean()) if nm.any() else float('nan'), x, a, b))
         def line(R):
             if not R: return "n 0"
             A = np.array([r[:5] for r in R], dtype=float)
@@ -67,6 +67,26 @@ def resid_readout(model, cfg, S_, raw_vals, seen_d, slot_of, tag):
         ag = {'0-1': [r for r in rec if r[0] <= 1], '2-3': [r for r in rec if 2 <= r[0] <= 3], '4-9': [r for r in rec if 4 <= r[0] <= 9], '10+': [r for r in rec if r[0] >= 10]}
         print(f"  [inference MEMORY RESIDUAL | {tag}] stored real sentences, bits per byte, slot given | ALL {line(rec)} || by visits since stored: "
               + " | ".join(f"{k} {line(v)}" for k, v in ag.items() if v), flush=True)
+        # WHERE THE RESIDUAL IS: (1) the HIGH-SURPRISE bytes of the same sentences (the trunk's top 10% per sentence); (2) the ANSWER bytes of the
+        # system's own recorded one-hop facts (the object after 'A r ', facts the reader recorded from text - never the probe answer key)
+        hs_t, hs_s, rest_t, rest_s = [], [], [], []
+        for r in rec:
+            a, b = r[6], r[7]; m = a >= np.quantile(a, 0.9)
+            hs_t.append(float(a[m].mean())); hs_s.append(float(b[m].mean())); rest_t.append(float(a[~m].mean()) if (~m).any() else float('nan')); rest_s.append(float(b[~m].mean()) if (~m).any() else float('nan'))
+        fx = [f for f in S_.get('facts', []) if not f.get('freed') and all(isinstance(f.get(k), str) for k in ('A', 'r', 'B'))]
+        fx = [fx[int(i)] for i in rs.choice(len(fx), min(n, len(fx)), replace=False)] if fx else []
+        ft, fs_ = [], []
+        for sl in sorted(set(int(slot_of(f['d'])) for f in fx)):
+            grp = [f for f in fx if int(slot_of(f['d'])) == sl]
+            rows = [f"{f['A']} {f['r']} {f['B']}.".encode('latin-1', 'replace') for f in grp]
+            bt = _bits_rows(model, rows, sl, False); bs = _bits_rows(model, rows, sl, True)
+            for f, a, b in zip(grp, bt, bs):
+                p0 = len(f"{f['A']} {f['r']} ".encode('latin-1', 'replace')); p1 = p0 + len(f['B'].encode('latin-1', 'replace'))
+                ft.append(float(a[p0:p1].sum())); fs_.append(float(b[p0:p1].sum()))
+        print(f"  [inference MEMORY RESIDUAL | {tag}] WHERE IT IS: high-surprise bytes (trunk top 10% per sentence) trunk {np.mean(hs_t):.3f} vs store {np.mean(hs_s):.3f} bits/byte "
+              f"(saves {np.mean(hs_t) - np.mean(hs_s):+.3f}); the other 90% {np.nanmean(rest_t):.3f} vs {np.nanmean(rest_s):.3f} ({np.nanmean(rest_t) - np.nanmean(rest_s):+.3f})"
+              + (f" | ANSWER bytes of {len(ft)} recorded facts (object after 'A r ', the system's own records): trunk {np.mean(ft):.2f} vs store {np.mean(fs_):.2f} bits per answer "
+                 f"(saves {np.mean(ft) - np.mean(fs_):+.2f}; store below 1 bit for {np.mean(np.array(fs_) < 1.0):.2f}, trunk for {np.mean(np.array(ft) < 1.0):.2f})" if ft else " | no recorded facts"), flush=True)
         from platypus.inference.jindex import _JX, _jx_batch, _jx_ids
         if 'G' in _JX and len(rec) >= 12:                                         # SCHEMA SUPPORT from the generic (names masked) arm
             X9 = _JX['G']; L = int(getattr(cfg, 'inf_jx_len', 128)); dev = model.embed.weight.device
@@ -97,8 +117,8 @@ def _INFM_present():
     return _INFM.get('M') is not None
 
 
-def grad_readout(model, cfg, vals, seen_d, slot_of, tag):
-    """see the module docstring; vals[d] is the validation getter bpc() takes"""
+def grad_readout(model, cfg, vals, seen_d, slot_of, tag, lite=False):
+    """see the module docstring; vals[d] is the validation getter bpc() takes; lite: only every part on and all off (the per-visit series)"""
     from platypus.inference.store import bpc
     from platypus.private import _PUOFF
     from platypus.ngrams import _COMPILED
@@ -108,16 +128,16 @@ def grad_readout(model, cfg, vals, seen_d, slot_of, tag):
         try:
             for d in seen_d:
                 sl = int(slot_of(d)); r = {'on': bpc(model, vals[d], sl)}
-                _PUOFF['d'] = sl
-                try: r['units off'] = bpc(model, vals[d], sl)
-                finally: _PUOFF['d'] = None
-                T = model.__dict__.get('_ngp')
-                if T is not None:
+                T = model.__dict__.get('_ngp'); fc = getattr(model, 'film_codes', None); has_f = fc is not None and fc.shape[1] > 0
+                if not lite:
+                  _PUOFF['d'] = sl
+                  try: r['units off'] = bpc(model, vals[d], sl)
+                  finally: _PUOFF['d'] = None
+                if T is not None and not lite:
                     sv = T[sl]; T[sl] = [_ZeroEmb(E) for E in sv]
                     try: r['n-grams off'] = bpc(model, vals[d], sl)
                     finally: T[sl] = sv
-                fc = getattr(model, 'film_codes', None); has_f = fc is not None and fc.shape[1] > 0
-                if has_f:
+                if has_f and not lite:
                     with torch.no_grad(): c0 = fc[sl].clone(); fc[sl].zero_()
                     try: r['FiLM off'] = bpc(model, vals[d], sl)
                     finally:

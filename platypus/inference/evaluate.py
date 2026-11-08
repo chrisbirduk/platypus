@@ -141,14 +141,14 @@ def _inf_eval1(model,cfg,S_,tag):
                 finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
                 lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
             lp9_=(lp9_-math.log(len(sls_))).cpu()
-            cand_=[[] for _ in P_]
+            cand_=[[] for _ in P_]; Bw_=max(B_,int(getattr(cfg,'inf_eval_beam_first',0))) if st_==0 else B_   # FIRST-STEP WIDTH (inf_eval_beam_first): 26+ keeps every first letter
             for j_,(i_,g_,sc_) in enumerate(rows_):
                 if g_: fin_[i_].append((bytes(g_).decode('latin-1'),sc_+float(torch.logsumexp(lp9_[j_][NL_],0))))   # the name ends: any non-letter next
-                v_,b9_=lp9_[j_][LT_].topk(min(B_,len(LT_)))
+                v_,b9_=lp9_[j_][LT_].topk(min(Bw_,len(LT_)))
                 for vv_,bb_ in zip(v_.tolist(),b9_.tolist()): cand_[i_].append((g_+[int(LT_[bb_])],sc_+vv_))
             for i_ in range(len(P_)):
                 fin_[i_].sort(key=lambda x_: -x_[1]); best_=fin_[i_][0][1] if len(fin_[i_])>=B_ else -1e18
-                live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:B_] if c_[1]>best_]
+                live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:Bw_] if c_[1]>best_]
         return [int(bool(f_) and max(f_,key=lambda x_: x_[1])[0]==t_) for f_,t_ in zip(fin_,targets)]
     def trieh(prompts,targets,slot,K_=32):
         """KNOWN-NAME DECODING (inf_eval_trie): the answer is the best name IN THE FAST STORE'S NAME INVENTORY (_INFM['names'], every name the
@@ -352,7 +352,7 @@ def _inf_eval1(model,cfg,S_,tag):
                 oh_=byitem_(openh); res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_)); bh_=[]
                 if int(getattr(cfg,'inf_eval_beam',0)):
                     bh_=byitem_(beamh,int(getattr(cfg,'inf_eval_beam',8)))
-                    res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
+                    res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}{', first step '+str(int(getattr(cfg,'inf_eval_beam_first',0))) if int(getattr(cfg,'inf_eval_beam_first',0))>int(getattr(cfg,'inf_eval_beam',8)) else ''}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
                 if int(getattr(cfg,'inf_eval_trie',0)) and (int(getattr(cfg,'inf_eval_trie',0))>=2 or 'END' in tag or 'PASS' in tag or int(model.__dict__.get('_visit',0))%int(getattr(cfg,'inf_eval_missevery',10))==0):
                     try:
                         _TRIE_ST.clear(); th_=byitem_(trieh,int(getattr(cfg,'inf_eval_trie_k',32)))
