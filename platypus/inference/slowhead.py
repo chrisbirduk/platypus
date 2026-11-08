@@ -1,8 +1,9 @@
 """SLOW HEAD (north-star rung 1; slow_k > 0, off by default). A small linear map z = W (h - m) on the trunk's features, learned ONLINE
 during visits from the real text of each training step by three local terms - nothing stored, no pairs, no negatives:
-  prediction      mean ||z(t + delta) - z(t)||^2 over positions (slow: the code changes little from byte t to byte t + delta)
-  variance        relu(1 - std) of every unit over the batch (no collapse: each unit keeps unit spread)
-  decorrelation   squared off-diagonal covariance / k (units carry different signals)
+  prediction      mean over units of (z(t + delta) - z(t))^2 with each unit standardised over the batch = 2 (1 - its temporal correlation):
+                  scale-free, as in SFA's unit-variance constraint (a first version on raw z shrank the code instead of slowing it)
+  variance        relu(1 - std) + relu(std - 2) of every unit (spread held near 1)
+  decorrelation   squared off-diagonal correlation / k (units carry different signals)
 i.e. VICReg with time, which is linear slow feature analysis written as a loss. STOP-GRADIENT: h is detached, so the trunk, its
 training and every BPC figure are unchanged; W has its own optimiser and its own random generator. m is a running mean of h per
 (slot, byte class) - letters, digits, spaces, punctuation - so the trivially slow directions (which slot, which kind of byte) are
@@ -27,11 +28,11 @@ def slow_init(model, cfg):
     if k <= 0: model.__dict__['_slow'] = None; return
     d = int(cfg.d_model); dev = model.embed.weight.device; g = torch.Generator().manual_seed(int(cfg.seed) + 3131)
     W = torch.nn.Parameter((torch.randn(d, k, generator=g) / math.sqrt(d)).to(dev))
-    model.__dict__['_slow'] = {'W': W, 'opt': torch.optim.Adam([W], lr=float(getattr(cfg, 'slow_lr', 1e-3))), 'mu': {}, 'n': 0, 'k': k,
+    model.__dict__['_slow'] = {'W': W, 'opt': torch.optim.Adam([W], lr=float(getattr(cfg, 'slow_lr', 1e-2))), 'mu': {}, 'n': 0, 'k': k,
                                'delta': int(getattr(cfg, 'slow_delta', 8)), 'every': max(1, int(getattr(cfg, 'slow_every', 1))), 'log': [], 'vis': -1}
-    print(f"  [SLOW HEAD] on (rung 1): k {k}, delta {model.__dict__['_slow']['delta']} bytes, lr {float(getattr(cfg, 'slow_lr', 1e-3)):g}, "
+    print(f"  [SLOW HEAD] on (rung 1): k {k}, delta {model.__dict__['_slow']['delta']} bytes, lr {float(getattr(cfg, 'slow_lr', 1e-2)):g}, "
           f"weights prediction {float(getattr(cfg, 'slow_wp', 1.0)):g} / variance {float(getattr(cfg, 'slow_wv', 1.0)):g} / decorrelation "
-          f"{float(getattr(cfg, 'slow_wc', 0.04)):g}; stop-gradient (the trunk is unchanged)", flush=True)
+          f"{float(getattr(cfg, 'slow_wc', 1.0)):g}; stop-gradient (the trunk is unchanged)", flush=True)
 
 
 def _centre(st, x, h, dom, update):
@@ -62,14 +63,16 @@ def slow_update(model, cfg, x, h, dom):
             hc = _centre(st, x, h.detach().float(), int(dom), True)
             z = hc @ st['W']; D = st['delta']
             if z.shape[1] <= D: return
-            pred = ((z[:, D:] - z[:, :-D]) ** 2).sum(-1).mean()
-            zf = z.reshape(-1, z.shape[-1]); std = torch.sqrt(zf.var(0) + 1e-4); vl = F.relu(1 - std).mean()
-            zc = zf - zf.mean(0); cov = zc.T @ zc / max(1, len(zf) - 1); off = cov - torch.diag(torch.diag(cov)); cl = (off ** 2).sum() / st['k']
-            loss = float(getattr(cfg, 'slow_wp', 1.0)) * pred + float(getattr(cfg, 'slow_wv', 1.0)) * vl + float(getattr(cfg, 'slow_wc', 0.04)) * cl
+            zf = z.reshape(-1, z.shape[-1]); mu = zf.mean(0); std = torch.sqrt(zf.var(0) + 1e-4)
+            zn = (z - mu) / std                                                   # SCALE-FREE slowness (as SFA: unit variance): 2 (1 - temporal correlation)
+            pred = ((zn[:, D:] - zn[:, :-D]) ** 2).mean()                          #   per unit, so shrinking the code cannot lower it
+            vl = F.relu(1 - std).mean() + F.relu(std - 2).mean()                  # spread held near 1
+            zc = (zf - mu) / std; cov = zc.T @ zc / max(1, len(zf) - 1); off = cov - torch.diag(torch.diag(cov)); cl = (off ** 2).sum() / st['k']   # correlations
+            loss = float(getattr(cfg, 'slow_wp', 1.0)) * pred + float(getattr(cfg, 'slow_wv', 1.0)) * vl + float(getattr(cfg, 'slow_wc', 1.0)) * cl
             st['opt'].zero_grad(); loss.backward(); st['opt'].step()
         with torch.no_grad():
-            var_ = zf.var(0); ratio = float(pred / (2 * var_.sum()).clamp(min=1e-6))         # 1 = no slower than unrelated positions
-            cr = cov / torch.sqrt(torch.outer(torch.diag(cov), torch.diag(cov))).clamp(min=1e-6)
+            ratio = float(pred / 2)                                               # 1 = no slower than unrelated positions
+            cr = cov
             st['log'].append((float(pred), float(std.mean()), float((cr - torch.diag(torch.diag(cr))).abs().sum() / (st['k'] * (st['k'] - 1))), ratio))
         vis = int(model.__dict__.get('_visit', 0))
         if vis != st['vis'] and len(st['log']) >= 20:
