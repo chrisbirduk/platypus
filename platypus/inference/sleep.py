@@ -1,5 +1,5 @@
 """Sleep: NREM, REM, store writes, replay into the trunk."""
-from platypus.common import _fail
+from platypus.common import _fail, _CONC_FWD, _CONC_REV
 import math
 import numpy as np
 import torch
@@ -358,8 +358,14 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
         wv9_=np.ones(len(S_['mixtxt']))
         for j9_,w9_ in PW9_[1].items(): wv9_[j9_]=w9_
         pmx9_=(pmx9_*wv9_) if pmx9_ is not None else wv9_; pmx9_=pmx9_/pmx9_.sum()
+    W9on_=cm_=='both' and int(getattr(cfg,'inf_conc_wordings',0)); CT9w_=float(getattr(cfg,'inf_cons_contrast',0.0)) if cm_=='both' else 0.0
+    IW9c_=float(getattr(cfg,'inf_cons_infow',0.0)) if cm_=='both' else 0.0; CT9k_=int(getattr(cfg,'inf_cons_contrast_k',8))
+    rw9_=np.random.RandomState(int(cfg.seed)+7311+int(model.__dict__.get('_visit',0)))   # cg27a: own random stream (the rows drawn stay those of the baseline)
+    byA9_={}; byC9_={}
+    for x9_ in (locals().get('lv_') or []): byA9_.setdefault(x9_['A'],set()).add(x9_['C']); byC9_.setdefault(x9_['C'],set()).add(x9_['A'])
+    aA9_=sorted(byA9_); aC9_=sorted(byC9_); CTL9_=[]; IWL9_=[]
     for att_ in range(1+NRT_):
-        model.train()
+        model.train(); CTL9_.clear(); IWL9_.clear()
         for st in range(int(cfg.inf_steps) if cm_!='both' else int(getattr(cfg,'inf_cons_wsteps',60))):
             loss_=0.0; grp_={}
             ps9_=pw9_
@@ -371,6 +377,9 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                 if cap9_>0: c_['ws']=c_.get('ws',0)+1; cnt9_[id(c_)]=(c_,cnt9_.get(id(c_),(c_,0))[1]+1)
                 w_=bytearray(filler(c_['d'])[:Lr_]); w_+=b' '*(Lr_-len(w_)); u_=rs_.rand(); sn_=c_['s'] if (c_['typed'] and u_<0.5) else (f"So {c_['A']} is connected to {c_['C']}." if rs_.rand()<0.5 else f"So {c_['C']} is connected to {c_['A']}.")
                 q0_=0
+                if W9on_ and not (c_['typed'] and u_<0.5):                       # cg27a CONCLUSIONS IN SEVERAL WORDINGS (inf_conc_wordings): same direction as drawn,
+                    T9_=_CONC_FWD if sn_.startswith(f"So {c_['A']} is connected") else _CONC_REV   #   wording from _CONC_FWD / _CONC_REV (no test wording)
+                    sn_=T9_[rw9_.randint(len(T9_))].format(A=c_['A'],C=c_['C']); model.__dict__['_nword']=model.__dict__.get('_nword',0)+1
                 if cm_=='both' and int(getattr(cfg,'inf_cons_vary',0)):              # VARIED RESTATEMENTS ('dreaming' many phrasings): models absorb a fact far better from
                     VT_=["So {A} is connected to {C}.","{A} and {C} are connected.","{C} is connected to {A}.","There is a connection between {A} and {C}.",   #   many paraphrases
                          "Through a mutual contact, {A} is connected to {C}.","Asked who {A} is connected to, the answer is {C}.","One of the people connected to {A} is {C}.",   #   than from one template
@@ -379,6 +388,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                     if c_.get('typed') and rs_.rand()<0.3: sn_=c_['s']
                     else: sn_=VT_[rs_.randint(len(VT_))].format(A=c_['A'],C=c_['C'])
                     model.__dict__['_nvary']=model.__dict__.get('_nvary',0)+1
+                sc9_=sn_                                                        # a plain restatement of the conclusion (pattern / splice / dream rows below replace it)
                 if cm_=='both' and rs_.rand()<float(getattr(cfg,'inf_cons_pattern',0.0)) and isinstance(c_.get('src'),tuple):   # RELATION PATTERN with fresh names
                     fr_=[]
                     while len(fr_)<3:
@@ -425,7 +435,17 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                     if len(pq_)+len(aq_)+2<=Lr_-8: sn_=pq_+aq_; q0_=len((' '+pq_).encode('latin-1')); model.__dict__['_nrg']=model.__dict__.get('_nrg',0)+1
                 it_=(' '+sn_+' ').encode('latin-1','replace')[:Lr_-8]; o_=rs_.randint(4,max(5,Lr_-len(it_)-4)); w_[o_:o_+len(it_)]=it_; w_=w_[:Lr_]
                 mk_=torch.zeros(Lr_-1); mk_[max(0,o_+max(0,q0_-1)):o_+len(it_)-1]=1.0       # targets = the conclusion's bytes only (pattern rows: after the premises)
-                grp_.setdefault(int(S_slot(dz8_)),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_))
+                exz7_=None
+                if (CT9w_>0 or IW9c_>0) and sn_ is sc9_:                         # cg27a: where the ANSWER sits (the name written second) and its competitors
+                    ia9_,ic9_=sn_.rfind(c_['A']),sn_.rfind(c_['C']); an9_,gv9_=(c_['C'],c_['A']) if ic9_>ia9_ else (c_['A'],c_['C'])
+                    pz7_=sn_.rfind(an9_); nx9_=(sn_[pz7_+len(an9_):pz7_+len(an9_)+1] or ' '); pa9_=o_+1+pz7_
+                    if pa9_+len(an9_)+1<=o_+len(it_)-1:
+                        ng9_=[]
+                        if CT9w_>0:                                             # other live conclusions' answers in the same role, never a true answer of this given name
+                            cd9_=[n_ for n_ in (aC9_ if an9_==c_['C'] else aA9_) if n_ not in (byA9_.get(gv9_,()) if an9_==c_['C'] else byC9_.get(gv9_,()))]
+                            ng9_=[cd9_[i_] for i_ in rw9_.choice(len(cd9_),min(CT9k_,len(cd9_)),replace=False)] if cd9_ else []
+                        exz7_=(pa9_,an9_,gv9_,nx9_,ng9_,sn_)
+                grp_.setdefault(int(S_slot(dz8_)),[]).append((torch.tensor(list(bytes(w_)),dtype=torch.long),mk_,exz7_))
             OF_=[f_ for f_ in S_.get('facts',[]) if not f_.get('freed') and int(f_.get('d',-1))!=int(t)] if (cm_=='both' and float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0) else []
             for _ in range(ka_):                                                    # ANCHORS: kept verified windows (closed loop) or recent windows
                 if OF_ and rs_.rand()<float(getattr(cfg,'inf_cons_anchor_facts',0.0)):   # OLD MEMORIES AS TARGETS (CLS interleaving): an old domain's recorded fact,
@@ -444,9 +464,38 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             for d_,rows_ in grp_.items():
                 cr_=[r_ for r_ in rows_ if r_[1] is not None]; ar_=[r_ for r_ in rows_ if r_[1] is None]
                 if cr_:
-                    X_=torch.stack([r_[0] for r_ in cr_]).to(dev_); M_=torch.stack([r_[1] for r_ in cr_]).to(dev_); lg_=fwd(X_,d_)
+                    X_=torch.stack([r_[0] for r_ in cr_]).to(dev_); M_=torch.stack([r_[1] for r_ in cr_]).to(dev_)
+                    EX9_=[(iz7_,r_[2]) for iz7_,r_ in enumerate(cr_) if len(r_)>2 and r_[2] is not None]
+                    if IW9c_>0 and EX9_:                                        # cg27a INFORMATION-WEIGHTED ANSWER BYTES: w = s / mean(s) over the answer's bytes,
+                        try:                                                    #   s = -log2 p(byte | neutral cue, earlier bytes), the given name replaced by 'someone'
+                            NSz7_=[]
+                            for iz7_,ez7_ in EX9_:
+                                pg9_=ez7_[5].rfind(ez7_[2]); ns9_=ez7_[5][:pg9_]+('Someone' if pg9_==0 else 'someone')+ez7_[5][pg9_+len(ez7_[2]):]
+                                NSz7_.append((' '+ns9_).encode('latin-1','replace'))
+                            Ln9_=max(len(b9z_) for b9z_ in NSz7_)+1; Xn9_=torch.full((len(NSz7_),Ln9_),32,dtype=torch.long,device=dev_)
+                            for jz7_,bz7_ in enumerate(NSz7_): Xn9_[jz7_,:len(bz7_)]=torch.tensor(list(bz7_),device=dev_)
+                            with torch.no_grad(): ln9_=F.log_softmax(fwd(Xn9_,d_),-1)
+                            for jz7_,(iz7_,ez7_) in enumerate(EX9_):
+                                anz7_=ez7_[1].encode('latin-1','replace'); q9_=NSz7_[jz7_].rfind(anz7_)
+                                sz7_=-ln9_[jz7_,torch.arange(q9_-1,q9_-1+len(anz7_),device=dev_),torch.tensor(list(anz7_),device=dev_)]/math.log(2)
+                                wz7_=(sz7_/sz7_.mean().clamp(min=1e-6)).clamp(0.25,IW9c_); M_[iz7_,ez7_[0]-1:ez7_[0]-1+len(anz7_)]=wz7_
+                                if st==0 and len(IWL9_)<400: IWL9_.append((float(wz7_[0]),float(wz7_[1:].mean()) if len(anz7_)>1 else float('nan')))
+                        except Exception: _fail('inference.sleep:infow')
+                    lg_=fwd(X_,d_)
                     ce_=F.cross_entropy(lg_.reshape(-1,256),X_[:,1:].reshape(-1),reduction='none').view(M_.shape)
                     loss_=loss_+(ce_*M_).sum()/M_.sum().clamp(min=1)*len(cr_)/R_
+                    if CT9w_>0 and EX9_:                                        # cg27a COMPETITOR CONTRAST: at the byte where each negative name leaves the answer
+                        ri9_=[]; pi9_=[]; ya9_=[]; yn9_=[]                       #   (same prefix up to there, so the same logits): softplus(logit(neg) - logit(answer))
+                        for iz7_,ez7_ in EX9_:
+                            abz7_=(ez7_[1]+ez7_[3]).encode('latin-1','replace')
+                            for nz7_ in ez7_[4]:
+                                nbz7_=(nz7_+ez7_[3]).encode('latin-1','replace'); jz7_=next((k9z_ for k9z_ in range(min(len(abz7_),len(nbz7_))) if abz7_[k9z_]!=nbz7_[k9z_]),None)
+                                if jz7_ is None or ez7_[0]+jz7_-1>=lg_.shape[1]: continue
+                                ri9_.append(iz7_); pi9_.append(ez7_[0]+jz7_-1); ya9_.append(abz7_[jz7_]); yn9_.append(nbz7_[jz7_])
+                        if ri9_:
+                            ri9_=torch.tensor(ri9_,device=dev_); pi9_=torch.tensor(pi9_,device=dev_)
+                            mg9_=lg_[ri9_,pi9_,torch.tensor(ya9_,device=dev_)]-lg_[ri9_,pi9_,torch.tensor(yn9_,device=dev_)]
+                            loss_=loss_+CT9w_*F.softplus(-mg9_).mean()*len(cr_)/R_; CTL9_.append((st,float((mg9_>0).float().mean())))
                 if ar_:
                     X_=torch.stack([r_[0] for r_ in ar_]).to(dev_); T_=teach(X_,d_); L_=F.log_softmax(fwd(X_,d_),-1)
                     kl_=(T_.exp()*(T_-L_)).sum(-1); nz_=(X_[:,1:]>0).float()                 # blanked positions excluded
@@ -508,6 +557,9 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             PI9_=model.__dict__.pop('_protinfo',None); pt9_=(f" | PROTECTED {PI9_[0]} block matrices, update kept {PI9_[1]/max(1,PI9_[2]):.2f} cosine to Adam's" if PI9_ else "")
             print(f"  [inference CONCLUSION REPLAY INTO THE TRUNK] {len(ls_)} steps at lr x{op_.param_groups[0]['lr']/float(cfg.lr):.4f} (store off){(' [retry '+str(att_)+']') if att_ else ''} on {len(pool_)} conclusions ({kc_} rows/step"+(f", relation-pattern rows with fresh names so far {model.__dict__.get('_npat',0)} (too long, skipped {model.__dict__.get('_npat_skip',0)})" if float(getattr(cfg,'inf_cons_pattern',0.0))>0 else "")+(f", SPLICED-PREMISE dream rows so far {model.__dict__.get('_nsplice',0)} (attended-span compact {model.__dict__.get('_ncompact',0)}; too long to fit whole, skipped {model.__dict__.get('_nsplice_skip',0)})" if float(getattr(cfg,'inf_cons_splice',0.0))>0 else "")+(f", self-confirmed REM rows so far {model.__dict__.get('_nrg',0)}" if float(getattr(cfg,'inf_remgen_dream',0.0))>0 else "")+(f", mixed-pair (attended-span) dream rows so far {model.__dict__.get('_nmixd',0)}" if float(getattr(cfg,'inf_mix_dream',0.0))>0 else "")+(f", REM analogy rows so far {model.__dict__.get('_nana',0)}" if float(getattr(cfg,'inf_rem_ana_dream',0.0))>0 else "")+(f", LLM-JEPA term x{float(getattr(cfg,'inf_cons_jepa',0.0)):g} on {len(JP9_)} premise pairs: 1-cos {JL9_[0]:.3f} -> {np.mean(JL9_[-5:]):.3f}" if JL9_ else "")+(f", old-domain fact rows as targets so far {model.__dict__.get('_noldf',0)}" if float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0 else "")+(f", varied restatements so far {model.__dict__.get('_nvary',0)}" if int(getattr(cfg,'inf_cons_vary',0)) else "")+f") + {ka_} anchor rows/step | "
                   f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}"+pt9_
+                  +(f" | WORDINGS (inf_conc_wordings) rows so far {model.__dict__.get('_nword',0)}" if W9on_ else "")
+                  +(f" | COMPETITOR CONTRAST x{CT9w_:g} ({CT9k_} negatives per row): answer byte beats the competitor's at the divergence byte, first steps {np.mean([v_ for s_,v_ in CTL9_ if s_<=min(x_ for x_,_ in CTL9_)+9]) if CTL9_ else float('nan'):.2f}, last 10 steps {np.mean([v_ for s_,v_ in CTL9_ if s_>=max(x_ for x_,_ in CTL9_)-9]) if CTL9_ else float('nan'):.2f}" if CT9w_>0 else "")
+                  +(f" | INFORMATION WEIGHTS (cap {IW9c_:g}): first answer byte {np.nanmean([a_ for a_,_ in IWL9_]):.2f}, later bytes {np.nanmean([b_ for _,b_ in IWL9_]):.2f} (mean weight)" if IW9c_>0 and IWL9_ else "")
                   +(f" | PAIR DREAMS so far {model.__dict__.get('_nmixd',0)}, of which in another slot than the row they replace {model.__dict__.get('_nmixf',0)}"+(" -> moved to their own slot" if int(getattr(cfg,'inf_mix_dream_own',0)) else " (trained there)") if model.__dict__.get('_nmixd',0) else ""),flush=True)
             if cap9_>0:                                                         # cg26h: only KEPT rows count as replays (cg26e counted rolled-back rows towards the cap too)
                 if not rb_:
@@ -652,11 +704,15 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             lo_=[f0_ for f0_ in fl_ if f0_.get('n',0)<int(cfg.inf_target)] or fl_
             lo_=sorted(lo_,key=lambda f0_: (not f0_.get('derived'),-f0_.get('rep',1),f0_.get('n',0)))[:max(4*fxs_,256)]
             sel_+=[(lo_[i_],'c') for i_ in rs_.choice(len(lo_),fxs_)]
+        W9s_=int(getattr(cfg,'inf_conc_wordings_store',0)); rw9s_=np.random.RandomState(int(cfg.seed)+7411+int(model.__dict__.get('_visit',0)))
         for c_,kd_ in sel_:
             if kd_!='s': c_['n']=c_.get('n',0)+1
             if c_.get('fact'): sn_=c_['s']                                       # a recorded one-hop fact (NREM replay)
             elif kd_=='s' or (kd_ is None and sf_>0 and rs_.rand()<sf_): sn_=S_['it'][c_['src'][rs_.randint(2)]]['s'].decode('latin-1').strip()   # a verified SOURCE fact (one-hop) of this conclusion
             else: sn_=c_['s'] if (c_['typed'] and rs_.rand()<0.5) else (f"So {c_['A']} is connected to {c_['C']}." if rs_.rand()<0.5 else f"So {c_['C']} is connected to {c_['A']}.")
+            if W9s_ and not c_.get('fact') and isinstance(c_.get('C'),str) and sn_ in (f"So {c_['A']} is connected to {c_['C']}.",f"So {c_['C']} is connected to {c_['A']}."):
+                T9_=_CONC_FWD if sn_.startswith(f"So {c_['A']} is connected") else _CONC_REV   # cg27a: the store is written in several wordings too (own random stream)
+                sn_=T9_[rw9s_.randint(len(T9_))].format(A=c_['A'],C=c_['C']); model.__dict__['_nwords']=model.__dict__.get('_nwords',0)+1
             if rs_.rand()<fa_:                                                  # no context before the conclusion (as the probes are asked)
                 it_=(sn_+' ').encode('latin-1')[:Lr_-2]; w_=bytearray(it_)+bytearray(filler(c_['d'])[:Lr_]); w_+=b' '*(Lr_-len(w_)); o_=0
             else:
@@ -766,7 +822,8 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     b1_=bpc(model,vals[t],ts,n=nb_); _inf_sync(cfg,'held-out BPC with the store'); o1_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
     print(f"  [inference sleep | FAST STORE] keyed positions written {_INFM.get('wpos',0)} | {int(cfg.inf_steps)} write steps ({kc_} conclusion rows + {ka_} anchor rows) on {len(allc_)} conclusions | "
           f"keyed conclusion bytes after writing {rc_[0] if rc_ else float('nan'):.3f} (first step), {np.mean(rc_[-5:]) if rc_ else float('nan'):.3f} (last steps) bits | anchor KL(store||model) {np.mean(ra_[-5:]) if ra_ else float('nan'):.4f} | "
-          f"|M| {float(_INFM['M'].norm()):.1f}{ainfo_} | trunk weight sum {float(sum(p0_.detach().double().abs().sum() for p0_ in model.parameters())):.6e}{' | gates '+str([round(float(g0_),2) for g0_ in _INFM['gates']]) if _INFM['key']=='slowgate' else ''}{xinfo_} | held-out BPC (store on) visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}",flush=True)
+          f"|M| {float(_INFM['M'].norm()):.1f}{ainfo_} | trunk weight sum {float(sum(p0_.detach().double().abs().sum() for p0_ in model.parameters())):.6e}{' | gates '+str([round(float(g0_),2) for g0_ in _INFM['gates']]) if _INFM['key']=='slowgate' else ''}{xinfo_} | held-out BPC (store on) visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}"
+          +(f" | WORDINGS (inf_conc_wordings_store) store rows so far {model.__dict__.get('_nwords',0)}" if int(getattr(cfg,'inf_conc_wordings_store',0)) else ""),flush=True)
     if int(cfg.inf_eval_every)>0 and (int(model.__dict__.get('_visit',0))+1)%int(cfg.inf_eval_every)==0: inf_eval(model,cfg,S_,f"visit {int(model.__dict__.get('_visit',0))+1}")
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded

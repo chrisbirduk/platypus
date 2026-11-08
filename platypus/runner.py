@@ -107,7 +107,7 @@ def run(cfg):
     _STF['on']=False
     proj_setup(model, cfg)
     _XDG.update(on=cfg.xdg>0,keep=1.0,seed=int(cfg.seed),masks={},cur=None,rows=None,tagon=(cfg.pu_k>0 or cfg.cgate>0 or cfg.film_k>0))
-    _FILM['codes']=getattr(model,'film_codes',None)
+    _FILM['codes']=getattr(model,'film_codes',None) if int(cfg.film_k)>0 else None   # film_k 0: FiLM off
     _DP2['on']=int(cfg.dp_steps)>=2
     if cfg.pu_k>0: print(f"  [private trunk units] {cfg.pu_k} private MLP units per domain in every block")
     for i_,b in enumerate(model.blocks): b.__dict__['_xdg_i']=i_
@@ -116,11 +116,11 @@ def run(cfg):
         nps_=lambda ps_: int(sum(p_.numel() for p_ in ps_))
         pu1_=sum(int(b.pu_in[0].numel()+b.pu_b[0].numel()+b.pu_out[0].numel()) for b in model.blocks if hasattr(b,'pu_in'))
         ng1_=len(tuple(cfg.ngp))*int(cfg.ngp_rows)*int(cfg.d_model) if cfg.ngp else 0
-        hd1_=nps_(model.heads[0].parameters()); fc1_=int(model.film_codes[0].numel()) if hasattr(model,'film_codes') else 0; ns_=len(model.heads)
+        hd1_=0 if cfg.shared_head else nps_(model.heads[0].parameters()); fc1_=int(model.film_codes[0].numel()) if hasattr(model,'film_codes') else 0; ns_=len(model.heads)
         tot_=nps_(model.parameters()); shng_=nps_(model.ngram.parameters()) if hasattr(model,'ngram') else 0
         priv_reg_=ns_*(hd1_+fc1_+pu1_)                                         # registered private parameters (the private n-gram tables live outside .parameters())
         print(f"  [parameters] shared trunk {(tot_-priv_reg_-shng_)/1e6:.1f}M + shared input n-gram tables {shng_/1e6:.1f}M | PRIVATE per slot {(pu1_+ng1_+hd1_+fc1_)/1e6:.1f}M "
-              f"(trunk units {pu1_/1e6:.1f}M, n-gram tables {ng1_/1e6:.1f}M, head {hd1_/1e6:.2f}M), x {ns_} slots = {ns_*(pu1_+ng1_+hd1_+fc1_)/1e6:.1f}M",flush=True)
+              f"(trunk units {pu1_/1e6:.1f}M, n-gram tables {ng1_/1e6:.1f}M, head {hd1_/1e6:.2f}M{' - ONE SHARED HEAD (shared_head), counted in the trunk' if cfg.shared_head else ''}, FiLM code {fc1_} numbers{' - FiLM OFF (film_k 0)' if not fc1_ else ''}), x {ns_} slots = {ns_*(pu1_+ng1_+hd1_+fc1_)/1e6:.1f}M",flush=True)
     except Exception as e_: _fail('runner:123'); print(f"  [parameters] unavailable ({type(e_).__name__}: {e_})")
     for b in model.blocks: b._surp_on=bool(cfg.surprise_mod); b.__dict__['_lean']=bool(cfg.lean_stats)
     _DSPLIT['on']=bool(cfg.dream_mom>0 or cfg.muon_mom_dream>0)
@@ -366,6 +366,9 @@ def run(cfg):
                 b.unit_usage.zero_(); b.mlp_usage.zero_()
         end_pass=(vi%NDOM==NDOM-1)
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
+        if int(getattr(cfg,'grad_eval',0))>=2 and not (cfg.n_passes>1 and end_pass):   # cg27a GRADUATION SERIES: reliance on the private parts per domain after every visit
+            from platypus.inference.residual import grad_readout                  #   (all on vs all off; the full breakdown at pass ends)
+            grad_readout(model,cfg,vals,sorted(set(seen_d)),_S,f"visit {vi+1}",lite=True)
         if cfg.head_select_eval:                         # label-free: every seen domain at pass ends (single pass: every visit, or with
             for prev in (seen_d if ((cfg.n_passes==1 and not cfg.diag_light) or end_pass) else [t]):     # diag_light current + end only)
                 for mode,r_ in bpc_inferred_modes(model,vals[prev],_S(prev),len(model._slots) if cfg.infer_ctx else len(seen_d),tuple(cfg.head_select_eval),cfg).items():
@@ -446,6 +449,16 @@ def run(cfg):
                              'pre':[pre_visit.get(d,{}).get(pass_i) for d in range(NDOM)]})
             print(f"\n  ===== PASS {pass_i+1} SUMMARY: mean BPC {np.mean(fin_):.3f} | mean forgetting since each domain's visit {np.mean(fg_):+.3f} | label-free "
                   +" ".join(f"{m} {x_:.3f}" for m,x_ in al_.items())+" =====")
+            if 'heads' in al_:                                                     # issue #23: inferred - given, with its sign, and the spread over domains
+                dl_=[alt_m['heads'][(vi,d)][0]-fin_[d] for d in range(NDOM)]
+                print(f"    [label-free] INFERRED - GIVEN: mean {np.mean(dl_):+.4f} (range {min(dl_):+.4f} to {max(dl_):+.4f}) | per domain "
+                      +" ".join(f"{PILE_DOMAINS[d][:6]} {dl_[d]:+.4f}" for d in range(NDOM)),flush=True)
+            if int(getattr(cfg,'grad_eval',0)):                                  # cg27a GRADUATION at each pass end
+                from platypus.inference.residual import grad_readout
+                grad_readout(model,cfg,vals,sorted(set(seen_d)),_S,f"PASS {pass_i+1}")
+            if int(getattr(cfg,'inf_resid',0)) and cfg.inf_on:
+                from platypus.inference.residual import resid_readout
+                resid_readout(model,cfg,_inf_store(model),[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(seen_d)),_S,f"PASS {pass_i+1}")
             CLp_=[r_ for r_ in model.__dict__.get('_pucons_log',[])]
             if CLp_:
                 print(f"    [consolidation] so far: {len(CLp_)} phases | median gap recovered {100*np.median([r_[5] for r_ in CLp_]):.0f}% | held-out with private units "
@@ -482,6 +495,18 @@ def run(cfg):
     if int(getattr(cfg,'gist_test',0)):                                          # GIST TEST: does a learned gist code carry information the trunk lacks?
         from platypus.inference.gisttest import gist_test
         gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S)
+    if int(getattr(cfg,'inf_resid',0)) and cfg.inf_on:                          # cg27a MEMORY RESIDUAL (no gist): what the trunk still cannot predict of what the store holds
+        from platypus.inference.residual import resid_readout
+        resid_readout(model,cfg,_inf_store(model),[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S,"END OF RUN")
+    if int(getattr(cfg,'inf_selcmp',0)) and cfg.inf_on:                          # SELECTOR COMPARISON: trained JEPA selector against CCA / SFA / TF-IDF
+        from platypus.inference.selcmp import selector_compare
+        selector_compare(model,cfg,_inf_store(model),_S,"END OF RUN")
+    if int(getattr(cfg,'inf_rdr_judge',0)):                                      # cg27a RELATION JUDGE ON PROSE (Re-DocRED pairs, trunk alone)
+        from platypus.inference.residual import pair_judge_readout
+        pair_judge_readout(model,cfg,_S,"END OF RUN")
+    if int(getattr(cfg,'grad_eval',0)):                                          # cg27a GRADUATION: private parts off, per slot
+        from platypus.inference.residual import grad_readout
+        grad_readout(model,cfg,vals,sorted(set(schedule)),_S,"END OF RUN")
     _pf9=__import__('sys').modules.get('platypus.profiling')
     if _pf9 is not None: _pf9._ft_total()
     print(f"\nMEAN FORGETTING: {mf:+.3f} | MEAN FINAL BPC: {mb:.3f}")
@@ -492,6 +517,9 @@ def run(cfg):
         print(f"FAILURES: {len(_F9)} ({len(cnt9_)} distinct) - "+" | ".join(f"{w_} {t_} x{c_[0]}: {c_[1][:80]}" for (w_,t_),c_ in sorted(cnt9_.items(),key=lambda x_: -x_[1][0])[:20]),flush=True)
     else: print("FAILURES: none",flush=True)
     if 'heads' in alt:                                                            # HEADLINE (issue #23): the slot inferred from the text itself
+        dl9_=[alt['heads']['final'][q]-bpc_m[-1][q] for q in range(len(PILE_DOMAINS))]
+        print(f"  [label-free] INFERRED - GIVEN at the end: mean {np.mean(dl9_):+.4f} (range {min(dl9_):+.4f} to {max(dl9_):+.4f}) | per domain "
+              +" ".join(f"{PILE_DOMAINS[q][:6]} {dl9_[q]:+.4f}" for q in range(len(PILE_DOMAINS))),flush=True)
         print(f"HEADLINE (label-free: each test window's slot inferred from the text, heads posterior): FORGETTING {alt['heads']['forget']:+.3f} | FINAL BPC {alt['heads']['bpc']:.3f} "
               f"|| with the slot given (task-incremental): {mf:+.3f} / {mb:.3f}",flush=True)
     if cfg.recon_diag: (replay_diag if cfg.recon_mark else recon_fidelity)(model,cfg,vals,NDOM,_S)
@@ -506,7 +534,7 @@ def run(cfg):
     vl_=getattr(model,'_vlog',None)
     if vl_: print("  [visit length] steps per visit: "+" ".join(f"{PILE_DOMAINS[d][:6]} {L_}" for d,(g_,L_,b_) in sorted(vl_.items()))
                   +f" | total {sum(L_ for g_,L_,b_ in vl_.values())+cfg.steps_per_task*(NDOM-len(vl_))} vs {cfg.steps_per_task*NDOM} budget")
-    return {'oracle':orc_,'vlen':vl_,'cov':getattr(model,'_cov_log',{}),'fsplit':getattr(model,'_fsplit_log',{}),'interf':interf,'hconf':(None if hc_ is None else (hc_[0],hc_[1].tolist())),'fdrift':getattr(model,'_fdrift_log',{}),
+    return {'_model':model,'_slot':_S,'_vals':vals,'_raw_vals':(lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)]),'_schedule':list(schedule),'oracle':orc_,'vlen':vl_,'cov':getattr(model,'_cov_log',{}),'fsplit':getattr(model,'_fsplit_log',{}),'interf':interf,'hconf':(None if hc_ is None else (hc_[0],hc_[1].tolist())),'fdrift':getattr(model,'_fdrift_log',{}),
             'klpos':getattr(model,'_klpos_log',{}),'wall_run':wall_run,'forget':mf,'bpc':mb,'per_domain':[bpc_m[-1][p]-post[p] for p in range(len(PILE_DOMAINS)) if p!=schedule[-1] and post[p] is not None],'passes':pass_log,'domains':list(PILE_DOMAINS),
             'gut_after_wiki':(bpc_m[1][0]-post[0]) if (len(bpc_m)>1 and bpc_m[1][0] is not None) else None,'locality':locality_log,'orth':orth_log,
             'post':list(post),'alt':alt,'topics':(topic_log if cfg.topic_diag else {}),'kl':kl_log,'dream':dream_log,'fdiag':fd_log,'stale':getattr(model,'_stale_log',{}),'beta':getattr(model,'_beta_log',{}),'timing':getattr(model,'_timing_log',{}),'recon':getattr(model,'_recon_log',{}),'sleep':getattr(model,'_sleep_log',{}),'battr':battr_log,'bw_dyn':getattr(model,'_bw_dyn',None),'tbirths':getattr(model,'_tspawn_log',[]),'tcombine':getattr(model,'_tcombine_log',[]),'tmerges':getattr(model,'_tmerge_log',[]),'treuse':getattr(model,'_tswitch_log',[]),'rollbacks':getattr(model,'_rb_log',[]),'cross':{int(k):v for k,v in (getattr(model,'_cross_log',None) or {}).items()},'zeroshot':zeroshot,'curve':getattr(model,'_curve',{}),'width':model.blocks[0].d_state,'mlp_width':model.blocks[0].mlp_hidden,

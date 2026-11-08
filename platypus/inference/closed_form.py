@@ -1,5 +1,5 @@
 """Closed-form edits of the last block MLP: layer states, drift, application."""
-from platypus.common import _fail
+from platypus.common import _fail, _CONC_CF
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -177,16 +177,37 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
         for j_ in rs_.choice(len(rl_),min(64,len(rl_)),replace=False) if rl_ else []:
             X_,M_=_ws_batch(model,[rl_[int(j_)]['s']]); cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,int(S_slot(rl_[int(j_)]['d']))); cap_['on']=False; gk_.append(cap_['k'][-1][0][M_[0,:-1]>0])
         Kg_=torch.cat(gk_) if gk_ else None; Ks_=[]; Rs_=[]; kd9_=[]; lr_=float(getattr(cfg,'inf_cf_lr',0.5)); st_=int(getattr(cfg,'inf_cf_steps',25))
+        nw9_=max(1,min(len(_CONC_CF),int(getattr(cfg,'inf_cf_wordings',1)))); ct9w_=float(getattr(cfg,'inf_cf_contrast',0.0)); ctk9_=int(getattr(cfg,'inf_cons_contrast_k',8))
+        if ct9w_>0:                                                             # cg27a COMPETITOR CONTRAST in the edit: other live conclusions' C (never one of the same A) as negatives
+            byA9_={}
+            for x_ in lv_: byA9_.setdefault(x_['A'],set()).add(x_['C'])
+            aC9_=sorted(set(x_['C'] for x_ in lv_)); rn9_=np.random.RandomState(int(cfg.seed)+9127+vis_); cm9_=[]
         for c_ in E_:
-            pr_=f"So {c_['A']} is connected to ".encode('latin-1','replace'); tg_=(c_['C']+'.').encode('latin-1','replace'); X_,M_=_ws_batch(model,[pr_+tg_])
+          for wi9_ in range(nw9_):                                              # cg27a: the edit is fitted on the keys of nw9_ wordings (_CONC_CF; the first is the original)
+            pr_=_CONC_CF[wi9_].format(A=c_['A']).encode('latin-1','replace'); tg_=(c_['C']+'.').encode('latin-1','replace'); X_,M_=_ws_batch(model,[pr_+tg_])
             T1_=X_.shape[1]-1; ps_=torch.arange(len(pr_)-1,min(T1_,len(pr_)+len(tg_)-1),device=X_.device)
             if ps_.numel()==0: continue
             sl_=int(S_slot(c_['d'])); cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,sl_); cap_['on']=False; K1_=cap_['k'][-1][0][ps_]
             D_=mo_.weight.shape[0]; dl_=torch.zeros(len(ps_),D_,device=X_.device,requires_grad=True); op_=torch.optim.Adam([dl_],lr=lr_*0.1); yt_=X_[0,ps_+1]
-            for _ in range(st_):
+            dv9_=[]
+            if ct9w_>0:                                                         # divergence byte of each negative: same prefix up to j, so the logits there are shared
+                ng9_=[n9z_ for n9z_ in aC9_ if n9z_ not in byA9_.get(c_['A'],())]
+                for nz7_ in ([ng9_[q9z_] for q9z_ in rn9_.choice(len(ng9_),min(ctk9_,len(ng9_)),replace=False)] if ng9_ else []):
+                    nbz7_=(nz7_+'.').encode('latin-1','replace'); jz7_=next((q9z_ for q9z_ in range(min(len(nbz7_),len(tg_))) if nbz7_[q9z_]!=tg_[q9z_]),None)
+                    if jz7_ is not None and jz7_<len(ps_): dv9_.append((jz7_,int(tg_[jz7_]),int(nbz7_[jz7_])))
+            for s9_ in range(st_):
                 full_=torch.zeros(1,T1_,D_,device=X_.device).index_put((torch.zeros_like(ps_),ps_),dl_); cap_['delta']=full_
-                l_=F.cross_entropy(_ws_run(model,X_,sl_,grad_=True)[0,ps_],yt_)+1e-3*(dl_**2).sum(); op_.zero_grad(); l_.backward(); op_.step(); cap_['delta']=None
-            Ks_.append(K1_); Rs_.append(dl_.detach().float()); kd9_.append((c_,K1_))
+                lg9_=_ws_run(model,X_,sl_,grad_=True)[0,ps_]; l_=F.cross_entropy(lg9_,yt_)+1e-3*(dl_**2).sum()
+                if dv9_:
+                    jj9_=torch.tensor([d_[0] for d_ in dv9_],device=X_.device); mg9_=lg9_[jj9_,[d_[1] for d_ in dv9_]]-lg9_[jj9_,[d_[2] for d_ in dv9_]]
+                    l_=l_+ct9w_*F.softplus(-mg9_).mean()
+                    if s9_ in (0,st_-1): cm9_.append((s9_==0,float((mg9_>0).float().mean())))
+                op_.zero_grad(); l_.backward(); op_.step(); cap_['delta']=None
+            Ks_.append(K1_); Rs_.append(dl_.detach().float())
+            if wi9_==0: kd9_.append((c_,K1_))
+        if ct9w_>0 and cm9_:
+            print(f"  [inference CF COMPETITOR CONTRAST] x{ct9w_:g}, up to {ctk9_} other conclusions' C per edit: the answer's byte beats the competitor's at the divergence byte "
+                  f"{np.mean([v_ for f_,v_ in cm9_ if f_]):.2f} before fitting, {np.mean([v_ for f_,v_ in cm9_ if not f_]):.2f} after | wordings {nw9_}",flush=True)
         cap_['delta']=None
         if not Ks_: print("  [inference CLOSED-FORM CONSOLIDATION APPLIED] no edit positions",flush=True); return
         K_=torch.cat(Ks_); R_=torch.cat(Rs_); H_=K_.shape[1]; lam_=float(getattr(cfg,'inf_cf_lam',1.0))
@@ -195,7 +216,8 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
         if rc_>0:                                                               # cg26m KEY CENTRING: remove the sentence frame from the keys and the edit
             Eid_={id(x_) for x_ in (E_ if EN9_ is None else EN9_)}; oth_=[x_ for x_ in lv_ if id(x_) not in Eid_][:48]; tk_=[]
             for c_ in oth_:
-                pr_=f"So {c_['A']} is connected to ".encode('latin-1','replace'); tg_=(c_['C']+'.').encode('latin-1','replace'); X_,M_=_ws_batch(model,[pr_+tg_])
+              for wi9_ in range(nw9_):                                          # cg27a: the frame is removed from the keys of every wording used
+                pr_=_CONC_CF[wi9_].format(A=c_['A']).encode('latin-1','replace'); tg_=(c_['C']+'.').encode('latin-1','replace'); X_,M_=_ws_batch(model,[pr_+tg_])
                 T1_=X_.shape[1]-1; ps_=torch.arange(len(pr_)-1,min(T1_,len(pr_)+len(tg_)-1),device=X_.device)
                 if ps_.numel()==0: continue
                 cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,int(S_slot(c_['d']))); cap_['on']=False; tk_.append(cap_['k'][-1][0][ps_])

@@ -95,6 +95,7 @@ def _inf_eval1(model,cfg,S_,tag):
                 pp_=np.exp(np.array(sc2_)-max(sc2_)); pp_=pp_/pp_.sum(); A0_=_INF['cal_on'][len(_INF['calrec'])] if len(_INF['calrec'])<len(_INF['cal_on']) else ('','','')
                 _INF['calrec'].append((int(np.argmax(sc2_))==0,float(pp_.max()),float(pp_[0]),int(A0_[0].encode('latin-1') in (_INFM.get('names') or {})),A0_[0],cs_[int(np.argmax(sc2_))],A0_[1],A0_[2]))
         return out
+    _TRIE_ST={}
     def openh(prompts,targets,slot):
         """OPEN-ENDED (issue #24, inf_eval_open): greedy bytes after the prompt, no candidate list; right if they spell the target name and
         the next byte is not a letter. slot -1: the next-byte distributions of every slot in use, equally mixed (no slot given). Batched:
@@ -118,13 +119,15 @@ def _inf_eval1(model,cfg,S_,tag):
             o_=bytes(g_).decode('latin-1'); hit_.append(int(o_[:len(t_)]==t_ and (len(o_)==len(t_) or not o_[len(t_)].isalpha())))
         return hit_
     def beamh(prompts,targets,slot,B_=8):
-        """BEAM (inf_eval_beam): name-level beam search after the prompt, no candidate list. Beams of letters; a beam ends when it writes a
-        non-letter after at least one letter; finished names ranked by total log-probability (terminator included). Right if the best is the
+        """BEAM (inf_eval_beam): name-level beam search after the prompt, no candidate list. Beams of letters; every beam of at least one
+        letter is also a finished name, scored log p(letters) + log p(any non-letter next) - the NAME SCORE, the same whole-name scoring
+        namescore() uses - and the best finished name is the answer. Right if the best is the
         target. slot -1: every slot in use, equally mixed. All prompts' beams in one batch per step."""
         if not prompts: return []
         sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
         P_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-16):] for p_ in prompts]
         isl_=lambda b_: 65<=b_<=90 or 97<=b_<=122
+        LT_=torch.tensor([b_ for b_ in range(256) if isl_(b_)]); NL_=torch.tensor([b_ for b_ in range(256) if not isl_(b_)])
         live_=[[([],0.0)] for _ in P_]; fin_=[[] for _ in P_]; T_=max(len(t_) for t_ in targets)+2
         for st_ in range(T_):
             rows_=[(i_,g_,sc_) for i_,bm_ in enumerate(live_) for g_,sc_ in bm_]
@@ -138,16 +141,107 @@ def _inf_eval1(model,cfg,S_,tag):
                 finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
                 lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
             lp9_=(lp9_-math.log(len(sls_))).cpu()
-            cand_=[[] for _ in P_]
+            cand_=[[] for _ in P_]; Bw_=max(B_,int(getattr(cfg,'inf_eval_beam_first',0))) if st_==0 else B_   # FIRST-STEP WIDTH (inf_eval_beam_first): 26+ keeps every first letter
             for j_,(i_,g_,sc_) in enumerate(rows_):
-                v_,b9_=lp9_[j_].topk(B_)
-                for vv_,bb_ in zip(v_.tolist(),b9_.tolist()):
-                    if isl_(bb_): cand_[i_].append((g_+[bb_],sc_+vv_))
-                    elif g_: fin_[i_].append((bytes(g_).decode('latin-1'),sc_+vv_))
+                if g_: fin_[i_].append((bytes(g_).decode('latin-1'),sc_+float(torch.logsumexp(lp9_[j_][NL_],0))))   # the name ends: any non-letter next
+                v_,b9_=lp9_[j_][LT_].topk(min(Bw_,len(LT_)))
+                for vv_,bb_ in zip(v_.tolist(),b9_.tolist()): cand_[i_].append((g_+[int(LT_[bb_])],sc_+vv_))
             for i_ in range(len(P_)):
                 fin_[i_].sort(key=lambda x_: -x_[1]); best_=fin_[i_][0][1] if len(fin_[i_])>=B_ else -1e18
-                live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:B_] if c_[1]>best_]
+                live_[i_]=[c_ for c_ in sorted(cand_[i_],key=lambda x_: -x_[1])[:Bw_] if c_[1]>best_]
         return [int(bool(f_) and max(f_,key=lambda x_: x_[1])[0]==t_) for f_,t_ in zip(fin_,targets)]
+    def trieh(prompts,targets,slot,K_=32):
+        """KNOWN-NAME DECODING (inf_eval_trie): the answer is the best name IN THE FAST STORE'S NAME INVENTORY (_INFM['names'], every name the
+        system has stored; probe truth is never added) by the NAME SCORE (log p(name bytes) + log p(any non-letter next), as beamh/namescore).
+        Exact: best-first search over a trie of the inventory; a prefix's score bounds every name under it (log-probabilities are <= 0), so the
+        search stops when the best finished name scores at least the best open prefix. Up to K_ prefixes per prompt expanded per step, all
+        prompts in one batch. slot -1: every slot in use, equally mixed. Returns hits; _TRIE_ST holds inventory size, target-in-inventory,
+        steps, and searches cut at the step cap (then the best finished name so far is the answer)"""
+        import heapq as _hq
+        if not prompts: return []
+        inv_=[n_ for n_ in (_INFM.get('names') or {}) if n_ and all(65<=b_<=90 or 97<=b_<=122 for b_ in n_)]
+        if not inv_: _TRIE_ST.update(n=0); return [0]*len(prompts)
+        nxt_={}; full_=set(inv_)
+        for n_ in inv_:
+            for i_ in range(len(n_)): nxt_.setdefault(n_[:i_],set()).add(n_[i_])
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0])
+        P_=[list((_cue_fix(cfg,p_) if _INF.get('corr') else p_).encode('latin-1'))[-(int(cfg.seq_len)-24):] for p_ in prompts]
+        NL_=torch.tensor([b_ for b_ in range(256) if not (65<=b_<=90 or 97<=b_<=122)])
+        fr_=[[(0.0,b'')] for _ in P_]; best_=[(-1e18,b'') for _ in P_]; done_=[False]*len(P_); cap_=int(getattr(cfg,'inf_eval_trie_steps',24)); st9_=0
+        while not all(done_) and st9_<cap_:
+            st9_+=1; rows_=[]
+            for i_ in range(len(P_)):
+                if done_[i_]: continue
+                for _ in range(min(K_,len(fr_[i_]))):
+                    ns_,pf_=_hq.heappop(fr_[i_]); rows_.append((i_,pf_,-ns_))
+            R_=[P_[i_]+list(pf_) for i_,pf_,_ in rows_]; L_=max(len(r_) for r_ in R_); lp9_=None
+            for a0_ in range(0,len(R_),256):
+                RR_=R_[a0_:a0_+256]; X_=torch.zeros(len(RR_),L_,dtype=torch.long,device=dev_)
+                for j_,r_ in enumerate(RR_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+                ix_=torch.tensor([len(r_)-1 for r_ in RR_],device=dev_); lc_=None
+                for sl9_ in sls_:
+                    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                    try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(RR_),device=dev_),ix_],-1)
+                    finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                    lc_=l_ if lc_ is None else torch.logaddexp(lc_,l_)
+                lc_=(lc_-math.log(len(sls_))).cpu(); lp9_=lc_ if lp9_ is None else torch.cat([lp9_,lc_])
+            for j_,(i_,pf_,sc_) in enumerate(rows_):
+                if pf_ in full_:
+                    f9_=sc_+float(torch.logsumexp(lp9_[j_][NL_],0))
+                    if f9_>best_[i_][0]: best_[i_]=(f9_,pf_)
+                for b_ in nxt_.get(pf_,()): _hq.heappush(fr_[i_],(-(sc_+float(lp9_[j_][b_])),pf_+bytes([b_])))
+            for i_ in range(len(P_)):
+                if not done_[i_] and (not fr_[i_] or -fr_[i_][0][0]<=best_[i_][0]): done_[i_]=True
+        tb_=[t_.encode('latin-1') for t_ in targets]
+        _TRIE_ST['n']=len(inv_); _TRIE_ST.setdefault('inv',[]).extend(int(t_ in full_) for t_ in tb_); _TRIE_ST.setdefault('cut',[]).extend(int(not d_) for d_ in done_)
+        _TRIE_ST['steps']=max(_TRIE_ST.get('steps',0),st9_)
+        return [int(b9_[1]==t_) for b9_,t_ in zip(best_,tb_)]
+    def namescore(p_,names_,slot,mode_='sum'):
+        """NAME SCORE of each candidate name after prompt p_: log p(name bytes) + log p(any non-letter next) (the beam's scoring), mixed
+        over slots; mode 'byte' divides by the name's length + 1"""
+        if _INF.get('corr'): p_=_cue_fix(cfg,p_)
+        isl_=lambda b_: 65<=b_<=90 or 97<=b_<=122; NL_=torch.tensor([b_ for b_ in range(256) if not isl_(b_)],device=dev_)
+        seqs=[(p_+c_).encode('latin-1')[-(int(cfg.seq_len)-1):] for c_ in names_]; L_=max(len(s_) for s_ in seqs)+1
+        X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
+        for j_,s_ in enumerate(seqs): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
+        n0_=[len(s_)-len(c_.encode('latin-1')) for s_,c_ in zip(seqs,names_)]
+        sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0]); tot_=None
+        for sl9_ in sls_:
+            sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+            try: lp_=F.log_softmax(model(X_,sl9_).float(),-1)
+            finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+            s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum())+float(torch.logsumexp(lp_[j_,len(seqs[j_])-1,NL_],0)) for j_ in range(len(seqs))])
+            tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
+        tot_=tot_-math.log(len(sls_))
+        return tot_/np.array([len(c_.encode('latin-1'))+1 for c_ in names_]) if mode_=='byte' else tot_
+    def misslog(kind_,items_,greedy_hits_,beam_hits_):
+        """RANK-1 SHARE and PER-MISS LOG (inf_eval_open_diag): for every greedy miss, all 200 probe names scored as whole names (the beam's
+        scoring, summed; and per byte); rank-1 share against beam gain; the top wrong name, whether it answers another probe subject with the
+        same relation (interference), and its length against the true name (length bias)"""
+        ch9_=inf_probes(cfg); obj_={}
+        for c9_ in ch9_:                                                              # answers by relation, from the PROBE SET (not the store)
+            n9_,r9_=c9_['names'],c9_['rels']
+            obj_.setdefault(('one-hop',r9_[0]),set()).add(n9_[1])
+            if len(n9_)>=3: obj_.setdefault(('two-hop',r9_[0],r9_[1]),set()).add(n9_[2]); obj_.setdefault(('two-hop-any',),set()).add(n9_[2])
+        rr9_=np.random.RandomState(4321); out_={'sum':[], 'byte':[]}; ex_=[]
+        for (p_,t_,sl,key_),gh_ in zip(items_,greedy_hits_):
+            if gh_: continue
+            oth_=[x_ for x_ in rr9_.choice(alln_,min(len(alln_),260),replace=False) if x_!=t_][:199]; nm_=[t_]+oth_
+            ss_=namescore(p_,nm_,sl,'sum'); nb9_=np.array([len(c_.encode('latin-1'))+1 for c_ in nm_],dtype=np.float64)
+            for md_ in ('sum','byte'):
+                sc_=ss_ if md_=='sum' else ss_/nb9_; o_=np.argsort(-sc_); r1_=int(o_[0]==0); tw_=nm_[int(o_[0] if o_[0]!=0 else o_[1])]
+                comp_=tw_ in obj_.get(key_,set())-{t_}; comp_any_=(kind_=='two-hop' and tw_ in obj_.get(('two-hop-any',),set())-{t_})
+                dl_=len(tw_.encode('latin-1'))-len(t_.encode('latin-1'))
+                out_[md_].append((r1_,comp_,comp_any_,dl_))
+                if md_=='sum' and len(ex_)<6: ex_.append(f"{t_} -> {tw_} (competitor {comp_}, length delta {dl_:+d}, rank-1 {bool(r1_)})")
+        n_=len(out_['sum']); gain_=float(np.mean(beam_hits_))-float(np.mean(greedy_hits_)) if len(beam_hits_) else float('nan')
+        if not n_: return f"no greedy misses (n {len(items_)})"
+        f_=lambda md_,k_: float(np.mean([x_[k_] for x_ in out_[md_]]))
+        return (f"{n_} greedy misses of {len(items_)} | RANK-1 SHARE (true name first of 200 by the name score) summed {f_('sum',0):.2f}, per byte {f_('byte',0):.2f} "
+                f"(as a share of all items: {f_('sum',0)*n_/len(items_):.2f}) vs BEAM GAIN (beam - greedy) {gain_:+.2f} | top wrong name: SAME-RELATION COMPETITOR "
+                f"summed {f_('sum',1):.2f}, per byte {f_('byte',1):.2f}"+(f", another chain's C (any relation) summed {f_('sum',2):.2f}" if kind_=='two-hop' else '')
+                +f" | SHORTER than the true name summed {np.mean([x_[3]<0 for x_ in out_['sum']]):.2f}, per byte {np.mean([x_[3]<0 for x_ in out_['byte']]):.2f} "
+                f"(mean length delta summed {np.mean([x_[3] for x_ in out_['sum']]):+.1f}, per byte {np.mean([x_[3] for x_ in out_['byte']]):+.1f}) || e.g. "+" | ".join(ex_))
     def seqlp(p_,cs_,slot):
         """summed log-probability (nats) of each continuation c + '.' after prompt p_, mixed over slots like score(); and its byte count"""
         if _INF.get('corr'): p_=_cue_fix(cfg,p_)
@@ -198,7 +292,7 @@ def _inf_eval1(model,cfg,S_,tag):
         act_={}; aw9_={}
         vd9_=S_.get('_vdom') if (int(getattr(cfg,'inf_upd_revisited',1)) and S_.get('_vdom_from',-1)==0) else None   # READOUT FIX: changed facts count only after a revisit
         for kind in KINDS_:
-            pr_=[];cd_=[];sl_=[];bn_=[]; _INFM['dbg']=[0,0,0.0]
+            pr_=[];cd_=[];sl_=[];bn_=[];rk_=[]; _INFM['dbg']=[0,0,0.0]
             for c_ in ch_:
                 n_=c_['names']; r_=c_['rels']
                 if kind in ('three-hop','IN-CONTEXT three-hop','HELD-OUT three-hop') and len(n_)<4: continue
@@ -236,6 +330,7 @@ def _inf_eval1(model,cfg,S_,tag):
                 elif kind=='NOISE-CONTRADICTED one-hop': cs_=[tgt,u0_['B3']]+cs_[1:19]  # the single false contradiction is a candidate: picking it = a wrong flip
                 elif kind.startswith('CTX2'): ic_=[n_[1],X0_,Y0_]; cs_=[tgt]+ic_+[x_ for x_ in cs_[1:] if x_ not in ic_][:16]   # in-context names compete with the answer
                 elif kind.startswith('HELD-OUT'): br_=[x_ for x_ in n_[1:] if x_!=tgt]; cs_=[tgt]+br_+cs_[1:20-len(br_)]   # the BRIDGE(S) are candidates too
+                rk_.append(('one-hop',r_[0]) if kind=='one-hop' else (('two-hop',r_[0],r_[1]) if len(r_)>1 else ('two-hop',r_[0])))
                 pr_.append(pp); cd_.append(cs_); bn_.append(n_[1]); sl_.append(-1 if kind.startswith('HELD-OUT') else int(model.__dict__.get('_t2s',{}).get(c_['doms'][0],c_['doms'][0])))
             hits=[]
             for sl in sorted(set(sl_)):
@@ -248,15 +343,27 @@ def _inf_eval1(model,cfg,S_,tag):
                 if _INF.get('cal_on') is not None and kind=='two-hop' and _INF.get('corr'): _INF.setdefault('calrec_all',[]).extend(_INF['calrec']); _INF['cal_on']=None
             res[kind]=(float(np.mean(hits)) if hits else float('nan'),len(hits)); d_=_INFM.get('dbg',[0,0,0.0]); act_[kind]=d_[2]/max(1,d_[0])
             if int(getattr(cfg,'inf_eval_open',0)) and kind in ('one-hop','two-hop','HELD-OUT two-hop','HELD-OUT typed two-hop') and pr_:
-                oh_=[]
-                for sl in sorted(set(sl_)):
-                    ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; oh_+=openh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl)
-                res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_))
-                if int(getattr(cfg,'inf_eval_beam',0)):
-                    bh_=[]
+                def byitem_(fn_,*a_):
+                    h9_=[0]*len(pr_)
                     for sl in sorted(set(sl_)):
-                        ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]; bh_+=beamh([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl,int(getattr(cfg,'inf_eval_beam',8)))
-                    res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
+                        ix_=[i_ for i_,s_ in enumerate(sl_) if s_==sl]
+                        for i_,v_ in zip(ix_,fn_([pr_[i_] for i_ in ix_],[cd_[i_][0] for i_ in ix_],sl,*a_)): h9_[i_]=v_
+                    return h9_
+                oh_=byitem_(openh); res[f"OPEN {kind} (greedy, no candidates)"]=(float(np.mean(oh_)),len(oh_)); bh_=[]
+                if int(getattr(cfg,'inf_eval_beam',0)):
+                    bh_=byitem_(beamh,int(getattr(cfg,'inf_eval_beam',8)))
+                    res[f"BEAM {kind} (width {int(getattr(cfg,'inf_eval_beam',8))}{', first step '+str(int(getattr(cfg,'inf_eval_beam_first',0))) if int(getattr(cfg,'inf_eval_beam_first',0))>int(getattr(cfg,'inf_eval_beam',8)) else ''}, no candidates)"]=(float(np.mean(bh_)),len(bh_))
+                if int(getattr(cfg,'inf_eval_trie',0)) and (int(getattr(cfg,'inf_eval_trie',0))>=2 or 'END' in tag or 'PASS' in tag or int(model.__dict__.get('_visit',0))%int(getattr(cfg,'inf_eval_missevery',10))==0):
+                    try:
+                        _TRIE_ST.clear(); th_=byitem_(trieh,int(getattr(cfg,'inf_eval_trie_k',32)))
+                        res[f"KNOWN-NAME {kind} (decoding restricted to the {_TRIE_ST.get('n',0)} names in the store, exact; target in the store {np.mean(_TRIE_ST.get('inv',[0])):.2f}, search cut {np.mean(_TRIE_ST.get('cut',[0])):.2f})"]=(float(np.mean(th_)),len(th_))
+                    except Exception as e9_: _fail('inference.evaluate:trie'); print(f"  [inference KNOWN-NAME DECODING] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+                dgm_=int(getattr(cfg,'inf_eval_open_diag',0))
+                if dgm_ and kind in ('one-hop','two-hop') and (dgm_>=2 or 'END' in tag or 'PASS' in tag or int(model.__dict__.get('_visit',0))%int(getattr(cfg,'inf_eval_missevery',10))==0):
+                    try:
+                        print(f"  [inference MISS LOG | {tag}] {kind} (slot given, from {'the weights + store' if _INF.get('corr') else 'the weights'}): "
+                              +misslog(kind,[(pr_[i_],cd_[i_][0],sl_[i_],rk_[i_]) for i_ in range(len(pr_))],oh_,bh_),flush=True)
+                    except Exception as e9_: _fail('inference.evaluate:misslog'); print(f"  [inference MISS LOG] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
                 dg9_=int(getattr(cfg,'inf_eval_open_diag',0))
                 if dg9_ and kind in ('one-hop','HELD-OUT two-hop') and (dg9_>=2 or 'END' in tag):
                     try:
