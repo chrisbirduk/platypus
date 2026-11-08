@@ -30,15 +30,27 @@ def _whiten(Z, k=64, eps=1e-3):
     W = V[:k].T / (S[:k] / max(1.0, (len(Z) - 1) ** 0.5) + eps); return mu, W
 
 
-def _fit_linear(ZA, ZB, r=32):
-    """CCA and SFA projections from consecutive pairs (ZA[i], ZB[i]) of trunk codes"""
+def _fit_linear(ZA, ZB, r=32, seed=0):
+    """CCA and SFA projections from consecutive pairs (ZA[i], ZB[i]) of trunk codes. Plain: the top r directions, equal weight. WEIGHTED:
+    only directions beyond a shuffled-pair null (the same fit with the partners permuted, max over 5 shuffles), each weighted by its
+    strength - canonical correlation rho for CCA, slowness 1 - lambda/2 for SFA (lambda = variance of the whitened change; 2 = unrelated)"""
     Z = torch.cat([ZA, ZB]); mu, W = _whiten(Z)
     A = (ZA - mu) @ W; B = (ZB - mu) @ W
     C = A.T @ B / len(A); U, S, V = torch.linalg.svd(C); r = min(r, U.shape[1])
     cca = (mu, W @ U[:, :r], W @ V.T[:, :r])                                      # query projection, candidate projection
     D = A - B; ev, evec = torch.linalg.eigh(D.T @ D / len(D))                     # slowest = smallest change between neighbours
     P = W @ evec[:, :r]; sfa = (mu, P, P)
-    return cca, sfa, float(S[:r].mean())
+    g = torch.Generator().manual_seed(seed); rho0, ev0 = [], []
+    for _ in range(5):                                                            # NULL: partners shuffled
+        Bp = B[torch.randperm(len(B), generator=g)]
+        rho0.append(float(torch.linalg.svdvals(A.T @ Bp / len(A)).max())); ev0.append(float(torch.linalg.eigvalsh((A - Bp).T @ (A - Bp) / len(A)).min()))
+    kc = S > max(rho0); ks = ev < min(ev0)
+    wc = S[kc]; ccaw = (mu, W @ U[:, kc] * wc.sqrt(), W @ V.T[:, kc] * wc.sqrt()) if kc.any() else None
+    ws = (1 - ev[ks] / 2).clamp(min=0); sfaw = (mu, W @ evec[:, ks] * ws.sqrt(), W @ evec[:, ks] * ws.sqrt()) if ks.any() else None
+    info = (f"mean canonical correlation of the top {r} {float(S[:r].mean()):.2f}; CCA directions beyond the shuffled null (rho > {max(rho0):.2f}): {int(kc.sum())}, "
+            f"rho {float(S[0]):.2f} to {float(S[kc][-1]) if kc.any() else float('nan'):.2f}; SFA directions slower than the null (lambda < {min(ev0):.2f}): {int(ks.sum())}, "
+            f"lambda {float(ev[0]):.2f} to {float(ev[ks][-1]) if ks.any() else float('nan'):.2f}")
+    return cca, sfa, ccaw, sfaw, info
 
 
 def _score_lin(proj, Zq, Zc):
@@ -58,18 +70,20 @@ def selector_compare(model, cfg, S_, slot_of, tag):
         ix = [i for i in range(len(it) - 1) if it[i].get('k') == 'real' and it[i + 1].get('k') == 'real' and it[i]['d'] == it[i + 1]['d']
               and it[i].get('v') == it[i + 1].get('v') and 20 <= len(it[i]['s']) <= 300 and 20 <= len(it[i + 1]['s']) <= 300]
         ix = [ix[int(k)] for k in rs.choice(len(ix), min(3000, len(ix)), replace=False)]
-        cca, sfa, rho = _fit_linear(_codes(model, [it[i]['s'] for i in ix]), _codes(model, [it[i + 1]['s'] for i in ix]))
-        sels = ['JEPA (trained)', 'CCA (linear)', 'SFA (linear)', 'TRUNK cosine', 'TF-IDF names', 'RANDOM']
+        cca, sfa, ccaw, sfaw, finfo = _fit_linear(_codes(model, [it[i]['s'] for i in ix]), _codes(model, [it[i + 1]['s'] for i in ix]), seed=int(cfg.seed))
+        LIN = {'CCA (linear)': cca, 'SFA (linear)': sfa, 'CCA weighted': ccaw, 'SFA weighted': sfaw}
+        sels = ['JEPA (trained)', 'CCA (linear)', 'CCA weighted', 'SFA (linear)', 'SFA weighted', 'TRUNK cosine', 'TF-IDF names', 'RANDOM']
         def score(name, qt, ct):
             M = score0(name, qt, ct)
             return None if M is None else M + 1e-6 * torch.rand(M.shape)               # ties broken at random (TF-IDF rows are often all zero)
         def score0(name, qt, ct):
             if name == 'JEPA (trained)':
                 m = _jd_scores(model, cfg, [bytes(t) for t in qt], [bytes(t) for t in ct]); return None if m is None else m.float().cpu()
-            if name in ('CCA (linear)', 'SFA (linear)', 'TRUNK cosine'):
+            if name in LIN or name == 'TRUNK cosine':
+                if name in LIN and LIN[name] is None: return None
                 Zq, Zc = _codes(model, qt), _codes(model, ct)
                 if name == 'TRUNK cosine': return (F.normalize(Zq, dim=-1) @ F.normalize(Zc, dim=-1).T).cpu()
-                return _score_lin(cca if name.startswith('CCA') else sfa, Zq, Zc).cpu()
+                return _score_lin(LIN[name], Zq, Zc).cpu()
             if name == 'TF-IDF names': return _tfidf_sim(S_, [bytes(t) for t in qt], [bytes(t) for t in ct], int(cfg.inf_df), True).float()
             return torch.tensor(rs.rand(len(qt), len(ct)), dtype=torch.float32)
         out = {s: {} for s in sels}
@@ -82,6 +96,15 @@ def selector_compare(model, cfg, S_, slot_of, tag):
             if M is None: continue
             rk = [(M[i] > M[i, i]).sum().item() + 1 for i in range(len(q1))]
             out[s]['ret'] = (float(np.mean([r <= 1 for r in rk])), float(np.mean([r <= 5 for r in rk])))
+        from platypus.inference.qtime import _INF_PARA                           # (1b) the query fact in a HELD-OUT WORDING (the relation paraphrased; never written)
+        hq = [(i, c['facts'][0][1].replace(f" {c['rels'][0]} ", f" {_INF_PARA[c['rels'][0]]} ", 1).encode('latin-1', 'replace')) for i, c in enumerate(ch)
+              if c.get('rels') and c['rels'][0] in _INF_PARA and f" {c['rels'][0]} " in c['facts'][0][1]]
+        for s in sels:
+            if not hq: break
+            M = score(s, [q for _, q in hq], pool)
+            if M is None: continue
+            rk = [(M[k] > M[k, i]).sum().item() + 1 for k, (i, _) in enumerate(hq)]
+            out[s]['reth'] = (float(np.mean([r <= 1 for r in rk])), float(np.mean([r <= 5 for r in rk])), len(hq))
         # (2) JUDGE: mutual compression of each selector's top pick
         cues = [real[int(k)]['s'] for k in rs.choice(len(real), 64, replace=False)]; cand = [real[int(k)]['s'] for k in rs.choice(len(real), 400, replace=False)]
         rnd = [real[int(k)]['s'] for k in rs.choice(len(real), 64, replace=False)]; sl = int(slot_of(0)) if callable(slot_of) else 0
@@ -119,10 +142,10 @@ def selector_compare(model, cfg, S_, slot_of, tag):
             if hits: out[s]['rel'] = (float(np.mean(hits)), len(hits))
         f = lambda v, k, j, fmt: (fmt.format(v[k][j]) if k in v else '-')
         print(f"  [SELECTOR COMPARISON | {tag}] trained JEPA selector against its linear precursors (CCA / SFA fitted in closed form on {len(ix)} consecutive "
-              f"stored sentence pairs, mean canonical correlation {rho:.2f}) | (1) RETRIEVAL of a planted chain's second fact from its first ({len(q1)} chains, "
+              f"stored sentence pairs; {finfo}) | (1) RETRIEVAL of a planted chain's second fact from its first ({len(q1)} chains, "
               f"{len(pool)} candidates): top-1/top-5 | (2) JUDGE on the top pick of 400: mean bits/byte saved over a random cue, share passing | "
               f"(3) RELATIONS: top pick within a Re-DocRED paragraph holds a gold relation (floor: a random sentence of the paragraph {np.mean(floor):.3f}, n {len(floor)}) || "
-              + " || ".join(f"{s}: (1) {f(out[s], 'ret', 0, '{:.2f}')}/{f(out[s], 'ret', 1, '{:.2f}')} (2) {f(out[s], 'judge', 0, '{:+.3f}')}, {f(out[s], 'judge', 1, '{:.2f}')} "
+              + " || ".join(f"{s}: (1) {f(out[s], 'ret', 0, '{:.2f}')}/{f(out[s], 'ret', 1, '{:.2f}')} held-out wording {f(out[s], 'reth', 0, '{:.2f}')}/{f(out[s], 'reth', 1, '{:.2f}')} (2) {f(out[s], 'judge', 0, '{:+.3f}')}, {f(out[s], 'judge', 1, '{:.2f}')} "
                             f"(3) {f(out[s], 'rel', 0, '{:.3f}')}" for s in sels), flush=True)
     except Exception as e:
         _fail('inference.selcmp'); print(f"  [SELECTOR COMPARISON] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

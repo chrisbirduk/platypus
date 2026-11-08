@@ -55,5 +55,9 @@
  "shared_head": true,
  "_shared_head": "one output head shared by every slot (tied)",
  "film_k": 0,
- "_film_k": "no FiLM codes"
+ "_film_k": "no FiLM codes",
+ "inf_selcmp": 1,
+ "_inf_selcmp": "readout (north-star rung 0): trained JEPA selector against closed-form CCA/SFA (plain and weighted beyond a shuffled null), trunk cosine, TF-IDF names, random; retrieval incl. held-out wording, judge, Re-DocRED relations",
+ "inf_rdr_judge": 1,
+ "_inf_rdr_judge": "readout: relational signal in the trunk on Re-DocRED prose (substitution and mutual-compression AUC)"
 }
