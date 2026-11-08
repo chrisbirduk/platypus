@@ -47,5 +47,9 @@
  "inf_cf_wordings": 3,
  "_inf_cf_wordings": "closed-form edits fitted on the keys of the first 3 wordings of common._CONC_CF (the first is the original)",
  "inf_cf_contrast": 0.5,
- "_inf_cf_contrast": "competitor contrast in the closed-form edit fit (divergence byte, as in replay)"
+ "_inf_cf_contrast": "competitor contrast in the closed-form edit fit (divergence byte, as in replay)",
+ "inf_selcmp": 1,
+ "_inf_selcmp": "readout at the end of the run (north-star rung 0): trained JEPA selector against closed-form CCA/SFA (plain and weighted beyond a shuffled null), trunk cosine, TF-IDF names, random; retrieval incl. held-out wording, judge, Re-DocRED relations",
+ "inf_rdr_judge": 1,
+ "_inf_rdr_judge": "readout at the end of the run: relational signal in the trunk on Re-DocRED prose (substitution and mutual-compression AUC)"
 }
