@@ -34,7 +34,11 @@ def recall(line):
                      ("held_out_typed_two_hop", r"\| HELD-OUT typed two-hop \(picked a bridge [0-9.na]+\) " + NUM),
                      ("held_out_three_hop", r"\| HELD-OUT three-hop \(picked a bridge [0-9.na]+\) " + NUM),
                      ("open_one_hop", r"OPEN one-hop \(greedy, no candidates\) " + NUM),
-                     ("open_held_out_two_hop", r"OPEN HELD-OUT two-hop \(greedy, no candidates\) " + NUM)):
+                     ("open_held_out_two_hop", r"OPEN HELD-OUT two-hop \(greedy, no candidates\) " + NUM),
+                     # cg27a: decoding restricted to the names in the store (exact)
+                     ("known_name_one_hop", r"KNOWN-NAME one-hop \(decoding restricted[^)]*\) " + NUM),
+                     ("known_name_two_hop", r"KNOWN-NAME two-hop \(decoding restricted[^)]*\) " + NUM),
+                     ("known_name_held_out_two_hop", r"KNOWN-NAME HELD-OUT two-hop \(decoding restricted[^)]*\) " + NUM)):
         m = re.search(pat, line.replace("(chance 0.05): one-hop", "(chance 0.05): | one-hop"))
         if m:
             out[key] = f(m.group(1))
@@ -160,7 +164,24 @@ def parse(path):
                 r.setdefault("miss_log", []).append({"at": m.group(1), "kind": m.group(2), "from": m.group(3), "misses": int(m.group(4)), "n": int(m.group(5)),
                     "rank1_sum": f(m.group(6)), "rank1_byte": f(m.group(7)), "beam_gain": f(m.group(8)), "competitor_sum": f(m.group(9)),
                     "competitor_byte": f(m.group(10)), "shorter_sum": f(m.group(11)), "shorter_byte": f(m.group(12))})
+                m2 = re.search(r"another chain's C \(any relation\) summed ([0-9.]+)", s)
+                if m2: r["miss_log"][-1]["other_chain_c_sum"] = f(m2.group(1))
                 continue
+            m = re.search(r"\[inference MEMORY RESIDUAL \| (.*?)\] stored real sentences.*?\| ALL n (\d+): trunk alone ([0-9.]+) bits/byte \(names ([0-9.na]+)\), with the store ([0-9.]+) \(names ([0-9.na]+)\)", s)
+            if m:
+                r.setdefault("memory_residual", []).append({"at": m.group(1), "n": int(m.group(2)), "trunk": f(m.group(3)), "trunk_names": f(m.group(4)), "store": f(m.group(5)), "store_names": f(m.group(6))})
+                continue
+            m = re.search(r"\[inference MEMORY RESIDUAL \| (.*?)\] TRANSFER .*?all bytes ([+-][0-9.]+), name bytes ([+-][0-9.na]+)", s)
+            if m:
+                r.setdefault("memory_transfer", []).append({"at": m.group(1), "all": f(m.group(2)), "names": f(m.group(3))})
+                continue
+            m = re.search(r"\[GRADUATION \| (.*?)\] .*?mean rise (.*?) \| per domain", s)
+            if m:
+                r.setdefault("graduation", []).append({"at": m.group(1), **{k.strip(): f(v) for k, v in re.findall(r"([a-zA-Z -]+?) ([+-][0-9.]+)", m.group(2))}})
+                continue
+            m = re.search(r"\[inference CF COMPETITOR CONTRAST\].*?divergence byte ([0-9.na]+) before fitting, ([0-9.na]+) after", s)
+            if m:
+                r.setdefault("cf_contrast", []).append({"before": f(m.group(1)), "after": f(m.group(2))})
             m = re.match(r"FAILURES: (none|\d+)", s)
             if m:
                 r["final"]["failures"] = 0 if m.group(1) == "none" else int(m.group(1))
@@ -203,6 +224,11 @@ def summary(r):
         "failures": fin.get("failures"),
         "label_free_minus_given": r.get("label_free_delta"),
         "miss_log_last": (r.get("miss_log") or [None])[-4:],
+        "known_name_two_hop_store_last": vs.get(last, {}).get("store", {}).get("known_name_two_hop") if last else None,
+        "memory_residual_last": (r.get("memory_residual") or [None])[-1],
+        "memory_transfer_last": (r.get("memory_transfer") or [None])[-1],
+        "graduation_last": (r.get("graduation") or [None])[-1],
+        "cf_contrast_last": (r.get("cf_contrast") or [None])[-1],
         "data_overlap": r.get("data_overlap"),
         "last_visit": last,
         "routing_correct_where_printed": f"{sum(x['ok'] for x in route)} of {len(route)}" if route else None,
