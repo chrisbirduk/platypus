@@ -367,6 +367,9 @@ def run(cfg):
                 b.unit_usage.zero_(); b.mlp_usage.zero_()
         end_pass=(vi%NDOM==NDOM-1)
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
+        if int(getattr(cfg,'bank_drift',0)):                                     # north star TIMESCALE BANK items 2-3 and routing by prototype (readout only)
+            from platypus.inference.bankdrift import bank_drift
+            bank_drift(model,cfg,lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(seen_d)),_S,vi+1,f"visit {vi+1}",summary=end_pass)
         if int(getattr(cfg,'grad_eval',0))>=2 and not (cfg.n_passes>1 and end_pass):   # cg27a GRADUATION SERIES: reliance on the private parts per domain after every visit
             from platypus.inference.residual import grad_readout                  #   (all on vs all off; the full breakdown at pass ends)
             grad_readout(model,cfg,vals,sorted(set(seen_d)),_S,f"visit {vi+1}",lite=True)
