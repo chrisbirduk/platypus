@@ -7,7 +7,10 @@ during visits from the real text of each training step by three local terms - no
 i.e. VICReg with time, which is linear slow feature analysis written as a loss. STOP-GRADIENT: h is detached, so the trunk, its
 training and every BPC figure are unchanged; W has its own optimiser and its own random generator. m is a running mean of h per
 (slot, byte class) - letters, digits, spaces, punctuation - so the trivially slow directions (which slot, which kind of byte) are
-removed before W sees them. The codes are read out by the selector comparison (inf_selcmp: SLOW (online)) against closed-form SFA."""
+removed before W sees them. v3 (slow_cf_init 1): pooled segment pairs from the first visit are kept in a small reservoir and, when the
+first visit ends, W is SET to the closed-form SFA solution on them (whiten, then the slowest directions of the change covariance); the
+online rule then only tracks the trunk's drift from there (offline on a trained trunk the online loss holds a closed-form start at 0.84,
+while random starts need ~8000 steps at lr 3e-2 to reach it - a run gives ~380 per visit). The codes are read out by the selector comparison (inf_selcmp: SLOW (online)) against closed-form SFA."""
 import math
 import torch
 import torch.nn.functional as F
@@ -30,11 +33,23 @@ def slow_init(model, cfg):
     W = torch.nn.Parameter((torch.randn(d, k, generator=g) / math.sqrt(d)).to(dev))
     model.__dict__['_slow'] = {'W': W, 'opt': torch.optim.Adam([W], lr=float(getattr(cfg, 'slow_lr', 1e-2))), 'mu': {}, 'n': 0, 'k': k,
                                'delta': int(getattr(cfg, 'slow_delta', 8)), 'every': max(1, int(getattr(cfg, 'slow_every', 1))), 'log': [], 'vis': -1,
-                               'seg': int(getattr(cfg, 'slow_seg', 16)), 'iters': max(1, int(getattr(cfg, 'slow_iters', 4)))}
+                               'seg': int(getattr(cfg, 'slow_seg', 16)), 'iters': max(1, int(getattr(cfg, 'slow_iters', 4))),
+                               'cf': int(getattr(cfg, 'slow_cf_init', 0) or 0), 'res': [], 'nres': 0, 'cfdone': False, 'vis0': None}
     st0 = model.__dict__['_slow']
     print(f"  [SLOW HEAD] on (rung 1): k {k}, " + (f"SEGMENT slowness: pooled {st0['seg']}-byte segments predicting the next" if st0['seg'] > 0 else f"delta {st0['delta']} bytes") + f", {st0['iters']} iteration(s) per step, lr {float(getattr(cfg, 'slow_lr', 1e-2)):g}, "
           f"weights prediction {float(getattr(cfg, 'slow_wp', 1.0)):g} / variance {float(getattr(cfg, 'slow_wv', 1.0)):g} / decorrelation "
-          f"{float(getattr(cfg, 'slow_wc', 1.0)):g}; stop-gradient (the trunk is unchanged)", flush=True)
+          f"{float(getattr(cfg, 'slow_wc', 1.0)):g}; stop-gradient (the trunk is unchanged)" + ("; CLOSED-FORM START at the end of the first visit (v3)" if st0['cf'] else ""), flush=True)
+
+
+def _cf_set(st):
+    """v3: set W to closed-form SFA on the reservoir of consecutive pooled segments (rows of A predict rows of B)"""
+    A = torch.cat([a for a, b in st['res']]); B = torch.cat([b for a, b in st['res']]); Z = torch.cat([A, B]); mu = Z.mean(0)
+    U, S, V = torch.linalg.svd(Z - mu, full_matrices=False); kk = min(64, V.shape[0]); Wh = V[:kk].T / (S[:kk] / max(1.0, (len(Z) - 1) ** 0.5) + 1e-3)
+    D = (A - B) @ Wh; ev, evec = torch.linalg.eigh(D.T @ D / len(D)); k = st['k']
+    with torch.no_grad(): st['W'].data.copy_((Wh @ evec[:, :k]).to(st['W'].device, st['W'].dtype))
+    st['opt'].state.clear(); st['cfdone'] = True; st['res'] = []
+    print(f"  [SLOW HEAD | CLOSED-FORM START] W set from {len(A)} consecutive pooled segment pairs: slowness (half the variance of the whitened change, "
+          f"1 = unrelated) of the {k} directions {float(ev[:k].mean() / 2):.3f} (slowest {float(ev[0] / 2):.3f}); the online rule continues from here", flush=True)
 
 
 def _centre(st, x, h, dom, update):
@@ -66,6 +81,13 @@ def slow_update(model, cfg, x, h, dom):
             n_ = hc.shape[1] // P                                                  #   pooled segments reaches slowness 0.84 over 32 directions locally, against 0.93
             if n_ < 2: return                                                      #   for single bytes 8 apart; v1 stalled at 0.986)
             hc = hc[:, :n_ * P].reshape(hc.shape[0], n_, P, -1).mean(2); D = 1
+            if st['cf'] and not st['cfdone']:                                      # v3: reservoir during the first visit, closed-form start when it ends
+                v_ = int(model.__dict__.get('_visit', 0))
+                if st['vis0'] is None: st['vis0'] = v_
+                if v_ != st['vis0'] and st['nres'] >= 1000: _cf_set(st)
+                elif st['nres'] < 6000:
+                    a_ = hc[:, :-1].reshape(-1, hc.shape[-1]).detach().cpu(); b_ = hc[:, 1:].reshape(-1, hc.shape[-1]).detach().cpu()
+                    st['res'].append((a_, b_)); st['nres'] += len(a_)
         if hc.shape[1] <= D: return
         for _ in range(st['iters']):
           with torch.enable_grad():
