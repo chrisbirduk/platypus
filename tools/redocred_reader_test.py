@@ -54,8 +54,9 @@ def run(fill_kb):
         wins = [(bytes(stream[i:i + WIN]), i) for i in range(0, len(stream) - 64, WIN)]; nwin[0] += len(wins)
         for w, _ in wins:
             for n in set(U._UWORD.findall(w)): df[n] = df.get(n, 0) + 1
+        dcnt = collections.Counter(t.lower() for t in U._UWORD.findall(bytes(stream)))   # the visit: case-insensitive counts in the domain's stream
         for w, off in wins:                                                       # store: sentences with >= 2 rare words (cut pieces dropped)
-            ss = U._INF_SENT.split(w); pos = 0
+            ss = U._INF_SENT.split(w); pos = 0; wcnt = collections.Counter(t.lower() for t in U._UWORD.findall(w)); wcnt['__visit__'] = dcnt
             for k, s in enumerate(ss):
                 p0 = w.find(s, pos); pos = p0 + len(s)
                 if k == 0 or k == len(ss) - 1: continue
@@ -63,10 +64,21 @@ def run(fill_kb):
                 ns = [m.group(0) for m in U._UWORD.finditer(s) if U._u_rare(m.group(0))]
                 if len(set(ns)) < 2: continue
                 g = any(a <= off + p0 < b for a, b in marks)
-                items.append({'s': s, 'd': int(d), 'k': 'real', 'g': g})
+                items.append({'s': s, 'd': int(d), 'k': 'real', 'g': g, 'wc': wcnt})
     S = {'it': items, 'facts': [], 'conc': []}
     rows = {}
     rows['BASE'] = [(it, list(U._UnitTrip()._base(it['s']))) for it in items if it['g']]
+    rare0 = U._u_rare; CUR = {}                                                  # ENTITY FILTERS on top of rarity (the base reader with the argument test replaced)
+    filt = {'+RECUR (window)': lambda w: CUR['it']['wc'][w.lower()] >= 2,
+            '+RECUR (visit)': lambda w: CUR['it']['wc']['__visit__'][w.lower()] >= 2,
+            '+CAPITAL': lambda w: w[:1].isupper(),
+            '+RECUR+CAP': lambda w: w[:1].isupper() and CUR['it']['wc'][w.lower()] >= 2}
+    for fn, f in filt.items():
+        U._u_rare = (lambda f_: (lambda w: rare0(w) and f_(w)))(f); out = []
+        for it in items:
+            if it['g']: CUR['it'] = it; out.append((it, list(U._UnitTrip()._base(it['s']))))
+        rows['BASE ' + fn] = out
+    U._u_rare = rare0
     U._ent_update(C, S)
     rows['ENT-MDL'] = [(it, list(U._UnitTrip()._base(it['s']))) for it in items if it['g']]
     U._UNITS['ent_on'] = False
@@ -90,6 +102,13 @@ def run(fill_kb):
         cooc |= {(es_s[i], es_s[j]) for i in range(len(es_s)) for j in range(i + 1, len(es_s)) if (es_s[i], es_s[j]) in REL}
     print(f"  BASELINE (every pair of gold-entity tokens in one clause): {len(bp)} pairs, gold relation {sum(p in REL for p in bp) / max(1, len(bp)):.3f}, "
           f"co-mentioned {sum(p in COM for p in bp) / max(1, len(bp)):.3f} | gold relation pairs sharing a stored sentence: {len(cooc)}")
+    PN = {'P17': 'country', 'P131': 'located in', 'P27': 'citizenship', 'P150': 'contains', 'P577': 'publication date', 'P569': 'birth date', 'P570': 'death date',
+          'P108': 'employer', 'P175': 'performer', 'P527': 'has part', 'P361': 'part of', 'P571': 'inception', 'P495': 'country of origin', 'P19': 'birthplace',
+          'P161': 'cast member', 'P102': 'party', 'P54': 'team', 'P463': 'member of', 'P264': 'record label', 'P39': 'position', 'P50': 'author', 'P57': 'director'}
+    byp = collections.defaultdict(set)
+    for pr_ in cooc:
+        for q in REL[pr_]: byp[q].add(pr_)
+    top = sorted(byp, key=lambda q: -len(byp[q]))[:8]
     for nm, R in rows.items():
         na = ng_ = 0; pairs = []; read = set(); phr = []
         for it, ms in R:
@@ -113,6 +132,7 @@ def run(fill_kb):
               f"{sum(p in REL for p in pairs) / max(1, len(pairs)):.3f}, co-mentioned {sum(p in COM for p in pairs) / max(1, len(pairs)):.3f} (n {len(pairs)}) | "
               f"PAIR RECALL {len(read & cooc) / max(1, len(cooc)):.3f} | RELATION PURITY {sum(b for _, b in pur) / max(1, sum(a for a, _ in pur)):.3f} "
               f"over {len(pur)} phrases used >= 2 times, NMI {nmi:.3f}")
+        print("      recall by relation: " + " | ".join(f"{PN.get(q, q)} {len(read & byp[q])}/{len(byp[q])}" for q in top))
         if nm == 'BASE':
             ex = [(m.group(1).decode('latin-1', 'replace'), m.group(2).decode('latin-1', 'replace'), m.group(3).decode('latin-1', 'replace')) for _, ms in R[:40] for m in ms][:8]
             print("    e.g. " + " | ".join(f"{a} [{r}] {c}" for a, r, c in ex))
