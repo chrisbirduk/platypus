@@ -160,6 +160,14 @@ def _inf_eval1(model,cfg,S_,tag):
         import heapq as _hq
         if not prompts: return []
         inv_=[n_ for n_ in (_INFM.get('names') or {}) if n_ and all(65<=b_<=90 or 97<=b_<=122 for b_ in n_)]
+        if str(getattr(cfg,'inf_eval_trie_inv','store'))=='seen':              # OPEN READOUT (1): every capitalised word of the stored sentences (all text seen and kept), not
+            sn9_=S_.get('_seen_names')                                          #   only the fast store's names; probe truth is never added
+            if sn9_ is None or sn9_[0]!=len(S_.get('it',[])):
+                st9n_=set(inv_)
+                for x9_ in S_.get('it',[]):
+                    for w9_ in __import__("re").findall(rb"[A-Z][a-z]{2,}",x9_['s'] if isinstance(x9_['s'],(bytes,bytearray)) else str(x9_['s']).encode('latin-1','replace')): st9n_.add(bytes(w9_))
+                sn9_=(len(S_.get('it',[])),sorted(st9n_)); S_['_seen_names']=sn9_
+            inv_=list(sn9_[1])
         if not inv_: _TRIE_ST.update(n=0); return [0]*len(prompts)
         nxt_={}; full_=set(inv_)
         for n_ in inv_:

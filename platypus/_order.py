@@ -683,4 +683,10 @@ ORDER = (
     ('inference.slowhead', 'slow_codes'),
     ('inference.bankdrift', '_bk_spearman'),
     ('inference.bankdrift', 'bank_drift'),
+    ('inference.openread', '_isl'),
+    ('inference.openread', '_tf_items'),
+    ('inference.openread', '_summ'),
+    ('inference.openread', 'open_diag'),
+    ('inference.openread', '_key_readout'),
+    ('inference.openread', '_cf_shadow'),
 )

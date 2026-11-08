@@ -367,6 +367,9 @@ def run(cfg):
                 b.unit_usage.zero_(); b.mlp_usage.zero_()
         end_pass=(vi%NDOM==NDOM-1)
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
+        if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:                 # OPEN-ENDED READOUTS: why held-out wordings fail open-ended; rung 3 keys at pass ends
+            from platypus.inference.openread import open_diag
+            open_diag(model,cfg,_inf_store(model),_S,f"visit {vi+1}",keys=end_pass)
         if int(getattr(cfg,'bank_drift',0)):                                     # north star TIMESCALE BANK items 2-3 and routing by prototype (readout only)
             from platypus.inference.bankdrift import bank_drift
             bank_drift(model,cfg,lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(seen_d)),_S,vi+1,f"visit {vi+1}",summary=end_pass)
@@ -496,6 +499,9 @@ def run(cfg):
         print(f"  {PILE_DOMAINS[p][:12]:12} | post {post[p]:.3f} | final {final:.3f} | forget {f:+.3f}")
     mf=float(np.mean(fg)); mb=float(np.mean([bpc_m[-1][p] for p in range(len(PILE_DOMAINS))]))
     if cfg.inf_on: inf_eval(model,cfg,_inf_store(model),"END OF RUN"); inf_final_bpc(model,cfg,vals,_S)
+    if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:
+        from platypus.inference.openread import open_diag
+        open_diag(model,cfg,_inf_store(model),_S,"END OF RUN",keys=True)
     if int(getattr(cfg,'gist_test',0)):                                          # GIST TEST: does a learned gist code carry information the trunk lacks?
         from platypus.inference.gisttest import gist_test
         gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S)

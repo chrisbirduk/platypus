@@ -276,6 +276,9 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
                     L9_=_cf_layer_states(model,c9_,S_slot)
                     if L9_ is not None: c9_['_cfL']=L9_; c9_['_cfLv']=vis_
             except Exception as e8_: _fail('inference.closed_form:254'); print(f"  [inference LAYER DRIFT] states unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
+        if int(getattr(cfg,'inf_cf_shadow',0)):                                 # OPEN READOUTS (2)+(3): shadow edits, measured and removed (readout only)
+            from platypus.inference.openread import _cf_shadow
+            _cf_shadow(model,cfg,[c_ for c_ in E_ if id(c_) not in rfid9_],mo_,cap_,S_slot,W0_,kept_[0],(Pm_ if rc_>0 else None),C0_,lam_,Cp_)
         model.__dict__['_cf_E']=En_[kept_[0]].detach(); cinfo_+=f" | ACCUMULATED EDITS |E| {float(En_[kept_[0]].norm()):.2f} vs rest of the matrix {nb9_:.2f}"+(f" (cap {mg_:g}x)" if mg_>0 else "")+dinfo_
         print(f"  [inference CLOSED-FORM CONSOLIDATION APPLIED] KEPT at x{kept_[0]:g} (brake {bk_}; tries: "+" | ".join(tr_)+f") | {len(E_)} conclusions edited (lambda {lam_:g}, |dW| {float(kept_[0]*dW_.norm()):.2f} vs |W| {float(W0_.norm()):.1f}) | "
               f"two-hop from the weights, fitted wording: edited {e0_:.2f} -> {e1_:.2f}, control (not edited) {n0_:.2f} -> {n1_:.2f} | OTHER WORDINGS: edited {v0_:.2f} -> {v1_:.2f} | "
