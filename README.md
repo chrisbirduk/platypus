@@ -6,6 +6,8 @@ Platypus is a 171-million-parameter byte-level language model that learns ten te
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
+> **About this project.** Platypus is a one-person side project, built and run by one person in spare time on a single rented GPU (Colab) and a small CPU machine for local tests. It began with one aim: a continuous learning memory system, a memory that keeps learning from new material without forgetting what it learned before. Everything else here (sleep, inference between facts, dreams, the JEPA selector, the readouts) grew out of that aim. Results come from single runs, usually one seed, at small scale, and should be read as research notes rather than benchmarks; the known issues below say where the measurements are weaker than they first looked.
+
 Current build: **cg26z** (cg26x plus the fast store reading the text of closed-loop visits; branch `mem-hints`; `configs/presets/cg26z_nohints.env` is the next GPU run: the strict closed loop with no hints, every readout on; `cg26z.env` keeps the hints). The trunk still learns only from verified replays; routing and the other defaults are unchanged. Merged-memory dreams stay off.
 
 ## Known issues and their fixes (8 November 2026; fixed on this branch, `eval-fix`)
