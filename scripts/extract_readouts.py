@@ -151,6 +151,16 @@ def parse(path):
             if m:
                 r["final"].setdefault("label_free_bpc", f(m.group(1))); r["final"].setdefault("label_free_forgetting", f(m.group(2)))
                 continue
+            m = re.search(r"\[label-free\] INFERRED - GIVEN(?: at the end)?: mean ([+-][0-9.]+) \(range ([+-][0-9.]+) to ([+-][0-9.]+)\)", s)
+            if m:
+                r.setdefault("label_free_delta", []).append({"end": "at the end" in s, "mean": f(m.group(1)), "min": f(m.group(2)), "max": f(m.group(3))})
+                continue
+            m = re.search(r"\[inference MISS LOG \| (.*?)\] (one-hop|two-hop) .*?from (the weights(?: \+ store)?)\): (\d+) greedy misses of (\d+) \| RANK-1 SHARE.*?summed ([0-9.]+), per byte ([0-9.]+).*?BEAM GAIN \(beam - greedy\) ([+-]?[0-9.na]+).*?SAME-RELATION COMPETITOR summed ([0-9.]+), per byte ([0-9.]+).*?SHORTER than the true name summed ([0-9.]+), per byte ([0-9.]+)", s)
+            if m:
+                r.setdefault("miss_log", []).append({"at": m.group(1), "kind": m.group(2), "from": m.group(3), "misses": int(m.group(4)), "n": int(m.group(5)),
+                    "rank1_sum": f(m.group(6)), "rank1_byte": f(m.group(7)), "beam_gain": f(m.group(8)), "competitor_sum": f(m.group(9)),
+                    "competitor_byte": f(m.group(10)), "shorter_sum": f(m.group(11)), "shorter_byte": f(m.group(12))})
+                continue
             m = re.match(r"FAILURES: (none|\d+)", s)
             if m:
                 r["final"]["failures"] = 0 if m.group(1) == "none" else int(m.group(1))
@@ -191,6 +201,8 @@ def summary(r):
         "HEADLINE_held_out_two_hop_store_last": vs.get(last, {}).get("store", {}).get("held_out_two_hop") if last else None,
         "open_held_out_two_hop_store_last": vs.get(last, {}).get("store", {}).get("open_held_out_two_hop") if last else None,
         "failures": fin.get("failures"),
+        "label_free_minus_given": r.get("label_free_delta"),
+        "miss_log_last": (r.get("miss_log") or [None])[-4:],
         "data_overlap": r.get("data_overlap"),
         "last_visit": last,
         "routing_correct_where_printed": f"{sum(x['ok'] for x in route)} of {len(route)}" if route else None,

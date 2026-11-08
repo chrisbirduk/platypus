@@ -446,6 +446,10 @@ def run(cfg):
                              'pre':[pre_visit.get(d,{}).get(pass_i) for d in range(NDOM)]})
             print(f"\n  ===== PASS {pass_i+1} SUMMARY: mean BPC {np.mean(fin_):.3f} | mean forgetting since each domain's visit {np.mean(fg_):+.3f} | label-free "
                   +" ".join(f"{m} {x_:.3f}" for m,x_ in al_.items())+" =====")
+            if 'heads' in al_:                                                     # issue #23: inferred - given, with its sign, and the spread over domains
+                dl_=[alt_m['heads'][(vi,d)][0]-fin_[d] for d in range(NDOM)]
+                print(f"    [label-free] INFERRED - GIVEN: mean {np.mean(dl_):+.4f} (range {min(dl_):+.4f} to {max(dl_):+.4f}) | per domain "
+                      +" ".join(f"{PILE_DOMAINS[d][:6]} {dl_[d]:+.4f}" for d in range(NDOM)),flush=True)
             CLp_=[r_ for r_ in model.__dict__.get('_pucons_log',[])]
             if CLp_:
                 print(f"    [consolidation] so far: {len(CLp_)} phases | median gap recovered {100*np.median([r_[5] for r_ in CLp_]):.0f}% | held-out with private units "
@@ -492,6 +496,9 @@ def run(cfg):
         print(f"FAILURES: {len(_F9)} ({len(cnt9_)} distinct) - "+" | ".join(f"{w_} {t_} x{c_[0]}: {c_[1][:80]}" for (w_,t_),c_ in sorted(cnt9_.items(),key=lambda x_: -x_[1][0])[:20]),flush=True)
     else: print("FAILURES: none",flush=True)
     if 'heads' in alt:                                                            # HEADLINE (issue #23): the slot inferred from the text itself
+        dl9_=[alt['heads']['final'][q]-bpc_m[-1][q] for q in range(len(PILE_DOMAINS))]
+        print(f"  [label-free] INFERRED - GIVEN at the end: mean {np.mean(dl9_):+.4f} (range {min(dl9_):+.4f} to {max(dl9_):+.4f}) | per domain "
+              +" ".join(f"{PILE_DOMAINS[q][:6]} {dl9_[q]:+.4f}" for q in range(len(PILE_DOMAINS))),flush=True)
         print(f"HEADLINE (label-free: each test window's slot inferred from the text, heads posterior): FORGETTING {alt['heads']['forget']:+.3f} | FINAL BPC {alt['heads']['bpc']:.3f} "
               f"|| with the slot given (task-incremental): {mf:+.3f} / {mb:.3f}",flush=True)
     if cfg.recon_diag: (replay_diag if cfg.recon_mark else recon_fidelity)(model,cfg,vals,NDOM,_S)
