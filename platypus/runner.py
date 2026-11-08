@@ -48,7 +48,7 @@ from platypus.data import (
     _RUN_T0, _inject_facts, _using_hf_stream, fact_eval, locality_metrics, make_loader, prefetch_pile, stream_bytes,
 )
 from platypus.heads import (
-    bpc_inferred, bpc_inferred_modes,
+    bpc_inferred, bpc_inferred_modes, mix_text_eval,
 )
 from platypus.train import (
     calibrate_affinity, train_domain,
@@ -353,6 +353,9 @@ def run(cfg):
             for prev in (seen_d if ((cfg.n_passes==1 and not cfg.diag_light) or end_pass) else [t]):     # diag_light current + end only)
                 for mode,r_ in bpc_inferred_modes(model,vals[prev],_S(prev),len(model._slots) if cfg.infer_ctx else len(seen_d),tuple(cfg.head_select_eval),cfg).items():
                     alt_m.setdefault(mode,{})[(vi,prev)]=r_
+        if int(getattr(cfg,'mix_eval',0)) and end_pass:   # MIXED-TEXT READOUT: several slots active at once (readout only)
+            try: mix_text_eval(model,vals,seen_d,_S,cfg,tag=f' | visit {vi+1}')
+            except Exception as e_: print(f"  [mixed text] skipped: {repr(e_)[:160]}")
         post[t]=bpc_m[vi][t]; last_visit[t]=vi; post_hist.setdefault(pass_i,{})[t]=post[t]
         print(f"  post-train BPC: {post[t]:.3f}  (width {model.blocks[0].d_state})"
               +(f" | before this visit {pre_visit[t][pass_i]:.3f}, after previous visit {post_hist[pass_i-1][t]:.3f}" if (pass_i>0 and pass_i in pre_visit.get(t,{}) and t in post_hist.get(pass_i-1,{})) else ""))

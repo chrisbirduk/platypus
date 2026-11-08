@@ -262,7 +262,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
         if int(getattr(cfg,'inf_cons_adapt',0)) and model.__dict__.get('_cons_m') is not None:   # cg23 ADAPTIVE DOSE: start at the last kept rate, one notch higher if that
             m0_,f0_=model.__dict__['_cons_m']; wm_=min(float(getattr(cfg,'inf_cons_wlr_max',0) or wm_),m0_*dv_ if f0_ else m0_)   # cg24: may climb to inf_cons_wlr_max      #   one was kept at the first try (the rate can climb back); never above inf_cons_wlr
         for g_ in op_.param_groups: g_['lr']=float(cfg.lr)*wm_
-        nmx0_=model.__dict__.get('_nmixd',0)
+        nmx0_=model.__dict__.get('_nmixd',0); nmf0_=model.__dict__.get('_nmixf',0)
         nb_=int(cfg.pu_cons_eval) or 4; _INFM['force']=False
         sk9_=int(getattr(cfg,'brake_eval_skip',0))                             # FIX (review): the brake decides on batches the reported metrics do not use
         bB0_=bpc(model,vals[t],ts,n=nb_,skip=sk9_); oBl_=[bpc(model,vals[d_],s_,n=nb_,skip=sk9_) for d_,s_ in olds_]; oB0_=float(np.mean(oBl_)) if olds_ else float('nan')
@@ -407,8 +407,12 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                     if (a8_,b8_) not in MC_:
                         try: MC_[(a8_,b8_)]=_compact(model,cfg,ta8_,tb8_,int(S_slot(d8_)))
                         except Exception: MC_[(a8_,b8_)]=None
-                    if MC_.get((a8_,b8_)) and len(MC_[(a8_,b8_)])<=Lr_-10: sn_=MC_[(a8_,b8_)].decode('latin-1'); q0_=0; model.__dict__['_nmixd']=model.__dict__.get('_nmixd',0)+1
-                dz8_=c_['d']
+                    if MC_.get((a8_,b8_)) and len(MC_[(a8_,b8_)])<=Lr_-10:
+                        sn_=MC_[(a8_,b8_)].decode('latin-1'); q0_=0; model.__dict__['_nmixd']=model.__dict__.get('_nmixd',0)+1
+                        fo9_=int(S_slot(d8_))!=int(S_slot(c_['d'])); model.__dict__['_nmixf']=model.__dict__.get('_nmixf',0)+int(fo9_)   # the pair's own slot differs from the row it replaces
+                        if fo9_ and int(getattr(cfg,'inf_mix_dream_own',0)):    # OWN SLOT (inf_mix_dream_own): the pair dream sits in a window of its own domain's text and is
+                            model.__dict__['_dz8']=d8_; w_=bytearray(filler(d8_)[:Lr_]); w_+=b' '*(Lr_-len(w_))   #   trained through its own slot (default: the window and slot of the conclusion row it replaces)
+                dz9o_=model.__dict__.pop('_dz8',None); dz8_=c_['d'] if dz9o_ is None else dz9o_
                 if cm_=='both' and S_.get('anatxt') and rs_.rand()<float(getattr(cfg,'inf_rem_ana_dream',0.0)):   # cg26l REM ANALOGY ROW: one link, then a link with the
                     s1_,s2_,dz_=S_['anatxt'][rs_.randint(len(S_['anatxt']))]                 #   same relation structure and no shared name; target = the second link
                     if len(s1_)+len(s2_)+3<=Lr_-10:
@@ -500,7 +504,8 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             if KAL_: print(f"  [inference KEY ANCHOR] {len(KA9_)} edited conclusions with stored keys, x{float(getattr(cfg,'inf_key_anchor',0.0)):g}: relative key change during replay {KAL_[0]:.3f} -> {np.mean(KAL_[-5:]):.3f}",flush=True); KAL_.clear()
             PI9_=model.__dict__.pop('_protinfo',None); pt9_=(f" | PROTECTED {PI9_[0]} block matrices, update kept {PI9_[1]/max(1,PI9_[2]):.2f} cosine to Adam's" if PI9_ else "")
             print(f"  [inference CONCLUSION REPLAY INTO THE TRUNK] {len(ls_)} steps at lr x{op_.param_groups[0]['lr']/float(cfg.lr):.4f} (store off){(' [retry '+str(att_)+']') if att_ else ''} on {len(pool_)} conclusions ({kc_} rows/step"+(f", relation-pattern rows with fresh names so far {model.__dict__.get('_npat',0)} (too long, skipped {model.__dict__.get('_npat_skip',0)})" if float(getattr(cfg,'inf_cons_pattern',0.0))>0 else "")+(f", SPLICED-PREMISE dream rows so far {model.__dict__.get('_nsplice',0)} (attended-span compact {model.__dict__.get('_ncompact',0)}; too long to fit whole, skipped {model.__dict__.get('_nsplice_skip',0)})" if float(getattr(cfg,'inf_cons_splice',0.0))>0 else "")+(f", self-confirmed REM rows so far {model.__dict__.get('_nrg',0)}" if float(getattr(cfg,'inf_remgen_dream',0.0))>0 else "")+(f", mixed-pair (attended-span) dream rows so far {model.__dict__.get('_nmixd',0)}" if float(getattr(cfg,'inf_mix_dream',0.0))>0 else "")+(f", REM analogy rows so far {model.__dict__.get('_nana',0)}" if float(getattr(cfg,'inf_rem_ana_dream',0.0))>0 else "")+(f", LLM-JEPA term x{float(getattr(cfg,'inf_cons_jepa',0.0)):g} on {len(JP9_)} premise pairs: 1-cos {JL9_[0]:.3f} -> {np.mean(JL9_[-5:]):.3f}" if JL9_ else "")+(f", old-domain fact rows as targets so far {model.__dict__.get('_noldf',0)}" if float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0 else "")+(f", varied restatements so far {model.__dict__.get('_nvary',0)}" if int(getattr(cfg,'inf_cons_vary',0)) else "")+f") + {ka_} anchor rows/step | "
-                  f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}"+pt9_,flush=True)
+                  f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}"+pt9_
+                  +(f" | PAIR DREAMS so far {model.__dict__.get('_nmixd',0)}, of which in another slot than the row they replace {model.__dict__.get('_nmixf',0)}"+(" -> moved to their own slot" if int(getattr(cfg,'inf_mix_dream_own',0)) else " (trained there)") if model.__dict__.get('_nmixd',0) else ""),flush=True)
             if cap9_>0:                                                         # cg26h: only KEPT rows count as replays (cg26e counted rolled-back rows towards the cap too)
                 if not rb_:
                     vk9_=int(model.__dict__.get('_visit',0))
@@ -511,7 +516,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                 cnt9_={}
             if rb_ and att_<NRT_:                                                   # cg21c: rolled back -> retry from the same snapshot at a lower rate
                 for g_ in op_.param_groups: g_['lr']=g_['lr']/float(getattr(cfg,'inf_cons_retry_div',3.0))
-                op_.state.clear(); ls_=[]; A_[1]-=1; model.__dict__['_nmixd']=nmx0_; continue
+                op_.state.clear(); ls_=[]; A_[1]-=1; model.__dict__['_nmixd']=nmx0_; model.__dict__['_nmixf']=nmf0_; continue
             _INFM.pop('force',None); model.train(wtr_); return r0_
     print(f"  [inference sleep] {int(cfg.inf_steps)} steps at lr x{cfg.inf_lr} on {len(pool_)} conclusions ({kc_} rows/step) + {ka_} kept verified rows/step | "
           f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | held-out BPC visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}",flush=True)

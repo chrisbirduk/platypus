@@ -295,6 +295,7 @@ ORDER = (
     ('heads', 'inferred_logp'),
     ('heads', 'inferred_logp_multi'),
     ('heads', 'bpc_inferred_modes'),
+    ('heads', 'mix_text_eval'),
     ('heads', 'bpc_inferred'),
     ('heads', '_bpc_w0'),
     ('heads', '_tmark'),
