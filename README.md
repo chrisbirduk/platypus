@@ -4,7 +4,7 @@
 
 > Copyright 2026 **CHRISTIAN BIRD**. Licensed under the [Apache License 2.0](#licence).
 
-This is a one-person research project, two months old, run on a single Colab GPU. This README says what the code does and what has been measured, in plain terms. The full record of every build, mechanism, readout and result (136 KB, generated with the help of an AI model, with the caveats that implies) is kept at [`docs/README-full.md`](docs/README-full.md). The results log is [`RESULTS.md`](RESULTS.md).
+This is a personal project: one person's own research, done in spare time over two months on a single Colab GPU, with no institutional affiliation, funding or publication behind it. This README says what the code does and what has been measured, in plain terms. The full record of every build, mechanism, readout and result (136 KB, generated with the help of an AI model, with the caveats that implies) is kept at [`docs/README-full.md`](docs/README-full.md). The results log is [`RESULTS.md`](RESULTS.md).
 
 Current build: **cg27a** (branch `cg27a`). GPU presets: `configs/presets/cg27a.env` (full build, three passes); `configs/presets/cg27a_readouts_pass1.env` (pass 1, every readout - the next GPU run, seed 3).
 
