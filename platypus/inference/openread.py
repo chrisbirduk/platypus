@@ -152,7 +152,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
     def name_pos(pr, A, ps0):
         ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
-    def fit(words, selfc, infow=0.0, items=None, site='answer'):
+    def fit(words, selfc, infow=0.0, items=None, site='answer', cp=None, kall=None):
         """items: (prompt, answer, domain, subject) to fit; by default this sleep's conclusions in each of the given wordings.
         infow > 0: INFORMATION-WEIGHTED answer bytes (as in replay, inf_cons_infow): each byte's loss weighted by its bits under a neutral cue
         (the subject replaced by 'someone'), divided by the mean over the answer and clipped to [0.25, infow].
@@ -164,8 +164,10 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                 pr = prs.encode('latin-1', 'replace'); tg = (Cs + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tg])
                 T1 = X.shape[1] - 1; ps = torch.arange(len(pr) - 1, min(T1, len(pr) + len(tg) - 1), device=X.device)
                 if ps.numel() == 0: continue
-                sl = int(S_slot(dd)); cap_['on'] = True; cap_['k'] = []; _ws_run(model, X, sl); cap_['on'] = False; K1 = cap_['k'][-1][0][ps]
-                nk = cap_['k'][-1][0][name_pos(pr, As, ps[0])]
+                cq = cp if cp is not None else cap_
+                sl = int(S_slot(dd)); cq['on'] = True; cq['k'] = []; _ws_run(model, X, sl); cq['on'] = False; K1 = cq['k'][-1][0][ps]
+                nk = cq['k'][-1][0][name_pos(pr, As, ps[0])]
+                if kall is not None: kall.append(cq['k'][-1][0].float())
                 wb = None
                 if infow > 0:
                     prn = prs.replace(As, 'someone').encode('latin-1', 'replace'); Xn, Mn = _ws_batch(model, [prn + tg]); psn = torch.arange(len(prn) - 1, len(prn) - 1 + len(ps), device=X.device)
@@ -174,17 +176,17 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                         if int(psn[-1]) < lgn.shape[0]:
                             bn = F.cross_entropy(lgn[psn].float(), Xn[0, psn + 1], reduction='none'); wb = (bn / bn.mean().clamp(min=1e-6)).clamp(0.25, infow)
                 pd = torch.tensor([name_pos(pr, As, ps[0])], device=X.device) if site == 'subject' else ps   # where the output change is fitted
-                if site == 'subject': K1 = cap_['k'][-1][0][pd]
+                if site == 'subject': K1 = cq['k'][-1][0][pd]
                 dl = torch.zeros(len(pd), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
                 for s in range(st_ * (2 if site == 'subject' else 1)):
-                    cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(pd), pd), dl)
+                    cq['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(pd), pd), dl)
                     lg = _ws_run(model, X, sl, grad_=True)[0, ps]; ce = F.cross_entropy(lg, yt, reduction='none')
                     l = (ce * wb).mean() if wb is not None else ce.mean(); l = l + 1e-3 * (dl ** 2).sum()
                     if selfc > 0:
                         if comp is None:                                          # the model's own top non-answer byte at each answer position (before fitting)
                             with torch.no_grad(): comp = lg.detach().scatter(1, yt[:, None], -1e9).argmax(1)
                         mg = lg.gather(1, yt[:, None])[:, 0] - lg.gather(1, comp[:, None])[:, 0]; l = l + selfc * F.softplus(-mg).mean()
-                    op.zero_grad(); l.backward(); op.step(); cap_['delta'] = None
+                    op.zero_grad(); l.backward(); op.step(); cq['delta'] = None
                 Ks.append(K1.float()); Rs.append(dl.detach().float()); Ns.append(nk.float()[None].expand(len(pd), -1)); Js.append(torch.arange(len(pd), device=X.device))
         return torch.cat(Ks), torch.cat(Rs), torch.cat(Ns), torch.cat(Js)
     def solve_cfg(K, R):
@@ -195,6 +197,24 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         return ridge(K, R, C0_)
     def ridge(K, R, Cr):
         H = K.shape[1]; return torch.linalg.solve(K.T @ K + lam_ * len(K) * Cr.float() + 1e-4 * torch.eye(H, device=K.device), K.T @ R).T
+    def _rome_shadow(fit, words, ws_self, ridge, measure, lam_):
+        nb = len(model.blocks); lays = sorted({max(0, nb // 4), max(0, nb // 2 - (1 if nb // 2 == nb - 1 else 0))} - {nb - 1})
+        txt = []
+        for li in lays:
+            mo2 = model.blocks[li].mlp_out; W2 = mo2.weight.detach().clone(); cp = {'on': False, 'k': [], 'delta': None}
+            def hook2(m_, inp_, out_, cp=cp):
+                if cp['on']: cp['k'].append(inp_[0].detach().float())
+                if cp['delta'] is not None: return out_ + cp['delta'].to(out_.dtype)
+            hk2 = mo2.register_forward_hook(hook2)
+            try:
+                kall = []; K, R, N, J = fit(words, ws_self, 0.0, None, 'subject', cp, kall)
+                KA = torch.cat(kall); C2 = (KA.T @ KA) / max(1, len(KA)); moved = float(R.norm(dim=1).mean())
+                with torch.no_grad(): mo2.weight.copy_((W2.float() + scale * ridge(K, R, C2).float()).to(W2.dtype))
+                txt.append(f"block {li} of {nb} (fitted output change at the name, mean norm {moved:.3f}): {measure()}")
+            finally:
+                with torch.no_grad(): mo2.weight.copy_(W2)
+                hk2.remove()
+        return f"ROME-STYLE subject-site edit (no oracle, + SELF-CONTRAST x{ws_self:g}) :: " + " :: ".join(txt)
     def measure():
         f_ = lambda w, dec: _ws_twohop(model, cfg, E, Cp_, S_slot, np.random.RandomState(3), w, dec)
         Rf = _tf_items(model, [(_CONC_CF[0].format(A=c['A']), c['C'], S_slot(c['d'])) for c in E])
@@ -280,8 +300,10 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                 if int(m.sum()) >= 2: PR[j] = ridge(N[m], Rr[m], cI)
             put(dWk); out.append(f"own key + NAME x POSITION on the residual{tag}: "
                        f"{measure_nk(lambda nk, n: torch.stack([(PR[j] @ nk) if j in PR else zero for j in range(n)]))}")
-        for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):   # ROME-STYLE: edit at the subject's last byte, a plain weight edit
-            K, R, N, J = fit(words, sc, 0.0, None, 'subject'); put(ridge(K, R, C0_)); out.append(f"ROME-STYLE subject-site edit (no oracle){tag}: {measure()}")
+        # ROME-STYLE: a plain weight edit at the subject's last byte in an EARLIER block's MLP, so later attention can carry it to the answer.
+        # (9 Nov: fitted in the edited block - the last - it could not: nothing after the last MLP moves information between positions, the fit's
+        # gradient was zero and the result equalled 'no edit' exactly. Void, not negative.) Key covariance of that block from the fitting texts.
+        put(torch.zeros_like(W0_, dtype=torch.float32)); out.append(_rome_shadow(fit, words, ws_self, ridge, measure, lam_))   # edited block back at the pre-edit weights
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
