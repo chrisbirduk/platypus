@@ -367,6 +367,8 @@ def run(cfg):
                 b.unit_usage.zero_(); b.mlp_usage.zero_()
         end_pass=(vi%NDOM==NDOM-1)
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
+        from platypus.inference.readouts import _gpu_mem_line                   # 9 Nov: where GPU memory goes outside PyTorch's allocator (a leak of ~78 GiB by the end)
+        _gpu_mem_line(f"visit {vi+1}")
         if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:                 # OPEN-ENDED READOUTS: why held-out wordings fail open-ended; rung 3 keys at pass ends
             from platypus.inference.openread import open_diag
             open_diag(model,cfg,_inf_store(model),_S,f"visit {vi+1}",keys=end_pass)

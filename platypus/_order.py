@@ -557,6 +557,7 @@ ORDER = (
     ('inference.readouts', '_inf_lm_probe'),
     ('inference.readouts', '_inf_lm_recall'),
     ('inference.readouts', '_inf_variant_readout'),
+    ('inference.readouts', '_gpu_mem_line'),
     ('inference.readouts', '_gpu_mem_report'),
     ('inference.readouts', '_inf_cls_probe'),
     ('inference.readouts', '_inf_ceiling'),

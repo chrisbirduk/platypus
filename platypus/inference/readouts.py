@@ -133,6 +133,21 @@ def _inf_variant_readout(model,cfg):
     if va_:
         fv_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in va_]); fn_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in no_]) if no_ else float('nan')
         print(f"  [inference VARIANT BRIDGES] chains whose bridge is spelled differently in its two facts: concluded {fv_:.2f} (n {len(va_)}) | ordinary two-hop chains concluded {fn_:.2f} (n {len(no_)})",flush=True)
+def _gpu_mem_line(tag):
+    """9 Nov GPU MEMORY GAP (one line, every visit): memory the driver reports as used against what PyTorch's caching allocator holds; the gap is
+    memory held outside the allocator in this process (CUDA graph pools, other libraries) or by other processes (per-process use from nvidia-smi)"""
+    if not torch.cuda.is_available(): return
+    try:
+        fr_,to_=torch.cuda.mem_get_info(); used_=(to_-fr_)/2**30; rv_=torch.cuda.memory_reserved()/2**30; al_=torch.cuda.memory_allocated()/2**30
+        st_=torch.cuda.memory_stats(); nseg_=int(st_.get('segment.all.current',0)); pk_=torch.cuda.max_memory_reserved()/2**30
+        try:
+            import subprocess as _sp9
+            q_=_sp9.run(['nvidia-smi','--query-compute-apps=pid,used_memory','--format=csv,noheader,nounits'],capture_output=True,text=True,timeout=10).stdout.strip()
+            procs_=', '.join(f"pid {l_.split(',')[0].strip()} {float(l_.split(',')[1])/1024:.1f} GiB" for l_ in q_.splitlines() if ',' in l_) or 'none listed'
+        except Exception: procs_='nvidia-smi unavailable'
+        print(f"  [GPU MEMORY GAP | {tag}] driver used {used_:.1f} of {to_/2**30:.1f} GiB | PyTorch reserved {rv_:.1f} (allocated {al_:.1f}, peak reserved {pk_:.1f}, "
+              f"{nseg_} segments) | OUTSIDE PyTorch {used_-rv_:.1f} GiB | processes: {procs_} | this pid {__import__('os').getpid()}",flush=True)
+    except Exception as e_: _fail('inference.readouts:gap'); print(f"  [GPU MEMORY GAP | {tag}] unavailable ({type(e_).__name__})",flush=True)
 def _gpu_mem_report(tag):
     """cg26q GPU MEMORY: what is still allocated before the heavy end-of-run readouts (two of them ran out of memory on the GPU with about 80 GiB
     held), grouped by tensor shape; tensors under 64 MiB are left out"""
@@ -147,6 +162,7 @@ def _gpu_mem_report(tag):
                     if n_>=2**26: k_=(tuple(o_.shape),str(o_.dtype).replace('torch.','')); v_=big_.setdefault(k_,[0,0]); v_[0]+=1; v_[1]+=n_
             except Exception: pass
         top_=sorted(big_.items(),key=lambda kv_:-kv_[1][1])[:10]
+        _gpu_mem_line(tag)
         print(f"  [GPU MEMORY | {tag}] allocated {al_:.1f} GiB, reserved {rv_:.1f} GiB | largest live tensors (count x shape dtype: GiB): "
               +" | ".join(f"{v_[0]} x {list(k_[0])} {k_[1]}: {v_[1]/2**30:.2f}" for k_,v_ in top_),flush=True)
     except Exception as e_: _fail('inference.readouts:151'); print(f"  [GPU MEMORY | {tag}] unavailable ({type(e_).__name__})",flush=True)
