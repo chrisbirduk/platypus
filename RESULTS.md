@@ -26,7 +26,7 @@ recall as subject enrichment at the subject positions, then attribute extraction
 keyed at the question end (ROME's "late site"), which explains its weak transfer; the name channel finds ROME's site independently in a
 byte-level model trained from scratch. What differs: in a pretrained model attention carries the attribute to the answer, so a subject edit
 suffices; the name-addressed binding memory writes each answer byte directly, which suggests the young trunk lacks that extraction path. The
-ROME-style shadow edit (subject-site, a plain weight edit, no oracle positions; seed-2 GPU run) tests whether it does.
+ROME-style shadow edit (subject-site, a plain weight edit, no oracle positions) tests whether it does. Its first version (in the seed-2 GPU run, code before `a8b7b5f`) is void: it edited the last block, after which nothing moves information between positions, so it equalled 'no edit' exactly. Moved to earlier blocks; local run pending.
 
 **Becomes a model result when** the memory fires on its own: a subject register (the most recent name-like span) and an answer-slot
 detector ("the next bytes are an object"). The slot signal is what rung 1's code should supply and does not yet (frame-dependent: matches
