@@ -165,8 +165,14 @@ def _inf_eval1(model,cfg,S_,tag):
             if sn9_ is None or sn9_[0]!=len(S_.get('it',[])):
                 st9n_=set(inv_)
                 for x9_ in S_.get('it',[]):
-                    for w9_ in __import__("re").findall(rb"[A-Z][a-z]{2,}",x9_['s'] if isinstance(x9_['s'],(bytes,bytearray)) else str(x9_['s']).encode('latin-1','replace')): st9n_.add(bytes(w9_))
+                    s9b_=x9_['s']                                               # stored text may be bytes, a str, or an array / tensor of byte values (GPU, 9 Nov:
+                    if hasattr(s9b_,'tolist') and not isinstance(s9b_,(bytes,bytearray)): s9b_=bytes(int(v9_)&255 for v9_ in s9b_.tolist())   #   str() of an array found no names)
+                    elif isinstance(s9b_,str): s9b_=s9b_.encode('latin-1','replace')
+                    elif not isinstance(s9b_,(bytes,bytearray)): s9b_=bytes(s9b_)
+                    for w9_ in __import__("re").findall(rb"[A-Z][a-z]{2,}",bytes(s9b_)): st9n_.add(bytes(w9_))
                 sn9_=(len(S_.get('it',[])),sorted(st9n_)); S_['_seen_names']=sn9_
+                print(f"  [KNOWN-NAME INVENTORY] {len(inv_)} names from the store's name table + capitalised words of {len(S_.get('it',[]))} stored sentences "
+                      f"({sum(1 for x9_ in S_.get('it',[]) if x9_.get('k')=='real')} real) = {len(sn9_[1])} names",flush=True)
             inv_=list(sn9_[1])
         if not inv_: _TRIE_ST.update(n=0); return [0]*len(prompts)
         nxt_={}; full_=set(inv_)
