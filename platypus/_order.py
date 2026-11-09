@@ -682,6 +682,7 @@ ORDER = (
     ('inference.slowhead', '_centre'),
     ('inference.slowhead', 'slow_update'),
     ('inference.slowhead', '_sent_update'),
+    ('inference.slowhead', '_alt_update'),
     ('inference.slowhead', '_pooled'),
     ('inference.slowhead', 'slow_codes'),
     ('inference.bankdrift', '_bk_spearman'),
