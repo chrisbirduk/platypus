@@ -6,7 +6,7 @@
 
 This is a one-person research project, two months old, run on a single Colab GPU. This README says what the code does and what has been measured, in plain terms. The full record of every build, mechanism, readout and result (136 KB, generated with the help of an AI model, with the caveats that implies) is kept at [`docs/README-full.md`](docs/README-full.md). The results log is [`RESULTS.md`](RESULTS.md).
 
-Current build: **cg27a** (branch `cg27a`). GPU preset: `configs/presets/cg27a.env`.
+Current build: **cg27a** (branch `cg27a`). GPU presets: `configs/presets/cg27a.env` (full build, three passes); `configs/presets/cg27a_readouts_pass1.env` (pass 1, every readout - the next GPU run, seed 3).
 
 ---
 
@@ -21,27 +21,30 @@ A 171M-parameter language model (byte vocabulary, hashed 2/3/4-gram embeddings, 
 - **Not a system that learns from real text.** Every recall, abstention, revision and consolidation figure in this repository is on planted template sentences. On 262 Re-DocRED Wikipedia paragraphs the reader's entity precision is 0.49 and its relation pairs are gold at the rate of chance (0.28 vs 0.29). The trunk shows no relational signal on those pairs either (AUC 0.45–0.50). See `tools/redocred_reader_test.py`.
 - **Not a model that composes facts in its weights.** Given both premises of a chain and no written conclusion, two-hop recall from the weights is 0 of 11 locally and 0.17 on the GPU (0.95 with the premises in context). Open-ended production of a held-out-wording two-hop answer from the weights alone is 0.00 in the configured build (0.04 in shadow experiments).
 - **Not continual learning without access to the data.** The "closed loop" (passes 2 and 3) still draws the real training batch at every step. The real-text cross-entropy is multiplied by zero; the batch is instead encoded by a frozen copy of the model into per-token key/value traces, decoded back to bytes, checked for consistency with the trace, and the decoded bytes train the student. The fast store reads the raw batch directly (`cd_store_text`). With `PLATYPUS_HINTS=1` (the default) 2–8% of the true bytes are also stored and forced. The traces for an 8-byte segment are per-token vectors of width 1088 across three blocks: far larger than the bytes they encode.
-- **Not benchmarked.** There is no fine-tuning, EWC or replay baseline run under the same conditions, no public benchmark result, and no second GPU seed for any headline number. Local results differing by less than about 0.15 in recall or 0.017 in BPC are seed noise.
+- **Not benchmarked.** There is no fine-tuning, EWC or replay baseline run under the same conditions and no public benchmark result. Pass-1 headlines now have two GPU seeds (1 and 2, 9 November); the three-pass numbers have one. Local results differing by less than about 0.15 in recall or 0.017 in BPC are seed noise.
 - **Not a trained hippocampus.** The fast store is a dictionary: a regex (or the "two rarest words" rule) finds a name, the name selects a bank of rows, and the rows add corrections to the output logits. "Exact recall" and "abstention on unknown names" are properties of a lookup table.
 
 ## What has been measured
 
-All GPU figures: one seed (1), Colab, unless stated. "From the weights" means fast store off. "Held-out wording" means a question template that is never written anywhere by the system. Multiple choice is among 10 or 20 candidate names as stated.
+All GPU figures: Colab, pass 1, seeds 1 and 2 where two values are given (seed 1 first), otherwise seed 1. "From the weights" means fast store off. "Held-out wording" means a question template that is never written anywhere by the system. Multiple choice is among 10 or 20 candidate names as stated.
 
 | Measurement | Result | Conditions | What it does not show |
 |---|---|---|---|
-| Mean BPC after pass 1, weights only, domain known | 1.743 | GPU, seed 1 (store on: 1.744) | Pass 2–3 forgetting rose to +0.06–0.08 in earlier builds; no baseline run |
-| Forgetting after pass 1 (mean rise in old-domain BPC) | +0.002 | GPU, seed 1, domain known | Measured with the per-domain private parts on; switching them off costs +0.14 BPC |
-| Label-free BPC (domain inferred from the text) | 1.721 | GPU; +0.013 over domain-known locally | Routing relies on a cap of one slot per domain and a "not the last slot" rule |
+| Mean BPC after pass 1, weights only, domain known | 1.743 / 1.725 | GPU (store on: 1.744 / 1.725). From build `f10d4ef` the run ends with a `HEADLINE WEIGHTS ONLY (fast store off)` line | Pass 2–3 forgetting rose to +0.06–0.08 in earlier builds; no baseline run |
+| Forgetting after pass 1 (mean rise in old-domain BPC) | +0.012 / +0.006 | GPU, domain known, self-contrast build (label-free: -0.002 / -0.006) | Measured with the per-domain private parts on; switching them off costs +0.14 BPC |
+| Label-free BPC (domain inferred from the text) | 1.731 / 1.712 | GPU, self-contrast build; +0.013 over domain-known locally | Routing relies on a cap of one slot per domain and a "not the last slot" rule |
 | Two-hop recall with the fast store, written wording | 0.97–0.99 | GPU, planted facts, 30 copies each | A lookup over regex-extracted triples |
-| Two-hop from the weights, written wording, 20 candidates | 0.53 | GPU, visit 9 | Open-ended (no candidates): 0.23 |
-| Two-hop from the weights, held-out wording, 20 candidates | 0.29 (0.39 in one run) vs 0.21 without the write side | GPU, visit 9–10, one seed per arm | Open-ended held-out: 0.00 |
+| Two-hop from the weights, written wording, 20 candidates | 0.71 / 0.70 | GPU, end of pass 1, self-contrast build | Open-ended (no candidates): 0.54 / 0.45 |
+| Two-hop from the weights, held-out wording, 20 candidates | 0.40 / 0.33 vs 0.21-0.22 without the write side | GPU, end of pass 1 | Open-ended held-out: 0.02 / 0.00 |
 | Open-ended recall from the weights, fitted wording, edited conclusions only | 0.62 vs 0.20 without self-contrast | GPU, shadow edits, slot given, 74 conclusions | Shadow measurement, not the configured build; one seed |
-| Temporal gradient: store-lesioned two-hop, old vs recent conclusions | 0.91 (n 47) vs 0.50 (n 20) | GPU, two near-identical runs of one seed | Age is confounded with number of replays and re-solves; the exposure control has not run |
+| Temporal gradient: store-lesioned two-hop, old vs recent conclusions | 0.87–0.91 vs 0.51–0.59 (seed 1, three runs); 0.91 vs 0.53 (seed 2) | GPU. Seed 2 by exposure: never-edited conclusions 0.78 (older) vs 0.50 (recent); three or more sleeps in the edit 0.96 | Age still confounded with the number of replays (not yet split) |
 | Release/reinstate protocol | 193 released, 10 restored | GPU, one seed, written wordings only | In pass 2 of an earlier build a third of released memories had to be restored |
 | Verified replay, no hints | 0.87–0.99 of 8-byte segments rebuilt exactly | GPU (locally 0–1%) | Costs ~0.04 BPC per pass vs hinted; traces are larger than the text |
 | JEPA dream selector vs random pairs | 20–40% of chosen pairs share a gold link vs ~1% random | Measured with benchmark-entity cues (now off) | Not yet shown to improve recall or forgetting over random dreams; the control run is pending |
 | Reader on real prose (Re-DocRED) | entity precision 0.49, pair precision 0.28 (chance 0.29) | offline, 262 paragraphs | — |
+| The trunk's state over a subject's name finds that subject's conclusion from a held-out question | 0.97 / 0.98 (ceiling 0.98) | GPU, readout; the edit's own key: 0.20–0.53 | Finding the fact, not producing the answer |
+| A ROME-style weight edit at the subject reaches the answer | No: equals no edit in every sleep (GPU and local); the best change at the name buys ~0.2–0.3 bits per answer byte | Shadow readout | The trunk has no path from subject to answer; facts planted in one template are the likely cause, untested |
+| Name-keyed memory with a learned answer-slot gate, no hint where the answer starts | first answer byte 0.07–0.25 (told the slot: 0.10–0.38); open-ended 0.06–0.09 in three of six sleeps | Local, two seeds, readout | Far below the fast store (0.97 in unseen wordings); parked as a readout |
 
 Earlier builds reported higher numbers measured with the domain label given, with summed byte scores that favour short names, with oracle options on, or on training text in the local harness. Those were corrected in `eval-fix` (8 November) and a second review (9 November); see [`docs/README-full.md`](docs/README-full.md#known-issues-and-their-fixes-8-november-2026-fixed-in-eval-fix-and-carried-into-cg27a).
 
@@ -69,8 +72,8 @@ None of these is a research result; each is a careful implementation of 2017–2
 
 1. Does anything here beat a plain fine-tuning baseline, EWC, or stored-example replay on the same ten-domain schedule? Not yet run.
 2. Do JEPA-chosen dreams beat random dreams on recall or forgetting? Control pending.
-3. Does the temporal gradient survive an exposure-matched control and a second seed?
-4. Can the weights answer in a wording they were never taught, open-ended, above 0.00? The name-keyed binding-memory experiment in `RESULTS.md` (0.15 in shadow with oracle answer positions) is the only lead.
+3. Is the temporal gradient consolidation or replay count? It holds on a second seed and among never-edited conclusions; replays per conclusion are not yet counted.
+4. Can the weights answer in a wording they were never taught, open-ended, above 0.00? Leads in `RESULTS.md`: a name-keyed memory (shadow, 0.15 with oracle answer positions; 0.06–0.09 locally with a learned gate). Ruled out: a ROME-style subject edit, and replaying facts in varied wrappers. Next: edits fitted with system-written question forms.
 5. Can any reader extract relations from real prose above chance? Until it can, nothing downstream applies to real text.
 6. Does the closed loop work with the training batch removed — traces from pass 1 only, no `cd_store_text`, no hints, store off for BPC? That experiment is not implemented.
 
