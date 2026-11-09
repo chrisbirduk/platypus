@@ -70,8 +70,9 @@ def _phase_wrap(on_):
             try: return f_(*a_,**k_)
             finally: depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
         return w_
+    called_=set(g_['_inf_sleep_body'].__code__.co_names)|set(g_['inf_sleep'].__code__.co_names)   # only what the sleep calls by name (also right in a single-file build)
     for nm_,f_ in list(g_.items()):
-        if isinstance(f_,_ty.FunctionType) and nm_ not in ('inf_sleep','_inf_sleep_body','_phase_wrap','_phase_report') and not nm_.startswith('__'):
+        if nm_ in called_ and isinstance(f_,_ty.FunctionType) and nm_ not in ('inf_sleep','_inf_sleep_body','_phase_wrap','_phase_report') and not nm_.startswith('__'):
             orig_[nm_]=f_; g_[nm_]=mk_(nm_,f_)
     return orig_
 def _phase_report(orig_,tt_):

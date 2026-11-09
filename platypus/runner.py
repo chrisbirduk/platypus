@@ -369,6 +369,9 @@ def run(cfg):
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
         from platypus.inference.readouts import _gpu_mem_line                   # 9 Nov: where GPU memory goes outside PyTorch's allocator (a leak of ~78 GiB by the end)
         _gpu_mem_line(f"visit {vi+1}")
+        if int(getattr(cfg,'sticky_router_eval',0)) and end_pass:              # 9 Nov STICKY ROUTING on mixed held-out streams, with the rule cascade's signals as gates (readout)
+            from platypus.inference.sticky import sticky_router_readout
+            sticky_router_readout(model,cfg,lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(seen_d)),_S,f"visit {vi+1}")
         if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:                 # OPEN-ENDED READOUTS: why held-out wordings fail open-ended; rung 3 keys at pass ends
             from platypus.inference.openread import open_diag
             open_diag(model,cfg,_inf_store(model),_S,f"visit {vi+1}",keys=end_pass)
@@ -527,6 +530,10 @@ def run(cfg):
         grad_readout(model,cfg,vals,sorted(set(schedule)),_S,"END OF RUN")
     _pf9=__import__('sys').modules.get('platypus.profiling')
     if _pf9 is not None: _pf9._ft_total()
+    dc9_=model.__dict__.pop('_deferred_ceiling',None)                           # 9 Nov: the composition-ceiling tests run LAST (they can fill the GPU)
+    if dc9_ is not None:
+        try: dc9_()
+        except Exception as e9_: print(f"  [inference CEILING] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     print(f"\nMEAN FORGETTING: {mf:+.3f} | MEAN FINAL BPC: {mb:.3f}")
     _F9=__import__('platypus.common',fromlist=['_FAILS'])._FAILS                  # issue #28: every print-and-continue handler that fired during the run
     if _F9:
