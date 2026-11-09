@@ -162,7 +162,7 @@ def _inf_eval1(model,cfg,S_,tag):
         inv_=[n_ for n_ in (_INFM.get('names') or {}) if n_ and all(65<=b_<=90 or 97<=b_<=122 for b_ in n_)]
         if str(getattr(cfg,'inf_eval_trie_inv','store'))=='seen':              # OPEN READOUT (1): every capitalised word of the stored sentences (all text seen and kept), not
             sn9_=S_.get('_seen_names')                                          #   only the fast store's names; probe truth is never added
-            if sn9_ is None or sn9_[0]!=len(S_.get('it',[])):
+            if sn9_ is None or sn9_[0]!=(len(S_.get('it',[])),int(S_.get('nwin',0))):     # rebuilt whenever the store has read more (its length alone can stay put)
                 st9n_=set(inv_)
                 for x9_ in S_.get('it',[]):
                     s9b_=x9_['s']                                               # stored text may be bytes, a str, or an array / tensor of byte values (GPU, 9 Nov:
@@ -170,7 +170,7 @@ def _inf_eval1(model,cfg,S_,tag):
                     elif isinstance(s9b_,str): s9b_=s9b_.encode('latin-1','replace')
                     elif not isinstance(s9b_,(bytes,bytearray)): s9b_=bytes(s9b_)
                     for w9_ in __import__("re").findall(rb"[A-Z][a-z]{2,}",bytes(s9b_)): st9n_.add(bytes(w9_))
-                sn9_=(len(S_.get('it',[])),sorted(st9n_)); S_['_seen_names']=sn9_
+                sn9_=((len(S_.get('it',[])),int(S_.get('nwin',0))),sorted(st9n_)); S_['_seen_names']=sn9_
                 print(f"  [KNOWN-NAME INVENTORY] {len(inv_)} names from the store's name table + capitalised words of {len(S_.get('it',[]))} stored sentences "
                       f"({sum(1 for x9_ in S_.get('it',[]) if x9_.get('k')=='real')} real) = {len(sn9_[1])} names",flush=True)
             inv_=list(sn9_[1])

@@ -55,9 +55,11 @@
  "inf_open_diag": 1,
  "_inf_open_diag": "per visit: teacher-forced open-ended diagnostic (open hit, answer bytes top-1, first-byte rank, bits behind, winner a letter) for the fitted, other written and held-out wordings; at pass ends and the end, RUNG 3 KEYS (held-out question -> own conclusion by nearest fitted key)",
  "inf_cf_shadow": 1,
- "_inf_cf_shadow": "on: NAME-KEYED shadow edits (own key vs [own ; name], name only, NAME x POSITION, own + NAME x POSITION on the residual), each with and without self-contrast, applied alone to the pre-edit weights and removed (readout only)",
+ "_inf_cf_shadow": "on: shadow edits - NAME-KEYED variants incl. NAME x POSITION, ROME-STYLE subject-site edit (a plain weight edit, no oracle positions), information-weighted fits, SOURCE FACTS; each applied alone and removed (readout only)",
  "inf_eval_trie_inv": "seen",
  "_inf_eval_trie_inv": "known-name decoding over every capitalised word of the stored sentences (local: 5067 names, target always present) instead of the fast store's names",
  "inf_cf_selfc": 1.0,
- "_inf_cf_selfc": "self-contrast in the closed-form edit: every answer byte must beat the model's own top non-answer byte (fixed from the unedited model), beside competitor contrast; GPU shadow edits (3 sleeps, 42 conclusions): fitted open 0.17 -> 0.57, held-out MC 0.48 -> 0.65, held-out answer bytes top-1 0.66 -> 0.80, held-out open 0/84 -> 6/84 (shadow without competitor contrast); local: no change (2 seeds)"
+ "_inf_cf_selfc": "self-contrast in the closed-form edit: every answer byte must beat the model's own top non-answer byte (fixed from the unedited model), beside competitor contrast; GPU shadow edits (3 sleeps, 42 conclusions): fitted open 0.17 -> 0.57, held-out MC 0.48 -> 0.65, held-out answer bytes top-1 0.66 -> 0.80, held-out open 0/84 -> 6/84 (shadow without competitor contrast); local: no change (2 seeds)",
+ "inf_latent_judge": 1,
+ "_inf_latent_judge": "LATENT JUDGE readout in sleep: slow-feature cosine on the pairs the byte judge tests (AUC vs controls / random, cost per pair); the byte judge still decides"
 }

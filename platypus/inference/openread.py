@@ -152,10 +152,12 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
     def name_pos(pr, A, ps0):
         ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
-    def fit(words, selfc, infow=0.0, items=None):
+    def fit(words, selfc, infow=0.0, items=None, site='answer'):
         """items: (prompt, answer, domain, subject) to fit; by default this sleep's conclusions in each of the given wordings.
         infow > 0: INFORMATION-WEIGHTED answer bytes (as in replay, inf_cons_infow): each byte's loss weighted by its bits under a neutral cue
-        (the subject replaced by 'someone'), divided by the mean over the answer and clipped to [0.25, infow]"""
+        (the subject replaced by 'someone'), divided by the mean over the answer and clipped to [0.25, infow].
+        site 'subject' (ROME-style, Meng et al. 2022): the output change is fitted at the subject name's LAST BYTE only, keyed by the layer's
+        input there, and must reach the answer through the trunk's own attention; solved, it is a plain weight edit (no oracle positions)"""
         Ks, Rs, Ns, Js = [], [], [], []
         its = items if items is not None else [(w.format(A=c['A']), c['C'], c['d'], c['A']) for c in E for w in words]
         for prs, Cs, dd, As in its:
@@ -171,9 +173,11 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                         lgn = _ws_run(model, Xn, sl)[0]
                         if int(psn[-1]) < lgn.shape[0]:
                             bn = F.cross_entropy(lgn[psn].float(), Xn[0, psn + 1], reduction='none'); wb = (bn / bn.mean().clamp(min=1e-6)).clamp(0.25, infow)
-                dl = torch.zeros(len(ps), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
-                for s in range(st_):
-                    cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(ps), ps), dl)
+                pd = torch.tensor([name_pos(pr, As, ps[0])], device=X.device) if site == 'subject' else ps   # where the output change is fitted
+                if site == 'subject': K1 = cap_['k'][-1][0][pd]
+                dl = torch.zeros(len(pd), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
+                for s in range(st_ * (2 if site == 'subject' else 1)):
+                    cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(pd), pd), dl)
                     lg = _ws_run(model, X, sl, grad_=True)[0, ps]; ce = F.cross_entropy(lg, yt, reduction='none')
                     l = (ce * wb).mean() if wb is not None else ce.mean(); l = l + 1e-3 * (dl ** 2).sum()
                     if selfc > 0:
@@ -181,7 +185,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                             with torch.no_grad(): comp = lg.detach().scatter(1, yt[:, None], -1e9).argmax(1)
                         mg = lg.gather(1, yt[:, None])[:, 0] - lg.gather(1, comp[:, None])[:, 0]; l = l + selfc * F.softplus(-mg).mean()
                     op.zero_grad(); l.backward(); op.step(); cap_['delta'] = None
-                Ks.append(K1.float()); Rs.append(dl.detach().float()); Ns.append(nk.float()[None].expand(len(ps), -1)); Js.append(torch.arange(len(ps), device=X.device))
+                Ks.append(K1.float()); Rs.append(dl.detach().float()); Ns.append(nk.float()[None].expand(len(pd), -1)); Js.append(torch.arange(len(pd), device=X.device))
         return torch.cat(Ks), torch.cat(Rs), torch.cat(Ns), torch.cat(Js)
     def solve_cfg(K, R):
         H = K.shape[1]
@@ -272,6 +276,8 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                 if int(m.sum()) >= 2: PR[j] = ridge(N[m], Rr[m], cI)
             put(dWk); out.append(f"own key + NAME x POSITION on the residual{tag}: "
                        f"{measure_nk(lambda nk, n: torch.stack([(PR[j] @ nk) if j in PR else zero for j in range(n)]))}")
+        for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):   # ROME-STYLE: edit at the subject's last byte, a plain weight edit
+            K, R, N, J = fit(words, sc, 0.0, None, 'subject'); put(ridge(K, R, C0_)); out.append(f"ROME-STYLE subject-site edit (no oracle){tag}: {measure()}")
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")

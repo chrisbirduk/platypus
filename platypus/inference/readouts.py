@@ -187,6 +187,17 @@ def _inf_cls_probe(model,cfg):
         for c_,k_ in found_: grp_['OLDER' if k_.get('v',0)<=md_ else 'RECENT'].append((f"So {c_['names'][0]} is connected to ",cands(c_),slot_(c_)))
         seg_=[f"{g_} (n {len(it_)}): store ON {acc(it_,True):.2f}, store OFF (lesion) {acc(it_,False):.2f}" for g_,it_ in grp_.items()]
         print(f"  [inference CLS PROBES | LESION BY AGE] two-hop on chains the system concluded, split at conclusion visit {md_:.0f}: "+" | ".join(seg_),flush=True)
+        try:                                                                    # 9 Nov EXPOSURE CONTROL: age is confounded with how often a conclusion was consolidated;
+            vn_=int(model.__dict__.get('_visit',0)); g2_={}                     #   split by edited / not edited within each age group, and by sleeps in the edit
+            for c_,k_ in found_:
+                it9_=(f"So {c_['names'][0]} is connected to ",cands(c_),slot_(c_)); ag_='OLDER' if k_.get('v',0)<=md_ else 'RECENT'
+                ed_=k_.get('cfe') is not None; ns_=(vn_-int(k_['cfe'])+1) if ed_ else 0
+                g2_.setdefault((ag_,'edited' if ed_ else 'not edited'),[]).append(it9_)
+                g2_.setdefault(('sleeps in the edit', '0' if ns_<=0 else ('1-2' if ns_<=2 else '3+')),[]).append(it9_)
+            seg2_=[f"{a9_} {b9_} (n {len(it_)}): store OFF {acc(it_,False):.2f}" for (a9_,b9_),it_ in sorted(g2_.items())]
+            print(f"  [inference CLS PROBES | LESION BY EXPOSURE] the same chains, store OFF, by age x edited and by sleeps since first edited (the edit is re-solved "
+                  f"every sleep): "+" | ".join(seg2_),flush=True)
+        except Exception as e9_: _fail('inference.readouts:exposure'); print(f"  [inference CLS PROBES | LESION BY EXPOSURE] unavailable ({type(e9_).__name__})",flush=True)
     dmg_={'intact':lambda n_: n_,'last letter dropped':lambda n_: n_[:-1],'inner letters swapped':lambda n_: n_[0]+n_[2]+n_[1]+n_[3:] if len(n_)>3 else n_,'lower-cased':lambda n_: n_.lower()}
     pc_=[]
     for k0_,f_ in dmg_.items():
