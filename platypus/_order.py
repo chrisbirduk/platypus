@@ -696,6 +696,7 @@ ORDER = (
     ('inference.latentjudge', 'latent_prefilter'),
     ('inference.latentjudge', 'latent_prefilter_report'),
     ('inference.latentjudge', '_latent_judge'),
+    ('inference.latentjudge', '_truth_and_hard'),
     ('inference.openread', '_isl'),
     ('inference.openread', '_tf_items'),
     ('inference.openread', '_summ'),

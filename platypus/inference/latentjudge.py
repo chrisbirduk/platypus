@@ -110,5 +110,76 @@ def _latent_judge(model, cfg, S_, G_, T_, thr_, byte_secs):
               f"PROPOSALS: latent AUC for the byte judge's accept vs reject {_auc(pick(sim, acc), pick(sim, rej)):.2f}, rank correlation with the byte margin "
               f"{_rho(pick(sim, prp), pick(mg, prp)):+.2f} | COST per pair: byte judge {per_byte * 1000:.1f} ms, latent {per_lat * 1000:.2f} ms "
               f"(+ SFA refit {tfit:.1f} s per sleep)", flush=True)
+        try: _truth_and_hard(model, cfg, S_, G, T_, thr_, sim, mg, src, prp, ctl, rnd, rare, mu, P, vis)
+        except Exception as e2: _fail('inference.latentjudge:truth'); print(f"  [LATENT JUDGE | TRUTH] unavailable ({type(e2).__name__}: {e2})"[:240], flush=True)
     except Exception as e:
         _fail('inference.latentjudge'); print(f"  [LATENT JUDGE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _truth_and_hard(model, cfg, S_, G, T_, thr_, sim, mg, src, prp, ctl, rnd, rare, mu, P, vis):
+    """(1) TRUTH (9 Nov; the planted chains are used to SCORE only, never to decide): a proposal whose two sentences hold the two facts of one
+    planted chain (A and B in one, B and C in the other) is a true link; a proposal whose sentences both hold planted names but no such pair is
+    false; others are unlabelled. Reported for the byte judge as it decided, the latent judge at the same number of accepts, and both (z-scores
+    summed, same number): precision and recall of the accepts, AUC of each score for true vs false.
+    (2) HARD CONTROLS (latent only; the byte judge is not re-run): the known-linked controls with the shared rare name replaced by 'the person'
+    in the second sentence, against random pairs; and the controls against SAME-DOMAIN TOPIC PAIRS (two stored sentences of one domain sharing
+    2+ lower-case content words and no name-like word) - unlinked pairs that look alike."""
+    import re
+    from platypus.inference.selcmp import _codes
+    from platypus.inference.probes import inf_probes
+    ch = [c for c in inf_probes(cfg) if len(c.get('names', [])) >= 3]
+    hops = [(c['names'][i].encode('latin-1', 'replace'), c['names'][i + 1].encode('latin-1', 'replace'), c['names'][i + 2].encode('latin-1', 'replace')) for c in ch for i in range(len(c['names']) - 2)]
+    allnm = {n.encode('latin-1', 'replace') for c in ch for n in c['names']}
+    def tb(t):
+        b = T_(t); return bytes(b) if not isinstance(b, (bytes, bytearray)) else bytes(b)
+    def words(b): return set(re.findall(rb"[A-Z][a-z]+", b))
+    lab = {}
+    for j in prp:
+        wa, wb = words(tb(G[j][0])), words(tb(G[j][1]))
+        if not (wa & allnm and wb & allnm): continue
+        tru = any(({A, B} <= wa and {B, C} <= wb) or ({A, B} <= wb and {B, C} <= wa) for A, B, C in hops)
+        lab[j] = tru
+    L = sorted(lab); yt = [lab[j] for j in L]; ntr = sum(yt); nfa = len(yt) - ntr
+    out = f"  [LATENT JUDGE | TRUTH | visit {vis + 1}] {len(L)} of {len(prp)} proposals between planted facts ({ntr} true links, {nfa} not)"
+    if ntr >= 2 and nfa >= 2:
+        sm = np.array([sim[j] for j in L]); mm = np.array([mg[j] for j in L]); y = np.array(yt)
+        acc_b = mm >= thr_; k = int(acc_b.sum())
+        def pr(sel): tp = int((sel & y).sum()); return (tp / max(1, int(sel.sum())), tp / max(1, int(y.sum())))
+        def topk(v): sel = np.zeros(len(v), bool); sel[np.argsort(-v)[:k]] = True; return sel
+        z = lambda v: (v - v.mean()) / (v.std() + 1e-9)
+        pb, rb_ = pr(acc_b); pl, rl = pr(topk(sm) if k else np.zeros(len(sm), bool)); pc, rc = pr(topk(z(sm) + z(mm)) if k else np.zeros(len(sm), bool))
+        out += (f" | byte judge accepts {k}: precision {pb:.2f}, recall {rb_:.2f} | latent, same number: precision {pl:.2f}, recall {rl:.2f} | both (z-sum), "
+                f"same number: precision {pc:.2f}, recall {rc:.2f} | AUC true vs false: byte margin {_auc(mm[y], mm[~y]):.2f}, latent {_auc(sm[y], sm[~y]):.2f}, "
+                f"both {_auc((z(sm) + z(mm))[y], (z(sm) + z(mm))[~y]):.2f}")
+    else: out += " | too few labelled for precision and AUC"
+    print(out, flush=True)
+    # (2) hard controls
+    rs = np.random.RandomState(int(cfg.seed) + 5353 + vis); it = S_['it']
+    def code(txts): return F.normalize((_codes(model, txts).cpu() - mu) @ P, dim=-1)
+    msk = []
+    for j in ctl:
+        a, b = tb(G[j][0]), tb(G[j][1]); sh = rare(G[j][0]) & rare(G[j][1])
+        if not sh: continue
+        for w in sh: b = b.replace(w, b'the person')
+        msk.append((a, b))
+    real = [i for i in range(len(it)) if it[i].get('k') == 'real' and not it[i].get('gone') and 20 <= len(it[i]['s']) <= 300]
+    bydom = {}
+    for i in real: bydom.setdefault(it[i]['d'], []).append(i)
+    cw = lambda b: {w for w in re.findall(rb"\b[a-z]{5,}\b", b)}
+    topic = []
+    for _ in range(4000):
+        if len(topic) >= 64 or not bydom: break
+        d = list(bydom)[rs.randint(len(bydom))]; L9 = bydom[d]
+        if len(L9) < 2: continue
+        i1, i2 = L9[rs.randint(len(L9))], L9[rs.randint(len(L9))]
+        a, b = bytes(it[i1]['s']), bytes(it[i2]['s'])
+        if i1 != i2 and len(cw(a) & cw(b)) >= 2 and not re.search(rb"[A-Z][a-z]{2,}", a[1:]) and not re.search(rb"[A-Z][a-z]{2,}", b[1:]): topic.append((a, b))
+    if len(msk) < 2 or not rnd: print(f"  [LATENT JUDGE | HARD CONTROLS | visit {vis + 1}] skipped ({len(msk)} maskable controls)", flush=True); return
+    def cs(pairs):
+        if not pairs: return []
+        A = code([p[0] for p in pairs]); B = code([p[1] for p in pairs]); return (A * B).sum(-1).tolist()
+    s_ctl = [sim[j] for j in ctl]; s_rnd = [sim[j] for j in rnd]; s_msk = cs(msk); s_top = cs(topic)
+    print(f"  [LATENT JUDGE | HARD CONTROLS | visit {vis + 1}] latent AUC: controls vs random {_auc(s_ctl, s_rnd):.2f} | NAME MASKED controls ({len(s_msk)}, "
+          f"the shared name replaced by 'the person') vs random {_auc(s_msk, s_rnd):.2f} | controls vs SAME-DOMAIN TOPIC PAIRS ({len(s_top)}, 2+ shared content "
+          f"words, no names) {_auc(s_ctl, s_top) if s_top else float('nan'):.2f} | masked controls vs topic pairs {_auc(s_msk, s_top) if s_top else float('nan'):.2f} | "
+          f"shared rare name after masking: 0 by construction", flush=True)
