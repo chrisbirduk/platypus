@@ -210,14 +210,20 @@ def _alt_update(model, cfg, st, Pa, Pb):
                 Y = X @ A['U'].T                                                  # GHA (Sanger): dU = lr (y x^T - LT(y y^T) U)
                 A['U'] = A['U'] + 0.01 * ((Y.T @ X) / len(X) - torch.tril(Y.T @ Y / len(X)) @ A['U'])
                 A['var'] = 0.99 * A['var'] + 0.01 * (Y ** 2).mean(0)
-                Wv = A['U'].T / A['var'].clamp(min=1e-6).sqrt()                   # online whitening, d x kk
+                vf = A['var'].clamp(min=1e-3 * float(A['var'].mean()) + 1e-8)     # 9 Nov: floor the variances (tiny ones blew the whitening up -> NaN at visit 9)
+                Wv = A['U'].T / vf.sqrt()                                         # online whitening, d x kk
                 Du = (xb - xa) @ Wv; Dw = Du.T @ Du / len(Du)                     # covariance of the whitened change
-                A['W'] = A['W'] - 0.05 * (Dw @ A['W'] - A['W'] @ (A['W'].T @ Dw @ A['W']))   # minor components (symmetric Oja, anti-Hebbian)
+                lr = 0.05 / max(1.0, float(Dw.diagonal().sum()) / kk)             # step scaled by the mean eigenvalue (fixed 0.05 diverges when it is large)
+                Wn = A['W'] - lr * (Dw @ A['W'] - A['W'] @ (A['W'].T @ Dw @ A['W']))   # minor components (symmetric Oja, anti-Hebbian)
+                if not bool(torch.isfinite(Wn).all()): A['bad'] = A.get('bad', 0) + 1; continue   # never take a non-finite step
+                A['W'] = Wn
                 if A['n'] % 10 == 0: A['W'] = torch.linalg.qr(A['W'])[0]
             P = (Wv @ A['W']) / A['s']; st['W'].data.copy_(P.to(st['W'].dtype)); st['zoff'] = (A['m'] @ P).detach()
-            sl = float(torch.diag(A['W'].T @ Dw @ A['W']).mean() / 2); st['log'].append((sl * 2, 1.0, 0.0, sl))
+            za = Pa.float() @ P; zb = Pb.float() @ P; zz = torch.cat([za, zb])         # slowness measured on the codes themselves (not trusting the whitening)
+            sl = float(((zb - za).var(0) / (2 * zz.var(0) + 1e-8)).mean()); st['log'].append((sl * 2, 1.0, 0.0, sl))
         if vis != st['vis'] and len(st['log']) >= 5:
-            print(f"  [SLOW HEAD | visit {vis}] rule {st['rule']}: {A['n']} sentence-pair updates | slowness (whitened change / unrelated, latest) {st['log'][-1][3]:.3f}", flush=True)
+            print(f"  [SLOW HEAD | visit {vis}] rule {st['rule']}: {A['n']} sentence-pair updates | slowness (whitened change / unrelated, latest) {st['log'][-1][3]:.3f}"
+                  + (f" | non-finite steps skipped {A.get('bad', 0)}" if st['rule'] == 'twostage' else ""), flush=True)
             st['vis'] = vis
 
 
