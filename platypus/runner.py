@@ -372,9 +372,6 @@ def run(cfg):
         if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:                 # OPEN-ENDED READOUTS: why held-out wordings fail open-ended; rung 3 keys at pass ends
             from platypus.inference.openread import open_diag
             open_diag(model,cfg,_inf_store(model),_S,f"visit {vi+1}",keys=end_pass)
-        if int(getattr(cfg,'bank_drift',0)):                                     # north star TIMESCALE BANK items 2-3 and routing by prototype (readout only)
-            from platypus.inference.bankdrift import bank_drift
-            bank_drift(model,cfg,lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(seen_d)),_S,vi+1,f"visit {vi+1}",summary=end_pass)
         if int(getattr(cfg,'grad_eval',0))>=2 and not (cfg.n_passes>1 and end_pass):   # cg27a GRADUATION SERIES: reliance on the private parts per domain after every visit
             from platypus.inference.residual import grad_readout                  #   (all on vs all off; the full breakdown at pass ends)
             grad_readout(model,cfg,vals,sorted(set(seen_d)),_S,f"visit {vi+1}",lite=True)

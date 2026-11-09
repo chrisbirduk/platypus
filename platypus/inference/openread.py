@@ -18,8 +18,6 @@ import torch
 import torch.nn.functional as F
 from platypus.common import _fail, _CONC_CF, _HO_TWO
 
-_CONC_CF_X = ("{A} can be linked to ", "Starting from {A}, one arrives at ")       # two more WRITTEN wordings for the six-wording shadow edit;
-                                                                                  #   none is a test wording (_HO_TWO, _CF_VARY, reworded/context/pronoun)
 
 
 def _isl(b): return 65 <= b <= 90 or 97 <= b <= 122

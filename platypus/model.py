@@ -27,28 +27,10 @@ from platypus.ngrams import (
 )
 
 
-class CaseEmbed(nn.Module):
-    """CASE-FACTORED INPUT EMBEDDING (case_factor 1): a byte's embedding is its own vector PLUS, for letters, a vector shared by both cases
-    of the letter and a case vector (lower / upper) - so 'c' and 'C' share what is learned about the letter. Bytes stay exact (the own
-    vector is kept); the shared and case vectors start at zero (the model starts as the plain embedding) and use no random numbers."""
-    def __init__(s, E):
-        super().__init__(); s.weight = E.weight; d = E.weight.shape[1]
-        s.letter = nn.Parameter(torch.zeros(27, d)); s.case = nn.Parameter(torch.zeros(3, d))
-        f = torch.zeros(256, dtype=torch.long); c = torch.zeros(256, dtype=torch.long)
-        for b in range(65, 91): f[b] = b - 64; c[b] = 2
-        for b in range(97, 123): f[b] = b - 96; c[b] = 1
-        s.register_buffer('fold', f); s.register_buffer('cas', c)
-    @property
-    def num_embeddings(s): return s.weight.shape[0]
-    @property
-    def embedding_dim(s): return s.weight.shape[1]
-    def forward(s, x):
-        return nn.functional.embedding(x, s.weight) + s.letter[s.fold[x]] + s.case[s.cas[x]]
 class Model(nn.Module):
     def __init__(s,cfg):
         super().__init__(); s.cfg=cfg
         s.embed=nn.Embedding(cfg.vocab,cfg.d_model); s.pos=nn.Embedding(cfg.seq_len,cfg.d_model)
-        if int(getattr(cfg,'case_factor',0)) and int(cfg.vocab)==256: s.embed=CaseEmbed(s.embed)   # case-factored input (off by default)
         s.pos.weight.data.zero_(); s.pos.weight.requires_grad_(False)
         ns0=int(round(cfg.d_state*cfg.init_state_mult)); nm0=int(round(2*cfg.d_model*cfg.init_mlp_mult))
         ex=lambda li: (cfg.block_extra[li] if (cfg.block_extra and li<len(cfg.block_extra) and cfg.block_extra_mode=='start') else 0.0)

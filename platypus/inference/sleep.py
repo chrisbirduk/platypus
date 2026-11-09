@@ -56,9 +56,34 @@ from platypus.inference.jindex import (
     _jx_sleep,
 )
 
+_PHASE_T={}
+def _phase_wrap(on_):
+    """SLEEP PHASE TIMING (9 Nov, readout only): while a sleep runs, every function this module calls by its global name is timed
+    (inclusive, outermost call only, so nothing is counted twice). Returns the names wrapped and their originals, to restore"""
+    if not on_: return {}
+    import time as _tm, types as _ty
+    g_=globals(); orig_={}; depth_={'d':0}
+    def mk_(nm_,f_):
+        def w_(*a_,**k_):
+            if depth_['d']: return f_(*a_,**k_)
+            depth_['d']=1; t_=_tm.time()
+            try: return f_(*a_,**k_)
+            finally: depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
+        return w_
+    for nm_,f_ in list(g_.items()):
+        if isinstance(f_,_ty.FunctionType) and nm_ not in ('inf_sleep','_inf_sleep_body','_phase_wrap','_phase_report') and not nm_.startswith('__'):
+            orig_[nm_]=f_; g_[nm_]=mk_(nm_,f_)
+    return orig_
+def _phase_report(orig_,tt_):
+    g_=globals()
+    for nm_,f_ in orig_.items(): g_[nm_]=f_
+    if not orig_: return
+    top_=sorted(_PHASE_T.items(),key=lambda x_:-x_[1]); acc_=sum(v_ for _,v_ in top_)
+    print(f"  [inference SLEEP PHASES] {tt_:.0f}s in all | "+" | ".join(f"{k_} {v_:.0f}s" for k_,v_ in top_[:14] if v_>=1.0)
+          +f" | not in a timed call {max(0.0,tt_-acc_):.0f}s",flush=True); _PHASE_T.clear()
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     """timing wrapper: wall time of the whole sleep and of the linking step"""
-    t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb()
+    t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb(); ph9_=_phase_wrap(int(getattr(cfg,'inf_sleep_phases',1)))
     try:                                                                        # READOUT: visits per TRUE domain, so UPDATED probes are scored only after a revisit
         S9v_=_inf_store(model); td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); vv9_=int(model.__dict__.get('_visit',0))
         if '_vdom' not in S9v_: S9v_['_vdom']={}; S9v_['_vdom_from']=vv9_
@@ -124,6 +149,8 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
             else: model.__dict__.pop('_skip_ro',None)
         if gs_ is not None: print(f"  [inference GPU MEMORY] peak during the visit before this sleep {gd_[0]:.2f} GB | peak during this sleep {gs_[0]:.2f} GB | reserved {gs_[1]:.2f} GB"
                                   f" (then cache released: {torch.cuda.memory_reserved()/2**30:.2f} GB) | device total {torch.cuda.get_device_properties(0).total_memory/2**30:.1f} GB",flush=True)
+        try: _phase_report(ph9_,__import__('time').time()-t0_)
+        except Exception as e9_: print(f"  [inference SLEEP PHASES] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
         if int(getattr(cfg,'inf_timing',0)):
             tt_=__import__('time').time()-t0_; print(f"  [inference TIMING] sleep {tt_:.1f}s: linking (one-scan / bridges) {_INF.get('t_link',0.0):.1f}s, everything else (facts, REM, store writes, audit, replay, readouts) {tt_-_INF.get('t_link',0.0):.1f}s",flush=True)
 def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
