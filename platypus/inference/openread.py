@@ -473,6 +473,12 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
+        # 9 Nov SYSTEM-WRITTEN QUESTION FORMS (the store-as-teacher test, readout): the edit fitted on the written wordings PLUS relation-agnostic
+        # question and wrapper forms the system writes itself - a different KIND of form from the extra paraphrase templates that added nothing
+        # (six wordings = three, GPU). None is a test wording (_HO_TWO, reworded, context, pronoun probes).
+        QF = ("Notes on {A}: So {A} is connected to ", "Q: {A} is connected to whom? A: ", "It is recorded that {A} is connected to ", "{A} is connected to ... ")
+        for sc, tag in ((ws_self, f' + SELF-CONTRAST x{ws_self:g}'),):
+            K, R, N, J = fit(list(words) + list(QF), sc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + {len(QF)} SYSTEM-WRITTEN QUESTION FORMS: {measure()}")
         try: out.append(_source_shadow())
         except Exception as e9: out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
         if int(getattr(cfg, 'inf_slot_gate', 1)):
