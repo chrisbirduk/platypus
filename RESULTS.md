@@ -20,6 +20,14 @@ without an explicit seed are seed 0; local recall differences under about 0.15 a
 | **Name-addressed binding memory (one closed-form memory per answer byte, keyed by the name state) produces facts in wordings never written** | Held-out open-ended: GPU 12/80 (0.15) vs 2/80 for the configured edit (both with self-contrast); local 7/80 vs 1/80. First answer byte ranked first: GPU 0.16-0.31 vs 0.00-0.06; local ~0.29 vs ~0.02 | **Shadow, oracle answer positions**, fitted on 8-16 conclusions per sleep, three sleeps each; GPU seed 1, local seed 0; the first production of a fact in an unwritten wording in this project. Not the weights |
 | [own key ; name key] in one edit, and the name key alone | +0.01 to +0.03 answer bytes (never below control, 5 sleeps, 2 seeds); name alone worse (one vector cannot spell an answer) | Shadow |
 
+**Prior art for the mechanism.** Keying a fact by the subject is established: ROME (Meng et al. 2022) locates factual associations in
+mid-layer MLPs at the subject's last token and keys its edit there (CounterFact paraphrase 88.6 GPT-2 XL, 93.6 GPT-J); Geva et al. 2023 show
+recall as subject enrichment at the subject positions, then attribute extraction by attention at the last position. Platypus's edit was
+keyed at the question end (ROME's "late site"), which explains its weak transfer; the name channel finds ROME's site independently in a
+byte-level model trained from scratch. What differs: in a pretrained model attention carries the attribute to the answer, so a subject edit
+suffices; the name-addressed binding memory writes each answer byte directly, which suggests the young trunk lacks that extraction path. The
+ROME-style shadow edit (subject-site, a plain weight edit, no oracle positions; seed-2 GPU run) tests whether it does.
+
 **Becomes a model result when** the memory fires on its own: a subject register (the most recent name-like span) and an answer-slot
 detector ("the next bytes are an object"). The slot signal is what rung 1's code should supply and does not yet (frame-dependent: matches
 SFA in the written wording, not held-out). First attempt: a small gate trained on the system's own conclusions, with its false-fire rate on
