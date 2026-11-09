@@ -136,7 +136,7 @@ def _sent_update(model, cfg, st):
     if len(st['pix']) < 50: return
     g = st.setdefault('g', torch.Generator().manual_seed(int(cfg.seed) + 3232)); ix = torch.randint(0, len(st['pix']), (st['sent'],), generator=g).tolist()
     Pa = _pooled(model, st, [it[st['pix'][j]]['s'] for j in ix]); Pb = _pooled(model, st, [it[st['pix'][j] + 1]['s'] for j in ix]); k = st['k']
-    if st['rule'] in ('stats', 'twostage'): _alt_update(model, cfg, st, Pa, Pb); return
+    if st['rule'] in ('stats', 'twostage', 'koopman', 'koopman_rls'): _alt_update(model, cfg, st, Pa, Pb); return
     for _ in range(st['iters']):
         with torch.enable_grad():
             za = Pa @ st['W']; zb = Pb @ st['W']; zf = torch.cat([za, zb]); mu = zf.mean(0); sd = torch.sqrt(zf.var(0) + 1e-4)
@@ -164,13 +164,43 @@ def _alt_update(model, cfg, st, Pa, Pb):
     """rung 1 alternatives on sentence pairs (codes always read as z = (pooled centred features) @ W - offset):
     'stats'    waking accumulates decaying sums (mean, covariance of the codes, covariance of the change to the next sentence); each new visit
                (after its sleep) solves closed-form SFA from them: top-64 whitening, then the slowest directions of the whitened change
+    'koopman' / 'koopman_rls' (9 Nov; Klus et al. 2018): a delta-rule memory B learns to predict the next sentence code from the current one
+               (both directions); its fixed point is sym(C1) C0^-1, so the slow features are the eigenvectors of B^T with the largest eigenvalues
+               (one-step autocorrelations) - SFA with the whitening supplied by the rule's own least-squares fixed point. 'koopman' = the plain
+               delta rule (normalised LMS: slow to reach C0^-1 in weak directions); 'koopman_rls' = recursive least squares (exact, still online)
     'twostage' IncSFA-style (Kompella et al. 2012): generalized Hebbian (Sanger) learning of the top principal directions with running variances
                = online whitening, then a minor-component (anti-Hebbian, symmetric Oja) rule on the whitened changes; all updates online"""
     A = st['alt']; k = st['k']; vis = int(model.__dict__.get('_visit', 0)); x = torch.cat([Pa, Pb]).float(); d = x.shape[1]; dev = x.device
     with torch.no_grad():
         if 'm' not in A: A['m'] = x.mean(0); A['s'] = float((x - x.mean(0)).pow(2).sum(1).mean().sqrt()) + 1e-6; A['n'] = 0
         A['m'] = 0.995 * A['m'] + 0.005 * x.mean(0); A['n'] += 1
-        if st['rule'] == 'stats':
+        if st['rule'] in ('koopman', 'koopman_rls'):                          # KOOPMAN (9 Nov): SFA read off a delta-rule memory (see the docstring)
+            kd = min(d, int(getattr(cfg, 'slow_koop_dim', 128)))
+            if 'B' not in A:                                                      # a fixed random rotation to kd dims keeps the operator small (none when kd = d)
+                g = torch.Generator().manual_seed(int(cfg.seed) + 3737)
+                A['R'] = (torch.linalg.qr(torch.randn(d, kd, generator=g))[0] if kd < d else torch.eye(d)).to(dev)
+                A['B'] = torch.zeros(kd, kd, device=dev); A['Pi'] = torch.eye(kd, device=dev) * 10.0; A['C0'] = torch.eye(kd, device=dev) * 1e-3
+            xa = ((Pa.float() - A['m']) / A['s']) @ A['R']; xb = ((Pb.float() - A['m']) / A['s']) @ A['R']
+            X = torch.cat([xa, xb]); Y = torch.cat([xb, xa])                       # both directions: the fixed point is sym(C1) C0^-1 (a reversible estimate)
+            A['C0'] = 0.995 * A['C0'] + 0.005 * (X.T @ X / len(X))                # (only to scale the codes to unit variance; not used by the rule)
+            if st['rule'] == 'koopman':                                           # DELTA RULE (normalised LMS): B <- B + eta (Y - B X) X^T
+                eta = 0.5 / float((X ** 2).sum(1).mean().clamp(min=1e-6))
+                A['B'] = A['B'] + eta * (Y.T - A['B'] @ X.T) @ X / len(X)
+            else:                                                                 # RECURSIVE LEAST SQUARES with forgetting lam (Woodbury on the batch)
+                lam = float(getattr(cfg, 'slow_koop_forget', 0.999)); Pi = A['Pi']
+                G = torch.linalg.solve(lam * torch.eye(len(X), device=dev) + X @ Pi @ X.T, X @ Pi)   # (n, kd)
+                Pn = (Pi - Pi @ X.T @ G) / lam; Pn = 0.5 * (Pn + Pn.T)
+                A['B'] = A['B'] + (Y.T - A['B'] @ X.T) @ (X @ Pn); A['Pi'] = Pn
+            if not bool(torch.isfinite(A['B']).all()): A['B'] = torch.zeros_like(A['B']); A['bad'] = A.get('bad', 0) + 1
+            if A.get('vis') is None: A['vis'] = vis
+            if (vis != A['vis'] or A['n'] % 50 == 0) and A['n'] >= 20:            # SLOW FEATURES = eigenvectors of B^T = C0^-1 sym(C1), largest eigenvalues
+                ev, V = torch.linalg.eig(A['B'].T.double().cpu()); er = ev.real; o = torch.argsort(-er)[:k]
+                Wk = V[:, o].real.float().to(dev); sdv = torch.sqrt(torch.diag(Wk.T @ A['C0'] @ Wk)).clamp(min=1e-6); Wk = Wk / sdv
+                P = (A['R'] @ Wk) / A['s']; st['W'].data.copy_(P.to(st['W'].dtype)); st['zoff'] = (A['m'] @ P).detach()
+                za = Pa.float() @ P; zb = Pb.float() @ P; zz = torch.cat([za, zb])
+                sl = float(((zb - za).var(0) / (2 * zz.var(0) + 1e-8)).mean()); st['log'].append((sl * 2, 1.0, 0.0, sl))
+                A['mu'] = (float(er[o].mean()), float(er[o].min())); A['vis'] = vis
+        elif st['rule'] == 'stats':
             xc = x - A['m']; dl = (Pb - Pa).float()
             C = xc.T @ xc / len(xc); Cd = dl.T @ dl / len(dl)
             A['C'] = C if 'C' not in A else 0.995 * A['C'] + 0.005 * C; A['Cd'] = Cd if 'Cd' not in A else 0.995 * A['Cd'] + 0.005 * Cd
@@ -205,7 +235,9 @@ def _alt_update(model, cfg, st, Pa, Pb):
             sl = float(((zb - za).var(0) / (2 * zz.var(0) + 1e-8)).mean()); st['log'].append((sl * 2, 1.0, 0.0, sl))
         if vis != st['vis'] and len(st['log']) >= 5:
             print(f"  [SLOW HEAD | visit {vis}] rule {st['rule']}: {A['n']} sentence-pair updates | slowness (whitened change / unrelated, latest) {st['log'][-1][3]:.3f}"
-                  + (f" | non-finite steps skipped {A.get('bad', 0)}" if st['rule'] == 'twostage' else ""), flush=True)
+                  + (f" | non-finite steps skipped {A.get('bad', 0)}" if st['rule'] == 'twostage' else "")
+                  + (f" | eigenvalues of the slow directions (one-step autocorrelation) mean {A['mu'][0]:.3f}, min {A['mu'][1]:.3f}; resets {A.get('bad', 0)}"
+                     if st['rule'] in ('koopman', 'koopman_rls') and 'mu' in A else ""), flush=True)
             st['vis'] = vis
 
 
