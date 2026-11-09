@@ -51,5 +51,7 @@
  "inf_selcmp": 1,
  "_inf_selcmp": "readout at the end of the run (north-star rung 0): trained JEPA selector against closed-form CCA/SFA (plain and weighted beyond a shuffled null), trunk cosine, TF-IDF names, random; retrieval incl. held-out wording, judge, Re-DocRED relations",
  "inf_rdr_judge": 1,
- "_inf_rdr_judge": "readout at the end of the run: relational signal in the trunk on Re-DocRED prose (substitution and mutual-compression AUC)"
+ "_inf_rdr_judge": "readout at the end of the run: relational signal in the trunk on Re-DocRED prose (substitution and mutual-compression AUC)",
+ "inf_cf_selfc": 1.0,
+ "_inf_cf_selfc": "ON by default (9 Nov): self-contrast in the closed-form edit - every answer byte must beat the model's own top non-answer byte (fixed from the unedited model), beside competitor contrast. GPU shadow edits (3 sleeps, 42 conclusions, fitted without competitor contrast): fitted open 0.17 -> 0.57, held-out MC 0.48 -> 0.65, held-out answer bytes top-1 0.66 -> 0.80; local: no change (2 seeds)"
 }

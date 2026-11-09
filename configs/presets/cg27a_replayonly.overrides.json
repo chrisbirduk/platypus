@@ -51,5 +51,7 @@
  "inf_selcmp": 1,
  "_inf_selcmp": "readout at the end of the run (north-star rung 0): trained JEPA selector against closed-form CCA/SFA (plain and weighted beyond a shuffled null), trunk cosine, TF-IDF names, random; retrieval incl. held-out wording, judge, Re-DocRED relations",
  "inf_rdr_judge": 1,
- "_inf_rdr_judge": "readout at the end of the run: relational signal in the trunk on Re-DocRED prose (substitution and mutual-compression AUC)"
+ "_inf_rdr_judge": "readout at the end of the run: relational signal in the trunk on Re-DocRED prose (substitution and mutual-compression AUC)",
+ "inf_cf_selfc": 0.0,
+ "_inf_cf_selfc": "0 here: kept as the 8-9 Nov replay-only split was run"
 }

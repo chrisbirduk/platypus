@@ -679,6 +679,7 @@ Useful options:
 | `inf_conc_wordings`, `inf_conc_wordings_store` | Conclusions written in several wordings in trunk replay (1 in cg27a.env); in the fast store too (0: one canonical form) |
 | `inf_cf_wordings` | Closed-form edits fitted on the keys of this many wordings (3 in cg27a.env) |
 | `inf_cons_contrast`, `inf_cons_contrast_k`, `inf_cf_contrast` | Competitor contrast in conclusion replay and in the closed-form edit fit: other live conclusions' answers as negatives, penalised at the byte where each leaves the answer |
+| `inf_cf_selfc` | Self-contrast in the closed-form edit fit (on by default, 1.0): every answer byte must beat the model's own top non-answer byte, the condition for greedy decoding to produce the name; `[inference CF SELF-CONTRAST]` line |
 | `inf_cons_infow` | Information-weighted answer bytes in conclusion replay (cap of the weight; 4 in cg27a.env) |
 | `inf_eval_trie`, `inf_eval_open_diag`, `inf_eval_beam`, `inf_eval_beam_first` | Known-name decoding; the miss log and open-ended diagnostic; beam search and its first-step width |
 | `inf_resid`, `grad_eval` | Memory residual readout; graduation readout (2: every visit) |

@@ -57,5 +57,7 @@
  "inf_cf_shadow": 1,
  "_inf_cf_shadow": "after each kept closed-form edit: shadow edits (as configured, + self-contrast, six wordings, both) on up to 16 conclusions, applied alone to the pre-edit weights, measured, removed",
  "inf_eval_trie_inv": "seen",
- "_inf_eval_trie_inv": "known-name decoding over every capitalised word of the stored sentences (local: 5067 names, target always present) instead of the fast store's names"
+ "_inf_eval_trie_inv": "known-name decoding over every capitalised word of the stored sentences (local: 5067 names, target always present) instead of the fast store's names",
+ "inf_cf_selfc": 0.0,
+ "_inf_cf_selfc": "0 here: cg27a_open_pass1 is the baseline WITHOUT self-contrast (GPU run 9 Nov, seed 1) for cg27a_selfc_pass1"
 }
