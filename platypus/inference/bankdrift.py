@@ -46,7 +46,8 @@ def bank_drift(model, cfg, raw_vals_fn, seen_d, slot_of, vis, tag, summary=False
             if B['sref'].get(d):
                 sb_ = float(np.mean([b.mean() for b in _bits_rows(model, B['sref'][d], int(slot_of(d)), False)])); B.setdefault('sb0', {}).setdefault(d, sb_); cur[d] = cur[d] + (sb_ - B['sb0'][d],)
         dr = {}
-        for d, (zt, zs, bt) in cur.items():
+        for d, cv_ in cur.items():
+            zt, zs, bt = cv_[:3]
             p0t, p0s = B['p0'][d]; c0t, c0s = B['c0'][d]
             dt = 1 - float(F.cosine_similarity(zt.mean(0), p0t, dim=0)); ds = (1 - float(F.cosine_similarity(zs.mean(0), p0s, dim=0))) if zs is not None else float('nan')
             st = float((zt * c0t).sum(-1).mean()); ss = float((zs * c0s).sum(-1).mean()) if zs is not None else float('nan')
