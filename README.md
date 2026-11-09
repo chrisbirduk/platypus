@@ -168,6 +168,8 @@ The slow network learns general skill, and only from real text or verified repla
 | Mean BPC / forgetting / label-free BPC at the end of pass 1 (GPU) | 1.735 / +0.002 / 1.721 | 1.729 / +0.002 / 1.713 | first cg27a run |
 | Final BPC / forgetting, local, seed 1 and seed 2 | 2.420 / -0.008; 2.391 / -0.005 | 2.411 / -0.007; 2.390 / -0.000 | within seed noise (about 0.017) |
 | Held-out two-hop with the store, local, seed 1 and seed 2 | 0.60; 0.32 | 0.43; 0.44 | no reliable local effect: local differences under about 0.15 are noise |
+| **Self-contrast (`inf_cf_selfc`, 9 November): open-ended recall from the weights** | **0.62** (46/74) | 0.20 (15/74) | **fitted wording, slot given, edited conclusions only (74 of the probe set), five edits, one seed** (GPU, seed 1, visits 3-8). The strongest production number the weights have shown. Measured by shadow edits: each variant fitted on that sleep's conclusions alone (up to 16) and without competitor contrast, applied to the pre-edit weights, measured and removed; the real edit (with competitor contrast) is being tested in `cg27a_selfc_pass1` |
+| Self-contrast, same shadow edits: held-out multiple choice (10) / held-out answer bytes top-1 / held-out open-ended | 0.63 / 0.79 / 0.04 (6/148) | 0.48 / 0.67 / 0.00 (0/148) | same qualifiers; held-out wordings never written; gains in every one of the five edits except held-out open-ended (2 of 5) |
 
 New readouts, on by default:
 
