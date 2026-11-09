@@ -315,7 +315,7 @@ def _inf_mix(model,cfg,S_,ts):
         A_,B_=T_(a_),T_(b_); R1_,R2_=it_[rq_[2*k_]]['s'],it_[rq_[2*k_+1]]['s']
         if int(getattr(cfg,'inf_mix_att',0)): R1_,R2_=_blankw(A_),_blankw(B_)    # ATTRIBUTED BASELINE: the same passage with its words blanked (form kept, content gone)
         jobs_+=[(A_,B_),(R1_,B_),(B_,A_),(R2_,A_)]+[(it_[r_]['s'],B_) for r_ in RB_[k_][0]]+[(it_[r_]['s'],A_) for r_ in RB_[k_][1]]
-    bb_=_inf_cond_bytes(model,cfg,jobs_,ts); acc_=[]; thr_=float(getattr(cfg,'inf_mix_bits',2.0)); G_=[]
+    tj9_=__import__('time').time(); bb_=_inf_cond_bytes(model,cfg,jobs_,ts); tj9_=__import__('time').time()-tj9_; acc_=[]; thr_=float(getattr(cfg,'inf_mix_bits',2.0)); G_=[]
     st9_=4+2*nb_
     for k_,(a_,b_,src_) in enumerate(P_):
         (tB_,bAB_),(_,bRB_),(tA_,bBA_),(_,bRA_)=bb_[st9_*k_:st9_*k_+4]
@@ -340,6 +340,9 @@ def _inf_mix(model,cfg,S_,ts):
             if src_=='control+' or a_<0: continue
             JG9_.append((T_(a_),T_(b_),bool(mg9_>=thr_ and src_!='random'),src_,bool(nmj_(T_(a_))&nmj_(T_(b_)))))   # (last: a shared rare name - a sign of a real link)
         del JG9_[:-6000]
+    if int(getattr(cfg,'inf_latent_judge',0)):                                 # north-star rung 2 readout: a LATENT judge (slow-feature cosine) on the same pairs
+        from platypus.inference.latentjudge import latent_judge_readout
+        latent_judge_readout(model,cfg,S_,G_,T_,thr_,tj9_)
     G_=[g_[:5] for g_ in G_]
     S_.setdefault('mix',[]).extend([x_ for x_ in acc_ if x_[1]>=0]); S_.setdefault('mixall',[]).extend(G_)
     ds9_=str(getattr(cfg,'inf_mix_dream_src','') or '')
