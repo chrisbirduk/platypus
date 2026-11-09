@@ -73,6 +73,7 @@ def selector_compare(model, cfg, S_, slot_of, tag):
         cca, sfa, ccaw, sfaw, finfo = _fit_linear(_codes(model, [it[i]['s'] for i in ix]), _codes(model, [it[i + 1]['s'] for i in ix]), seed=int(cfg.seed))
         LIN = {'CCA (linear)': cca, 'SFA (linear)': sfa, 'CCA weighted': ccaw, 'SFA weighted': sfaw}
         sels = ['JEPA (trained)', 'CCA (linear)', 'CCA weighted', 'SFA (linear)', 'SFA weighted', 'TRUNK cosine', 'TF-IDF names', 'RANDOM']
+        if model.__dict__.get('_slow') is not None: sels.insert(5, 'SLOW (online)')   # rung 1: the online slow head
         def score(name, qt, ct):
             M = score0(name, qt, ct)
             return None if M is None else M + 1e-6 * torch.rand(M.shape)               # ties broken at random (TF-IDF rows are often all zero)
@@ -84,6 +85,9 @@ def selector_compare(model, cfg, S_, slot_of, tag):
                 Zq, Zc = _codes(model, qt), _codes(model, ct)
                 if name == 'TRUNK cosine': return (F.normalize(Zq, dim=-1) @ F.normalize(Zc, dim=-1).T).cpu()
                 return _score_lin(LIN[name], Zq, Zc).cpu()
+            if name == 'SLOW (online)':
+                from platypus.inference.slowhead import slow_codes
+                return (F.normalize(slow_codes(model, qt), dim=-1) @ F.normalize(slow_codes(model, ct), dim=-1).T).cpu()
             if name == 'TF-IDF names': return _tfidf_sim(S_, [bytes(t) for t in qt], [bytes(t) for t in ct], int(cfg.inf_df), True).float()
             return torch.tensor(rs.rand(len(qt), len(ct)), dtype=torch.float32)
         out = {s: {} for s in sels}

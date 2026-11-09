@@ -178,6 +178,8 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             X_,M_=_ws_batch(model,[rl_[int(j_)]['s']]); cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,int(S_slot(rl_[int(j_)]['d']))); cap_['on']=False; gk_.append(cap_['k'][-1][0][M_[0,:-1]>0])
         Kg_=torch.cat(gk_) if gk_ else None; Ks_=[]; Rs_=[]; kd9_=[]; lr_=float(getattr(cfg,'inf_cf_lr',0.5)); st_=int(getattr(cfg,'inf_cf_steps',25))
         nw9_=max(1,min(len(_CONC_CF),int(getattr(cfg,'inf_cf_wordings',1)))); ct9w_=float(getattr(cfg,'inf_cf_contrast',0.0)); ctk9_=int(getattr(cfg,'inf_cons_contrast_k',8))
+        sc9w_=float(getattr(cfg,'inf_cf_selfc',0.0)); sm9_=[]                     # SELF-CONTRAST (inf_cf_selfc w): every answer byte must beat the model's own top non-answer byte
+                                                                                  #   (fixed from the unedited model), the condition for greedy decoding to produce the name
         if ct9w_>0:                                                             # cg27a COMPETITOR CONTRAST in the edit: other live conclusions' C (never one of the same A) as negatives
             byA9_={}
             for x_ in lv_: byA9_.setdefault(x_['A'],set()).add(x_['C'])
@@ -202,12 +204,20 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
                     jj9_=torch.tensor([d_[0] for d_ in dv9_],device=X_.device); mg9_=lg9_[jj9_,[d_[1] for d_ in dv9_]]-lg9_[jj9_,[d_[2] for d_ in dv9_]]
                     l_=l_+ct9w_*F.softplus(-mg9_).mean()
                     if s9_ in (0,st_-1): cm9_.append((s9_==0,float((mg9_>0).float().mean())))
+                if sc9w_>0:
+                    if s9_==0: sv9_=lg9_.detach().scatter(1,yt_[:,None],-1e9).argmax(1)
+                    ms9_=lg9_.gather(1,yt_[:,None])[:,0]-lg9_.gather(1,sv9_[:,None])[:,0]; l_=l_+sc9w_*F.softplus(-ms9_).mean()
+                    if s9_ in (0,st_-1): sm9_.append((s9_==0,float((ms9_>0).float().mean()),float((ms9_>0).all())))
                 op_.zero_grad(); l_.backward(); op_.step(); cap_['delta']=None
             Ks_.append(K1_); Rs_.append(dl_.detach().float())
             if wi9_==0: kd9_.append((c_,K1_))
         if ct9w_>0 and cm9_:
             print(f"  [inference CF COMPETITOR CONTRAST] x{ct9w_:g}, up to {ctk9_} other conclusions' C per edit: the answer's byte beats the competitor's at the divergence byte "
                   f"{np.mean([v_ for f_,v_ in cm9_ if f_]):.2f} before fitting, {np.mean([v_ for f_,v_ in cm9_ if not f_]):.2f} after | wordings {nw9_}",flush=True)
+        if sc9w_>0 and sm9_:
+            print(f"  [inference CF SELF-CONTRAST] x{sc9w_:g}: answer bytes beating the model's own top non-answer byte {np.mean([v_ for f_,v_,a_ in sm9_ if f_]):.2f} before fitting, "
+                  f"{np.mean([v_ for f_,v_,a_ in sm9_ if not f_]):.2f} after; whole answer (greedy would produce it, per fitted wording) {np.mean([a_ for f_,v_,a_ in sm9_ if f_]):.2f} -> "
+                  f"{np.mean([a_ for f_,v_,a_ in sm9_ if not f_]):.2f}",flush=True)
         cap_['delta']=None
         if not Ks_: print("  [inference CLOSED-FORM CONSOLIDATION APPLIED] no edit positions",flush=True); return
         K_=torch.cat(Ks_); R_=torch.cat(Rs_); H_=K_.shape[1]; lam_=float(getattr(cfg,'inf_cf_lam',1.0))
@@ -276,6 +286,9 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
                     L9_=_cf_layer_states(model,c9_,S_slot)
                     if L9_ is not None: c9_['_cfL']=L9_; c9_['_cfLv']=vis_
             except Exception as e8_: _fail('inference.closed_form:254'); print(f"  [inference LAYER DRIFT] states unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
+        if int(getattr(cfg,'inf_cf_shadow',0)):                                 # OPEN READOUTS (2)+(3): shadow edits, measured and removed (readout only)
+            from platypus.inference.openread import _cf_shadow
+            _cf_shadow(model,cfg,[c_ for c_ in E_ if id(c_) not in rfid9_],mo_,cap_,S_slot,W0_,kept_[0],(Pm_ if rc_>0 else None),C0_,lam_,Cp_)
         model.__dict__['_cf_E']=En_[kept_[0]].detach(); cinfo_+=f" | ACCUMULATED EDITS |E| {float(En_[kept_[0]].norm()):.2f} vs rest of the matrix {nb9_:.2f}"+(f" (cap {mg_:g}x)" if mg_>0 else "")+dinfo_
         print(f"  [inference CLOSED-FORM CONSOLIDATION APPLIED] KEPT at x{kept_[0]:g} (brake {bk_}; tries: "+" | ".join(tr_)+f") | {len(E_)} conclusions edited (lambda {lam_:g}, |dW| {float(kept_[0]*dW_.norm()):.2f} vs |W| {float(W0_.norm()):.1f}) | "
               f"two-hop from the weights, fitted wording: edited {e0_:.2f} -> {e1_:.2f}, control (not edited) {n0_:.2f} -> {n1_:.2f} | OTHER WORDINGS: edited {v0_:.2f} -> {v1_:.2f} | "
@@ -320,10 +333,13 @@ def _ws_closed_form(model,cfg,S_,vals,olds_,t,ts,S_slot):
             if ps_.numel()==0: continue
             sl_=int(S_slot(c_['d'])); cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,sl_); cap_['on']=False; K1_=cap_['k'][-1][0][ps_]
             D_=mo_.weight.shape[0]; dl_=torch.zeros(len(ps_),D_,device=X_.device,requires_grad=True); op_=torch.optim.Adam([dl_],lr=lr_*0.1)
-            yt_=X_[0,ps_+1]
+            yt_=X_[0,ps_+1]; scw_=float(getattr(cfg,'inf_cf_selfc',0.0)); sv_=None
             for _ in range(st_):
                 full_=torch.zeros(1,T1_,D_,device=X_.device); full_=full_.index_put((torch.zeros_like(ps_),ps_),dl_); cap_['delta']=full_
-                lg_=_ws_run(model,X_,sl_,grad_=True); l_=F.cross_entropy(lg_[0,ps_],yt_)+1e-3*(dl_**2).sum()
+                lg_=_ws_run(model,X_,sl_,grad_=True); lp_=lg_[0,ps_]; l_=F.cross_entropy(lp_,yt_)+1e-3*(dl_**2).sum()
+                if scw_>0:                                                      # SELF-CONTRAST as in _cf_apply (9 Nov: was pasted with _cf_apply's names, NameError)
+                    if sv_ is None: sv_=lp_.detach().scatter(1,yt_[:,None],-1e9).argmax(1)
+                    ms_=lp_.gather(1,yt_[:,None])[:,0]-lp_.gather(1,sv_[:,None])[:,0]; l_=l_+scw_*F.softplus(-ms_).mean()
                 op_.zero_grad(); l_.backward(); op_.step(); cap_['delta']=None
             Ks_.append(K1_); Rs_.append(dl_.detach().float())
         cap_['delta']=None

@@ -143,6 +143,10 @@ def parse(path):
             if m:
                 r["temporal_gradient"] = {"older": f(m.group(1)), "recent": f(m.group(2))}
                 continue
+            m = re.search(r"HEADLINE WEIGHTS ONLY \(fast store off\): FORGETTING ([+-]?[0-9.]+) \| FINAL BPC " + NUM, s)
+            if m:
+                r["final"].update(weights_only_forgetting=f(m.group(1)), weights_only_bpc=f(m.group(2)))
+                continue
             m = re.search(r"MEAN FORGETTING: " + r"([+-]?[0-9.]+) \| MEAN FINAL BPC: " + NUM, s)
             if m:
                 r["final"].update(forgetting=f(m.group(1)), bpc=f(m.group(2)))
@@ -215,7 +219,10 @@ def summary(r):
     route = r["routing"]
     fin = r["final"] or {}
     return {
-        # HEADLINES (issues #23, #24): slot inferred from the text; held-out wording with no slot given
+        # HEADLINES (issues #23, #24): slot inferred from the text; held-out wording with no slot given. BPC and forgetting from the
+        # weights alone (fast store off, 9 Nov review) where the log has them; the label-free pair is with the store on
+        "HEADLINE_weights_only_bpc": fin.get("weights_only_bpc"),
+        "HEADLINE_weights_only_forgetting": fin.get("weights_only_forgetting"),
         "HEADLINE_label_free_bpc": fin.get("label_free_bpc"),
         "HEADLINE_label_free_forgetting": fin.get("label_free_forgetting"),
         "HEADLINE_held_out_two_hop_weights_last": vs.get(last, {}).get("weights", {}).get("held_out_two_hop") if last else None,

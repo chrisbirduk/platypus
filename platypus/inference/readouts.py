@@ -133,6 +133,21 @@ def _inf_variant_readout(model,cfg):
     if va_:
         fv_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in va_]); fn_=np.mean([frozenset((c_['names'][0],c_['names'][2])) in cm_ for c_ in no_]) if no_ else float('nan')
         print(f"  [inference VARIANT BRIDGES] chains whose bridge is spelled differently in its two facts: concluded {fv_:.2f} (n {len(va_)}) | ordinary two-hop chains concluded {fn_:.2f} (n {len(no_)})",flush=True)
+def _gpu_mem_line(tag):
+    """9 Nov GPU MEMORY GAP (one line, every visit): memory the driver reports as used against what PyTorch's caching allocator holds; the gap is
+    memory held outside the allocator in this process (CUDA graph pools, other libraries) or by other processes (per-process use from nvidia-smi)"""
+    if not torch.cuda.is_available(): return
+    try:
+        fr_,to_=torch.cuda.mem_get_info(); used_=(to_-fr_)/2**30; rv_=torch.cuda.memory_reserved()/2**30; al_=torch.cuda.memory_allocated()/2**30
+        st_=torch.cuda.memory_stats(); nseg_=int(st_.get('segment.all.current',0)); pk_=torch.cuda.max_memory_reserved()/2**30
+        try:
+            import subprocess as _sp9
+            q_=_sp9.run(['nvidia-smi','--query-compute-apps=pid,used_memory','--format=csv,noheader,nounits'],capture_output=True,text=True,timeout=10).stdout.strip()
+            procs_=', '.join(f"pid {l_.split(',')[0].strip()} {float(l_.split(',')[1])/1024:.1f} GiB" for l_ in q_.splitlines() if ',' in l_) or 'none listed'
+        except Exception: procs_='nvidia-smi unavailable'
+        print(f"  [GPU MEMORY GAP | {tag}] driver used {used_:.1f} of {to_/2**30:.1f} GiB | PyTorch reserved {rv_:.1f} (allocated {al_:.1f}, peak reserved {pk_:.1f}, "
+              f"{nseg_} segments) | OUTSIDE PyTorch {used_-rv_:.1f} GiB | processes: {procs_} | this pid {__import__('os').getpid()}",flush=True)
+    except Exception as e_: _fail('inference.readouts:gap'); print(f"  [GPU MEMORY GAP | {tag}] unavailable ({type(e_).__name__})",flush=True)
 def _gpu_mem_report(tag):
     """cg26q GPU MEMORY: what is still allocated before the heavy end-of-run readouts (two of them ran out of memory on the GPU with about 80 GiB
     held), grouped by tensor shape; tensors under 64 MiB are left out"""
@@ -147,6 +162,7 @@ def _gpu_mem_report(tag):
                     if n_>=2**26: k_=(tuple(o_.shape),str(o_.dtype).replace('torch.','')); v_=big_.setdefault(k_,[0,0]); v_[0]+=1; v_[1]+=n_
             except Exception: pass
         top_=sorted(big_.items(),key=lambda kv_:-kv_[1][1])[:10]
+        _gpu_mem_line(tag)
         print(f"  [GPU MEMORY | {tag}] allocated {al_:.1f} GiB, reserved {rv_:.1f} GiB | largest live tensors (count x shape dtype: GiB): "
               +" | ".join(f"{v_[0]} x {list(k_[0])} {k_[1]}: {v_[1]/2**30:.2f}" for k_,v_ in top_),flush=True)
     except Exception as e_: _fail('inference.readouts:151'); print(f"  [GPU MEMORY | {tag}] unavailable ({type(e_).__name__})",flush=True)
@@ -171,6 +187,17 @@ def _inf_cls_probe(model,cfg):
         for c_,k_ in found_: grp_['OLDER' if k_.get('v',0)<=md_ else 'RECENT'].append((f"So {c_['names'][0]} is connected to ",cands(c_),slot_(c_)))
         seg_=[f"{g_} (n {len(it_)}): store ON {acc(it_,True):.2f}, store OFF (lesion) {acc(it_,False):.2f}" for g_,it_ in grp_.items()]
         print(f"  [inference CLS PROBES | LESION BY AGE] two-hop on chains the system concluded, split at conclusion visit {md_:.0f}: "+" | ".join(seg_),flush=True)
+        try:                                                                    # 9 Nov EXPOSURE CONTROL: age is confounded with how often a conclusion was consolidated;
+            vn_=int(model.__dict__.get('_visit',0)); g2_={}                     #   split by edited / not edited within each age group, and by sleeps in the edit
+            for c_,k_ in found_:
+                it9_=(f"So {c_['names'][0]} is connected to ",cands(c_),slot_(c_)); ag_='OLDER' if k_.get('v',0)<=md_ else 'RECENT'
+                ed_=k_.get('cfe') is not None; ns_=(vn_-int(k_['cfe'])+1) if ed_ else 0
+                g2_.setdefault((ag_,'edited' if ed_ else 'not edited'),[]).append(it9_)
+                g2_.setdefault(('sleeps in the edit', '0' if ns_<=0 else ('1-2' if ns_<=2 else '3+')),[]).append(it9_)
+            seg2_=[f"{a9_} {b9_} (n {len(it_)}): store OFF {acc(it_,False):.2f}" for (a9_,b9_),it_ in sorted(g2_.items())]
+            print(f"  [inference CLS PROBES | LESION BY EXPOSURE] the same chains, store OFF, by age x edited and by sleeps since first edited (the edit is re-solved "
+                  f"every sleep): "+" | ".join(seg2_),flush=True)
+        except Exception as e9_: _fail('inference.readouts:exposure'); print(f"  [inference CLS PROBES | LESION BY EXPOSURE] unavailable ({type(e9_).__name__})",flush=True)
     dmg_={'intact':lambda n_: n_,'last letter dropped':lambda n_: n_[:-1],'inner letters swapped':lambda n_: n_[0]+n_[2]+n_[1]+n_[3:] if len(n_)>3 else n_,'lower-cased':lambda n_: n_.lower()}
     pc_=[]
     for k0_,f_ in dmg_.items():

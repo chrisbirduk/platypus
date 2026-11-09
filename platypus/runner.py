@@ -61,7 +61,7 @@ from platypus.conduit import (
     lora_merge, sem_rescore, set_seed,
 )
 from platypus.inference.store import (
-    bpc,
+    bpc, bpc_weights,
 )
 from platypus.inference.probes import (
     inf_plant,
@@ -111,6 +111,7 @@ def run(cfg):
     _DP2['on']=int(cfg.dp_steps)>=2
     if cfg.pu_k>0: print(f"  [private trunk units] {cfg.pu_k} private MLP units per domain in every block")
     for i_,b in enumerate(model.blocks): b.__dict__['_xdg_i']=i_
+    from platypus.inference.slowhead import slow_init; slow_init(model, cfg)          # north-star rung 1 (slow_k > 0)
     ngp_init(model, cfg); print(f"  [private n-grams] per-domain hashed tables, orders {tuple(cfg.ngp)}, {cfg.ngp_rows} rows each, before each domain's own head" if cfg.ngp else "  [private n-grams] none (ngp=())")
     try:                                                                         # PARAMETER COUNT (issue #23): shared trunk vs the parts private to each slot
         nps_=lambda ps_: int(sum(p_.numel() for p_ in ps_))
@@ -193,7 +194,7 @@ def run(cfg):
         print(f"  [pass shuffle] visit order: "+' '.join(str(d) for d in schedule))
     _t2s=model.__dict__.setdefault('_t2s',{})                      # LABEL-FREE: true domain -> the slot its text was routed to (evaluation only)
     _S=(lambda q: _t2s.get(q,q)) if cfg.infer_ctx else (lambda q: q)
-    bpc_m=[[None]*NDOM for _ in range(len(schedule))]; post=[None]*NDOM; prior_buffer=[]; fz_tok={}
+    bpc_m=[[None]*NDOM for _ in range(len(schedule))]; post=[None]*NDOM; post_w=[None]*NDOM; prior_buffer=[]; fz_tok={}
     last_visit={}; post_hist={}; pre_visit={d:{} for d in range(NDOM)}; pass_log=[]
     locality_log=[]; prior_imp=[np.zeros(b.mlp_hidden) for b in model.blocks]
     model._orth=None; orth_log={}
@@ -205,7 +206,7 @@ def run(cfg):
         pass_i=vi//NDOM; seen_d=sorted(set(schedule[:vi+1]))
         if cfg.stream:                                                         # NO VISIT BOUNDARIES: the slot was decided by the detector
             _eo=_src.done
-            if _eo: print(f"  [stream] the stream has ended ({vi} detected visits for a schedule of {len(schedule)}): evaluation only"); ts=shist_[-1] if shist_ else 0; _b0=[]
+            if _eo: print(f"  [stream] the stream has ended ({vi} detected visits for a schedule of {len(schedule)}): evaluation only"); sh9_=model.__dict__.get('_slot_hist') or []; ts=sh9_[-1] if sh9_ else 0; _b0=[]
             elif _pend is None: ts,_b0=infer_slot(model,cfg,_src,_src.true_dom,vi)
             else: ts,_b0=_pend
             if not _eo: t=_src.true_dom; _seen_true.add(t); seen_d=sorted(_seen_true|set(schedule[:vi+1]))   # bookkeeping (evaluation only) follows the true text
@@ -366,6 +367,14 @@ def run(cfg):
                 b.unit_usage.zero_(); b.mlp_usage.zero_()
         end_pass=(vi%NDOM==NDOM-1)
         for prev in (seen_d if (end_pass or not cfg.lean or cfg.fz_diag or cfg.sim_diag) else [t]): bpc_m[vi][prev]=bpc(model,vals[prev],_S(prev))   # lean: all domains at pass ends
+        from platypus.inference.readouts import _gpu_mem_line                   # 9 Nov: where GPU memory goes outside PyTorch's allocator (a leak of ~78 GiB by the end)
+        _gpu_mem_line(f"visit {vi+1}")
+        if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:                 # OPEN-ENDED READOUTS: why held-out wordings fail open-ended; rung 3 keys at pass ends
+            from platypus.inference.openread import open_diag
+            open_diag(model,cfg,_inf_store(model),_S,f"visit {vi+1}",keys=end_pass)
+        if int(getattr(cfg,'bank_drift',0)):                                     # north star TIMESCALE BANK items 2-3 and routing by prototype (readout only)
+            from platypus.inference.bankdrift import bank_drift
+            bank_drift(model,cfg,lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(seen_d)),_S,vi+1,f"visit {vi+1}",summary=end_pass)
         if int(getattr(cfg,'grad_eval',0))>=2 and not (cfg.n_passes>1 and end_pass):   # cg27a GRADUATION SERIES: reliance on the private parts per domain after every visit
             from platypus.inference.residual import grad_readout                  #   (all on vs all off; the full breakdown at pass ends)
             grad_readout(model,cfg,vals,sorted(set(seen_d)),_S,f"visit {vi+1}",lite=True)
@@ -377,6 +386,7 @@ def run(cfg):
             try: mix_text_eval(model,vals,seen_d,_S,cfg,tag=f' | visit {vi+1}')
             except Exception as e_: _fail('runner:368'); print(f"  [mixed text] skipped: {repr(e_)[:160]}")
         post[t]=bpc_m[vi][t]; last_visit[t]=vi; post_hist.setdefault(pass_i,{})[t]=post[t]
+        post_w[t]=bpc_weights(model,vals[t],_S(t))                             # the same domain, fast store off (weights only): the headline
         print(f"  post-train BPC: {post[t]:.3f}  (width {model.blocks[0].d_state})"
               +(f" | before this visit {pre_visit[t][pass_i]:.3f}, after previous visit {post_hist[pass_i-1][t]:.3f}" if (pass_i>0 and pass_i in pre_visit.get(t,{}) and t in post_hist.get(pass_i-1,{})) else ""))
         cl=(getattr(model,'_cross_log',None) or {}).get(t)
@@ -491,7 +501,18 @@ def run(cfg):
         if p!=schedule[-1]: fg.append(f)
         print(f"  {PILE_DOMAINS[p][:12]:12} | post {post[p]:.3f} | final {final:.3f} | forget {f:+.3f}")
     mf=float(np.mean(fg)); mb=float(np.mean([bpc_m[-1][p] for p in range(len(PILE_DOMAINS))]))
+    fin_w=[bpc_weights(model,vals[p],_S(p)) for p in range(len(PILE_DOMAINS))]; fgw=[]   # WEIGHTS ONLY (fast store off): the headline; the table above has the store on
+    print("\n=== REAL FORGETTING, WEIGHTS ONLY (fast store off; the table above has the store on) ===")
+    for p in range(len(PILE_DOMAINS)):
+        pw_=fin_w[p] if post_w[p] is None else post_w[p]; f=fin_w[p]-pw_
+        if p!=schedule[-1]: fgw.append(f)
+        print(f"  {PILE_DOMAINS[p][:12]:12} | post {pw_:.3f} | final {fin_w[p]:.3f} | forget {f:+.3f} | store on: final {bpc_m[-1][p]:.3f}")
+    mfw=float(np.mean(fgw)); mbw=float(np.mean(fin_w))
+    print(f"HEADLINE WEIGHTS ONLY (fast store off): FORGETTING {mfw:+.3f} | FINAL BPC {mbw:.3f} || with the fast store on: FORGETTING {mf:+.3f} | FINAL BPC {mb:.3f}",flush=True)
     if cfg.inf_on: inf_eval(model,cfg,_inf_store(model),"END OF RUN"); inf_final_bpc(model,cfg,vals,_S)
+    if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:
+        from platypus.inference.openread import open_diag
+        open_diag(model,cfg,_inf_store(model),_S,"END OF RUN",keys=True)
     if int(getattr(cfg,'gist_test',0)):                                          # GIST TEST: does a learned gist code carry information the trunk lacks?
         from platypus.inference.gisttest import gist_test
         gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S)
@@ -535,7 +556,7 @@ def run(cfg):
     if vl_: print("  [visit length] steps per visit: "+" ".join(f"{PILE_DOMAINS[d][:6]} {L_}" for d,(g_,L_,b_) in sorted(vl_.items()))
                   +f" | total {sum(L_ for g_,L_,b_ in vl_.values())+cfg.steps_per_task*(NDOM-len(vl_))} vs {cfg.steps_per_task*NDOM} budget")
     return {'_model':model,'_slot':_S,'_vals':vals,'_raw_vals':(lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)]),'_schedule':list(schedule),'oracle':orc_,'vlen':vl_,'cov':getattr(model,'_cov_log',{}),'fsplit':getattr(model,'_fsplit_log',{}),'interf':interf,'hconf':(None if hc_ is None else (hc_[0],hc_[1].tolist())),'fdrift':getattr(model,'_fdrift_log',{}),
-            'klpos':getattr(model,'_klpos_log',{}),'wall_run':wall_run,'forget':mf,'bpc':mb,'per_domain':[bpc_m[-1][p]-post[p] for p in range(len(PILE_DOMAINS)) if p!=schedule[-1] and post[p] is not None],'passes':pass_log,'domains':list(PILE_DOMAINS),
+            'klpos':getattr(model,'_klpos_log',{}),'wall_run':wall_run,'forget':mf,'bpc':mb,'forget_w':mfw,'bpc_w':mbw,'per_domain':[bpc_m[-1][p]-post[p] for p in range(len(PILE_DOMAINS)) if p!=schedule[-1] and post[p] is not None],'passes':pass_log,'domains':list(PILE_DOMAINS),
             'gut_after_wiki':(bpc_m[1][0]-post[0]) if (len(bpc_m)>1 and bpc_m[1][0] is not None) else None,'locality':locality_log,'orth':orth_log,
             'post':list(post),'alt':alt,'topics':(topic_log if cfg.topic_diag else {}),'kl':kl_log,'dream':dream_log,'fdiag':fd_log,'stale':getattr(model,'_stale_log',{}),'beta':getattr(model,'_beta_log',{}),'timing':getattr(model,'_timing_log',{}),'recon':getattr(model,'_recon_log',{}),'sleep':getattr(model,'_sleep_log',{}),'battr':battr_log,'bw_dyn':getattr(model,'_bw_dyn',None),'tbirths':getattr(model,'_tspawn_log',[]),'tcombine':getattr(model,'_tcombine_log',[]),'tmerges':getattr(model,'_tmerge_log',[]),'treuse':getattr(model,'_tswitch_log',[]),'rollbacks':getattr(model,'_rb_log',[]),'cross':{int(k):v for k,v in (getattr(model,'_cross_log',None) or {}).items()},'zeroshot':zeroshot,'curve':getattr(model,'_curve',{}),'width':model.blocks[0].d_state,'mlp_width':model.blocks[0].mlp_hidden,
             'recruit':getattr(model,'_recruit_log',{}),'merges':getattr(model,'_merge_log',[]),

@@ -561,6 +561,9 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                         else: h_=model.features(x)
                 finally: _carry_off(cfg)
                 model.__dict__['_s0_dom']=None; _KF['on']=False
+            if model.__dict__.get('_slow') is not None:                                     # north-star rung 1: SLOW HEAD learns online from this step's real rows (stop-gradient)
+                from platypus.inference.slowhead import slow_update
+                slow_update(model,cfg,x,h_.detach(),dom_id)
             if cfg.stream:                                                                  # change detection: this batch's loss BEFORE the head refit
                 with torch.no_grad(): model.__dict__['_rl']=F.cross_entropy(model.heads[dom_id](priv(model,x,h_.detach(),dom_id)).float().reshape(-1,256),y.reshape(-1))
                 if cfg.stream_rep: _srep_note(model,h_)
@@ -899,7 +902,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                           +(f" | floor weight mean {np.mean(_V97['fw']):.2f}, skipped calls {_V97['skip']} of {_V97['calls']} (running verified share {float(fz2_['vps']) if fz2_.get('vps') is not None else float('nan'):.2f})" if float(cfg.cd_floor_hi)>float(cfg.cd_floor_lo) else ""))
                     for k3_ in _V97: _V97[k3_]=[] if isinstance(_V97[k3_],list) else 0
                 if float(cfg.cd_buf)>0 and _CBUF['calls']:
-                    print(f"    [v9.7 buffer] {_CBUF['mix']/_CBUF['calls']:.1f} buffered windows per conduit step | from: "+(" ".join(f"{dn_(d_) if callable(globals().get('dn_')) else d_}:{c_}" for d_,c_ in sorted(_CBUF['src'].items())) or "-")
+                    print(f"    [v9.7 buffer] {_CBUF['mix']/_CBUF['calls']:.1f} buffered windows per conduit step | from: "+(" ".join(f"{d_}:{c_}" for d_,c_ in sorted(_CBUF['src'].items())) or "-")
                           +" | buffer now: "+" ".join(f"{d_}:{len(e_['x'])}" for d_,e_ in sorted(_CBUF['d'].items())))
                     _CBUF.update(mix=0,calls=0,src={})
                 for k2_ in list(FOKS): FOKS[k2_]=[]
