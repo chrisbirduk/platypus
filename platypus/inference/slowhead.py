@@ -38,13 +38,15 @@ def slow_init(model, cfg):
     model.__dict__['_slow'] = {'W': W, 'opt': torch.optim.Adam([W], lr=float(getattr(cfg, 'slow_lr', 1e-2))), 'mu': {}, 'n': 0, 'k': k,
                                'delta': int(getattr(cfg, 'slow_delta', 8)), 'every': max(1, int(getattr(cfg, 'slow_every', 1))), 'log': [], 'vis': -1,
                                'seg': int(getattr(cfg, 'slow_seg', 16)), 'iters': max(1, int(getattr(cfg, 'slow_iters', 4))),
+                               'anc': float(getattr(cfg, 'slow_anchor', 0.0) or 0.0), 'aref': None, 'aP': None, 'az': None, 'avis': None, 'alog': [],
                                'sent': int(getattr(cfg, 'slow_sent', 0) or 0), 'sent_every': max(1, int(getattr(cfg, 'slow_sent_every', 2))), 'pix': None, 'pn': -1,
                                'cf': int(getattr(cfg, 'slow_cf_init', 0) or 0), 'res': [], 'nres': 0, 'cfdone': False, 'vis0': None}
     st0 = model.__dict__['_slow']
     print(f"  [SLOW HEAD] on (rung 1): k {k}, " + (f"SEGMENT slowness: pooled {st0['seg']}-byte segments predicting the next" if st0['seg'] > 0 else f"delta {st0['delta']} bytes") + f", {st0['iters']} iteration(s) per step, lr {float(getattr(cfg, 'slow_lr', 1e-2)):g}, "
           f"weights prediction {float(getattr(cfg, 'slow_wp', 1.0)):g} / variance {float(getattr(cfg, 'slow_wv', 1.0)):g} / decorrelation "
           f"{float(getattr(cfg, 'slow_wc', 1.0)):g}; stop-gradient (the trunk is unchanged)" + ("; CLOSED-FORM START at the end of the first visit (v3)" if st0['cf'] else "")
-          + (f"; SENTENCE PAIRS (v4): {st0['sent']} adjacent stored sentence pairs every {st0['sent_every']} step(s), replacing byte segments" if st0['sent'] else ""), flush=True)
+          + (f"; SENTENCE PAIRS (v4): {st0['sent']} adjacent stored sentence pairs every {st0['sent_every']} step(s), replacing byte segments" if st0['sent'] else "")
+          + (f"; ANCHOR x{st0['anc']:g}: 64 fixed stored sentences keep their codes from the end of the previous visit (training-clock stability)" if st0['anc'] > 0 else ""), flush=True)
 
 
 def _cf_set(st):
@@ -133,19 +135,35 @@ def _sent_update(model, cfg, st):
     if len(st['pix']) < 50: return
     g = st.setdefault('g', torch.Generator().manual_seed(int(cfg.seed) + 3232)); ix = torch.randint(0, len(st['pix']), (st['sent'],), generator=g).tolist()
     Pa = _pooled(model, st, [it[st['pix'][j]]['s'] for j in ix]); Pb = _pooled(model, st, [it[st['pix'][j] + 1]['s'] for j in ix]); k = st['k']
+    vis0 = int(model.__dict__.get('_visit', 0)); anc = st['anc']
+    if anc > 0:                                                                   # ANCHOR (bank item 3): codes of a fixed reference set held to their values at the end
+        if st['aref'] is None:                                                    #   of the previous visit, so W follows the trunk's drift (as the edit's re-solve does by hand)
+            ra = [x['s'] for x in it if x.get('k') == 'real' and 20 <= len(x['s']) <= 300]
+            if len(ra) >= 64: gq = torch.Generator().manual_seed(int(cfg.seed) + 3434); st['aref'] = [ra[j] for j in torch.randperm(len(ra), generator=gq)[:64].tolist()]
+        if st['aref'] is not None:
+            if st['aP'] is None or st['n'] % 50 == 0 or st['avis'] != vis0: st['aP'] = _pooled(model, st, st['aref'])
+            if st['avis'] != vis0:                                                # a new visit: record the codes as they stand (trunk now, W now) and how far they had moved
+                with torch.no_grad():
+                    zn = F.normalize(st['aP'] @ st['W'].detach(), dim=-1)
+                    if st['az'] is not None: st['alog'].append((vis0, float((zn * st['az']).sum(-1).mean())))
+                    st['az'] = zn
+                st['avis'] = vis0
     for _ in range(st['iters']):
         with torch.enable_grad():
             za = Pa @ st['W']; zb = Pb @ st['W']; zf = torch.cat([za, zb]); mu = zf.mean(0); sd = torch.sqrt(zf.var(0) + 1e-4)
             pred = (((zb - mu) / sd - (za - mu) / sd) ** 2).mean(); vl = F.relu(1 - sd).mean() + F.relu(sd - 2).mean()
             zc = (zf - mu) / sd; cov = zc.T @ zc / max(1, len(zf) - 1); off = cov - torch.diag(torch.diag(cov)); cl = (off ** 2).sum() / k
             loss = float(getattr(cfg, 'slow_wp', 1.0)) * pred + float(getattr(cfg, 'slow_wv', 1.0)) * vl + float(getattr(cfg, 'slow_wc', 1.0)) * cl
+            if anc > 0 and st['az'] is not None and st['aP'] is not None:
+                loss = loss + anc * (1 - (F.normalize(st['aP'] @ st['W'], dim=-1) * st['az']).sum(-1)).mean()
             st['opt'].zero_grad(); loss.backward(); st['opt'].step()
     with torch.no_grad(): st['log'].append((float(pred), float(sd.mean()), float(off.abs().sum() / (k * (k - 1))), float(pred / 2)))
     vis = int(model.__dict__.get('_visit', 0))
     if vis != st['vis'] and len(st['log']) >= 10:
         L = st['log'][-100:]; m = lambda j: sum(r[j] for r in L) / len(L)
         print(f"  [SLOW HEAD | visit {vis}] {len(st['log'])} sentence-pair updates ({len(st['pix'])} adjacent pairs in the store) | slowness (change to the next sentence / unrelated) {m(3):.3f} | "
-              f"unit spread {m(1):.2f} | mean |correlation| between units {m(2):.3f}", flush=True)
+              f"unit spread {m(1):.2f} | mean |correlation| between units {m(2):.3f}"
+              + (f" | ANCHOR: reference codes vs the end of the previous visit, cosine {st['alog'][-1][1]:.3f}" if st['alog'] else ""), flush=True)
         st['vis'] = vis
 
 

@@ -152,19 +152,30 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
     def name_pos(pr, A, ps0):
         ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
-    def fit(words, selfc):
+    def fit(words, selfc, infow=0.0, items=None):
+        """items: (prompt, answer, domain, subject) to fit; by default this sleep's conclusions in each of the given wordings.
+        infow > 0: INFORMATION-WEIGHTED answer bytes (as in replay, inf_cons_infow): each byte's loss weighted by its bits under a neutral cue
+        (the subject replaced by 'someone'), divided by the mean over the answer and clipped to [0.25, infow]"""
         Ks, Rs, Ns, Js = [], [], [], []
-        for c in E:
-            for w in words:
-                pr = w.format(A=c['A']).encode('latin-1', 'replace'); tg = (c['C'] + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tg])
+        its = items if items is not None else [(w.format(A=c['A']), c['C'], c['d'], c['A']) for c in E for w in words]
+        for prs, Cs, dd, As in its:
+                pr = prs.encode('latin-1', 'replace'); tg = (Cs + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tg])
                 T1 = X.shape[1] - 1; ps = torch.arange(len(pr) - 1, min(T1, len(pr) + len(tg) - 1), device=X.device)
                 if ps.numel() == 0: continue
-                sl = int(S_slot(c['d'])); cap_['on'] = True; cap_['k'] = []; _ws_run(model, X, sl); cap_['on'] = False; K1 = cap_['k'][-1][0][ps]
-                nk = cap_['k'][-1][0][name_pos(pr, c['A'], ps[0])]
+                sl = int(S_slot(dd)); cap_['on'] = True; cap_['k'] = []; _ws_run(model, X, sl); cap_['on'] = False; K1 = cap_['k'][-1][0][ps]
+                nk = cap_['k'][-1][0][name_pos(pr, As, ps[0])]
+                wb = None
+                if infow > 0:
+                    prn = prs.replace(As, 'someone').encode('latin-1', 'replace'); Xn, Mn = _ws_batch(model, [prn + tg]); psn = torch.arange(len(prn) - 1, len(prn) - 1 + len(ps), device=X.device)
+                    with torch.no_grad():
+                        lgn = _ws_run(model, Xn, sl)[0]
+                        if int(psn[-1]) < lgn.shape[0]:
+                            bn = F.cross_entropy(lgn[psn].float(), Xn[0, psn + 1], reduction='none'); wb = (bn / bn.mean().clamp(min=1e-6)).clamp(0.25, infow)
                 dl = torch.zeros(len(ps), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
                 for s in range(st_):
                     cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(ps), ps), dl)
-                    lg = _ws_run(model, X, sl, grad_=True)[0, ps]; l = F.cross_entropy(lg, yt) + 1e-3 * (dl ** 2).sum()
+                    lg = _ws_run(model, X, sl, grad_=True)[0, ps]; ce = F.cross_entropy(lg, yt, reduction='none')
+                    l = (ce * wb).mean() if wb is not None else ce.mean(); l = l + 1e-3 * (dl ** 2).sum()
                     if selfc > 0:
                         if comp is None:                                          # the model's own top non-answer byte at each answer position (before fitting)
                             with torch.no_grad(): comp = lg.detach().scatter(1, yt[:, None], -1e9).argmax(1)
@@ -209,6 +220,30 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         Rf = tf_nk([(_CONC_CF[0], c) for c in E], dfun); Rh = tf_nk([(w, c) for c in E for w in _HO_TWO], dfun)
         return (f"fitted: open {np.mean([r['hit'] for r in Rf]):.2f} | HELD-OUT: open {np.mean([r['hit'] for r in Rh]):.2f}, "
                 f"first byte top-1 {np.mean([r['rank'] <= 1 for r in Rh]):.2f}, answer bytes top-1 {np.mean([r['top1'] for r in Rh]):.2f}")
+    def _source_shadow():
+        """SOURCE FACTS through the conclusion write path: recorded one-hop facts (the evidence record: subject, relation phrase, object), fitted
+        as the edit fits conclusions, in the source wording ("A <relation> ") alone and with the edit's written wordings; measured in the
+        source wording and in the held-out wordings, from the pre-edit weights (before) and after; open-ended = greedy produces the object"""
+        from platypus.inference.sentences import _inf_store
+        S9 = _inf_store(model); it = S9.get('it', []); rel = S9.get('rel', {}); rs9 = np.random.RandomState(int(cfg.seed) + 4545); fx = []
+        isname = lambda b: len(b) >= 3 and 65 <= b[0] <= 90 and all(65 <= x <= 90 or 97 <= x <= 122 for x in b)
+        keys = list(rel.keys()); rs9.shuffle(keys)
+        for (a9, r9) in keys:
+            for o9, ix9 in rel[(a9, r9)].items():
+                if isname(bytes(a9)) and isname(bytes(o9)) and ix9 and ix9[-1] < len(it):
+                    fx.append((bytes(a9).decode('latin-1'), bytes(r9).decode('latin-1').strip(), bytes(o9).decode('latin-1'), it[ix9[-1]]['d'])); break
+            if len(fx) >= 16: break
+        if len(fx) < 8: return f"SOURCE FACTS skipped ({len(fx)} recorded name-to-name facts)"
+        src = [(f"{a9} {r9} ", o9, d9, a9) for a9, r9, o9, d9 in fx]; ho = [(w.format(A=a9), o9, d9, a9) for a9, r9, o9, d9 in fx for w in _HO_TWO]
+        def meas():
+            R1 = _tf_items(model, [(p9, o9, S_slot(d9)) for p9, o9, d9, a9 in src]); R2 = _tf_items(model, [(p9, o9, S_slot(d9)) for p9, o9, d9, a9 in ho])
+            return (f"source wording: open {np.mean([r['hit'] for r in R1]):.2f}, answer bytes top-1 {np.mean([r['top1'] for r in R1]):.2f} | HELD-OUT: open "
+                    f"{np.mean([r['hit'] for r in R2]):.2f}, first byte top-1 {np.mean([r['rank'] <= 1 for r in R2]):.2f}, answer bytes top-1 {np.mean([r['top1'] for r in R2]):.2f}")
+        with torch.no_grad(): mo_.weight.copy_(W0_)
+        o9 = [f"no edit: {meas()}"]
+        for nm9, its9 in (('source wording only', src), (f'source wording + the {nw} edit wordings', src + [(w.format(A=a9), o9_, d9, a9) for a9, r9, o9_, d9 in fx for w in _CONC_CF[:nw]])):
+            K9, R9, N9, J9 = fit(None, ws_self, 0.0, its9); put(solve_cfg(K9, R9)); o9.append(f"{nm9} (+ self-contrast): {meas()}")
+        return f"SOURCE FACTS ({len(fx)} recorded one-hop facts, e.g. '{fx[0][0]} {fx[0][1]} {fx[0][2]}') :: " + " :: ".join(o9)
     out = []
     try:
         with torch.no_grad(): mo_.weight.copy_(W0_)
@@ -237,6 +272,11 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                 if int(m.sum()) >= 2: PR[j] = ridge(N[m], Rr[m], cI)
             put(dWk); out.append(f"own key + NAME x POSITION on the residual{tag}: "
                        f"{measure_nk(lambda nk, n: torch.stack([(PR[j] @ nk) if j in PR else zero for j in range(n)]))}")
+        iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
+        for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
+            K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
+        try: out.append(_source_shadow())
+        except Exception as e9: out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
         print(f"  [CF SHADOW EDITS] {len(E)} of this sleep's conclusions, each variant fitted on them alone and applied to the pre-edit weights at x{scale:g}, measured, removed "
               f"(the kept edit is restored) || " + " || ".join(out), flush=True)
     except Exception as e:
