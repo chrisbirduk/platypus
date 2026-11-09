@@ -152,6 +152,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
     def name_pos(pr, A, ps0):
         ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
+    FITLOG = []                                                                # (answer-byte loss, top-1) at the first and last fit step, subject site only
     def fit(words, selfc, infow=0.0, items=None, site='answer', cp=None, kall=None):
         """items: (prompt, answer, domain, subject) to fit; by default this sleep's conclusions in each of the given wordings.
         infow > 0: INFORMATION-WEIGHTED answer bytes (as in replay, inf_cons_infow): each byte's loss weighted by its bits under a neutral cue
@@ -181,6 +182,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                 for s in range(st_ * (2 if site == 'subject' else 1)):
                     cq['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(pd), pd), dl)
                     lg = _ws_run(model, X, sl, grad_=True)[0, ps]; ce = F.cross_entropy(lg, yt, reduction='none')
+                    if site == 'subject' and s in (0, st_ * 2 - 1): FITLOG.append((s == 0, float(ce.mean()) / 0.6931, float((lg.argmax(1) == yt).float().mean())))
                     l = (ce * wb).mean() if wb is not None else ce.mean(); l = l + 1e-3 * (dl ** 2).sum()
                     if selfc > 0:
                         if comp is None:                                          # the model's own top non-answer byte at each answer position (before fitting)
@@ -207,10 +209,14 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                 if cp['delta'] is not None: return out_ + cp['delta'].to(out_.dtype)
             hk2 = mo2.register_forward_hook(hook2)
             try:
-                kall = []; K, R, N, J = fit(words, ws_self, 0.0, None, 'subject', cp, kall)
+                kall = []; FITLOG.clear(); K, R, N, J = fit(words, ws_self, 0.0, None, 'subject', cp, kall)
+                f0 = [x for x in FITLOG if x[0]]; f1 = [x for x in FITLOG if not x[0]]
+                fl = (f"fit with the change itself at the name (fitted wordings): answer-byte loss {np.mean([x[1] for x in f0]):.2f} -> {np.mean([x[1] for x in f1]):.2f} bits, "
+                      f"answer bytes top-1 {np.mean([x[2] for x in f0]):.2f} -> {np.mean([x[2] for x in f1]):.2f}") if f0 and f1 else "fit log empty"
+
                 KA = torch.cat(kall); C2 = (KA.T @ KA) / max(1, len(KA)); moved = float(R.norm(dim=1).mean())
                 with torch.no_grad(): mo2.weight.copy_((W2.float() + scale * ridge(K, R, C2).float()).to(W2.dtype))
-                txt.append(f"block {li} of {nb} (fitted output change at the name, mean norm {moved:.3f}): {measure()}")
+                txt.append(f"block {li} of {nb} (fitted output change at the name, mean norm {moved:.3f}; {fl}) solved into the weights: {measure()}")
             finally:
                 with torch.no_grad(): mo2.weight.copy_(W2)
                 hk2.remove()
