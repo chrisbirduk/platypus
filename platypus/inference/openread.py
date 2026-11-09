@@ -138,7 +138,8 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
 
 
 def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp_):
-    """(2)+(3) shadow edits on up to 16 of this sleep's conclusions, each applied alone to the pre-edit weights at the kept scale, measured,
+    """(2)+(3) shadow edits on up to 16 of this sleep's conclusions (NOTE: the shadow fits leave out competitor contrast, inf_cf_contrast, so
+    'as configured' has no margin term at all), each applied alone to the pre-edit weights at the kept scale, measured,
     and removed (the kept edit is restored). cap_ is _cf_apply's hook dict (cap_['on'] captures keys, cap_['delta'] adds an output change)."""
     from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_twohop
     Wk = mo_.weight.detach().clone(); E = [c for c in E_][:16]
