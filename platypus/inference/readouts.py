@@ -242,9 +242,25 @@ def _inf_cls_probe(model,cfg):
         model.train(was_); del opt_
         try: _ng_zero(model)
         except Exception: pass
+    if int(getattr(cfg,'inf_ceiling_last',1)) and (int(getattr(cfg,'inf_ceiling2',0)) or int(getattr(cfg,'inf_ceiling',0))):
+        # 9 Nov: both ceiling tests run LAST (runner, after every other end-of-run readout). On the GPU (seed 2) CEILING LONG filled the device,
+        # the driver failed to map memory, and the CUDA error that followed killed every later readout (open diagnostic, selector comparison...)
+        model.__dict__['_deferred_ceiling']=lambda: _run_ceilings(model,cfg,nm,sl0_,acc,candn,rs_)
+    else: _run_ceilings(model,cfg,nm,sl0_,acc,candn,rs_)
+    _SCORE_LEN['n']=0
+    print(f"  [inference CLS PROBES | SCHEMA TEST, IN CONTEXT] {len(ic_)} of {NS_} brand-new chains fit the window whole, both premises in the prompt, store off: two-hop {bic_:.2f} (chance 0.10)",flush=True)
+    print(f"  [inference CLS PROBES | SCHEMA TEST] {NS_} brand-new chains, store off, weights only: before learning one-hop {b1_:.2f} two-hop {b2_:.2f} -> after {K_} steps on their one-hop facts: one-hop {a1_:.2f} two-hop {a2_:.2f} (weights restored)",flush=True)
+
+def _run_ceilings(model,cfg,nm,sl0_,acc,candn,rs_):
+    """the two composition-ceiling tests (CEILING LONG, CEILING TEST); by default deferred to the very end of the run"""
+    _SCORE_LEN['n']=int(getattr(cfg,'inf_schema_ctxlen',0))                    # as when they ran inside the schema test
+    try: _run_ceilings0(model,cfg,nm,sl0_,acc,candn,rs_)
+    finally: _SCORE_LEN['n']=0
+def _run_ceilings0(model,cfg,nm,sl0_,acc,candn,rs_):
     if int(getattr(cfg,'inf_ceiling2',0)):
         _gpu_mem_report('before CEILING LONG')
-        for lean_ in (0,1):                                                     # cg26q: after running out of GPU memory, retry once without optimizer state for the large tables
+        for lean_ in ((1,) if torch.cuda.is_available() else (0,1)):            # 9 Nov: LEAN first on the GPU (tensors of 4M+ numbers fixed, no optimizer state for them):
+                                                                                #   out of memory surfaced as a driver mapping failure, never as a catchable OOM
             cfg._ceil2_lean=lean_
             try: _inf_ceiling2(model,cfg,nm,sl0_,acc,rs_); break
             except Exception as e_:
@@ -262,9 +278,6 @@ def _inf_cls_probe(model,cfg):
         except Exception as e_:
             _fail('inference.readouts:233')
             import traceback as _tb; print(f"  [inference CEILING TEST] FAILED: {type(e_).__name__}: {e_} | {_tb.format_exc()[-500:]!r}",flush=True)
-    _SCORE_LEN['n']=0
-    print(f"  [inference CLS PROBES | SCHEMA TEST, IN CONTEXT] {len(ic_)} of {NS_} brand-new chains fit the window whole, both premises in the prompt, store off: two-hop {bic_:.2f} (chance 0.10)",flush=True)
-    print(f"  [inference CLS PROBES | SCHEMA TEST] {NS_} brand-new chains, store off, weights only: before learning one-hop {b1_:.2f} two-hop {b2_:.2f} -> after {K_} steps on their one-hop facts: one-hop {a1_:.2f} two-hop {a2_:.2f} (weights restored)",flush=True)
 
 def _inf_ceiling(model,cfg,nm,sl0_,acc,candn,rs_):
     """COMPOSITION CEILING (can this trunk compose at all?). Brand-new chains, weights copied and restored after each arm.

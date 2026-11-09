@@ -304,6 +304,12 @@ def _inf_mix(model,cfg,S_,ts):
     pc_=[c_ for c_ in S_.get('conc',[]) if isinstance(c_.get('src'),tuple) and not c_.get('freed')]   # POSITIVE CONTROL: the two premises of committed conclusions
     for c_ in [pc_[int(i_)] for i_ in rs_.choice(len(pc_),min(16,len(pc_)),replace=False)] if pc_ else []:   #   (known linked pairs) go through the SAME test;
         P_.append((int(c_['src'][0]),int(c_['src'][1]),'control+'))             #   never dreamed, only scored - the test must pass these far more often than random
+    LPF_=None
+    if float(getattr(cfg,'inf_latent_prefilter',0.0))>0:                        # 9 Nov LATENT FIRST PASS: the lowest-SFA-cosine proposals skip the byte judge
+        try:
+            from platypus.inference.latentjudge import latent_prefilter
+            P_,AU9_,LPF_=latent_prefilter(model,cfg,S_,P_,T_); P_=P_+AU9_       #   (audit pairs: judged, never accepted)
+        except Exception as e9_: _fail('inference.mixing:prefilter'); print(f"  [LATENT FIRST PASS] unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     byd_={}
     for i_ in old_: byd_.setdefault(it_[i_]['d'],[]).append(i_)
     nb_=int(getattr(cfg,'inf_mix_nbase',3))
@@ -326,6 +332,7 @@ def _inf_mix(model,cfg,S_,ts):
         mB_=_mix_mask(A_,tB_,kp9_); mA_=_mix_mask(B_,tA_,kp9_)                  # (copying excluded: bytes of common words B shares with A, and vice versa)
         gB_=float((bRB_-bAB_)[mB_].sum()); gA_=float((bRA_-bBA_)[mA_].sum()); gr_=float((bRB_-bAB_).sum()+(bRA_-bBA_).sum())
         G_.append((a_,b_,src_,min(gA_,gB_),gr_,gA_,gB_))
+    GA9_=[g_ for g_ in G_ if g_[2]=='audit']; G_=[g_ for g_ in G_ if g_[2]!='audit']   # audit pairs leave before anything else sees them
     if int(getattr(cfg,'inf_mix_null',1)):                                      # THRESHOLD SET BY CHANCE: a proposed pair must beat the 95th percentile of what RANDOM pairs
         nr9_=[g_[3] for g_ in G_ if g_[2]=='random']                            #   reach this sleep (both ways), not just a fixed number of bits
         if len(nr9_)>=10: thr_=max(thr_,float(np.quantile(nr9_,float(getattr(cfg,'inf_mix_null_q',0.95)))))   # cg22: quantile settable (GPU cg21c: chance-level junk accepted at 0.95)
@@ -333,6 +340,11 @@ def _inf_mix(model,cfg,S_,ts):
     model.__dict__['_mixctrl']=(len(cpn_),sum(1 for x_ in cpn_ if x_>=thr_),float(np.median(cpn_)) if cpn_ else float('nan'),len(rdn_),sum(1 for x_ in rdn_ if x_>=thr_),float(np.median(rdn_)) if rdn_ else float('nan'),thr_)
     for a_,b_,src_,mg9_,gr_,gA_,gB_ in G_:
         if src_ not in ('random','control+') and mg9_>=thr_: acc_.append((a_,b_,src_,gA_,gB_))
+    if LPF_ is not None:
+        try:
+            from platypus.inference.latentjudge import latent_prefilter_report
+            latent_prefilter_report(model,LPF_,GA9_,thr_,len(acc_),tj9_,len(G_)+len(GA9_))
+        except Exception as e9_: _fail('inference.mixing:prefilter_report'); print(f"  [LATENT FIRST PASS] report unavailable ({type(e9_).__name__}: {e9_})"[:200],flush=True)
     if int(getattr(cfg,'inf_jd_judge',0)):                                     # cg26j: the judge's outcome for every tested pair, kept for training the JEPA selector
         JG9_=S_.setdefault('jd_judged',[]); dfj_=S_.get('df',{}); dmj_=int(cfg.inf_df)
         nmj_=lambda t_: {w_.group(0) for w_ in _UWORD.finditer(t_) if len(w_.group(0))>=4 and w_.group(0)[:1].isupper() and w_.group(0)[1:].isalpha() and w_.group(0)[1:].islower() and 0<dfj_.get(w_.group(0),0)<=dmj_}

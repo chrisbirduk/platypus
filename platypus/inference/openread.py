@@ -18,8 +18,6 @@ import torch
 import torch.nn.functional as F
 from platypus.common import _fail, _CONC_CF, _HO_TWO
 
-_CONC_CF_X = ("{A} can be linked to ", "Starting from {A}, one arrives at ")       # two more WRITTEN wordings for the six-wording shadow edit;
-                                                                                  #   none is a test wording (_HO_TWO, _CF_VARY, reworded/context/pronoun)
 
 
 def _isl(b): return 65 <= b <= 90 or 97 <= b <= 122
@@ -278,6 +276,166 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         for nm9, its9 in (('source wording only', src), (f'source wording + the {nw} edit wordings', src + [(w.format(A=a9), o9_, d9, a9) for a9, r9, o9_, d9 in fx for w in _CONC_CF[:nw]])):
             K9, R9, N9, J9 = fit(None, ws_self, 0.0, its9); put(solve_cfg(K9, R9)); o9.append(f"{nm9} (+ self-contrast): {meas()}")
         return f"SOURCE FACTS ({len(fx)} recorded one-hop facts between planted names, e.g. '{fx[0][0]} {fx[0][1]} {fx[0][2]}') :: " + " :: ".join(o9)
+    def _slot_gate(FITs, put):
+        """ANSWER-SLOT GATES (north-star rung 3 without the oracle; readout). The NAME x POSITION memory needs to know WHERE an answer starts
+        and WHOSE answer it is; neither is given. SUBJECT REGISTER: the most recent name-like word before the position (capitalised, 3+
+        letters: the store's own name pattern); its last byte's key is the name key the memory reads. Three ways to decide where to fire,
+        each trained only on the system's own material (this sleep's conclusions in the written edit wordings, recorded name-to-name facts in
+        their source wording, ordinary stored sentences); the held-out question wordings are never seen:
+          LINEAR: logistic regression on the edited layer's key at the byte (64 principal directions);
+          SERAC-STYLE (Mitchell et al. 2022): a small two-layer gate on the same key plus the bytes since the register's name ended, trained on
+            MORE FORMS the system writes itself (relation-agnostic: 'Notes on A: ...', 'Q: A <rel> whom? A: ', 'It is recorded that A <rel> ',
+            'A <rel> ... '; never a test wording) and HARD NEGATIVES (the 1-3 bytes after a name in ordinary sentences, weighted x3);
+          WISE-STYLE (Wang et al. 2024): no separate gate - a closed-form first-byte memory on [key at the byte ; key at the register's name]
+            fitted to the first answer byte's change at the slots and to ZERO at every other byte with a register (ordinary sentences and the
+            training texts); it fires where its own output norm passes the smallest it reaches on a stored conclusion (WISE's rule), or the
+            1% point of ordinary text.
+        Thresholds for the gates: the 99th percentile on held-in ordinary sentences (and for WISE also its own rule). Measured on held-out
+        wordings of this sleep's conclusions: fires at the slot / fires earlier in the prompt / recall with the memory applied from the FIRST
+        firing byte for as many bytes as the longest fitted answer; and on held-out ordinary sentences: fires per 1000 bytes, BPC change with
+        the memory applied at the first firing byte of each sentence. Pre-edit weights, store off, the memory at the kept scale."""
+        import re as _re
+        from platypus.inference.sentences import _inf_store
+        K, R, N, J = FITs; H = K.shape[1]; cI = float(C0_.diagonal().mean()) * torch.eye(H, device=C0_.device)
+        PJ = {j: ridge(N[J == j], R[J == j], cI) for j in range(int(J.max()) + 1) if int((J == j).sum()) >= 2}
+        if not PJ: return "ANSWER-SLOT GATES skipped (no memory)"
+        jmax = max(PJ) + 1; put(torch.zeros_like(W0_, dtype=torch.float32))
+        S9 = _inf_store(model); it = S9.get('it', []); rel = S9.get('rel', {}); rs9 = np.random.RandomState(int(cfg.seed) + 4747)
+        isname = lambda b: len(b) >= 3 and 65 <= b[0] <= 90 and all(65 <= x <= 90 or 97 <= x <= 122 for x in b)
+        def keys_of(txt, sl):                                                     # the edited layer's keys at every byte (store off, pre-edit weights)
+            X, M = _ws_batch(model, [txt]); cap_['on'] = True; cap_['k'] = []
+            with torch.no_grad(): _ws_run(model, X, sl)
+            cap_['on'] = False; return X, cap_['k'][-1][0].float()                # (T-1, H): key at t predicts byte t+1
+        def regs(txt, T):                                                         # SUBJECT REGISTER per byte: last byte of the latest name-like word ending before t
+            out = np.full(T, -1, dtype=np.int64)
+            for m in _re.finditer(rb"[A-Za-z]+", txt):
+                if isname(m.group(0)): out[m.end():] = m.end() - 1               # bytes after the name (the name's own bytes do not see it yet)
+            return out[:T]
+        # ---- material
+        facts = []
+        for (a9, r9) in list(rel.keys())[:4000]:
+            if len(facts) >= 64: break
+            for o9, ix9 in rel[(a9, r9)].items():
+                if isname(bytes(a9)) and isname(bytes(o9)) and ix9 and ix9[-1] < len(it):
+                    facts.append((bytes(a9).decode('latin-1'), bytes(r9).decode('latin-1').strip(), bytes(o9).decode('latin-1'), it[ix9[-1]]['d'])); break
+        base = [(w.format(A=c['A']), c['C'], c['d']) for c in E for w in words] + [(f"{a} {r} ", o, d) for a, r, o, d in facts]
+        FC = ("Notes on {A}: {A} {r} ", "Q: {A} {r} whom? A: ", "It is recorded that {A} {r} ", "{A} {r} ... ")   # relation-agnostic, never a test wording
+        more = [(f.format(A=c['A'], r='is connected to'), c['C'], c['d']) for c in E for f in FC] + [(f.format(A=a, r=r), o, d) for a, r, o, d in facts for f in FC]
+        real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+        sel = [real[int(k)] for k in rs9.choice(len(real), min(400, len(real)), replace=False)] if real else []
+        held_in, held_out = sel[:len(sel) // 2], sel[len(sel) // 2:]
+        def collect(items):                                                       # (CPU keys, register per byte, slot byte) per training text
+            out = []
+            for pr, C, d in items:
+                pb = pr.encode('latin-1', 'replace'); txt = pb + (C + '.').encode('latin-1', 'replace'); X, Kt = keys_of(txt, int(S_slot(d)))
+                out.append((Kt.cpu(), regs(txt, Kt.shape[0]), len(pb) - 1))
+            return out
+        TB, TM = collect(base), collect(more)
+        TO = []
+        for x in held_in:
+            txt = bytes(x['s']); X, Kt = keys_of(txt, int(S_slot(x['d']))); TO.append((Kt.cpu(), regs(txt, Kt.shape[0])))
+        if len(TB) < 16 or not TO: return f"ANSWER-SLOT GATES skipped ({len(TB)} training texts)"
+        Kall = torch.cat([k for k, _, _ in TB] + [k for k, _ in TO]); mu = Kall.mean(0)
+        U, Sv, V = torch.linalg.svd(Kall[torch.randperm(len(Kall), generator=torch.Generator().manual_seed(7))[:4000]] - mu, full_matrices=False)
+        P = V[:64].T; sd = ((Kall - mu) @ P).std(0) + 1e-6; del Kall
+        f = lambda Kt: ((Kt.float().cpu() - mu) @ P) / sd
+        sub30 = lambda n, s: torch.randperm(n, generator=torch.Generator().manual_seed(s))[:30]
+        def fit_logit(Xp, Xn, wn=None, hidden=0):
+            g0 = torch.Generator().manual_seed(11); din = Xp.shape[1]
+            W1 = (torch.randn(din, hidden, generator=g0) / din ** 0.5).requires_grad_(True) if hidden else None
+            w = torch.zeros(hidden or din, requires_grad=True); b = torch.zeros(1, requires_grad=True)
+            ps = [w, b] + ([W1] if hidden else []); op = torch.optim.Adam(ps, lr=0.03 if hidden else 0.05)
+            fwd = (lambda Z: F.relu(Z @ W1) @ w + b) if hidden else (lambda Z: Z @ w + b)
+            wn = torch.ones(len(Xn)) if wn is None else wn; wp = float(wn.sum()) / len(Xp)
+            with torch.enable_grad():
+                for _ in range(400 if hidden else 300):
+                    loss = -(wp * F.logsigmoid(fwd(Xp)).sum() + (wn * F.logsigmoid(-fwd(Xn))).sum()) / (wp * len(Xp) + float(wn.sum()))
+                    loss = loss + 1e-3 * sum((q ** 2).sum() for q in ps if q is not b); op.zero_grad(); loss.backward(); op.step()
+            return lambda Z: fwd(Z).detach()
+        # ---- LINEAR (as before: base texts + ordinary)
+        Lp = torch.stack([f(k[sp:sp + 1])[0] for k, _, sp in TB if sp < len(k)])
+        Ln = torch.cat([f(torch.cat([k[:sp], k[sp + 1:]])) for k, _, sp in TB] + [f(k[sub30(len(k), i)]) for i, (k, _) in enumerate(TO)])
+        lin = fit_logit(Lp, Ln)
+        # ---- SERAC-STYLE (more forms, hard negatives, recency feature, two layers)
+        def fz(k, rg):                                                            # key features + log bytes since the register's name + has-register
+            t = torch.arange(len(k)); rr = torch.tensor(rg[:len(k)]); hr = (rr >= 0).float()
+            return torch.cat([f(k), (torch.log1p((t - rr).clamp(min=0).float()) * hr)[:, None], hr[:, None]], 1)
+        Sp, Sn, Sw = [], [], []
+        for k, rg, sp in TB + TM:
+            Z = fz(k, rg)
+            if sp < len(Z): Sp.append(Z[sp]); Sn.append(torch.cat([Z[:sp], Z[sp + 1:]])); Sw.append(torch.ones(len(Z) - 1))
+        for i, (k, rg) in enumerate(TO):
+            Z = fz(k, rg); ix = sub30(len(Z), i); Sn.append(Z[ix]); Sw.append(torch.ones(len(ix)))
+            hard = [t for t in range(1, len(Z)) if rg[t] >= 0 and 1 <= t - rg[t] <= 3]   # HARD NEGATIVES: just after a name in ordinary text
+            if hard: Sn.append(Z[hard]); Sw.append(torch.full((len(hard),), 3.0))
+        ser = fit_logit(torch.stack(Sp), torch.cat(Sn), torch.cat(Sw), hidden=32)
+        # ---- WISE-STYLE (closed-form first-byte memory fitted with zero targets elsewhere; fires on its own output norm)
+        def fw(k, rg):                                                            # [key at the byte ; key at the register's name] (zeros without a register)
+            Fk = f(k); rr = torch.tensor(rg[:len(k)]); hn = torch.zeros_like(Fk); ok = rr >= 0
+            if bool(ok.any()): hn[ok] = Fk[rr[ok]]
+            return torch.cat([Fk, hn], 1), ok
+        m0 = J == 0; Xpos = torch.cat([f(K[m0]), f(N[m0])], 1); Ypos = R[m0].float().cpu()
+        negs = []
+        for k, rg, sp in TB:
+            Z, ok = fw(k, rg); ok[sp:sp + 1] = False; negs.append(Z[ok])
+        for i, (k, rg) in enumerate(TO):
+            Z, ok = fw(k, rg); ix = [int(t) for t in sub30(len(Z), i) if bool(ok[int(t)])]; negs.append(Z[ix])
+        Xneg = torch.cat(negs); wpos = float(len(Xneg)) / max(1, len(Xpos))
+        A = wpos * Xpos.T @ Xpos + Xneg.T @ Xneg + 1e-1 * (len(Xpos) * wpos + len(Xneg)) / Xpos.shape[1] * torch.eye(Xpos.shape[1])
+        Wm = torch.linalg.solve(A, wpos * Xpos.T @ Ypos).T                        # (D, 128): the first answer byte's change; ~0 off the slots
+        act = lambda Z: (Z @ Wm.T).norm(dim=1)
+        wise_min = float(act(Xpos).min()); wise_med = float(act(Xpos).median())
+        # ---- scoring of a text by each gate
+        def score(kind, k, rg):
+            if kind == 'linear': return lin(f(k))
+            if kind == 'serac': return ser(fz(k, rg))
+            Z, ok = fw(k, rg); s = act(Z); s[~ok] = 0.0; return s
+        ordo = []
+        for x in held_out:
+            txt = bytes(x['s']); sl = int(S_slot(x['d'])); X, Kt = keys_of(txt, sl); ordo.append((txt, sl, X, Kt, regs(txt, Kt.shape[0])))
+        qs = []
+        for c in E:
+            for w9 in _HO_TWO:
+                pb = w9.format(A=c['A']).encode('latin-1', 'replace'); tb = (c['C'] + '.').encode('latin-1', 'replace'); txt = pb + tb; sl = int(S_slot(c['d']))
+                X, Kt = keys_of(txt, sl); qs.append((txt, sl, X, Kt, regs(txt, Kt.shape[0]), len(pb) - 1, tb))
+        held_in_scores = {kind: torch.cat([score(kind, k, rg) for k, rg in TO]) for kind in ('linear', 'serac', 'wise')}
+        def apply_memory(X, Kt, sl, rg, t0):                                      # name-keyed memory bytes from t0 on, keyed by the register at t0
+            ne = int(rg[t0]) if t0 < len(rg) else -1
+            if ne < 0: return None
+            nk = Kt[ne]; T1 = X.shape[1] - 1; ps = torch.arange(t0, min(T1, t0 + jmax), device=X.device)
+            dv = scale * torch.stack([(PJ[j] @ nk) if j in PJ else torch.zeros(D, device=X.device) for j in range(len(ps))])
+            cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(ps), ps), dv.to(X.device))
+            try:
+                with torch.no_grad(): return _ws_run(model, X, sl)[0]
+            finally: cap_['delta'] = None
+        def evaluate(kind, th):
+            at, early, hit, fb, ab = [], [], [], [], []
+            for txt, sl, X, Kt, rg, sp, tb in qs:
+                sc = score(kind, Kt.cpu(), rg); fired = [t for t in range(len(sc)) if float(sc[t]) > th]
+                at.append(sp in fired); early.append(any(t < sp for t in fired)); t0 = fired[0] if fired else None
+                lg = apply_memory(X, Kt, sl, rg, t0) if t0 is not None and t0 <= sp + 2 else None
+                if lg is None:
+                    with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
+                ps = torch.arange(sp, sp + len(tb), device=X.device); ps = ps[ps < lg.shape[0]]
+                if len(ps) < len(tb): continue
+                L = F.log_softmax(lg[ps].float(), -1); tr = torch.tensor(list(tb), device=X.device); top = L.argmax(-1); okb = (top[:-1] == tr[:-1]).float()
+                hit.append(bool(okb.all()) and not _isl(int(top[-1]))); fb.append(int(top[0]) == int(tr[0])); ab.append(float(okb.mean()))
+            nfire, nby, dbits = 0, 0, 0.0
+            for txt, sl, X, Kt, rg in ordo:
+                sc = score(kind, Kt.cpu(), rg); fired = [t for t in range(len(sc)) if float(sc[t]) > th]; nfire += len(fired); nby += len(sc)
+                if not fired: continue
+                lg1 = apply_memory(X, Kt, sl, rg, fired[0])
+                if lg1 is None: continue
+                with torch.no_grad(): l0 = F.cross_entropy(_ws_run(model, X, sl)[0].float(), X[0, 1:], reduction='sum')
+                dbits += float(F.cross_entropy(lg1.float(), X[0, 1:], reduction='sum') - l0) / np.log(2)
+            return (f"fires AT the slot {np.mean(at):.2f}, earlier {np.mean(early):.2f} | recall (no oracle): open {np.mean(hit):.2f}, first byte {np.mean(fb):.2f}, "
+                    f"answer bytes {np.mean(ab):.2f} | ordinary text: {1000 * nfire / max(1, nby):.1f} fires per 1000 bytes, BPC {dbits / max(1, nby):+.4f}")
+        res = []
+        for kind, nm in (('linear', 'LINEAR'), ('serac', 'SERAC-STYLE (more forms, hard negatives, recency, 2 layers)'), ('wise', 'WISE-STYLE (self-firing memory)')):
+            th = float(torch.quantile(held_in_scores[kind], 0.99)); res.append(f"{nm} at 1% of ordinary text: {evaluate(kind, th)}")
+            if kind == 'wise': res.append(f"WISE-STYLE at its own rule (the smallest output on a stored conclusion, {wise_min:.3g}; median {wise_med:.3g}): {evaluate(kind, wise_min)}")
+        return (f"{len(TB)} base + {len(TM)} extra-form training texts ({len(E)} conclusions, {len(facts)} recorded facts), {len(TO)} ordinary sentences; "
+                f"memory: NAME x POSITION + self-contrast, {jmax} bytes; held-out questions {len(qs)} || " + " || ".join(res))
     out = []
     try:
         with torch.no_grad(): mo_.weight.copy_(W0_)
@@ -315,8 +473,18 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
+        # 9 Nov SYSTEM-WRITTEN QUESTION FORMS (the store-as-teacher test, readout): the edit fitted on the written wordings PLUS relation-agnostic
+        # question and wrapper forms the system writes itself - a different KIND of form from the extra paraphrase templates that added nothing
+        # (six wordings = three, GPU). None is a test wording (_HO_TWO, reworded, context, pronoun probes).
+        QF = ("Notes on {A}: So {A} is connected to ", "Q: {A} is connected to whom? A: ", "It is recorded that {A} is connected to ", "{A} is connected to ... ")
+        for sc, tag in ((ws_self, f' + SELF-CONTRAST x{ws_self:g}'),):
+            K, R, N, J = fit(list(words) + list(QF), sc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + {len(QF)} SYSTEM-WRITTEN QUESTION FORMS: {measure()}")
         try: out.append(_source_shadow())
         except Exception as e9: out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
+        if int(getattr(cfg, 'inf_slot_gate', 1)):
+            try: print(f"  [ANSWER-SLOT GATES | visit {int(model.__dict__.get('_visit', 0)) + 1}] " + _slot_gate(FIT[ws_self], put), flush=True)
+            except Exception as e7: _fail('inference.openread:slotgate'); print(f"  [ANSWER-SLOT GATES] unavailable ({type(e7).__name__}: {str(e7)[:160]})", flush=True)
+            with torch.no_grad(): mo_.weight.copy_(W0_)
         print(f"  [CF SHADOW EDITS] {len(E)} of this sleep's conclusions, each variant fitted on them alone and applied to the pre-edit weights at x{scale:g}, measured, removed "
               f"(the kept edit is restored) || " + " || ".join(out), flush=True)
     except Exception as e:

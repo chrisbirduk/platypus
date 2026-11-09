@@ -39,7 +39,6 @@ def slow_init(model, cfg):
                                'delta': int(getattr(cfg, 'slow_delta', 8)), 'every': max(1, int(getattr(cfg, 'slow_every', 1))), 'log': [], 'vis': -1,
                                'seg': int(getattr(cfg, 'slow_seg', 16)), 'iters': max(1, int(getattr(cfg, 'slow_iters', 4))),
                                'rule': str(getattr(cfg, 'slow_rule', 'grad') or 'grad'), 'zoff': None, 'alt': {},
-                               'anc': float(getattr(cfg, 'slow_anchor', 0.0) or 0.0), 'aref': None, 'aP': None, 'az': None, 'avis': None, 'alog': [],
                                'sent': int(getattr(cfg, 'slow_sent', 0) or 0), 'sent_every': max(1, int(getattr(cfg, 'slow_sent_every', 2))), 'pix': None, 'pn': -1,
                                'cf': int(getattr(cfg, 'slow_cf_init', 0) or 0), 'res': [], 'nres': 0, 'cfdone': False, 'vis0': None}
     st0 = model.__dict__['_slow']
@@ -48,8 +47,7 @@ def slow_init(model, cfg):
           f"{float(getattr(cfg, 'slow_wc', 1.0)):g}; stop-gradient (the trunk is unchanged)" + ("; CLOSED-FORM START at the end of the first visit (v3)" if st0['cf'] else "")
           + (f"; SENTENCE PAIRS (v4): {st0['sent']} adjacent stored sentence pairs every {st0['sent_every']} step(s), replacing byte segments" if st0['sent'] else "")
           + (f"; RULE {st0['rule']} (stats: waking accumulates covariances, each sleep solves SFA | twostage: online GHA whitening + minor-component rule, "
-             f"IncSFA-style | lpl: Latent Predictive Learning details - stop-gradient past code, running mean/variance, Hebbian variance term)" if st0['rule'] != 'grad' else "")
-          + (f"; ANCHOR x{st0['anc']:g}: 64 fixed stored sentences keep their codes from the end of the previous visit (training-clock stability)" if st0['anc'] > 0 else ""), flush=True)
+             f"IncSFA-style | lpl: Latent Predictive Learning details - stop-gradient past code, running mean/variance, Hebbian variance term)" if st0['rule'] != 'grad' else ""), flush=True)
 
 
 def _cf_set(st):
@@ -138,20 +136,7 @@ def _sent_update(model, cfg, st):
     if len(st['pix']) < 50: return
     g = st.setdefault('g', torch.Generator().manual_seed(int(cfg.seed) + 3232)); ix = torch.randint(0, len(st['pix']), (st['sent'],), generator=g).tolist()
     Pa = _pooled(model, st, [it[st['pix'][j]]['s'] for j in ix]); Pb = _pooled(model, st, [it[st['pix'][j] + 1]['s'] for j in ix]); k = st['k']
-    if st['rule'] in ('stats', 'twostage'): _alt_update(model, cfg, st, Pa, Pb); return
-    vis0 = int(model.__dict__.get('_visit', 0)); anc = st['anc']
-    if anc > 0:                                                                   # ANCHOR (bank item 3): codes of a fixed reference set held to their values at the end
-        if st['aref'] is None:                                                    #   of the previous visit, so W follows the trunk's drift (as the edit's re-solve does by hand)
-            ra = [x['s'] for x in it if x.get('k') == 'real' and 20 <= len(x['s']) <= 300]
-            if len(ra) >= 64: gq = torch.Generator().manual_seed(int(cfg.seed) + 3434); st['aref'] = [ra[j] for j in torch.randperm(len(ra), generator=gq)[:64].tolist()]
-        if st['aref'] is not None:
-            if st['aP'] is None or st['n'] % 50 == 0 or st['avis'] != vis0: st['aP'] = _pooled(model, st, st['aref'])
-            if st['avis'] != vis0:                                                # a new visit: record the codes as they stand (trunk now, W now) and how far they had moved
-                with torch.no_grad():
-                    zn = F.normalize(st['aP'] @ st['W'].detach(), dim=-1)
-                    if st['az'] is not None: st['alog'].append((vis0, float((zn * st['az']).sum(-1).mean())))
-                    st['az'] = zn
-                st['avis'] = vis0
+    if st['rule'] in ('stats', 'twostage', 'koopman', 'koopman_rls'): _alt_update(model, cfg, st, Pa, Pb); return
     for _ in range(st['iters']):
         with torch.enable_grad():
             za = Pa @ st['W']; zb = Pb @ st['W']; zf = torch.cat([za, zb]); mu = zf.mean(0); sd = torch.sqrt(zf.var(0) + 1e-4)
@@ -165,16 +150,13 @@ def _sent_update(model, cfg, st):
                 pred = (((zb - mu) / sd - (za - mu) / sd) ** 2).mean(); vl = F.relu(1 - sd).mean() + F.relu(sd - 2).mean()
             zc = (zf - mu) / sd; cov = zc.T @ zc / max(1, len(zf) - 1); off = cov - torch.diag(torch.diag(cov)); cl = (off ** 2).sum() / k
             loss = float(getattr(cfg, 'slow_wp', 1.0)) * pred + float(getattr(cfg, 'slow_wv', 1.0)) * vl + float(getattr(cfg, 'slow_wc', 1.0)) * cl
-            if anc > 0 and st['az'] is not None and st['aP'] is not None:
-                loss = loss + anc * (1 - (F.normalize(st['aP'] @ st['W'], dim=-1) * st['az']).sum(-1)).mean()
             st['opt'].zero_grad(); loss.backward(); st['opt'].step()
     with torch.no_grad(): st['log'].append((float(pred), float(sd.mean()), float(off.abs().sum() / (k * (k - 1))), float(pred / 2)))
     vis = int(model.__dict__.get('_visit', 0))
     if vis != st['vis'] and len(st['log']) >= 10:
         L = st['log'][-100:]; m = lambda j: sum(r[j] for r in L) / len(L)
         print(f"  [SLOW HEAD | visit {vis}] {len(st['log'])} sentence-pair updates ({len(st['pix'])} adjacent pairs in the store) | slowness (change to the next sentence / unrelated) {m(3):.3f} | "
-              f"unit spread {m(1):.2f} | mean |correlation| between units {m(2):.3f}"
-              + (f" | ANCHOR: reference codes vs the end of the previous visit, cosine {st['alog'][-1][1]:.3f}" if st['alog'] else ""), flush=True)
+              f"unit spread {m(1):.2f} | mean |correlation| between units {m(2):.3f}", flush=True)
         st['vis'] = vis
 
 
@@ -182,13 +164,43 @@ def _alt_update(model, cfg, st, Pa, Pb):
     """rung 1 alternatives on sentence pairs (codes always read as z = (pooled centred features) @ W - offset):
     'stats'    waking accumulates decaying sums (mean, covariance of the codes, covariance of the change to the next sentence); each new visit
                (after its sleep) solves closed-form SFA from them: top-64 whitening, then the slowest directions of the whitened change
+    'koopman' / 'koopman_rls' (9 Nov; Klus et al. 2018): a delta-rule memory B learns to predict the next sentence code from the current one
+               (both directions); its fixed point is sym(C1) C0^-1, so the slow features are the eigenvectors of B^T with the largest eigenvalues
+               (one-step autocorrelations) - SFA with the whitening supplied by the rule's own least-squares fixed point. 'koopman' = the plain
+               delta rule (normalised LMS: slow to reach C0^-1 in weak directions); 'koopman_rls' = recursive least squares (exact, still online)
     'twostage' IncSFA-style (Kompella et al. 2012): generalized Hebbian (Sanger) learning of the top principal directions with running variances
                = online whitening, then a minor-component (anti-Hebbian, symmetric Oja) rule on the whitened changes; all updates online"""
     A = st['alt']; k = st['k']; vis = int(model.__dict__.get('_visit', 0)); x = torch.cat([Pa, Pb]).float(); d = x.shape[1]; dev = x.device
     with torch.no_grad():
         if 'm' not in A: A['m'] = x.mean(0); A['s'] = float((x - x.mean(0)).pow(2).sum(1).mean().sqrt()) + 1e-6; A['n'] = 0
         A['m'] = 0.995 * A['m'] + 0.005 * x.mean(0); A['n'] += 1
-        if st['rule'] == 'stats':
+        if st['rule'] in ('koopman', 'koopman_rls'):                          # KOOPMAN (9 Nov): SFA read off a delta-rule memory (see the docstring)
+            kd = min(d, int(getattr(cfg, 'slow_koop_dim', 128)))
+            if 'B' not in A:                                                      # a fixed random rotation to kd dims keeps the operator small (none when kd = d)
+                g = torch.Generator().manual_seed(int(cfg.seed) + 3737)
+                A['R'] = (torch.linalg.qr(torch.randn(d, kd, generator=g))[0] if kd < d else torch.eye(d)).to(dev)
+                A['B'] = torch.zeros(kd, kd, device=dev); A['Pi'] = torch.eye(kd, device=dev) * 10.0; A['C0'] = torch.eye(kd, device=dev) * 1e-3
+            xa = ((Pa.float() - A['m']) / A['s']) @ A['R']; xb = ((Pb.float() - A['m']) / A['s']) @ A['R']
+            X = torch.cat([xa, xb]); Y = torch.cat([xb, xa])                       # both directions: the fixed point is sym(C1) C0^-1 (a reversible estimate)
+            A['C0'] = 0.995 * A['C0'] + 0.005 * (X.T @ X / len(X))                # (only to scale the codes to unit variance; not used by the rule)
+            if st['rule'] == 'koopman':                                           # DELTA RULE (normalised LMS): B <- B + eta (Y - B X) X^T
+                eta = 0.5 / float((X ** 2).sum(1).mean().clamp(min=1e-6))
+                A['B'] = A['B'] + eta * (Y.T - A['B'] @ X.T) @ X / len(X)
+            else:                                                                 # RECURSIVE LEAST SQUARES with forgetting lam (Woodbury on the batch)
+                lam = float(getattr(cfg, 'slow_koop_forget', 0.999)); Pi = A['Pi']
+                G = torch.linalg.solve(lam * torch.eye(len(X), device=dev) + X @ Pi @ X.T, X @ Pi)   # (n, kd)
+                Pn = (Pi - Pi @ X.T @ G) / lam; Pn = 0.5 * (Pn + Pn.T)
+                A['B'] = A['B'] + (Y.T - A['B'] @ X.T) @ (X @ Pn); A['Pi'] = Pn
+            if not bool(torch.isfinite(A['B']).all()): A['B'] = torch.zeros_like(A['B']); A['bad'] = A.get('bad', 0) + 1
+            if A.get('vis') is None: A['vis'] = vis
+            if (vis != A['vis'] or A['n'] % 50 == 0) and A['n'] >= 20:            # SLOW FEATURES = eigenvectors of B^T = C0^-1 sym(C1), largest eigenvalues
+                ev, V = torch.linalg.eig(A['B'].T.double().cpu()); er = ev.real; o = torch.argsort(-er)[:k]
+                Wk = V[:, o].real.float().to(dev); sdv = torch.sqrt(torch.diag(Wk.T @ A['C0'] @ Wk)).clamp(min=1e-6); Wk = Wk / sdv
+                P = (A['R'] @ Wk) / A['s']; st['W'].data.copy_(P.to(st['W'].dtype)); st['zoff'] = (A['m'] @ P).detach()
+                za = Pa.float() @ P; zb = Pb.float() @ P; zz = torch.cat([za, zb])
+                sl = float(((zb - za).var(0) / (2 * zz.var(0) + 1e-8)).mean()); st['log'].append((sl * 2, 1.0, 0.0, sl))
+                A['mu'] = (float(er[o].mean()), float(er[o].min())); A['vis'] = vis
+        elif st['rule'] == 'stats':
             xc = x - A['m']; dl = (Pb - Pa).float()
             C = xc.T @ xc / len(xc); Cd = dl.T @ dl / len(dl)
             A['C'] = C if 'C' not in A else 0.995 * A['C'] + 0.005 * C; A['Cd'] = Cd if 'Cd' not in A else 0.995 * A['Cd'] + 0.005 * Cd
@@ -210,14 +222,22 @@ def _alt_update(model, cfg, st, Pa, Pb):
                 Y = X @ A['U'].T                                                  # GHA (Sanger): dU = lr (y x^T - LT(y y^T) U)
                 A['U'] = A['U'] + 0.01 * ((Y.T @ X) / len(X) - torch.tril(Y.T @ Y / len(X)) @ A['U'])
                 A['var'] = 0.99 * A['var'] + 0.01 * (Y ** 2).mean(0)
-                Wv = A['U'].T / A['var'].clamp(min=1e-6).sqrt()                   # online whitening, d x kk
+                vf = A['var'].clamp(min=1e-3 * float(A['var'].mean()) + 1e-8)     # 9 Nov: floor the variances (tiny ones blew the whitening up -> NaN at visit 9)
+                Wv = A['U'].T / vf.sqrt()                                         # online whitening, d x kk
                 Du = (xb - xa) @ Wv; Dw = Du.T @ Du / len(Du)                     # covariance of the whitened change
-                A['W'] = A['W'] - 0.05 * (Dw @ A['W'] - A['W'] @ (A['W'].T @ Dw @ A['W']))   # minor components (symmetric Oja, anti-Hebbian)
+                lr = 0.05 / max(1.0, float(Dw.diagonal().sum()) / kk)             # step scaled by the mean eigenvalue (fixed 0.05 diverges when it is large)
+                Wn = A['W'] - lr * (Dw @ A['W'] - A['W'] @ (A['W'].T @ Dw @ A['W']))   # minor components (symmetric Oja, anti-Hebbian)
+                if not bool(torch.isfinite(Wn).all()): A['bad'] = A.get('bad', 0) + 1; continue   # never take a non-finite step
+                A['W'] = Wn
                 if A['n'] % 10 == 0: A['W'] = torch.linalg.qr(A['W'])[0]
             P = (Wv @ A['W']) / A['s']; st['W'].data.copy_(P.to(st['W'].dtype)); st['zoff'] = (A['m'] @ P).detach()
-            sl = float(torch.diag(A['W'].T @ Dw @ A['W']).mean() / 2); st['log'].append((sl * 2, 1.0, 0.0, sl))
+            za = Pa.float() @ P; zb = Pb.float() @ P; zz = torch.cat([za, zb])         # slowness measured on the codes themselves (not trusting the whitening)
+            sl = float(((zb - za).var(0) / (2 * zz.var(0) + 1e-8)).mean()); st['log'].append((sl * 2, 1.0, 0.0, sl))
         if vis != st['vis'] and len(st['log']) >= 5:
-            print(f"  [SLOW HEAD | visit {vis}] rule {st['rule']}: {A['n']} sentence-pair updates | slowness (whitened change / unrelated, latest) {st['log'][-1][3]:.3f}", flush=True)
+            print(f"  [SLOW HEAD | visit {vis}] rule {st['rule']}: {A['n']} sentence-pair updates | slowness (whitened change / unrelated, latest) {st['log'][-1][3]:.3f}"
+                  + (f" | non-finite steps skipped {A.get('bad', 0)}" if st['rule'] == 'twostage' else "")
+                  + (f" | eigenvalues of the slow directions (one-step autocorrelation) mean {A['mu'][0]:.3f}, min {A['mu'][1]:.3f}; resets {A.get('bad', 0)}"
+                     if st['rule'] in ('koopman', 'koopman_rls') and 'mu' in A else ""), flush=True)
             st['vis'] = vis
 
 
