@@ -303,7 +303,9 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         # ROME-STYLE: a plain weight edit at the subject's last byte in an EARLIER block's MLP, so later attention can carry it to the answer.
         # (9 Nov: fitted in the edited block - the last - it could not: nothing after the last MLP moves information between positions, the fit's
         # gradient was zero and the result equalled 'no edit' exactly. Void, not negative.) Key covariance of that block from the fitting texts.
-        put(torch.zeros_like(W0_, dtype=torch.float32)); out.append(_rome_shadow(fit, words, ws_self, ridge, measure, lam_))   # edited block back at the pre-edit weights
+        put(torch.zeros_like(W0_, dtype=torch.float32))
+        try: out.append(_rome_shadow(fit, words, ws_self, ridge, measure, lam_))
+        except Exception as e8: out.append(f"ROME-STYLE unavailable ({type(e8).__name__}: {str(e8)[:80]})")   # edited block back at the pre-edit weights
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
