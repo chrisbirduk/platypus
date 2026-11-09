@@ -23,7 +23,15 @@ def _rho(a, b):
 
 
 def latent_judge_readout(model, cfg, S_, G_, T_, thr_, byte_secs):
-    """G_: (a, b, source, margin (weaker side, bits), ...) as the byte judge scored them this sleep"""
+    """G_: (a, b, source, margin (weaker side, bits), ...) as the byte judge scored them this sleep. Run under a forked random state so
+    the readout cannot change training (9 Nov: without it a local run ended 0.006 BPC off its twin)"""
+    with torch.random.fork_rng(devices=[torch.cuda.current_device()] if torch.cuda.is_available() else []):
+        st0 = np.random.get_state()
+        try: _latent_judge(model, cfg, S_, G_, T_, thr_, byte_secs)
+        finally: np.random.set_state(st0)
+
+
+def _latent_judge(model, cfg, S_, G_, T_, thr_, byte_secs):
     from platypus.inference.selcmp import _codes, _fit_linear
     try:
         it = S_['it']; vis = int(model.__dict__.get('_visit', 0)); t0 = time.time()

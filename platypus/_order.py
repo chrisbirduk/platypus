@@ -690,6 +690,7 @@ ORDER = (
     ('inference.latentjudge', '_auc'),
     ('inference.latentjudge', '_rho'),
     ('inference.latentjudge', 'latent_judge_readout'),
+    ('inference.latentjudge', '_latent_judge'),
     ('inference.openread', '_isl'),
     ('inference.openread', '_tf_items'),
     ('inference.openread', '_summ'),
