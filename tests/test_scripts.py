@@ -72,3 +72,18 @@ class MergeOverrides(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+try:
+    import pyflakes  # noqa: F401
+    HAVE_PYFLAKES = True
+except ImportError:
+    HAVE_PYFLAKES = False
+
+
+@unittest.skipUnless(HAVE_PYFLAKES, "pyflakes is needed")
+class UndefinedNames(unittest.TestCase):
+    def test_package_has_no_undefined_names(self):
+        r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "check_undefined.py"), os.path.join(DEPLOY, "platypus")],
+                           capture_output=True, text=True, cwd=DEPLOY)
+        self.assertEqual(r.returncode, 0, r.stdout)

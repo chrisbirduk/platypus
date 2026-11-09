@@ -333,14 +333,13 @@ def _ws_closed_form(model,cfg,S_,vals,olds_,t,ts,S_slot):
             if ps_.numel()==0: continue
             sl_=int(S_slot(c_['d'])); cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,sl_); cap_['on']=False; K1_=cap_['k'][-1][0][ps_]
             D_=mo_.weight.shape[0]; dl_=torch.zeros(len(ps_),D_,device=X_.device,requires_grad=True); op_=torch.optim.Adam([dl_],lr=lr_*0.1)
-            yt_=X_[0,ps_+1]
+            yt_=X_[0,ps_+1]; scw_=float(getattr(cfg,'inf_cf_selfc',0.0)); sv_=None
             for _ in range(st_):
                 full_=torch.zeros(1,T1_,D_,device=X_.device); full_=full_.index_put((torch.zeros_like(ps_),ps_),dl_); cap_['delta']=full_
-                lg_=_ws_run(model,X_,sl_,grad_=True); l_=F.cross_entropy(lg_[0,ps_],yt_)+1e-3*(dl_**2).sum()
-                if sc9w_>0:
-                    if s9_==0: sv9_=lg9_.detach().scatter(1,yt_[:,None],-1e9).argmax(1)
-                    ms9_=lg9_.gather(1,yt_[:,None])[:,0]-lg9_.gather(1,sv9_[:,None])[:,0]; l_=l_+sc9w_*F.softplus(-ms9_).mean()
-                    if s9_ in (0,st_-1): sm9_.append((s9_==0,float((ms9_>0).float().mean()),float((ms9_>0).all())))
+                lg_=_ws_run(model,X_,sl_,grad_=True); lp_=lg_[0,ps_]; l_=F.cross_entropy(lp_,yt_)+1e-3*(dl_**2).sum()
+                if scw_>0:                                                      # SELF-CONTRAST as in _cf_apply (9 Nov: was pasted with _cf_apply's names, NameError)
+                    if sv_ is None: sv_=lp_.detach().scatter(1,yt_[:,None],-1e9).argmax(1)
+                    ms_=lp_.gather(1,yt_[:,None])[:,0]-lp_.gather(1,sv_[:,None])[:,0]; l_=l_+scw_*F.softplus(-ms_).mean()
                 op_.zero_grad(); l_.backward(); op_.step(); cap_['delta']=None
             Ks_.append(K1_); Rs_.append(dl_.detach().float())
         cap_['delta']=None

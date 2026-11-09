@@ -2,6 +2,7 @@
 #
 # Runs on every push and pull request, on CPU only:
 #   1. the package (and any single-file build) compiles and its NAME strings have no apostrophes
+#   1b. no undefined names (pyflakes; compileall cannot catch them)
 #   2. secret scan of the whole repository
 #   3. tests for the deployment scripts (readout extraction on real log excerpts)
 #   4. package structure tests (imports, run-time links, the single-file export) on CPU torch
@@ -37,6 +38,11 @@ jobs:
           sys.exit(f"{sys.argv[1]}: apostrophe in NAME at {bad}" if bad else 0)
           PY
           done
+
+      - name: Undefined names (pyflakes, minus each module's _LATE names)
+        run: |
+          pip install pyflakes
+          python scripts/check_undefined.py platypus
 
       - name: Secret scan
         run: python scripts/scan_secrets.py .

@@ -161,6 +161,17 @@ def _head_fwd_m(s,x):
         if act_: z_=z_+_infm_head_corr(x,z_)
     return z_
 Head.forward=_head_fwd_m
+def bpc_weights(model,get,domain,n=15,skip=0):
+    """the same evaluation with the fast store OFF (weights only): the headline BPC and forgetting (9 Nov, review). Reporting only."""
+    if _INFM['M'] is None: return _bpc_w0(model,get,domain,n,skip)
+    had_='force' in _INFM; sv_=_INFM.get('force'); _INFM['force']=False; st_=np.random.get_state()
+    try:
+        with torch.random.fork_rng(devices=[torch.cuda.current_device()] if torch.cuda.is_available() else []):   # cannot move training's random state
+            return _bpc_w0(model,get,domain,n,skip)
+    finally:
+        np.random.set_state(st_)
+        if had_: _INFM['force']=sv_
+        else: _INFM.pop('force',None)
 def bpc(model,get,domain,n=15,skip=0):
     """evaluation with the fast store active (cg20h); identical to the original when no store exists"""
     if _INFM['M'] is None: return _bpc_w0(model,get,domain,n,skip)

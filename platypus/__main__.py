@@ -62,7 +62,8 @@ NAME=BUILD_NAME+NAME+' | overrides '+_OVR
 print(f"\n################ {NAME} | seed {cfg.seed} ################")
 r=run(cfg)
 print("\n==================== SUMMARY ====================")
-print(f"final BPC {r['bpc']:.3f} | forgetting {r['forget']:+.3f} | post-train {np.mean(r['post']):.3f}")
+if r.get('bpc_w') is not None: print(f"WEIGHTS ONLY (fast store off): final BPC {r['bpc_w']:.3f} | forgetting {r['forget_w']:+.3f}")
+print(f"final BPC {r['bpc']:.3f} | forgetting {r['forget']:+.3f} | post-train {np.mean(r['post']):.3f}"+(" (fast store on)" if r.get('bpc_w') is not None else ""))
 for k,p in enumerate(r.get('passes',[])):
     pre=[x for x in p['pre'] if x is not None]
     print(f"pass {k+1}: end {p['bpc']:.3f} | forgetting {p['forget']:+.4f} | post-train {np.mean(p['post']):.3f}"

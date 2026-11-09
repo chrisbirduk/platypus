@@ -66,11 +66,12 @@ def _inf_need(model,cfg,buf_,S_slot,vals,t,ts):
     sel_=[buf_[i_] for i_ in rs_.choice(len(buf_),min(16,len(buf_)),replace=False)]; Zs_=[];Ys_=[];Ls_=[];Ks_=[]
     blk_=model.blocks[-1]
     for w_,d0_ in sel_:
-        X_=torch.tensor([list(w_)],dtype=torch.long,device=dev_); sh_=_HCAP['on']; _HCAP['on']=True; _DQ['on']=True; _DQ['kv']={}
+        X_=torch.tensor([list(w_)],dtype=torch.long,device=dev_); sh_=_HCAP['on']; _HCAP['on']=True; kv9_={}
+        hk9_=blk_.Wk.register_forward_hook(lambda m_,i_,o_: kv9_.__setitem__(id(blk_),(o_.detach(),)))   # the last block's keys (9 Nov: was an undefined _DQ capture)
         try: lg_=_inf_fwd(model,X_,int(S_slot(d0_))); z_=_HCAP['h'].float()
-        finally: _HCAP['on']=sh_; _DQ['on']=False
+        finally: _HCAP['on']=sh_; hk9_.remove()
         y_=X_[0,1:]; ok_=y_>0; Zs_.append(z_[0][ok_]); Ys_.append(y_[ok_]); Ls_.append(F.log_softmax(lg_[0][ok_],-1).gather(-1,y_[ok_][:,None]).squeeze(-1))
-        kv_=_DQ['kv'].get(id(blk_))
+        kv_=kv9_.get(id(blk_))
         if kv_ is not None: Ks_.append((kv_[0].reshape(-1,kv_[0].shape[-1])[:y_.numel()][ok_],y_[ok_]))
     model.train(was_); Z_=torch.cat(Zs_); Y_=torch.cat(Ys_); N_=Z_.shape[0]; out_={}
     if N_>200:
