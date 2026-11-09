@@ -231,10 +231,14 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         from platypus.inference.sentences import _inf_store
         S9 = _inf_store(model); it = S9.get('it', []); rel = S9.get('rel', {}); rs9 = np.random.RandomState(int(cfg.seed) + 4545); fx = []
         isname = lambda b: len(b) >= 3 and 65 <= b[0] <= 90 and all(65 <= x <= 90 or 97 <= x <= 122 for x in b)
+        try:                                                                       # 9 Nov: only records between names of the planted fact sentences (the evidence
+            from platypus.inference.probes import inf_probes                       #   record also catches junk from prose, e.g. 'Transylvania on December');
+            pn9 = {n.encode('latin-1', 'replace') for c in inf_probes(cfg) for n in c.get('names', [])}   #   readout only, nothing is trained on this
+        except Exception: pn9 = None
         keys = list(rel.keys()); rs9.shuffle(keys)
         for (a9, r9) in keys:
             for o9, ix9 in rel[(a9, r9)].items():
-                if isname(bytes(a9)) and isname(bytes(o9)) and ix9 and ix9[-1] < len(it):
+                if isname(bytes(a9)) and isname(bytes(o9)) and ix9 and ix9[-1] < len(it) and (pn9 is None or (bytes(a9) in pn9 and bytes(o9) in pn9)):
                     fx.append((bytes(a9).decode('latin-1'), bytes(r9).decode('latin-1').strip(), bytes(o9).decode('latin-1'), it[ix9[-1]]['d'])); break
             if len(fx) >= 16: break
         if len(fx) < 8: return f"SOURCE FACTS skipped ({len(fx)} recorded name-to-name facts)"
@@ -247,7 +251,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         o9 = [f"no edit: {meas()}"]
         for nm9, its9 in (('source wording only', src), (f'source wording + the {nw} edit wordings', src + [(w.format(A=a9), o9_, d9, a9) for a9, r9, o9_, d9 in fx for w in _CONC_CF[:nw]])):
             K9, R9, N9, J9 = fit(None, ws_self, 0.0, its9); put(solve_cfg(K9, R9)); o9.append(f"{nm9} (+ self-contrast): {meas()}")
-        return f"SOURCE FACTS ({len(fx)} recorded one-hop facts, e.g. '{fx[0][0]} {fx[0][1]} {fx[0][2]}') :: " + " :: ".join(o9)
+        return f"SOURCE FACTS ({len(fx)} recorded one-hop facts between planted names, e.g. '{fx[0][0]} {fx[0][1]} {fx[0][2]}') :: " + " :: ".join(o9)
     out = []
     try:
         with torch.no_grad(): mo_.weight.copy_(W0_)
