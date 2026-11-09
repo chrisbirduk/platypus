@@ -140,21 +140,28 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
 def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp_):
     """(2)+(3) shadow edits on up to 16 of this sleep's conclusions (NOTE: the shadow fits leave out competitor contrast, inf_cf_contrast, so
     'as configured' has no margin term at all), each applied alone to the pre-edit weights at the kept scale, measured,
-    and removed (the kept edit is restored). cap_ is _cf_apply's hook dict (cap_['on'] captures keys, cap_['delta'] adds an output change)."""
+    and removed (the kept edit is restored). cap_ is _cf_apply's hook dict (cap_['on'] captures keys, cap_['delta'] adds an output change).
+    NAME-KEYED shadow edits (9 Nov, the amended rung 3 as a build): the same targets solved on keys [own key ; NAME key] - the name key is the
+    edited layer's input at the subject name's last byte - and, at test, the name part read from the question's own name (the edit's output
+    change at the answer positions = dW_own k_own + dW_name k_name); also the NAME key alone. Plain ridge, so its control is 'own key, plain
+    ridge'. (Six wordings were dropped: no gain over three on the GPU, five sleeps.)"""
     from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_twohop
     Wk = mo_.weight.detach().clone(); E = [c for c in E_][:16]
     if len(E) < 8: return
     lr_ = float(getattr(cfg, 'inf_cf_lr', 0.5)); st_ = int(getattr(cfg, 'inf_cf_steps', 25)); nw = max(1, min(len(_CONC_CF), int(getattr(cfg, 'inf_cf_wordings', 1))))
-    ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); rs_ = np.random.RandomState(int(cfg.seed) + 4343)
+    ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
+    def name_pos(pr, A, ps0):
+        ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
     def fit(words, selfc):
-        Ks, Rs = [], []
+        Ks, Rs, Ns = [], [], []
         for c in E:
             for w in words:
                 pr = w.format(A=c['A']).encode('latin-1', 'replace'); tg = (c['C'] + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tg])
                 T1 = X.shape[1] - 1; ps = torch.arange(len(pr) - 1, min(T1, len(pr) + len(tg) - 1), device=X.device)
                 if ps.numel() == 0: continue
                 sl = int(S_slot(c['d'])); cap_['on'] = True; cap_['k'] = []; _ws_run(model, X, sl); cap_['on'] = False; K1 = cap_['k'][-1][0][ps]
-                D = mo_.weight.shape[0]; dl = torch.zeros(len(ps), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
+                nk = cap_['k'][-1][0][name_pos(pr, c['A'], ps[0])]
+                dl = torch.zeros(len(ps), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
                 for s in range(st_):
                     cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(ps), ps), dl)
                     lg = _ws_run(model, X, sl, grad_=True)[0, ps]; l = F.cross_entropy(lg, yt) + 1e-3 * (dl ** 2).sum()
@@ -163,12 +170,16 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                             with torch.no_grad(): comp = lg.detach().scatter(1, yt[:, None], -1e9).argmax(1)
                         mg = lg.gather(1, yt[:, None])[:, 0] - lg.gather(1, comp[:, None])[:, 0]; l = l + selfc * F.softplus(-mg).mean()
                     op.zero_grad(); l.backward(); op.step(); cap_['delta'] = None
-                Ks.append(K1); Rs.append(dl.detach().float())
-        K = torch.cat(Ks); R = torch.cat(Rs); H = K.shape[1]
+                Ks.append(K1.float()); Rs.append(dl.detach().float()); Ns.append(nk.float()[None].expand(len(ps), -1))
+        return torch.cat(Ks), torch.cat(Rs), torch.cat(Ns)
+    def solve_cfg(K, R):
+        H = K.shape[1]
         if Pm_ is not None:
             Kc = K @ Pm_; A = Kc.T @ Kc + 1e-2 * float((K.T @ K).diagonal().mean()) * torch.eye(H, device=K.device) + lam_ * len(K) * (Pm_ @ C0_ @ Pm_)
             return (torch.linalg.solve(A, Kc.T @ R).T) @ Pm_
-        return torch.linalg.solve(K.T @ K + lam_ * len(K) * C0_ + 1e-4 * torch.eye(H, device=K.device), K.T @ R).T
+        return ridge(K, R, C0_)
+    def ridge(K, R, Cr):
+        H = K.shape[1]; return torch.linalg.solve(K.T @ K + lam_ * len(K) * Cr.float() + 1e-4 * torch.eye(H, device=K.device), K.T @ R).T
     def measure():
         f_ = lambda w, dec: _ws_twohop(model, cfg, E, Cp_, S_slot, np.random.RandomState(3), w, dec)
         Rf = _tf_items(model, [(_CONC_CF[0].format(A=c['A']), c['C'], S_slot(c['d'])) for c in E])
@@ -176,17 +187,43 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         mc = np.nanmean([f_(w, False) for w in _HO_TWO])
         return (f"fitted: open {np.mean([r['hit'] for r in Rf]):.2f} | HELD-OUT: multiple choice (10) {mc:.2f}, open {np.mean([r['hit'] for r in Rh]):.2f}, "
                 f"first byte top-1 {np.mean([r['rank'] <= 1 for r in Rh]):.2f}, answer bytes top-1 {np.mean([r['top1'] for r in Rh]):.2f}")
-    V = {f'as configured ({nw} wording(s))': (list(_CONC_CF[:nw]), 0.0), f'+ SELF-CONTRAST x{ws_self:g}': (list(_CONC_CF[:nw]), ws_self),
-         'SIX wordings': (list(_CONC_CF) + list(_CONC_CF_X), 0.0), f'SIX wordings + SELF-CONTRAST x{ws_self:g}': (list(_CONC_CF) + list(_CONC_CF_X), ws_self)}
+    def tf_nk(lst, dWn):
+        """teacher-forced metrics with the name part of the edit read from each question's own name (weights hold the own-key part)"""
+        out = []
+        for w, c in lst:
+            pr = w.format(A=c['A']).encode('latin-1', 'replace'); tb = (c['C'] + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tb]); sl = int(S_slot(c['d']))
+            T1 = X.shape[1] - 1; ps = torch.arange(len(pr) - 1, min(T1, len(pr) + len(tb) - 1), device=X.device)
+            if len(ps) < len(tb): continue
+            cap_['on'] = True; cap_['k'] = []
+            with torch.no_grad(): _ws_run(model, X, sl)
+            cap_['on'] = False; nk = cap_['k'][-1][0][name_pos(pr, c['A'], ps[0])].float()
+            dv = (scale * (dWn @ nk))[None].expand(len(ps), -1); cap_['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(ps), ps), dv)
+            try:
+                with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
+            finally: cap_['delta'] = None
+            L = F.log_softmax(lg[ps].float(), -1); tr = torch.tensor(list(tb), device=X.device); top = L.argmax(-1)
+            okb = (top[:-1] == tr[:-1]).float(); l0 = L[0]; t0 = int(tr[0])
+            out.append(dict(hit=bool(okb.all()) and not _isl(int(top[-1])), top1=float(okb.mean()), rank=int((l0 > l0[t0]).sum()) + 1))
+        return out
+    def measure_nk(dWn):
+        Rf = tf_nk([(_CONC_CF[0], c) for c in E], dWn); Rh = tf_nk([(w, c) for c in E for w in _HO_TWO], dWn)
+        return (f"fitted: open {np.mean([r['hit'] for r in Rf]):.2f} | HELD-OUT: open {np.mean([r['hit'] for r in Rh]):.2f}, "
+                f"first byte top-1 {np.mean([r['rank'] <= 1 for r in Rh]):.2f}, answer bytes top-1 {np.mean([r['top1'] for r in Rh]):.2f}")
     out = []
     try:
         with torch.no_grad(): mo_.weight.copy_(W0_)
         out.append(f"no edit: {measure()}")
-        for n, (ws, sc) in V.items():
-            with torch.no_grad(): mo_.weight.copy_(W0_)
-            dW = fit(ws, sc)
+        words = list(_CONC_CF[:nw]); FIT = {0.0: fit(words, 0.0), ws_self: fit(words, ws_self)}
+        def put(dW):
             with torch.no_grad(): mo_.weight.copy_((W0_.float() + scale * dW.float()).to(W0_.dtype))
-            out.append(f"{n}: {measure()}")
+        H = FIT[0.0][0].shape[1]; cI = float(C0_.diagonal().mean()) * torch.eye(H, device=C0_.device)
+        for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
+            K, R, N = FIT[sc]
+            put(solve_cfg(K, R)); out.append(f"as configured ({nw} wording(s)){tag}: {measure()}")
+            put(ridge(K, R, C0_)); out.append(f"own key, plain ridge{tag} (control for NAME-KEYED): {measure()}")
+            Cx = torch.block_diag(C0_.float(), cI.float()); dWx = ridge(torch.cat([K, N], 1), R, Cx)
+            put(dWx[:, :H]); out.append(f"NAME-KEYED [own ; name]{tag}: {measure_nk(dWx[:, H:])}")
+            put(torch.zeros_like(dWx[:, :H])); out.append(f"NAME key only{tag}: {measure_nk(ridge(N, R, cI))}")
         print(f"  [CF SHADOW EDITS] {len(E)} of this sleep's conclusions, each variant fitted on them alone and applied to the pre-edit weights at x{scale:g}, measured, removed "
               f"(the kept edit is restored) || " + " || ".join(out), flush=True)
     except Exception as e:
