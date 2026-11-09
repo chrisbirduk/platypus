@@ -38,6 +38,13 @@ def bank_drift(model, cfg, raw_vals_fn, seen_d, slot_of, vis, tag, summary=False
             bt = float(np.mean([b.mean() for b in _bits_rows(model, W, int(slot_of(d)), False)]))
             cur[d] = (zt, zs, bt)
             if d not in B['p0']: B['p0'][d] = (zt.mean(0), zs.mean(0) if zs is not None else None); B['c0'][d] = (zt, zs); B['b0'][d] = bt
+            if d not in B.setdefault('sref', {}):                              # STORED-TEXT SURPRISE: 24 of the domain's own stored real sentences (the model's
+                from platypus.inference.sentences import _inf_store                #   memory, no validation set), fixed when the domain is first recorded
+                it_ = [x['s'] for x in _inf_store(model).get('it', []) if x.get('k') == 'real' and x['d'] == d and 40 <= len(x['s']) <= 300]
+                if len(it_) < 24: it_ = [x['s'] for x in _inf_store(model).get('it', []) if x.get('k') == 'real' and 40 <= len(x['s']) <= 300 and x.get('v', -1) == vis - 1]
+                rsd = np.random.RandomState(int(cfg.seed) + 2223 + d); B['sref'][d] = [bytes(it_[i]) for i in rsd.choice(len(it_), min(24, len(it_)), replace=False)] if it_ else []
+            if B['sref'].get(d):
+                sb_ = float(np.mean([b.mean() for b in _bits_rows(model, B['sref'][d], int(slot_of(d)), False)])); B.setdefault('sb0', {}).setdefault(d, sb_); cur[d] = cur[d] + (sb_ - B['sb0'][d],)
         dr = {}
         for d, (zt, zs, bt) in cur.items():
             p0t, p0s = B['p0'][d]; c0t, c0s = B['c0'][d]
@@ -46,7 +53,7 @@ def bank_drift(model, cfg, raw_vals_fn, seen_d, slot_of, vis, tag, summary=False
             dr[d] = (dt, ds, bt - B['b0'][d], st, ss)
         mt = np.mean([v[0] for v in dr.values()]); ms = np.nanmean([v[1] for v in dr.values()]) if has_slow else float('nan')
         for d, v in dr.items():
-            if v[2] != 0.0 or B['b0'][d] != cur[d][2]: B['pts'].append((vis, d, v[0], v[0] - mt, v[1], v[1] - ms if has_slow else float('nan'), v[2]))
+            if v[2] != 0.0 or B['b0'][d] != cur[d][2]: B['pts'].append((vis, d, v[0], v[0] - mt, v[1], v[1] - ms if has_slow else float('nan'), v[2], cur[d][3] if len(cur[d]) > 3 else float('nan')))
         print(f"  [BANK DRIFT | {tag}] per seen domain: prototype drift trunk" + ("/slow" if has_slow else "") + ", BPC rise since its first visit, "
               f"own-code stability trunk" + ("/slow" if has_slow else "") + " | " + " ".join(
               f"d{d} {v[0]:.4f}" + (f"/{v[1]:.4f}" if has_slow else "") + f" {v[2]:+.3f} {v[3]:.3f}" + (f"/{v[4]:.3f}" if has_slow else "") for d, v in sorted(dr.items())), flush=True)
@@ -71,5 +78,10 @@ def bank_drift(model, cfg, raw_vals_fn, seen_d, slot_of, vis, tag, summary=False
             print(f"  [BANK DRIFT | {tag}] ITEM 2 over {len(P)} (domain, visit) points: rank correlation of prototype drift with the BPC rise - trunk {_bk_spearman(P[:, 0], P[:, 4]):+.2f} "
                   f"(relative to the bank {_bk_spearman(P[:, 1], P[:, 4]):+.2f})" + (f", slow head {_bk_spearman(P[:, 2], P[:, 4]):+.2f} (relative {_bk_spearman(P[:, 3], P[:, 4]):+.2f})" if has_slow else "")
                   + " | + = drift predicts forgetting", flush=True)
+            ok_ = ~np.isnan(P[:, 5])
+            if ok_.sum() >= 4:
+                print(f"  [BANK DRIFT | {tag}] ITEM 2, STORED-TEXT SURPRISE: rank correlation of the BPC rise on the domain's own stored sentences with the BPC rise on its "
+                      f"validation text over {int(ok_.sum())} points {_bk_spearman(P[ok_, 5], P[ok_, 4]):+.2f} | the same, pass-2 points only (where forgetting happens) "
+                      f"{_bk_spearman(P[ok_ & (np.array([p[0] for p in B['pts']]) > len(set(p[1] for p in B['pts']))), 5], P[ok_ & (np.array([p[0] for p in B['pts']]) > len(set(p[1] for p in B['pts']))), 4]):+.2f}", flush=True)
     except Exception as e:
         _fail('inference.bankdrift'); print(f"  [BANK DRIFT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

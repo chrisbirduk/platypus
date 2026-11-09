@@ -88,19 +88,20 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
         from platypus.conduit import _carry_save, _carry_load
         from platypus.layers import _CARRY
         def keys_of(w):
-            K, H = [], []
+            K, H, NS, NK = [], [], [], []
             for c in ed:
                 pb = w.format(A=c['A']).encode('latin-1', 'replace'); X, M = _ws_batch(model, [pb + (c['C'] + '.').encode('latin-1', 'replace')]); p0 = len(pb) - 1
                 cap['on'] = True; cap['k'] = []; _ws_run(model, X, int(S_slot(c['d']))); cap['on'] = False
-                K.append(cap['k'][-1][0][p0].cpu())
+                K.append(cap['k'][-1][0][p0].cpu()); ab = c['A'].encode('latin-1', 'replace'); i0 = pb.find(ab); i1 = i0 + len(ab)
+                NK.append(cap['k'][-1][0][i1 - 1].cpu() if i0 >= 0 else cap['k'][-1][0][p0].cpu())
                 sv = _carry_save(); _CARRY.update(on=False, st={}, new={}); was = model.training; model.eval()
                 try:
                     with torch.no_grad(): hf = model.features(X[:, :-1])
                 finally: _carry_load(sv); model.train(was)
                 hf = hf[0] if isinstance(hf, (tuple, list)) else hf
-                H.append(hf[0, p0].float().cpu())
-            return torch.stack(K), torch.stack(H)
-        Kf, Hf = keys_of(_CONC_CF[0]); Kh = [keys_of(w) for w in _HO_TWO]
+                H.append(hf[0, p0].float().cpu()); NS.append(hf[0, i0:i1].float().mean(0).cpu() if i0 >= 0 else hf[0, p0].float().cpu())
+            return torch.stack(K), torch.stack(H), torch.stack(NS), torch.stack(NK)
+        Kf, Hf, NSf, NKf = keys_of(_CONC_CF[0]); Kh = [keys_of(w) for w in _HO_TWO]
         it = S_.get('it', []); rs = np.random.RandomState(int(cfg.seed) + 4142)
         ix = [i for i in range(len(it) - 1) if it[i].get('k') == 'real' and it[i + 1].get('k') == 'real' and it[i]['d'] == it[i + 1]['d'] and 20 <= len(it[i]['s']) <= 300 and 20 <= len(it[i + 1]['s']) <= 300]
         sfa = None
@@ -110,13 +111,27 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
         def r1(Q, Kb):
             Q = F.normalize(Q, dim=-1); Kb = F.normalize(Kb, dim=-1); return float(((Q @ Kb.T).argmax(1) == torch.arange(len(Q))).float().mean())
         rows = {}
-        for (Kq, Hq) in Kh:
+        def sims(Q, Kb, ctr=True):
+            if ctr: m = Kb.mean(0); Q = Q - m; Kb = Kb - m
+            return F.normalize(Q, dim=-1) @ F.normalize(Kb, dim=-1).T
+        def zsum(*S): return sum((x - x.mean(1, keepdim=True)) / (x.std(1, keepdim=True) + 1e-6) for x in S)
+        def acc(S): return float((S.argmax(1) == torch.arange(len(S))).float().mean())
+        for (Kq, Hq, NSq, NKq) in Kh:                                             # AMENDED RUNG 3: the NAME CHANNEL and [slow code ; name]
+            rows.setdefault('NAME: trunk state over the subject name (centred)', []).append(acc(sims(NSq, NSf)))
+            rows.setdefault('NAME: edit key at the name\'s last byte (centred)', []).append(acc(sims(NKq, NKf)))
+            rows.setdefault('edit key + NAME state', []).append(acc(zsum(sims(Kq, Kf), sims(NSq, NSf))))
+            if sfa is not None:
+                mu, P, _ = sfa
+                rows.setdefault('[SFA 32 ; NAME state]', []).append(acc(zsum(sims((Hq - mu) @ P, (Hf - mu) @ P, False), sims(NSq, NSf))))
+                rows.setdefault('[SFA 32 ; NAME state ; edit key]', []).append(acc(zsum(sims((Hq - mu) @ P, (Hf - mu) @ P, False), sims(NSq, NSf), sims(Kq, Kf))))
+        nA = len(set(c['A'] for c in ed))
+        for (Kq, Hq, NSq, NKq) in Kh:
             rows.setdefault('edit key raw', []).append(r1(Kq, Kf)); mk = Kf.mean(0); rows.setdefault('edit key centred', []).append(r1(Kq - mk, Kf - mk))
             rows.setdefault('trunk output raw', []).append(r1(Hq, Hf)); mh = Hf.mean(0); rows.setdefault('trunk output centred', []).append(r1(Hq - mh, Hf - mh))
             if sfa is not None:
                 mu, P, _ = sfa; rows.setdefault('trunk output in SFA directions (32)', []).append(r1((Hq - mu) @ P, (Hf - mu) @ P))
                 for k in (4, 16): rows.setdefault(f'trunk output, slowest {k} SFA directions', []).append(r1((Hq - mu) @ P[:, :k], (Hf - mu) @ P[:, :k]))
-        print(f"  [RUNG 3 KEYS | {tag}] held-out question -> its own conclusion by the nearest fitted-wording key, among {len(ed)} edited conclusions "
+        print(f"  [RUNG 3 KEYS | {tag}] held-out question -> its own conclusion by the nearest fitted-wording key, among {len(ed)} edited conclusions with {nA} distinct subjects "
               f"(chance {1 / len(ed):.3f}; mean of {len(_HO_TWO)} held-out wordings): " + " | ".join(f"{n} {np.mean(v):.2f}" for n, v in rows.items()), flush=True)
     finally:
         h.remove(); back()
