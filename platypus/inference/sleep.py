@@ -392,16 +392,6 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
     byA9_={}; byC9_={}
     for x9_ in (locals().get('lv_') or []): byA9_.setdefault(x9_['A'],set()).add(x9_['C']); byC9_.setdefault(x9_['C'],set()).add(x9_['A'])
     aA9_=sorted(byA9_); aC9_=sorted(byC9_); CTL9_=[]; IWL9_=[]
-    FF9p_=float(getattr(cfg,'inf_fact_forms',0.0)) if cm_=='both' else 0.0; FF9_=[]   # 9 Nov ROUTE 2: recorded facts replayed in VARIED FORMS (or plain, the control)
-    if FF9p_>0:
-        it9f_=S_.get('it',[]); nmf9_=lambda b_: len(b_)>=3 and 65<=b_[0]<=90 and all(65<=x_<=90 or 97<=x_<=122 for x_ in b_)
-        for (a9f_,r9f_),ob9_ in S_.get('rel',{}).items():
-            for o9f_,ix9f_ in ob9_.items():
-                if nmf9_(bytes(a9f_)) and nmf9_(bytes(o9f_)) and ix9f_ and ix9f_[-1]<len(it9f_) and not it9f_[ix9f_[-1]].get('gone'):
-                    FF9_.append((bytes(a9f_).decode('latin-1'),bytes(r9f_).decode('latin-1').strip(),bytes(o9f_).decode('latin-1'),it9f_[ix9f_[-1]]['d']))
-        rf9_=np.random.RandomState(int(cfg.seed)+7411+int(model.__dict__.get('_visit',0)))   # own random stream (the other rows drawn stay those of the baseline)
-    # relation-agnostic forms (the stored relation phrase is kept; no test wording: not _HO_TWO, reworded, context, pronoun or paraphrase probes)
-    FFV9_=("{A} {r} {B}.","Notes on {A}: {A} {r} {B}.","It is recorded that {A} {r} {B}.","Q: {A} {r} whom? A: {B}.","{A} {r} ... {B}.","Regarding {A}: {A} {r} {B}, as recorded.")
     for att_ in range(1+NRT_):
         model.train(); CTL9_.clear(); IWL9_.clear()
         for st in range(int(cfg.inf_steps) if cm_!='both' else int(getattr(cfg,'inf_cons_wsteps',60))):
@@ -471,12 +461,6 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                 if cm_=='both' and S_.get('rgrows') and rs_.rand()<float(getattr(cfg,'inf_remgen_dream',0.0)):   # SELF-CONFIRMED REM ROW: an inference the model made itself from
                     pq_,aq_,_=S_['rgrows'][rs_.randint(len(S_['rgrows']))]                 #   the attended spans, replayed with the answer as the only target
                     if len(pq_)+len(aq_)+2<=Lr_-8: sn_=pq_+aq_; q0_=len((' '+pq_).encode('latin-1')); model.__dict__['_nrg']=model.__dict__.get('_nrg',0)+1
-                if FF9_ and rf9_.rand()<FF9p_:                                   # ROUTE 2 FACT ROW (inf_fact_forms p): a recorded fact in a varied form, or plain
-                    af_,rf_,bf_,df_=FF9_[rf9_.randint(len(FF9_))]                  #   (inf_fact_forms_mode 'plain': the exposure-matched control), in a window of its domain
-                    fm_=FFV9_[rf9_.randint(len(FFV9_))] if str(getattr(cfg,'inf_fact_forms_mode','varied'))=='varied' else FFV9_[0]
-                    sf_=fm_.format(A=af_,r=rf_,B=bf_)
-                    if len(sf_)<=Lr_-10:
-                        dz8_=df_; w_=bytearray(filler(df_)[:Lr_]); w_+=b' '*(Lr_-len(w_)); sn_=sf_; q0_=0; model.__dict__['_nff']=model.__dict__.get('_nff',0)+1
                 it_=(' '+sn_+' ').encode('latin-1','replace')[:Lr_-8]; o_=rs_.randint(4,max(5,Lr_-len(it_)-4)); w_[o_:o_+len(it_)]=it_; w_=w_[:Lr_]
                 mk_=torch.zeros(Lr_-1); mk_[max(0,o_+max(0,q0_-1)):o_+len(it_)-1]=1.0       # targets = the conclusion's bytes only (pattern rows: after the premises)
                 exz7_=None
@@ -602,7 +586,6 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             print(f"  [inference CONCLUSION REPLAY INTO THE TRUNK] {len(ls_)} steps at lr x{op_.param_groups[0]['lr']/float(cfg.lr):.4f} (store off){(' [retry '+str(att_)+']') if att_ else ''} on {len(pool_)} conclusions ({kc_} rows/step"+(f", relation-pattern rows with fresh names so far {model.__dict__.get('_npat',0)} (too long, skipped {model.__dict__.get('_npat_skip',0)})" if float(getattr(cfg,'inf_cons_pattern',0.0))>0 else "")+(f", SPLICED-PREMISE dream rows so far {model.__dict__.get('_nsplice',0)} (attended-span compact {model.__dict__.get('_ncompact',0)}; too long to fit whole, skipped {model.__dict__.get('_nsplice_skip',0)})" if float(getattr(cfg,'inf_cons_splice',0.0))>0 else "")+(f", self-confirmed REM rows so far {model.__dict__.get('_nrg',0)}" if float(getattr(cfg,'inf_remgen_dream',0.0))>0 else "")+(f", mixed-pair (attended-span) dream rows so far {model.__dict__.get('_nmixd',0)}" if float(getattr(cfg,'inf_mix_dream',0.0))>0 else "")+(f", REM analogy rows so far {model.__dict__.get('_nana',0)}" if float(getattr(cfg,'inf_rem_ana_dream',0.0))>0 else "")+(f", LLM-JEPA term x{float(getattr(cfg,'inf_cons_jepa',0.0)):g} on {len(JP9_)} premise pairs: 1-cos {JL9_[0]:.3f} -> {np.mean(JL9_[-5:]):.3f}" if JL9_ else "")+(f", old-domain fact rows as targets so far {model.__dict__.get('_noldf',0)}" if float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0 else "")+(f", varied restatements so far {model.__dict__.get('_nvary',0)}" if int(getattr(cfg,'inf_cons_vary',0)) else "")+f") + {ka_} anchor rows/step | "
                   f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}"+pt9_
                   +(f" | WORDINGS (inf_conc_wordings) rows so far {model.__dict__.get('_nword',0)}" if W9on_ else "")
-                  +(f" | FACT ROWS ({str(getattr(cfg,'inf_fact_forms_mode','varied'))} forms, p {FF9p_:g}) so far {model.__dict__.get('_nff',0)} from {len(FF9_)} recorded facts" if FF9p_>0 else "")
                   +(f" | COMPETITOR CONTRAST x{CT9w_:g} ({CT9k_} negatives per row): answer byte beats the competitor's at the divergence byte, first steps {np.mean([v_ for s_,v_ in CTL9_ if s_<=min(x_ for x_,_ in CTL9_)+9]) if CTL9_ else float('nan'):.2f}, last 10 steps {np.mean([v_ for s_,v_ in CTL9_ if s_>=max(x_ for x_,_ in CTL9_)-9]) if CTL9_ else float('nan'):.2f}" if CT9w_>0 else "")
                   +(f" | INFORMATION WEIGHTS (cap {IW9c_:g}): first answer byte {np.nanmean([a_ for a_,_ in IWL9_]):.2f}, later bytes {np.nanmean([b_ for _,b_ in IWL9_]):.2f} (mean weight)" if IW9c_>0 and IWL9_ else "")
                   +(f" | PAIR DREAMS so far {model.__dict__.get('_nmixd',0)}, of which in another slot than the row they replace {model.__dict__.get('_nmixf',0)}"+(" -> moved to their own slot" if int(getattr(cfg,'inf_mix_dream_own',0)) else " (trained there)") if model.__dict__.get('_nmixd',0) else ""),flush=True)

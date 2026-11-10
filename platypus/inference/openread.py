@@ -150,23 +150,21 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
     def name_pos(pr, A, ps0):
         ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
-    FITLOG = []                                                                # (answer-byte loss, top-1) at the first and last fit step, subject site only
-    def fit(words, selfc, infow=0.0, items=None, site='answer', cp=None, kall=None):
+    def fit(words, selfc, infow=0.0, items=None):
         """items: (prompt, answer, domain, subject) to fit; by default this sleep's conclusions in each of the given wordings.
         infow > 0: INFORMATION-WEIGHTED answer bytes (as in replay, inf_cons_infow): each byte's loss weighted by its bits under a neutral cue
         (the subject replaced by 'someone'), divided by the mean over the answer and clipped to [0.25, infow].
-        site 'subject' (ROME-style, Meng et al. 2022): the output change is fitted at the subject name's LAST BYTE only, keyed by the layer's
-        input there, and must reach the answer through the trunk's own attention; solved, it is a plain weight edit (no oracle positions)"""
+        (The ROME-style subject-site fit was removed 10 Nov: negative, see RESULTS.md.)"""
         Ks, Rs, Ns, Js = [], [], [], []
         its = items if items is not None else [(w.format(A=c['A']), c['C'], c['d'], c['A']) for c in E for w in words]
         for prs, Cs, dd, As in its:
                 pr = prs.encode('latin-1', 'replace'); tg = (Cs + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tg])
                 T1 = X.shape[1] - 1; ps = torch.arange(len(pr) - 1, min(T1, len(pr) + len(tg) - 1), device=X.device)
                 if ps.numel() == 0: continue
-                cq = cp if cp is not None else cap_
-                sl = int(S_slot(dd)); cq['on'] = True; cq['k'] = []; _ws_run(model, X, sl); cq['on'] = False; K1 = cq['k'][-1][0][ps]
-                nk = cq['k'][-1][0][name_pos(pr, As, ps[0])]
-                if kall is not None: kall.append(cq['k'][-1][0].float())
+                cq = cap_; sl = int(S_slot(dd)); cq['on'] = True; cq['k'] = []
+                try: _ws_run(model, X, sl)
+                finally: cq['on'] = False                                         # never left on: it would keep every later forward's keys
+                K1 = cq['k'][-1][0][ps]; nk = cq['k'][-1][0][name_pos(pr, As, ps[0])]
                 wb = None
                 if infow > 0:
                     prn = prs.replace(As, 'someone').encode('latin-1', 'replace'); Xn, Mn = _ws_batch(model, [prn + tg]); psn = torch.arange(len(prn) - 1, len(prn) - 1 + len(ps), device=X.device)
@@ -174,13 +172,11 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                         lgn = _ws_run(model, Xn, sl)[0]
                         if int(psn[-1]) < lgn.shape[0]:
                             bn = F.cross_entropy(lgn[psn].float(), Xn[0, psn + 1], reduction='none'); wb = (bn / bn.mean().clamp(min=1e-6)).clamp(0.25, infow)
-                pd = torch.tensor([name_pos(pr, As, ps[0])], device=X.device) if site == 'subject' else ps   # where the output change is fitted
-                if site == 'subject': K1 = cq['k'][-1][0][pd]
+                pd = ps                                                           # the output change is fitted at the answer positions
                 dl = torch.zeros(len(pd), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
-                for s in range(st_ * (2 if site == 'subject' else 1)):
+                for s in range(st_):
                     cq['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(pd), pd), dl)
                     lg = _ws_run(model, X, sl, grad_=True)[0, ps]; ce = F.cross_entropy(lg, yt, reduction='none')
-                    if site == 'subject' and s in (0, st_ * 2 - 1): FITLOG.append((s == 0, float(ce.mean()) / 0.6931, float((lg.argmax(1) == yt).float().mean())))
                     l = (ce * wb).mean() if wb is not None else ce.mean(); l = l + 1e-3 * (dl ** 2).sum()
                     if selfc > 0:
                         if comp is None:                                          # the model's own top non-answer byte at each answer position (before fitting)
@@ -197,28 +193,6 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         return ridge(K, R, C0_)
     def ridge(K, R, Cr):
         H = K.shape[1]; return torch.linalg.solve(K.T @ K + lam_ * len(K) * Cr.float() + 1e-4 * torch.eye(H, device=K.device), K.T @ R).T
-    def _rome_shadow(fit, words, ws_self, ridge, measure, lam_):
-        nb = len(model.blocks); lays = sorted({max(0, nb // 4), max(0, nb // 2 - (1 if nb // 2 == nb - 1 else 0))} - {nb - 1})
-        txt = []
-        for li in lays:
-            mo2 = model.blocks[li].mlp_out; W2 = mo2.weight.detach().clone(); cp = {'on': False, 'k': [], 'delta': None}
-            def hook2(m_, inp_, out_, cp=cp):
-                if cp['on']: cp['k'].append(inp_[0].detach().float())
-                if cp['delta'] is not None: return out_ + cp['delta'].to(out_.dtype)
-            hk2 = mo2.register_forward_hook(hook2)
-            try:
-                kall = []; FITLOG.clear(); K, R, N, J = fit(words, ws_self, 0.0, None, 'subject', cp, kall)
-                f0 = [x for x in FITLOG if x[0]]; f1 = [x for x in FITLOG if not x[0]]
-                fl = (f"fit with the change itself at the name (fitted wordings): answer-byte loss {np.mean([x[1] for x in f0]):.2f} -> {np.mean([x[1] for x in f1]):.2f} bits, "
-                      f"answer bytes top-1 {np.mean([x[2] for x in f0]):.2f} -> {np.mean([x[2] for x in f1]):.2f}") if f0 and f1 else "fit log empty"
-
-                KA = torch.cat(kall); C2 = (KA.T @ KA) / max(1, len(KA)); moved = float(R.norm(dim=1).mean())
-                with torch.no_grad(): mo2.weight.copy_((W2.float() + scale * ridge(K, R, C2).float()).to(W2.dtype))
-                txt.append(f"block {li} of {nb} (fitted output change at the name, mean norm {moved:.3f}; {fl}) solved into the weights: {measure()}")
-            finally:
-                with torch.no_grad(): mo2.weight.copy_(W2)
-                hk2.remove()
-        return f"ROME-STYLE subject-site edit (no oracle, + SELF-CONTRAST x{ws_self:g}) :: " + " :: ".join(txt)
     def measure():
         f_ = lambda w, dec: _ws_twohop(model, cfg, E, Cp_, S_slot, np.random.RandomState(3), w, dec)
         Rf = _tf_items(model, [(_CONC_CF[0].format(A=c['A']), c['C'], S_slot(c['d'])) for c in E])
@@ -279,18 +253,15 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     def _slot_gate(FITs, put):
         """ANSWER-SLOT GATES (north-star rung 3 without the oracle; readout). The NAME x POSITION memory needs to know WHERE an answer starts
         and WHOSE answer it is; neither is given. SUBJECT REGISTER: the most recent name-like word before the position (capitalised, 3+
-        letters: the store's own name pattern); its last byte's key is the name key the memory reads. Three ways to decide where to fire,
+        letters: the store's own name pattern); its last byte's key is the name key the memory reads. Two ways to decide where to fire,
         each trained only on the system's own material (this sleep's conclusions in the written edit wordings, recorded name-to-name facts in
         their source wording, ordinary stored sentences); the held-out question wordings are never seen:
           LINEAR: logistic regression on the edited layer's key at the byte (64 principal directions);
           SERAC-STYLE (Mitchell et al. 2022): a small two-layer gate on the same key plus the bytes since the register's name ended, trained on
             MORE FORMS the system writes itself (relation-agnostic: 'Notes on A: ...', 'Q: A <rel> whom? A: ', 'It is recorded that A <rel> ',
             'A <rel> ... '; never a test wording) and HARD NEGATIVES (the 1-3 bytes after a name in ordinary sentences, weighted x3);
-          WISE-STYLE (Wang et al. 2024): no separate gate - a closed-form first-byte memory on [key at the byte ; key at the register's name]
-            fitted to the first answer byte's change at the slots and to ZERO at every other byte with a register (ordinary sentences and the
-            training texts); it fires where its own output norm passes the smallest it reaches on a stored conclusion (WISE's rule), or the
-            1% point of ordinary text.
-        Thresholds for the gates: the 99th percentile on held-in ordinary sentences (and for WISE also its own rule). Measured on held-out
+          (A WISE-style self-firing memory was removed 10 Nov: negative on both scales, see RESULTS.md.)
+        Thresholds for the gates: the 99th percentile on held-in ordinary sentences. Measured on held-out
         wordings of this sleep's conclusions: fires at the slot / fires earlier in the prompt / recall with the memory applied from the FIRST
         firing byte for as many bytes as the longest fitted answer; and on held-out ordinary sentences: fires per 1000 bytes, BPC change with
         the memory applied at the first firing byte of each sentence. Pre-edit weights, store off, the memory at the kept scale."""
@@ -369,27 +340,10 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             hard = [t for t in range(1, len(Z)) if rg[t] >= 0 and 1 <= t - rg[t] <= 3]   # HARD NEGATIVES: just after a name in ordinary text
             if hard: Sn.append(Z[hard]); Sw.append(torch.full((len(hard),), 3.0))
         ser = fit_logit(torch.stack(Sp), torch.cat(Sn), torch.cat(Sw), hidden=32)
-        # ---- WISE-STYLE (closed-form first-byte memory fitted with zero targets elsewhere; fires on its own output norm)
-        def fw(k, rg):                                                            # [key at the byte ; key at the register's name] (zeros without a register)
-            Fk = f(k); rr = torch.tensor(rg[:len(k)]); hn = torch.zeros_like(Fk); ok = rr >= 0
-            if bool(ok.any()): hn[ok] = Fk[rr[ok]]
-            return torch.cat([Fk, hn], 1), ok
-        m0 = J == 0; Xpos = torch.cat([f(K[m0]), f(N[m0])], 1); Ypos = R[m0].float().cpu()
-        negs = []
-        for k, rg, sp in TB:
-            Z, ok = fw(k, rg); ok[sp:sp + 1] = False; negs.append(Z[ok])
-        for i, (k, rg) in enumerate(TO):
-            Z, ok = fw(k, rg); ix = [int(t) for t in sub30(len(Z), i) if bool(ok[int(t)])]; negs.append(Z[ix])
-        Xneg = torch.cat(negs); wpos = float(len(Xneg)) / max(1, len(Xpos))
-        A = wpos * Xpos.T @ Xpos + Xneg.T @ Xneg + 1e-1 * (len(Xpos) * wpos + len(Xneg)) / Xpos.shape[1] * torch.eye(Xpos.shape[1])
-        Wm = torch.linalg.solve(A, wpos * Xpos.T @ Ypos).T                        # (D, 128): the first answer byte's change; ~0 off the slots
-        act = lambda Z: (Z @ Wm.T).norm(dim=1)
-        wise_min = float(act(Xpos).min()); wise_med = float(act(Xpos).median())
         # ---- scoring of a text by each gate
         def score(kind, k, rg):
             if kind == 'linear': return lin(f(k))
-            if kind == 'serac': return ser(fz(k, rg))
-            Z, ok = fw(k, rg); s = act(Z); s[~ok] = 0.0; return s
+            return ser(fz(k, rg))
         ordo = []
         for x in held_out:
             txt = bytes(x['s']); sl = int(S_slot(x['d'])); X, Kt = keys_of(txt, sl); ordo.append((txt, sl, X, Kt, regs(txt, Kt.shape[0])))
@@ -398,7 +352,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             for w9 in _HO_TWO:
                 pb = w9.format(A=c['A']).encode('latin-1', 'replace'); tb = (c['C'] + '.').encode('latin-1', 'replace'); txt = pb + tb; sl = int(S_slot(c['d']))
                 X, Kt = keys_of(txt, sl); qs.append((txt, sl, X, Kt, regs(txt, Kt.shape[0]), len(pb) - 1, tb))
-        held_in_scores = {kind: torch.cat([score(kind, k, rg) for k, rg in TO]) for kind in ('linear', 'serac', 'wise')}
+        held_in_scores = {kind: torch.cat([score(kind, k, rg) for k, rg in TO]) for kind in ('linear', 'serac')}
         def apply_memory(X, Kt, sl, rg, t0):                                      # name-keyed memory bytes from t0 on, keyed by the register at t0
             ne = int(rg[t0]) if t0 < len(rg) else -1
             if ne < 0: return None
@@ -431,9 +385,8 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             return (f"fires AT the slot {np.mean(at):.2f}, earlier {np.mean(early):.2f} | recall (no oracle): open {np.mean(hit):.2f}, first byte {np.mean(fb):.2f}, "
                     f"answer bytes {np.mean(ab):.2f} | ordinary text: {1000 * nfire / max(1, nby):.1f} fires per 1000 bytes, BPC {dbits / max(1, nby):+.4f}")
         res = []
-        for kind, nm in (('linear', 'LINEAR'), ('serac', 'SERAC-STYLE (more forms, hard negatives, recency, 2 layers)'), ('wise', 'WISE-STYLE (self-firing memory)')):
+        for kind, nm in (('linear', 'LINEAR'), ('serac', 'SERAC-STYLE (more forms, hard negatives, recency, 2 layers)')):
             th = float(torch.quantile(held_in_scores[kind], 0.99)); res.append(f"{nm} at 1% of ordinary text: {evaluate(kind, th)}")
-            if kind == 'wise': res.append(f"WISE-STYLE at its own rule (the smallest output on a stored conclusion, {wise_min:.3g}; median {wise_med:.3g}): {evaluate(kind, wise_min)}")
         return (f"{len(TB)} base + {len(TM)} extra-form training texts ({len(E)} conclusions, {len(facts)} recorded facts), {len(TO)} ordinary sentences; "
                 f"memory: NAME x POSITION + self-contrast, {jmax} bytes; held-out questions {len(qs)} || " + " || ".join(res))
     out = []
@@ -447,10 +400,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = FIT[sc]
             put(solve_cfg(K, R)); out.append(f"as configured ({nw} wording(s)){tag}: {measure()}")
-            put(ridge(K, R, C0_)); out.append(f"own key, plain ridge{tag} (control for NAME-KEYED): {measure()}")
-            Cx = torch.block_diag(C0_.float(), cI.float()); dWx = ridge(torch.cat([K, N], 1), R, Cx); dWn = dWx[:, H:]
-            put(dWx[:, :H]); out.append(f"NAME-KEYED [own ; name]{tag}: {measure_nk(lambda nk, n: (dWn @ nk)[None].expand(n, -1))}")
-            put(torch.zeros_like(dWx[:, :H])); dWo = ridge(N, R, cI); out.append(f"NAME key only{tag}: {measure_nk(lambda nk, n: (dWo @ nk)[None].expand(n, -1))}")
+            put(torch.zeros_like(W0_, dtype=torch.float32))
             PJ = {}                                                                # NAME x POSITION: one small memory per answer byte j, keyed by the name
             for j in range(int(J.max()) + 1):
                 m = J == j
@@ -458,37 +408,19 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             zero = torch.zeros(D, device=N.device)
             out.append(f"NAME x POSITION (a memory per answer byte, keyed by the name){tag}: "
                        f"{measure_nk(lambda nk, n: torch.stack([(PJ[j] @ nk) if j in PJ else zero for j in range(n)]))}")
-            dWk = ridge(K, R, C0_); Rr = R - K @ dWk.T; PR = {}                  # own key, then NAME x POSITION on what the own key leaves (the residual)
-            for j in range(int(J.max()) + 1):
-                m = J == j
-                if int(m.sum()) >= 2: PR[j] = ridge(N[m], Rr[m], cI)
-            put(dWk); out.append(f"own key + NAME x POSITION on the residual{tag}: "
-                       f"{measure_nk(lambda nk, n: torch.stack([(PR[j] @ nk) if j in PR else zero for j in range(n)]))}")
-        # ROME-STYLE: a plain weight edit at the subject's last byte in an EARLIER block's MLP, so later attention can carry it to the answer.
-        # (9 Nov: fitted in the edited block - the last - it could not: nothing after the last MLP moves information between positions, the fit's
-        # gradient was zero and the result equalled 'no edit' exactly. Void, not negative.) Key covariance of that block from the fitting texts.
-        put(torch.zeros_like(W0_, dtype=torch.float32))
-        try: out.append(_rome_shadow(fit, words, ws_self, ridge, measure, lam_))
-        except Exception as e8: out.append(f"ROME-STYLE unavailable ({type(e8).__name__}: {str(e8)[:80]})")   # edited block back at the pre-edit weights
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
-        # 9 Nov SYSTEM-WRITTEN QUESTION FORMS (the store-as-teacher test, readout): the edit fitted on the written wordings PLUS relation-agnostic
-        # question and wrapper forms the system writes itself - a different KIND of form from the extra paraphrase templates that added nothing
-        # (six wordings = three, GPU). None is a test wording (_HO_TWO, reworded, context, pronoun probes).
-        QF = ("Notes on {A}: So {A} is connected to ", "Q: {A} is connected to whom? A: ", "It is recorded that {A} is connected to ", "{A} is connected to ... ")
-        for sc, tag in ((ws_self, f' + SELF-CONTRAST x{ws_self:g}'),):
-            K, R, N, J = fit(list(words) + list(QF), sc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + {len(QF)} SYSTEM-WRITTEN QUESTION FORMS: {measure()}")
         try: out.append(_source_shadow())
-        except Exception as e9: out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
+        except Exception as e9: cap_['delta'] = None; cap_['on'] = False; out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
         if int(getattr(cfg, 'inf_slot_gate', 1)):
             try: print(f"  [ANSWER-SLOT GATES | visit {int(model.__dict__.get('_visit', 0)) + 1}] " + _slot_gate(FIT[ws_self], put), flush=True)
-            except Exception as e7: _fail('inference.openread:slotgate'); print(f"  [ANSWER-SLOT GATES] unavailable ({type(e7).__name__}: {str(e7)[:160]})", flush=True)
+            except Exception as e7: cap_['delta'] = None; cap_['on'] = False; _fail('inference.openread:slotgate'); print(f"  [ANSWER-SLOT GATES] unavailable ({type(e7).__name__}: {str(e7)[:160]})", flush=True)
             with torch.no_grad(): mo_.weight.copy_(W0_)
         print(f"  [CF SHADOW EDITS] {len(E)} of this sleep's conclusions, each variant fitted on them alone and applied to the pre-edit weights at x{scale:g}, measured, removed "
               f"(the kept edit is restored) || " + " || ".join(out), flush=True)
     except Exception as e:
         _fail('inference.openread:shadow'); print(f"  [CF SHADOW EDITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
-        cap_['delta'] = None
+        cap_['delta'] = None; cap_['on'] = False; cap_['k'] = []                 # 10 Nov: capture can never be left on (it would keep every forward's keys)
         with torch.no_grad(): mo_.weight.copy_(Wk)

@@ -111,7 +111,6 @@ def run(cfg):
     _DP2['on']=int(cfg.dp_steps)>=2
     if cfg.pu_k>0: print(f"  [private trunk units] {cfg.pu_k} private MLP units per domain in every block")
     for i_,b in enumerate(model.blocks): b.__dict__['_xdg_i']=i_
-    from platypus.inference.slowhead import slow_init; slow_init(model, cfg)          # north-star rung 1 (slow_k > 0)
     ngp_init(model, cfg); print(f"  [private n-grams] per-domain hashed tables, orders {tuple(cfg.ngp)}, {cfg.ngp_rows} rows each, before each domain's own head" if cfg.ngp else "  [private n-grams] none (ngp=())")
     try:                                                                         # PARAMETER COUNT (issue #23): shared trunk vs the parts private to each slot
         nps_=lambda ps_: int(sum(p_.numel() for p_ in ps_))
@@ -518,9 +517,6 @@ def run(cfg):
     if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:
         from platypus.inference.openread import open_diag
         open_diag(model,cfg,_inf_store(model),_S,"END OF RUN",keys=True); _gpu_mem_mark('after open diagnostic')
-    if int(getattr(cfg,'gist_test',0)):                                          # GIST TEST: does a learned gist code carry information the trunk lacks?
-        from platypus.inference.gisttest import gist_test
-        gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S); _gpu_mem_mark('after gist test')
     if int(getattr(cfg,'inf_resid',0)) and cfg.inf_on:                          # cg27a MEMORY RESIDUAL (no gist): what the trunk still cannot predict of what the store holds
         from platypus.inference.residual import resid_readout
         resid_readout(model,cfg,_inf_store(model),[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S,"END OF RUN"); _gpu_mem_mark('after memory residual')
