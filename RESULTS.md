@@ -88,6 +88,41 @@ map 0.00-0.01. **No.** The slot state carries no general, linearly readable subj
 be replaced by a learned projection of the slot state; the trunk would have to learn the path (distillation) or the network needs a
 mechanism that carries the name forward.
 
+## The name memory on the GPU, the value type, and keeping it out of training (10 November 2026, evening)
+
+**GPU, seed 4, facts chosen by sightings (run 19:32)**, memory off -> on, through the model's forward:
+
+| Sleep | Conclusions, standard held-out wordings | Facts, new frame | Paraphrased relation | Own wording | Misfires, text naming stored subjects | Values kept / refitted |
+|---|---|---|---|---|---|---|
+| 1 | - | 0.00 -> 0.00 | 0.00 -> 0.00 | 0.00 -> 0.00 | +0.0002 BPC | - |
+| 2 | 0.00 -> 0.17 (6) | 0.00 -> 0.21 | 0.00 -> 0.33 | 0.00 -> 0.67 | +0.007 | 0 / 76 |
+| 5 | 0.33 -> 0.62 (84) | 0.00 -> 0.85 | 0.00 -> 0.26 | 0.06 -> 0.94 | +0.018 | 219 / 44 |
+| 6 | 0.28 -> 0.60 (96) | 0.02 -> 0.75 | 0.00 -> 0.21 | 0.21 -> 0.98 | +0.016 | 265 / 26 |
+| 7 | 0.50 -> 0.69 (96) | 0.02 -> 0.67 | 0.00 -> 0.33 | 0.19 -> 0.98 | +0.019 | 301 / 37 |
+| 8 | 0.36 -> 0.60 (96) | 0.02 -> 0.92 | 0.00 -> 0.09 | 0.27 -> 0.92 | +0.031 | 250 / 24 |
+
+Ordinary text 0-0.5 fires / 1000 bytes, at most +0.0004 BPC. 9-12 s per rebuild. Planted share of entries 0.60 -> 0.67-0.69 (facts),
+0.86-0.96 (conclusions). **Caveat:** in this run the memory still reached training (below), so its "off" (from the weights) column is not clean.
+Sleep GPU peak 70-72 GB vs 40-51 GB without the memory - not from the fitting batch (8 vs 24 facts gives the same 70 GB at sleep 2); a
+per-stage readout (`[NAME MEMORY | GPU]`) is in the next build.
+
+**Value type (hidden fitted change vs output-level boost).** Local full run, seed 0, visits 6-10: output-level recall as good or better
+(conclusions 0.49 vs 0.41 fresh at visit 10; paraphrased 0.28-0.38 vs 0.15-0.34), both lose much between rebuilds (facts new frame stale
+0.33 / 0.31 at visit 8 vs fresh 1.00 / 0.98 - mostly key drift), misfire cost 3-4x higher for the output-level boost on a full memory
+(+0.06-0.14 vs +0.01-0.04 BPC on text naming stored subjects). **GPU (run 21:39), sleep 1:** output-level own wording 1.00, new frame 0.81,
+paraphrased 0.84 (19) vs 0.00 everywhere for the hidden value; sleep 2 fresh: own 0.98 vs 0.65, paraphrased 0.56 vs 0.33; stale (sleep 1's
+memory after visit 2): 0.31 / 0.37 vs 0.00 / 0.00; misfire cost +0.021 vs +0.006. The gate variant (the chosen fact's own name) kept recall
+with about 25% fewer misfires.
+
+**Keeping the memory out of training.** The memory acted wherever the fast store acts; sleep steps that switch the store on to decide
+(REM recombination, need scoring, store writes, self-taught scoring) carried it into training: a local run parted from the run without it
+at visit 3 (dream mixing), final weights-only BPC 2.412 vs 2.411. Scoped to the store-on probe evaluation and its readouts: a short run with
+the memory on from 8 facts then matched the run without it (weights only -0.168 / 2.981, store on -0.168 / 2.982, every store-off and
+training line), apart from one near-tie in the dream mixing (2 of 440 candidates swap labels; nothing downstream changes).
+
+**Carry the subject (`inf_carry` 0.1, local seed 0, in progress):** training task (the byte's state picks its own name among the batch's
+names) 0.04-0.08 at visits 2-5; post-train BPC within noise of the run without it. Slot readout and GPU run pending.
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
