@@ -120,8 +120,17 @@ at visit 3 (dream mixing), final weights-only BPC 2.412 vs 2.411. Scoped to the 
 the memory on from 8 facts then matched the run without it (weights only -0.168 / 2.981, store on -0.168 / 2.982, every store-off and
 training line), apart from one near-tie in the dream mixing (2 of 440 candidates swap labels; nothing downstream changes).
 
-**Carry the subject (`inf_carry` 0.1, local seed 0, in progress):** training task (the byte's state picks its own name among the batch's
-names) 0.04-0.08 at visits 2-5; post-train BPC within noise of the run without it. Slot readout and GPU run pending.
+**Carry the subject (`inf_carry` 0.1).** Local (seed 0, fixed run): training task 0.04-0.14 over visits 2-8; slot readout unseen subjects
+0.00-0.10 at visits 3 and 6 (chance 0.03-0.05) - no signal; recall from the weights 0.00. The local model is too small and trains too
+briefly (about 95 steps per visit). **GPU (seed 4, run 22:24):** training task 0.30 (last 50: 0.72) at visit 2, 0.85 (0.94) at visit 3.
+Slot readout at sleep 3, UNSEEN subjects, layer 3 (top): paraphrased relation 0.56 (27), conclusions in held-out wordings 0.42 (12), facts in
+a new frame 0.14 (70); layer 2: 0.26 / 0.33 / 0.06; chance 0.015; no map 0.00-0.08. No GPU control without the carry loss yet (the
+0.01-0.05 baseline is local, 2 layers). From the weights, fixed set: 0.03 (edited 0.12 -> 0.00 without the closed-form edits). The sleep
+GPU peak was already 70-72 GB before the name memory ran (not the memory).
+**NOTE (10 Nov, 23:00): the carry loss is starting to compete with language modelling.** Post-train BPC (store on) against the seed-4 run
+without it: +0.002, +0.014, **+0.041** at visits 1-3 (seed noise about 0.017) - the cost grows as the task is mastered (0.94). Weight 0.1
+may be too strong once the task is learned: lower it, apply it every few steps (`inf_carry_every`), or anneal it when the task accuracy
+passes a level.
 
 ## Write side (cg27a), configuration results
 
