@@ -692,6 +692,7 @@ ORDER = (
     ('inference.openread', '_tf_items'),
     ('inference.openread', '_summ'),
     ('inference.openread', 'open_diag'),
+    ('inference.openread', '_jepa_question_codes'),
     ('inference.openread', '_key_readout'),
     ('inference.openread', '_cf_shadow'),
     ('inference.sticky', 'sticky_route'),

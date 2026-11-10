@@ -74,6 +74,27 @@ def open_diag(model, cfg, S_, S_slot, tag, keys=False):
         _fail('inference.openread'); print(f"  [OPEN DIAGNOSTIC] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _jepa_question_codes(model, cfg, ed):
+    """the trained JEPA's codes of each conclusion's question PREFIX (the text up to the answer slot, i.e. what a key at the slot can see), in
+    the first written wording and in each held-out wording: 'context' (the online encoder), 'target' (the target encoder) and 'predicted'
+    (the predictor applied to the context code, as the dream selector scores partners). None when no JEPA has been trained."""
+    from platypus.inference.jepa import _jd_codes
+    SH = model.__dict__.get('_jdS'); EN = model.__dict__.get('_jdenc')
+    if SH is None or EN is None: return None
+    g, gt, Pq, _ = SH; mu, sd, V = EN
+    def enc(Z):
+        Y = (Z - mu) / sd
+        if model.__dict__.get('_jdpca') and V is not None: return Y @ V.T
+        return Y - (Y @ V.T) @ V if V is not None else Y
+    def codes(txts):
+        with torch.no_grad():
+            E0 = enc(_jd_codes(model, cfg, txts)); c = g(E0)
+            return {'context': F.normalize(c, dim=-1).float().cpu(), 'target': F.normalize(gt(E0), dim=-1).float().cpu(),
+                    'predicted': F.normalize(Pq(c), dim=-1).float().cpu()}
+    pf = [_CONC_CF[0].format(A=c['A']).encode('latin-1', 'replace') for c in ed]
+    return codes(pf), [codes([w.format(A=c['A']).encode('latin-1', 'replace') for c in ed]) for w in _HO_TWO]
+
+
 def _key_readout(model, cfg, S_, S_slot, ed, tag):
     """(4) the held-out question's key against the fitted-wording keys of all these conclusions: top-1 retrieval of its own conclusion"""
     from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_eager
@@ -122,6 +143,13 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
                 mu, P, _ = sfa
                 rows.setdefault('[SFA 32 ; NAME state]', []).append(acc(zsum(sims((Hq - mu) @ P, (Hf - mu) @ P, False), sims(NSq, NSf))))
                 rows.setdefault('[SFA 32 ; NAME state ; edit key]', []).append(acc(zsum(sims((Hq - mu) @ P, (Hf - mu) @ P, False), sims(NSq, NSf), sims(Kq, Kf))))
+        JC = _jepa_question_codes(model, cfg, ed)                              # 10 Nov: KEYING FROM THE JEPA (the trained dream selector's codes)
+        if JC is not None:
+            Jf, Jh = JC
+            for (Kq, Hq, NSq, NKq), Jq in zip(Kh, Jh):
+                for kind in Jf:
+                    rows.setdefault(f'JEPA {kind} code of the question', []).append(acc(sims(Jq[kind], Jf[kind], False)))
+                rows.setdefault('JEPA context code + NAME state', []).append(acc(zsum(sims(Jq['context'], Jf['context'], False), sims(NSq, NSf))))
         nA = len(set(c['A'] for c in ed))
         for (Kq, Hq, NSq, NKq) in Kh:
             rows.setdefault('edit key raw', []).append(r1(Kq, Kf)); mk = Kf.mean(0); rows.setdefault('edit key centred', []).append(r1(Kq - mk, Kf - mk))
