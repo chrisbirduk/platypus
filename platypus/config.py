@@ -525,6 +525,7 @@ class Config:
     inf_carry_n=128                 #   carry: sampled bytes per batch
     inf_carry_tau=0.1               #   carry: InfoNCE temperature
     inf_carry_dim=128               #   carry: projection size
+    inf_carry_every=1               #   carry: apply the loss every this many training steps
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
                                     #   that domain's private units OFF, on the visit's VERIFIED windows (the NREM reservoir; needs nrem_res > 0)

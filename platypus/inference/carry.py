@@ -36,6 +36,30 @@ def carry_arm(model, cfg):
 def carry_disarm(): _CL['arm'] = False
 
 
+def _cl_positions(x, dmax):
+    """VECTORISED SUBJECT REGISTER (10 Nov; replaces a per-row regex scan that copied the batch to the CPU every step): for every byte, the
+    last byte of the latest name-like word ending before it (capital first letter, 3+ letters, letters only) and the distance to it.
+    Returns (rows, positions, name positions, name hashes) of the bytes 1..dmax after a name, all on the device."""
+    B, T = x.shape; dev = x.device
+    up = (x >= 65) & (x <= 90); lo = (x >= 97) & (x <= 122); L = up | lo
+    Lp = torch.cat([torch.zeros(B, 1, dtype=torch.bool, device=dev), L[:, :-1]], 1); Ln = torch.cat([L[:, 1:], torch.zeros(B, 1, dtype=torch.bool, device=dev)], 1)
+    st = L & ~Lp; en = L & ~Ln
+    t = torch.arange(T, device=dev)[None].expand(B, -1)
+    wst = torch.where(st, t, torch.full_like(t, -1)).cummax(1).values           # start of the word each byte is in
+    cap = up.gather(1, wst.clamp(min=0)); ln = t - wst + 1
+    ne = en & cap & (ln >= 3) & (wst >= 0)                                      # last byte of a name-like word
+    reg = torch.where(ne, t, torch.full_like(t, -1)).cummax(1).values
+    reg = torch.cat([torch.full((B, 1), -1, dtype=reg.dtype, device=dev), reg[:, :-1]], 1)   # the latest name ending BEFORE the byte
+    d = t - reg; ok = (reg >= 0) & (d >= 1) & (d <= dmax)
+    rows, pos = ok.nonzero(as_tuple=True); npos = reg[rows, pos]
+    h = torch.zeros(len(rows), dtype=torch.long, device=dev); xl = x.long()     # hash of the name's bytes (up to 16, read backwards from its end)
+    nst = wst[rows, npos]
+    for k in range(16):
+        j = npos - k; m = j >= nst
+        h = torch.where(m, (h * 257 + xl[rows, j.clamp(min=0)]) % 1000000007, h)
+    return rows, pos, npos, h
+
+
 def carry_loss(model, cfg, x):
     """the auxiliary loss for the window batch x (B, T) whose forward has just run (keys captured); 0.0 when nothing to do"""
     K = _CL.get('K'); _CL['K'] = None; _CL['arm'] = False
@@ -43,22 +67,15 @@ def carry_loss(model, cfg, x):
     if K is None or K.dim() != 3 or K.shape[:2] != x.shape[:2]: return 0.0
     try:
         B, T, H = K.shape; dev = K.device; dmax = int(getattr(cfg, 'inf_carry_dist', 32)); nmax = int(getattr(cfg, 'inf_carry_n', 128))
-        Xc = x.detach().to('cpu', torch.uint8).numpy(); qs, ns, ids = [], [], []
-        for b in range(B):
-            txt = bytes(Xc[b].tolist()); last = None
-            for m in _CL_WORD.finditer(txt):
-                w = m.group(0)
-                if not _cl_isname(w): continue
-                ne = m.end() - 1; nxt = len(txt)
-                for m2 in _CL_WORD.finditer(txt, m.end()):
-                    if _cl_isname(m2.group(0)): nxt = m2.end() - 1; break
-                for t in range(ne + 1, min(T, ne + 1 + dmax, nxt + 1)): qs.append((b, t)); ns.append((b, ne)); ids.append(w)
-        if len(set(ids)) < 4: return 0.0
-        rs = np.random.RandomState(_CL['n']); _CL['n'] += 1
-        pick = rs.permutation(len(qs))[:nmax]
-        qb = torch.tensor([qs[i][0] for i in pick], device=dev); qt = torch.tensor([qs[i][1] for i in pick], device=dev)
-        nb = torch.tensor([ns[i][0] for i in pick], device=dev); nt = torch.tensor([ns[i][1] for i in pick], device=dev)
-        wid = [ids[i] for i in pick]; uq = {w: k for k, w in enumerate(sorted(set(wid)))}; lab = torch.tensor([uq[w] for w in wid], device=dev)
+        ev = max(1, int(getattr(cfg, 'inf_carry_every', 1))); _CL['n'] += 1
+        if (_CL['n'] - 1) % ev: return 0.0
+        rows, pos, npos, hsh = _cl_positions(x[:, :T], dmax)
+        if len(rows) == 0: return 0.0
+        g = torch.Generator(device='cpu').manual_seed(_CL['n'])                 # own generator: training's random state is not touched
+        pick = torch.randperm(len(rows), generator=g)[:nmax].to(dev)
+        qb, qt, nt, hp = rows[pick], pos[pick], npos[pick], hsh[pick]; nb = qb
+        uq, lab = torch.unique(hp, return_inverse=True)
+        if len(uq) < 4: return 0.0
         if _CL['P'] is None or _CL['P'][0].in_features != H:
             d = int(getattr(cfg, 'inf_carry_dim', 128))
             _CL['P'] = (torch.nn.Linear(H, d).to(dev), torch.nn.Linear(H, d).to(dev))

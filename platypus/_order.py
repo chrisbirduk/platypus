@@ -700,6 +700,7 @@ ORDER = (
     ('inference.carry', '_cl_hook'),
     ('inference.carry', 'carry_arm'),
     ('inference.carry', 'carry_disarm'),
+    ('inference.carry', '_cl_positions'),
     ('inference.carry', 'carry_loss'),
     ('inference.carry', 'carry_report'),
     ('inference.carry', 'slot_subject_readout'),
