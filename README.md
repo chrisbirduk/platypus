@@ -9,6 +9,17 @@ This is a personal project: one person's own research, done in spare time over t
 Current build: **cg27a** (branch `cg27a`). GPU presets: `configs/presets/cg27a.env` (full build, three passes); `configs/presets/cg27a_readouts_pass1.env` (pass 1, every readout - the next GPU run, seed 3).
 
 ---
+## Note from author
+Documentation here is LLM generated. This has proved problematic, and the LLM often got carried away - either making wild claims or underestimating the benchmarks which had been undertaken. 
+The core memory was built, tested and benchmarked at a number of sizes (50M, 170M, 500M) and against several other baselines. In its initial form, it did well, but probably needs benchmarking again with all the extra bloat.
+The original aim of the project was to create a continuous learning memory system, ideally for deployment with agents. This then expanded to understand if the dream system could be expanded to provide inference abilities. My gut feeling is that it can, but this would require more layers and additional features. Some weight updates to the trunk are real and a temporal gradient is evident.
+The closed-loop approach also requires work. My gut feeling here is that should only be an encoder. An encoder would work within a "hippocampal" layer to identify similarity (soft features) and mix these with less predictable raw data, with the raw data component likely decaying faster. The trunk should be able to take the gist and raw data in parallel. Dreams would aid helping avoiding forgetting and inference building. 
+Different dreaming would potentially occur during normal training, and gated depending on the state of the model.
+Whilst not included within the results here, I had some partial success getting this to work - but I would need to test this at a scale which isn't available to me. Mixing of "concepts" is likely what is required to advance the model, but this cannot easily be achieved with a byte stream as SFA/JEPA decoding is not feasible back to byte form - ultimately, the decoder needs to go (and this creates new challenges).
+Other thoughts here - there seems to be a struggle to ensure that memory traces are smaller than the original memory. IMHO this doesn't matter, instead the focus needs to be - can the traces convey all of the information required for modelling state change AND providing inference. Sure, memory traces should be as small as possible, but not so small that they prevent advanced function.
+I have barely sufficient time to work on this project. The original aim was to understand if a memory system could be developed for agents which didn't decay into nonsense. I think the project demonstrates this is possible, and along with existing research points towards how this could be achieved. In the last few weeks, so many products have arrived in this area, that this work is less novel than when I started it.
+The code is very messy, I apologise for this - it is largely LLM generated and only the core memory system was sufficiently reviewed and has since deteriorated.
+I am not an AI engineer or AI researcher - this is a pet project.
 
 ## What it is, in one paragraph
 
