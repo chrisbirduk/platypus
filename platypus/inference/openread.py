@@ -70,6 +70,9 @@ def open_diag(model, cfg, S_, S_slot, tag, keys=False):
                 R = _tf_items(model, [(w.format(A=c['A']), c['C'], S_slot(c['d'])) for c in L for w in ws]); parts.append(f"{wn}: {_summ(R)}")
             print(f"  [OPEN DIAGNOSTIC | {tag} | {grp} conclusions, from the weights] " + " || ".join(parts), flush=True)
         if keys and len(ed) >= 8: _key_readout(model, cfg, S_, S_slot, ed, tag)
+        if keys:
+            try: _key_readout_rel(model, cfg, S_, S_slot, tag)
+            except Exception as e2: _fail('inference.openread:relkeys'); print(f"  [RUNG 3 KEYS, TWO RELATIONS PER SUBJECT] unavailable ({type(e2).__name__}: {e2})"[:240], flush=True)
     except Exception as e:
         _fail('inference.openread'); print(f"  [OPEN DIAGNOSTIC] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
@@ -159,6 +162,101 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
                 for k in (4, 16): rows.setdefault(f'trunk output, slowest {k} SFA directions', []).append(r1((Hq - mu) @ P[:, :k], (Hf - mu) @ P[:, :k]))
         print(f"  [RUNG 3 KEYS | {tag}] held-out question -> its own conclusion by the nearest fitted-wording key, among {len(ed)} edited conclusions with {nA} distinct subjects "
               f"(chance {1 / len(ed):.3f}; mean of {len(_HO_TWO)} held-out wordings): " + " | ".join(f"{n} {np.mean(v):.2f}" for n, v in rows.items()), flush=True)
+    finally:
+        h.remove(); back()
+
+
+def _key_readout_rel(model, cfg, S_, S_slot, tag):
+    """RUNG 3 KEYS, TWO RELATIONS PER SUBJECT (10 Nov; readout only). The conclusion test cannot show a key that carries the relation: every
+    conclusion says 'is connected to', so the name key's ceiling is distinct subjects / conclusions. Here each subject X brings TWO items with
+    different relations: its planted fact 'X <rel> Y' (written 'X <rel> ') and one of its conclusions 'X is connected to Z' (written as the
+    first conclusion wording). A key that knows only the subject can reach at most 0.50; going above 0.50 needs the relation in the key.
+    Held-out questions: SAME RELATION, NEW FRAME ('It is on record that X <rel> ') and PARAPHRASED RELATION ('X <paraphrase> ',
+    'We read that X <paraphrase> '). Facts whose relation is 'is linked to' are left out (a synonym of the conclusions' relation).
+    Per key: top-1 retrieval of its own item, and of the retrieved items the share with the right subject and with the right relation."""
+    import numpy as np, torch, torch.nn.functional as F
+    from platypus.common import _CONC_CF
+    from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_eager
+    from platypus.inference.probes import inf_probes, _inf_phrase
+    from platypus.conduit import _carry_save, _carry_load
+    from platypus.layers import _CARRY
+    PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
+            'trained under': 'was taught by', 'is connected to': 'is tied to'}
+    fact_of = {}
+    for ch in inf_probes(cfg):
+        if ch.get('upd') or ch.get('known'): continue
+        for i, r in enumerate(ch['rels']):
+            if r in PARA and r != 'is connected to': fact_of.setdefault(ch['names'][i], (r, ch['names'][i + 1], ch['doms'][i]))
+    seen, subj = set(), []
+    lv = [c for c in S_.get('conc', []) if not c.get('freed') and isinstance(c.get('C'), str) and isinstance(c.get('A'), str)]
+    for c in lv:
+        if c['A'] in fact_of and c['A'] not in seen: seen.add(c['A']); subj.append((c['A'], c))
+    rs = np.random.RandomState(int(cfg.seed) + 4143); subj = [subj[i] for i in rs.permutation(len(subj))[:32]]
+    if len(subj) < 8: print(f"  [RUNG 3 KEYS, TWO RELATIONS PER SUBJECT | {tag}] skipped: {len(subj)} subjects with a planted fact and a conclusion", flush=True); return
+    items = []                                                             # (subject, relation, answer, domain, fitted prefix)
+    for A, c in subj:
+        r, B, d = fact_of[A]; items.append((A, r, B, d, f"{A} {r} ")); items.append((A, 'is connected to', c['C'], c['d'], _CONC_CF[0].format(A=A)))
+    HO = {'SAME RELATION, new frame': [lambda A, r: f"It is on record that {A} {r} "],
+          'PARAPHRASED RELATION': [lambda A, r: f"{A} {PARA[r]} ", lambda A, r: f"We read that {A} {PARA[r]} "]}
+    li = int(getattr(cfg, 'inf_cf_layer', -1)); mo = model.blocks[li].mlp_out; back = _ws_eager(model); cap = {'on': False, 'k': []}
+    def hk(m, i, o):
+        if cap['on']: cap['k'].append(i[0].detach().float())
+    h = mo.register_forward_hook(hk)
+    try:
+        def keys(prefixes):
+            K, NS, NK = [], [], []
+            for (A, r, ans, d, _), pf in zip(items, prefixes):
+                pb = pf.encode('latin-1', 'replace'); X, M = _ws_batch(model, [pb + (ans + '.').encode('latin-1', 'replace')]); p0 = len(pb) - 1
+                cap['on'] = True; cap['k'] = []
+                try: _ws_run(model, X, int(S_slot(d)))
+                finally: cap['on'] = False
+                ab = A.encode('latin-1', 'replace'); i0 = pb.find(ab); i1 = i0 + len(ab)
+                K.append(cap['k'][-1][0][p0].cpu()); NK.append(cap['k'][-1][0][i1 - 1].cpu())
+                sv = _carry_save(); _CARRY.update(on=False, st={}, new={}); was = model.training; model.eval()
+                try:
+                    with torch.no_grad(): hf = model.features(X[:, :-1])
+                finally: _carry_load(sv); model.train(was)
+                hf = hf[0] if isinstance(hf, (tuple, list)) else hf; NS.append(hf[0, i0:i1].float().mean(0).cpu())
+            return torch.stack(K), torch.stack(NS), torch.stack(NK)
+        J = None
+        try:
+            from platypus.inference.jepa import _jd_codes
+            SH = model.__dict__.get('_jdS'); EN = model.__dict__.get('_jdenc')
+            if SH is not None and EN is not None:
+                g, gt, Pq, _ = SH; mu, sd, V = EN
+                def enc(Z):
+                    Y = (Z - mu) / sd
+                    if model.__dict__.get('_jdpca') and V is not None: return Y @ V.T
+                    return Y - (Y @ V.T) @ V if V is not None else Y
+                def J(prefixes):
+                    with torch.no_grad():
+                        E0 = enc(_jd_codes(model, cfg, [p.encode('latin-1', 'replace') for p in prefixes])); cc = g(E0)
+                        return {'context': F.normalize(cc, dim=-1).float().cpu(), 'target': F.normalize(gt(E0), dim=-1).float().cpu(),
+                                'predicted': F.normalize(Pq(cc), dim=-1).float().cpu()}
+        except Exception: J = None
+        def sims(Q, Kb, ctr=True):
+            if ctr: m = Kb.mean(0); Q = Q - m; Kb = Kb - m
+            return F.normalize(Q, dim=-1) @ F.normalize(Kb, dim=-1).T
+        def zsum(*S): return sum((x - x.mean(1, keepdim=True)) / (x.std(1, keepdim=True) + 1e-6) for x in S)
+        sA = np.array([it[0] for it in items]); sR = np.array([it[1] == 'is connected to' for it in items])
+        def score(S):
+            p = S.argmax(1).numpy(); n = np.arange(len(p)); return np.array([(p == n).mean(), (sA[p] == sA).mean(), (sR[p] == sR).mean()])
+        fit_pf = [it[4] for it in items]; Kf, NSf, NKf = keys(fit_pf); Jf = J(fit_pf) if J else None
+        res = []
+        for fam, fs in HO.items():
+            rows = {}
+            for f in fs:
+                pf = [f(it[0], it[1]) for it in items]; Kq, NSq, NKq = keys(pf); Jq = J(pf) if J else None
+                S = {'NAME: edit key at the name\'s last byte': sims(NKq, NKf), 'NAME: trunk state over the name': sims(NSq, NSf), 'edit key (question end)': sims(Kq, Kf)}
+                S['edit key + NAME'] = zsum(S['edit key (question end)'], S['NAME: trunk state over the name'])
+                if Jq is not None:
+                    for kd in ('context', 'target', 'predicted'): S[f'JEPA {kd}'] = sims(Jq[kd], Jf[kd], False)
+                    S['JEPA target + NAME'] = zsum(S['JEPA target'], S['NAME: trunk state over the name'])
+                    S['JEPA context + NAME'] = zsum(S['JEPA context'], S['NAME: trunk state over the name'])
+                for k, v in S.items(): rows.setdefault(k, []).append(score(v))
+            res.append(f"{fam} ({len(fs)} wording(s)): " + " | ".join(f"{k} {np.mean(v, 0)[0]:.2f} (subject {np.mean(v, 0)[1]:.2f}, relation {np.mean(v, 0)[2]:.2f})" for k, v in rows.items()))
+        print(f"  [RUNG 3 KEYS, TWO RELATIONS PER SUBJECT | {tag}] {len(subj)} subjects x (planted fact + conclusion) = {len(items)} items; a subject-only key "
+              f"is capped at 0.50 (chance {1 / len(items):.3f}); e.g. '{items[0][4]}{items[0][2]}' / '{items[1][4]}{items[1][2]}' || " + " || ".join(res), flush=True)
     finally:
         h.remove(); back()
 
