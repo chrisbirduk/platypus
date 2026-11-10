@@ -509,25 +509,30 @@ def run(cfg):
         print(f"  {PILE_DOMAINS[p][:12]:12} | post {pw_:.3f} | final {fin_w[p]:.3f} | forget {f:+.3f} | store on: final {bpc_m[-1][p]:.3f}")
     mfw=float(np.mean(fgw)); mbw=float(np.mean(fin_w))
     print(f"HEADLINE WEIGHTS ONLY (fast store off): FORGETTING {mfw:+.3f} | FINAL BPC {mbw:.3f} || with the fast store on: FORGETTING {mf:+.3f} | FINAL BPC {mb:.3f}",flush=True)
-    if cfg.inf_on: inf_eval(model,cfg,_inf_store(model),"END OF RUN"); inf_final_bpc(model,cfg,vals,_S)
+    from platypus.inference.readouts import _gpu_mem_mark, _gpu_mem_report
+    _gpu_mem_report('end of training, before freeing generation graphs')
+    from platypus.conduit import release_gen_graphs
+    n9g_=release_gen_graphs('end of training'); print(f"  [GPU MEMORY] generation graphs released at the end of training ({n9g_[0]} sets, {n9g_[1]} slot graphs); generation runs eager from here",flush=True)
+    _gpu_mem_report('end of training, after freeing generation graphs')
+    if cfg.inf_on: inf_eval(model,cfg,_inf_store(model),"END OF RUN"); _gpu_mem_mark('after END eval'); inf_final_bpc(model,cfg,vals,_S); _gpu_mem_mark('after final BPC and CLS probes')
     if int(getattr(cfg,'inf_open_diag',0)) and cfg.inf_on:
         from platypus.inference.openread import open_diag
-        open_diag(model,cfg,_inf_store(model),_S,"END OF RUN",keys=True)
+        open_diag(model,cfg,_inf_store(model),_S,"END OF RUN",keys=True); _gpu_mem_mark('after open diagnostic')
     if int(getattr(cfg,'gist_test',0)):                                          # GIST TEST: does a learned gist code carry information the trunk lacks?
         from platypus.inference.gisttest import gist_test
-        gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S)
+        gist_test(model,cfg,[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S); _gpu_mem_mark('after gist test')
     if int(getattr(cfg,'inf_resid',0)) and cfg.inf_on:                          # cg27a MEMORY RESIDUAL (no gist): what the trunk still cannot predict of what the store holds
         from platypus.inference.residual import resid_readout
-        resid_readout(model,cfg,_inf_store(model),[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S,"END OF RUN")
+        resid_readout(model,cfg,_inf_store(model),[stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)],sorted(set(schedule)),_S,"END OF RUN"); _gpu_mem_mark('after memory residual')
     if int(getattr(cfg,'inf_selcmp',0)) and cfg.inf_on:                          # SELECTOR COMPARISON: trained JEPA selector against CCA / SFA / TF-IDF
         from platypus.inference.selcmp import selector_compare
-        selector_compare(model,cfg,_inf_store(model),_S,"END OF RUN")
+        selector_compare(model,cfg,_inf_store(model),_S,"END OF RUN"); _gpu_mem_mark('after selector comparison')
     if int(getattr(cfg,'inf_rdr_judge',0)):                                      # cg27a RELATION JUDGE ON PROSE (Re-DocRED pairs, trunk alone)
         from platypus.inference.residual import pair_judge_readout
-        pair_judge_readout(model,cfg,_S,"END OF RUN")
+        pair_judge_readout(model,cfg,_S,"END OF RUN"); _gpu_mem_mark('after relation judge')
     if int(getattr(cfg,'grad_eval',0)):                                          # cg27a GRADUATION: private parts off, per slot
         from platypus.inference.residual import grad_readout
-        grad_readout(model,cfg,vals,sorted(set(schedule)),_S,"END OF RUN")
+        grad_readout(model,cfg,vals,sorted(set(schedule)),_S,"END OF RUN"); _gpu_mem_mark('after graduation')
     _pf9=__import__('sys').modules.get('platypus.profiling')
     if _pf9 is not None: _pf9._ft_total()
     dc9_=model.__dict__.pop('_deferred_ceiling',None)                           # 9 Nov: the composition-ceiling tests run LAST (they can fill the GPU)

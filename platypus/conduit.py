@@ -430,6 +430,14 @@ def _cdg_msg():
             f" | self-checks {_CDG['n_chk']}: bit-identical {_CDG['n_bit']}, max logit diff {_CDG['maxd']:.1e}, same top byte >= {_CDG['minag']:.4f}"+(f" | {torch.cuda.mem_get_info()[0]/2**30:.1f} GB free, peak allocated {torch.cuda.max_memory_allocated()/2**30:.1f} GB" if torch.cuda.is_available() else '')+(f" | sets skipped for memory {_CDG.get('n_skip',0)}" if _CDG.get('n_skip') else '')+(f" | OFF: {_CDG['off'][:120]}" if _CDG['off'] else ''))
 # ---------------- v9.8 cg5: SLOT MEMORY GENERATION (cd_slot), with CUDA graphs bound to one persistent buffer ----------------
 _CG5={'key':None,'cap':0,'B':None,'Y':None,'LG':None,'g':{},'pool':None,'nchk':0,'chk_calls':0}
+def release_gen_graphs(why='end of training'):
+    """10 Nov: free every recorded generation graph, its static buffers and memory pools, and switch graph capture off (generation runs eager
+    from here). Called when training ends: the end-of-run readouts need memory more than graph speed (seed 3 ran out with ~80 GiB allocated)"""
+    n1_=len(_CDG['g']); n2_=len(_CG5['g'])
+    _CDG['g'].clear(); _CDG['pool']=None; _CDG['off']=why
+    _CG5['g'].clear(); _CG5['B']=None; _CG5['Y']=None; _CG5['LG']=None; _CG5['pool']=None; _CG5['key']=None; _CG5['cap']=0
+    return n1_,n2_
+
 def _slot_ok(st0,m):
     """the starting state is a set of factored memories (U, K) for m rows (no other carried statistics)"""
     why=None

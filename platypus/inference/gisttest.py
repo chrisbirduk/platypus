@@ -47,65 +47,69 @@ def gist_test(model, cfg, raw_vals, seen_d, slot_of):
     hk = model.embed.register_forward_hook(lambda m_, i_, o_: o_ if inj['z'] is None else o_ + inj['z'][:, None, :].to(o_.dtype))
     try:
         for Lc in lens:
-            tr, te = [], []
-            for d in seen_d:
-                v = raw_vals[d]; h = len(v) // 2
-                for _ in range(max(B * 4, 64)):
-                    i = rs.randint(0, h - Lc - 1); tr.append((d, v[i:i + Lc]))
-                for _ in range(NT):
-                    i = rs.randint(h, len(v) - Lc - 1); te.append((d, v[i:i + Lc]))
-            def bits(rows, z):
-                """mean bits per byte of each row, slot given; z (n, d_model) added to the input embedding or None"""
-                out = []
-                for a in range(0, len(rows), 16):
-                    rr = rows[a:a + 16]
-                    for d in sorted(set(r[0] for r in rr)):
-                        ii = [j for j, r in enumerate(rr) if r[0] == d]
-                        X = torch.tensor([list(rr[j][1]) for j in ii], dtype=torch.long, device=dev)
-                        inj['z'] = None if z is None else z[[a + j for j in ii]]
-                        sl = int(slot_of(d)); _XDG['cur'] = sl
-                        lp = F.log_softmax(model(X[:, :-1], sl).float(), -1)
-                        nll = -lp.gather(-1, X[:, 1:, None]).squeeze(-1).mean(1) / math.log(2)
-                        for jj, v_ in zip(ii, nll.tolist()): out.append((a + jj, v_))
-                inj['z'] = None
-                return np.array([v for _, v in sorted(out)])
-            with torch.no_grad(): base = bits(te, None)
-            res = {}
-            for arm in arms:
-                Gtr = _gist_codes(cfg, [c for _, c in tr], arm, dev); Gte = _gist_codes(cfg, [c for _, c in te], arm, dev)
-                mu, sd = Gtr.mean(0), Gtr.std(0) + 1e-6
-                for k in (ks if arm == 'G' else ks[-1:]):
-                    torch.manual_seed(int(cfg.seed) + 77 * k)
-                    A = nn.Linear(Gtr.shape[1], k).to(dev); Bm = nn.Linear(k, model.embed.weight.shape[1], bias=False).to(dev)
-                    gate = nn.Parameter(torch.zeros(1, device=dev)); op = torch.optim.Adam(list(A.parameters()) + list(Bm.parameters()) + [gate], lr=1e-3)
-                    def code(G, train):
-                        c = torch.tanh(A((G - mu) / sd))                                      # in (-1, 1): 8 bits per dimension
-                        q = torch.round((c + 1) * 127.5) / 127.5 - 1
-                        c = c + (q - c).detach() if train else q                             # straight-through quantisation
-                        return gate * Bm(c)
-                    for st in range(steps):
-                        ix = rs.randint(0, len(tr), B)
-                        loss = 0.0
-                        for d in sorted(set(tr[i][0] for i in ix)):
-                            jj = [i for i in ix if tr[i][0] == d]
-                            X = torch.tensor([list(tr[i][1]) for i in jj], dtype=torch.long, device=dev)
-                            inj['z'] = code(Gtr[jj], True); _XDG['cur'] = int(slot_of(d))
-                            lp = F.log_softmax(model(X[:, :-1], int(slot_of(d))).float(), -1)
-                            loss = loss + (-lp.gather(-1, X[:, 1:, None]).squeeze(-1).mean()) * len(jj) / B
-                        inj['z'] = None; op.zero_grad(); loss.backward(); op.step()
-                    with torch.no_grad():
-                        own = bits(te, code(Gte, False))
-                        perm = np.roll(np.arange(len(te)), len(te) // 2)                     # another chunk's gist (half the list away: mostly another domain)
-                        shuf = bits(te, code(Gte[perm], False))
-                    res[(arm, k)] = (own, shuf, float(gate.detach().abs()))
-            nB = Lc - 1
-            print(f"  [GIST TEST | chunks of {Lc} bytes, slot given, {len(te)} held-out chunks over {len(seen_d)} domains] baseline (trunk + slot code, no gist) "
-                  f"{base.mean():.4f} bits/byte = {base.mean() * nB:.1f} bits per chunk", flush=True)
-            for (arm, k), (own, shuf, g) in res.items():
-                sv = (base - own).mean() * nB; ss = (base - shuf).mean() * nB; cost = 8 * k
-                print(f"    gist arm {arm} ({'names masked' if arm == 'G' else 'names kept'}), {k} dims x 8 bits = {cost} bits: with the chunk's own gist "
-                      f"{own.mean():.4f} bits/byte, SAVES {sv:+.1f} bits per chunk (net of the gist's cost {sv - cost:+.1f}) | another chunk's gist "
-                      f"{shuf.mean():.4f}, saves {ss:+.1f} | gate {g:.3f} | chunks helped {np.mean(own < base):.2f}", flush=True)
+          try:
+              tr, te = [], []
+              for d in seen_d:
+                  v = raw_vals[d]; h = len(v) // 2
+                  for _ in range(max(B * 4, 64)):
+                      i = rs.randint(0, h - Lc - 1); tr.append((d, v[i:i + Lc]))
+                  for _ in range(NT):
+                      i = rs.randint(h, len(v) - Lc - 1); te.append((d, v[i:i + Lc]))
+              def bits(rows, z):
+                  """mean bits per byte of each row, slot given; z (n, d_model) added to the input embedding or None"""
+                  out = []
+                  for a in range(0, len(rows), 16):
+                      rr = rows[a:a + 16]
+                      for d in sorted(set(r[0] for r in rr)):
+                          ii = [j for j, r in enumerate(rr) if r[0] == d]
+                          X = torch.tensor([list(rr[j][1]) for j in ii], dtype=torch.long, device=dev)
+                          inj['z'] = None if z is None else z[[a + j for j in ii]]
+                          sl = int(slot_of(d)); _XDG['cur'] = sl
+                          lp = F.log_softmax(model(X[:, :-1], sl).float(), -1)
+                          nll = -lp.gather(-1, X[:, 1:, None]).squeeze(-1).mean(1) / math.log(2)
+                          for jj, v_ in zip(ii, nll.tolist()): out.append((a + jj, v_))
+                  inj['z'] = None
+                  return np.array([v for _, v in sorted(out)])
+              with torch.no_grad(): base = bits(te, None)
+              res = {}
+              for arm in arms:
+                  Gtr = _gist_codes(cfg, [c for _, c in tr], arm, dev); Gte = _gist_codes(cfg, [c for _, c in te], arm, dev)
+                  mu, sd = Gtr.mean(0), Gtr.std(0) + 1e-6
+                  for k in (ks if arm == 'G' else ks[-1:]):
+                      torch.manual_seed(int(cfg.seed) + 77 * k)
+                      A = nn.Linear(Gtr.shape[1], k).to(dev); Bm = nn.Linear(k, model.embed.weight.shape[1], bias=False).to(dev)
+                      gate = nn.Parameter(torch.zeros(1, device=dev)); op = torch.optim.Adam(list(A.parameters()) + list(Bm.parameters()) + [gate], lr=1e-3)
+                      def code(G, train):
+                          c = torch.tanh(A((G - mu) / sd))                                      # in (-1, 1): 8 bits per dimension
+                          q = torch.round((c + 1) * 127.5) / 127.5 - 1
+                          c = c + (q - c).detach() if train else q                             # straight-through quantisation
+                          return gate * Bm(c)
+                      for st in range(steps):
+                          ix = rs.randint(0, len(tr), B)
+                          loss = 0.0
+                          for d in sorted(set(tr[i][0] for i in ix)):
+                              jj = [i for i in ix if tr[i][0] == d]
+                              X = torch.tensor([list(tr[i][1]) for i in jj], dtype=torch.long, device=dev)
+                              inj['z'] = code(Gtr[jj], True); _XDG['cur'] = int(slot_of(d))
+                              lp = F.log_softmax(model(X[:, :-1], int(slot_of(d))).float(), -1)
+                              loss = loss + (-lp.gather(-1, X[:, 1:, None]).squeeze(-1).mean()) * len(jj) / B
+                          inj['z'] = None; op.zero_grad(); loss.backward(); op.step()
+                      with torch.no_grad():
+                          own = bits(te, code(Gte, False))
+                          perm = np.roll(np.arange(len(te)), len(te) // 2)                     # another chunk's gist (half the list away: mostly another domain)
+                          shuf = bits(te, code(Gte[perm], False))
+                      res[(arm, k)] = (own, shuf, float(gate.detach().abs()))
+              nB = Lc - 1
+              print(f"  [GIST TEST | chunks of {Lc} bytes, slot given, {len(te)} held-out chunks over {len(seen_d)} domains] baseline (trunk + slot code, no gist) "
+                    f"{base.mean():.4f} bits/byte = {base.mean() * nB:.1f} bits per chunk", flush=True)
+              for (arm, k), (own, shuf, g) in res.items():
+                  sv = (base - own).mean() * nB; ss = (base - shuf).mean() * nB; cost = 8 * k
+                  print(f"    gist arm {arm} ({'names masked' if arm == 'G' else 'names kept'}), {k} dims x 8 bits = {cost} bits: with the chunk's own gist "
+                        f"{own.mean():.4f} bits/byte, SAVES {sv:+.1f} bits per chunk (net of the gist's cost {sv - cost:+.1f}) | another chunk's gist "
+                        f"{shuf.mean():.4f}, saves {ss:+.1f} | gate {g:.3f} | chunks helped {np.mean(own < base):.2f}", flush=True)
+          except torch.cuda.OutOfMemoryError:                                    # 10 Nov: a length that does not fit is skipped, not fatal
+              inj['z'] = None; import gc as _gc9; _gc9.collect(); torch.cuda.empty_cache()
+              print(f"  [GIST TEST | chunks of {Lc} bytes] skipped: out of GPU memory", flush=True)
     except Exception as e:
         _fail('inference.gisttest'); print(f"  [GIST TEST] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
