@@ -81,3 +81,75 @@ def carry_report(tag):
     """training accuracy of the carry task since the last report (the true name's state first among the batch's names)"""
     a = _CL['acc']; _CL['acc'] = []
     if a: print(f"  [CARRY THE SUBJECT | {tag}] training batches {len(a)}: the byte's state picks its own name among the batch's names {np.mean(a):.2f} (last 50: {np.mean(a[-50:]):.2f})", flush=True)
+
+
+def slot_subject_readout(model, cfg, S_slot, tag, maxents=160, pdim=256):
+    """DOES THE ANSWER-SLOT STATE CARRY THE SUBJECT? (readout; the test for inf_carry). Per layer (input of blocks[l].mlp_out): a ridge map
+    (in the top pdim principal directions of the slot states) from the state where the answer starts to the subject's name state, fitted on
+    the system's own written texts for half the subjects; tested on held-out wordings (conclusions: the standard held-out wordings; facts:
+    a new frame, a paraphrased relation): the predicted name state retrieves the subject among the subjects of the same half. SEEN = the map
+    was fitted on texts about them; UNSEEN = never (what replacing the name register needs). Baselines: the register's own name state,
+    the slot state with no map. Local baseline (10 Nov, no carry loss): UNSEEN 0.01-0.05, chance about 0.006."""
+    from platypus.common import _HO_TWO
+    from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_eager
+    import platypus.inference.namemem as NMm
+    ents = list(model.__dict__.get('_nm_ents', []))
+    if len(ents) < 16: return
+    rs = np.random.RandomState(int(cfg.seed) + 7171); ents = [ents[i] for i in rs.permutation(len(ents))[:maxents]]
+    subs = sorted(set(e['A'] for e in ents)); perm = rs.permutation(len(subs)); fit_s = set(subs[i] for i in perm[:len(subs) // 2]); sid = {s: k for k, s in enumerate(subs)}
+    nL = len(model.blocks); cap = {'on': False, 'k': {}}; _N = NMm._NM
+    def mk(l):
+        def hk(m, i, o):
+            if cap['on']: cap['k'][l] = i[0].detach().float()
+        return hk
+    hs = [model.blocks[l].mlp_out.register_forward_hook(mk(l)) for l in range(nL)]; back = _ws_eager(model); was = _N['force']; _N['force'] = False
+    def states(items):
+        S = {l: [] for l in range(nL)}; Nn = {l: [] for l in range(nL)}; ids = []
+        for pf, ans, d, A in items:
+            pb = pf.encode('latin-1', 'replace'); ab = A.encode('latin-1', 'replace'); i0 = pb.rfind(ab)
+            if i0 < 0: continue
+            X, _ = _ws_batch(model, [pb + (ans + '.').encode('latin-1', 'replace')]); cap['on'] = True; cap['k'] = {}
+            try:
+                with torch.no_grad(): _ws_run(model, X, int(S_slot(d)))
+            finally: cap['on'] = False
+            p0 = len(pb) - 1; ne = i0 + len(ab) - 1
+            for l in range(nL): S[l].append(cap['k'][l][0, p0].cpu()); Nn[l].append(cap['k'][l][0, ne].cpu())
+            ids.append(sid[A])
+        return {l: torch.stack(S[l]) for l in range(nL)}, {l: torch.stack(Nn[l]) for l in range(nL)}, np.array(ids)
+    tr, te = [], {'conclusions, held-out wordings': [], 'facts, new frame': [], 'facts, paraphrased relation': []}
+    for e in ents:
+        for pf in e['pfs'] + [f.format(A=e['A'], r=e['r']) for f in NMm._NM_FORMS]: tr.append((pf, e['ans'], e['d'], e['A']))
+        if e['key'][0] == 'conclusion': te['conclusions, held-out wordings'] += [(w.format(A=e['A']), e['ans'], e['d'], e['A']) for w in _HO_TWO]
+        else:
+            te['facts, new frame'].append((f"It is on record that {e['A']} {e['r']} ", e['ans'], e['d'], e['A']))
+            if e['r'] in NMm._NM_PARA: te['facts, paraphrased relation'].append((f"{e['A']} {NMm._NM_PARA[e['r']]} ", e['ans'], e['d'], e['A']))
+    try:
+        Sall, Nall, idall = states(tr); fm = torch.tensor([subs[i] in fit_s for i in idall])
+        bank, W = {}, {}
+        for l in range(nL):
+            B = torch.zeros(len(subs), Nall[l].shape[1]); c = torch.zeros(len(subs))
+            B.index_add_(0, torch.tensor(idall), Nall[l]); c.index_add_(0, torch.tensor(idall), torch.ones(len(idall))); bank[l] = B / c.clamp(min=1)[:, None]
+            X = Sall[l][fm]; Y = Nall[l][fm]; mx = X.mean(0); my = Y.mean(0)
+            V = torch.linalg.svd(X - mx, full_matrices=False)[2][:pdim].T          # principal directions of the slot states (keeps the solve small)
+            Xc = (X - mx) @ V; lam = 0.1 * float((Xc ** 2).sum(1).mean())
+            W[l] = (V, torch.linalg.solve(Xc.T @ Xc + lam * torch.eye(Xc.shape[1]), Xc.T @ (Y - my)), mx, my)
+        has = torch.zeros(len(subs), dtype=torch.bool); has[torch.tensor(idall)] = True
+        def top1(Q, ids, l, pool):
+            Bm = bank[l][pool]; mu = Bm.mean(0); s = F.normalize(Q - mu, dim=-1) @ F.normalize(Bm - mu, dim=-1).T
+            pidx = torch.nonzero(pool)[:, 0]; return float((pidx[s.argmax(1)] == torch.tensor(ids)).float().mean())
+        fit_mask = torch.tensor([s in fit_s for s in subs]); out = [f"{len(subs)} subjects ({len(fit_s)} used to fit the maps, {int(fm.sum())} written texts); chance about {2 / len(subs):.3f}"]
+        for fam, items in te.items():
+            if len(items) < 8: out.append(f"{fam}: too few ({len(items)})"); continue
+            Sq, Nq, idq = states(items); seen = np.array([subs[i] in fit_s for i in idq]); rows = []
+            for l in range(nL):
+                V, Wl, mx, my = W[l]; P = ((Sq[l] - mx) @ V) @ Wl + my; r = []
+                for nm, msk, pool in (('SEEN', seen, has & fit_mask), ('UNSEEN', ~seen, has & ~fit_mask)):
+                    if msk.sum() < 4: r.append(f"{nm} n/a"); continue
+                    m = torch.tensor(msk)
+                    r.append(f"{nm} ({int(msk.sum())}): map {top1(P[m], idq[msk], l, pool):.2f}, no map {top1(Sq[l][m], idq[msk], l, pool):.2f}, register {top1(Nq[l][m], idq[msk], l, pool):.2f}")
+                rows.append(f"layer {l}: " + "; ".join(r))
+            out.append(f"{fam}: " + " | ".join(rows))
+        print(f"  [SLOT CARRIES THE SUBJECT? | {tag}] " + " || ".join(out), flush=True)
+    finally:
+        for h in hs: h.remove()
+        back(); _N['force'] = was

@@ -365,6 +365,13 @@ def nm_sleep(model, cfg, S_, S_slot):
         finally: _NM['own_name'] = False
     except Exception as e:
         _fail('inference.namemem:readout'); print(f"  [NAME MEMORY READOUT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    vv9 = int(model.__dict__.get('_visit', 0)) + 1
+    if vv9 % 3 == 0 or vv9 == 10:                                              # the carry test (inference.carry), every third sleep and at the tenth
+        try:
+            from platypus.inference.carry import slot_subject_readout
+            slot_subject_readout(model, cfg, S_slot, vt9)
+        except Exception as e:
+            _fail('inference.carry:readout'); print(f"  [SLOT CARRIES THE SUBJECT?] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
     try: nm_weights_track(model, cfg, S_, S_slot, vt9)
     except Exception as e:
         _fail('inference.namemem:readout'); print(f"  [NAME MEMORY READOUT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

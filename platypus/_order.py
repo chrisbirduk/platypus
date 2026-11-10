@@ -701,6 +701,7 @@ ORDER = (
     ('inference.carry', 'carry_disarm'),
     ('inference.carry', 'carry_loss'),
     ('inference.carry', 'carry_report'),
+    ('inference.carry', 'slot_subject_readout'),
     ('inference.sticky', 'sticky_route'),
     ('inference.sticky', 'sticky_router_readout'),
     ('inference.sticky', '_readout'),
