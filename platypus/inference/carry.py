@@ -39,6 +39,7 @@ def carry_disarm(): _CL['arm'] = False
 def carry_loss(model, cfg, x):
     """the auxiliary loss for the window batch x (B, T) whose forward has just run (keys captured); 0.0 when nothing to do"""
     K = _CL.get('K'); _CL['K'] = None; _CL['arm'] = False
+    if K is not None and K.dim() == 3 and K.shape[0] > x.shape[0] and K.shape[1] == x.shape[1]: K = K[:x.shape[0]]   # combined real + dream forward: real rows
     if K is None or K.dim() != 3 or K.shape[:2] != x.shape[:2]: return 0.0
     try:
         B, T, H = K.shape; dev = K.device; dmax = int(getattr(cfg, 'inf_carry_dist', 32)); nmax = int(getattr(cfg, 'inf_carry_n', 128))

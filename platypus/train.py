@@ -432,6 +432,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     if _kfm_ or kfd_:
                         kf_main_on(model,cfg,x.shape[0]); _KF['dream']=kfd_; _KF['real_off']=not _kfm_; _KF['dacc']=model.__dict__.setdefault('_kf_dacc',{})
                     _carry_on(cfg,x.shape[0])
+                    _cs_=float(getattr(cfg,'inf_carry',0.0))>0 and float(model.__dict__.get('_real_w',1.0))>0   # 10 Nov CARRY THE SUBJECT: also in the combined
+                    if _cs_:                                                                    #   real + dream forward (most steps once dreams exist); the
+                        from platypus.inference.carry import carry_arm                          #   loss reads only the real rows (the first x.shape[0])
+                        carry_arm(model,cfg)
                     try: Hall=model.features(torch.cat([x,sbp_[0]]),route=rtp_,nstat=x.shape[0])
                     finally: _carry_off(cfg)
                     _KF['on']=False; _KF['dream']=False; _KF['real_off']=False
