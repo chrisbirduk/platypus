@@ -1,8 +1,9 @@
 """NAME MEMORY (inf_name_mem, 10 Nov; on by default). A binding memory beside the weights - a hippocampus to the trunk's cortex - that
 answers questions about stored facts in wordings never written. Local evidence (RESULTS.md, 10 Nov): end to end, no oracle, open-ended
 recall in held-out wordings 0.71-0.87 (relation in its own wording) and 0.30-0.46 (relation paraphrased) against 0.00-0.08 without it,
-at no cost on ordinary text. It never changes the weights; it acts in the forward pass only where the fast store acts (store-on
-evaluation; never in training, never in 'weights only' / 'from the weights' readouts), so its effect is reported in the store-on column.
+at no cost on ordinary text. It never changes the weights and acts in the forward pass ONLY in the store-on probe evaluation (inf_eval, 'WITH THE FAST STORE') and its
+own readouts - not in store-on BPC, not in any sleep step that uses the store to decide something, never in training - so the training run is
+the same with or without it; its BPC cost is reported by its own MISFIRES readout.
 
 ENTRIES (one per fact): the system's own live conclusions ('A is connected to C', written in inf_cf_wordings edit wordings) and the
   evidence record's name-to-name facts ('A <relation> O', the latest object per subject and relation; seen in at least
@@ -60,8 +61,10 @@ def _nm_layer(model, cfg):
 def _nm_active():
     if not _NM['ready'] or torch.is_grad_enabled(): return False
     if _NM['force'] is not None: return bool(_NM['force'])
-    from platypus.inference.store import _INFM
-    return bool(_INFM['force']) if 'force' in _INFM else bool(_INFM.get('on', False))
+    from platypus.inference.probes import _INF                                  # ONLY in the store-on PROBE EVALUATION (inf_eval, _INF['corr']) - never where a
+    if not _INF.get('corr'): return False                                      #   sleep step switches the store on to make a decision (REM, need, store writes,
+    from platypus.inference.store import _INFM                                 #   self-taught scoring): those would carry the memory into training (10 Nov:
+    return bool(_INFM['force']) if 'force' in _INFM else bool(_INFM.get('on', False))   #   the run without it diverged from visit 3, in the dream mixing)
 
 
 def _nm_hook(m, inp, out):

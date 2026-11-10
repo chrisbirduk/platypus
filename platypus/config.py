@@ -510,7 +510,7 @@ class Config:
     inf_mem_gain=1.0                #   fast store: logit gain of the correction
     inf_mem_nofill=0.5              #   fast store: share of conclusion rows written with no context before them
     inf_name_mem=1                  # 10 Nov NAME MEMORY (inference.namemem; on by default): one entry per fact beside the weights, two-part key
-                                    #   (subject name + answer slot), SERAC-style slot gate with re-anchoring; acts only where the fast store acts
+                                    #   (subject name + answer slot), SERAC-style slot gate with re-anchoring; acts only in the store-on probe evaluation and its readouts
     inf_nm_max=384                  #   name memory: most entries (newest conclusions up to half, then newest recorded facts)
     inf_nm_selfc=1.0                #   name memory: self-contrast weight when fitting values
     inf_nm_min_seen=2               #   name memory: a recorded fact must have been seen in at least this many sentences (most seen first)
