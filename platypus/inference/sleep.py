@@ -56,7 +56,7 @@ from platypus.inference.jindex import (
     _jx_sleep,
 )
 
-_PHASE_T={}
+_PHASE_T={}; _PHASE_M={}
 def _phase_wrap(on_):
     """SLEEP PHASE TIMING (9 Nov, readout only): while a sleep runs, every function this module calls by its global name is timed
     (inclusive, outermost call only, so nothing is counted twice). Returns the names wrapped and their originals, to restore"""
@@ -66,9 +66,13 @@ def _phase_wrap(on_):
     def mk_(nm_,f_):
         def w_(*a_,**k_):
             if depth_['d']: return f_(*a_,**k_)
-            depth_['d']=1; t_=_tm.time()
+            depth_['d']=1; t_=_tm.time(); m0_=torch.cuda.max_memory_allocated() if torch.cuda.is_available() else 0
             try: return f_(*a_,**k_)
-            finally: depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
+            finally:
+                depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
+                if torch.cuda.is_available():                                   # 10 Nov: which phase raised the sleep's GPU peak (allocated, GB), and to what
+                    m1_=torch.cuda.max_memory_allocated()
+                    if m1_>m0_: _PHASE_M[nm_]=(max(_PHASE_M.get(nm_,(0.0,0.0))[0],(m1_-m0_)/2**30),m1_/2**30)
         return w_
     called_=set(g_['_inf_sleep_body'].__code__.co_names)|set(g_['inf_sleep'].__code__.co_names)   # only what the sleep calls by name (also right in a single-file build)
     for nm_,f_ in list(g_.items()):
@@ -81,7 +85,9 @@ def _phase_report(orig_,tt_):
     if not orig_: return
     top_=sorted(_PHASE_T.items(),key=lambda x_:-x_[1]); acc_=sum(v_ for _,v_ in top_)
     print(f"  [inference SLEEP PHASES] {tt_:.0f}s in all | "+" | ".join(f"{k_} {v_:.0f}s" for k_,v_ in top_[:14] if v_>=1.0)
-          +f" | not in a timed call {max(0.0,tt_-acc_):.0f}s",flush=True); _PHASE_T.clear()
+          +f" | not in a timed call {max(0.0,tt_-acc_):.0f}s"
+          +(" || GPU PEAK RAISED BY: "+" | ".join(f"{k_} +{v_[0]:.1f} GB (to {v_[1]:.1f})" for k_,v_ in sorted(_PHASE_M.items(),key=lambda x_:-x_[1][0]) if v_[0]>=0.5) if _PHASE_M else ""),flush=True)
+    _PHASE_T.clear(); _PHASE_M.clear()
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     """timing wrapper: wall time of the whole sleep and of the linking step"""
     t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb(); ph9_=_phase_wrap(int(getattr(cfg,'inf_sleep_phases',1)))

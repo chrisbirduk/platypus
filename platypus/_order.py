@@ -528,6 +528,7 @@ ORDER = (
     ('inference.jindex', '_jx_sleep'),
     ('inference.jindex', '_jx_sleep_'),
     ('inference.sleep', '_PHASE_T'),
+    ('inference.sleep', '_PHASE_M'),
     ('inference.sleep', '_phase_wrap'),
     ('inference.sleep', '_phase_report'),
     ('inference.sleep', 'inf_sleep'),
