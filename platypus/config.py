@@ -515,8 +515,9 @@ class Config:
     inf_nm_selfc=1.0                #   name memory: self-contrast weight when fitting values
     inf_nm_min_seen=2               #   name memory: a recorded fact must have been seen in at least this many sentences (most seen first)
     inf_nm_min_entries=32           #   name memory: stays off until it holds this many facts (its slot gate needs material)
-    inf_nm_value='hidden'           #   name memory: 'hidden' = a fitted change to the edited layer's output (drifts with the trunk); 'logit' = the
-                                    #   stored answer byte raised to beat the best other byte by inf_nm_margin nats, computed on the fly
+    inf_nm_value='logit'            #   name memory: 'logit' (default since 10 Nov) = the stored answer byte raised to beat the best other byte by
+                                    #   inf_nm_margin nats, computed on the fly, nothing fitted; 'hidden' = a fitted change to the edited layer's output
+                                    #   (drifts with the trunk: on the GPU no fitted change survived the first visit; +20 GB sleep peak for fitting)
     inf_nm_margin=1.0               #   name memory, logit value: margin in nats
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with

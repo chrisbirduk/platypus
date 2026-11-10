@@ -690,6 +690,7 @@ ORDER = (
     ('inference.namemem', '_nm_keys_and_check'),
     ('inference.namemem', '_nm_gate'),
     ('inference.namemem', 'nm_sleep'),
+    ('inference.namemem', 'nm_weights_track'),
     ('inference.namemem', 'nm_readout'),
     ('inference.namemem', '_nm_readout'),
     ('inference.sticky', 'sticky_route'),

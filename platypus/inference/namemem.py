@@ -9,8 +9,10 @@ ENTRIES (one per fact): the system's own live conclusions ('A is connected to C'
   inf_nm_min_seen sentences, most seen first - on the GPU the newest were prose co-occurrences seen once), up to inf_nm_max.
 KEY (two parts): the edited layer's input (blocks[inf_cf_layer].mlp_out) at the subject name's last byte, and at the byte where the
   answer starts; each averaged over the entry's written wordings.
-VALUE: the entry's own change to that layer's output at the answer bytes, fitted on its written wordings (inf_cf_steps Adam steps,
-  self-contrast inf_nm_selfc: each answer byte must beat the model's own best non-answer byte).
+VALUE (inf_nm_value): 'logit' (default since 10 Nov) - the entry's answer bytes; at each byte the memory covers, the stored byte is
+  raised just enough to beat the model's best other byte by inf_nm_margin nats, from the current logits, so nothing fitted can go stale
+  (on the GPU no fitted hidden change survived the first visit, and fitting cost about 20 GB of sleep peak). 'hidden' - the entry's own
+  change to that layer's output at the answer bytes, fitted on its written wordings (inf_cf_steps Adam steps, self-contrast inf_nm_selfc).
 EVERY SLEEP (after the closed-form edit): all keys are re-read from the current weights (the trunk keeps learning, so keys drift);
   each kept value is checked (applied at its written wordings, does it still produce the answer?) and refitted only if not; new entries
   are fitted; entries no longer in the material are dropped (retracted / freed conclusions, superseded facts).
@@ -75,16 +77,17 @@ def _nm_hook(m, inp, out):
         t = torch.arange(T, device=dev)[None].expand(B, -1); hr = ok.float()
         Z = torch.cat([((K - M['muS']) @ M['PS']) / M['sdS'], (torch.log1p((t - rg).clamp(min=0).float()) * hr)[..., None], hr[..., None]], -1)
         g = F.relu(Z @ M['W1']) @ M['w'] + M['b']
-        fire = (g > M['th_s']) & (sn.max(-1).values > M['th_n']) & ok
-        if not bool(fire.any()): return None
         item = (sn + sq).argmax(-1)
+        nm9 = sn.gather(2, item[..., None])[..., 0] if _NM.get('own_name') else sn.max(-1).values   # readout variant: the CHOSEN fact's own name must match
+        fire = (g > M['th_s']) & (nm9 > M['th_n']) & ok
+        if not bool(fire.any()): return None
         last = torch.where(fire, t, torch.full_like(t, -1)).cummax(1).values
         il = item.gather(1, last.clamp(min=0)); off = t - last
         valid = (last >= 0) & (off < M['L'][il])
-        dv = M['V'][il, off.clamp(min=0, max=M['V'].shape[1] - 1)] * valid[..., None].float()
         _NM['stats'][0] += int(fire.sum()); _NM['stats'][1] += B * T
-        if _NM['mode'] == 'logit':                                             # OUTPUT-LEVEL VALUE: the answer byte is boosted in the logits
+        if _NM['mode'] == 'logit' or M.get('V') is None:                       # OUTPUT-LEVEL VALUE: the answer byte is boosted in the logits
             _NM['plan'] = (il, off.clamp(min=0, max=M['ANS'].shape[1] - 1), valid); return None   #   (applied by the Model.forward wrapper)
+        dv = M['V'][il, off.clamp(min=0, max=M['V'].shape[1] - 1)] * valid[..., None].float()
         return out + dv.to(out.dtype)
     except Exception:
         _fail('inference.namemem:hook'); return None
@@ -290,7 +293,7 @@ def nm_sleep(model, cfg, S_, S_slot):
     back = _ws_eager(model); h = mo.register_forward_hook(hk); was = _NM['force']; _NM['force'] = False
     try:
         if _NM['ready']:                                                       # STALE: last sleep's memory after this visit's training = what the
-            for md9 in ('hidden', 'logit'):                                    #   model's own store-on evaluations used (drift test, 10 Nov)
+            for md9 in (('logit',) if _NM['M'].get('V') is None else ('hidden', 'logit')):   #   model's own store-on evaluations used (drift test, 10 Nov)
                 try: nm_readout(model, cfg, S_, S_slot, f"visit {int(model.__dict__.get('_visit', 0)) + 1} | STALE (built last sleep, before this rebuild) | value {md9}", mode=md9)
                 except Exception as e9: print(f"  [NAME MEMORY READOUT] stale unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
             _NM['force'] = False
@@ -303,9 +306,10 @@ def nm_sleep(model, cfg, S_, S_slot):
         mne = int(getattr(cfg, 'inf_nm_min_entries', 32))                     # a gate trained on a handful of facts fires everywhere (local, 10 Nov:
         if len(ents) < mne: _NM['ready'] = False; print(f"  [NAME MEMORY] {len(ents)} facts (< {mne}): not built yet, memory off", flush=True); return   #   11 entries, 54 fires / 1000 bytes)
         _nm_keys_and_check(model, ents, S_slot, cap)
-        nfit = [i for i, e in enumerate(ents) if e.get('V') is None or not e.get('ok')]; nnew = sum(1 for e in ents if e.get('V') is None)
+        lgt = str(getattr(cfg, 'inf_nm_value', 'logit')) == 'logit'            # the output-level value fits nothing (no gradient passes through the model)
+        nfit = [] if lgt else [i for i, e in enumerate(ents) if e.get('V') is None or not e.get('ok')]; nnew = sum(1 for e in ents if e.get('V') is None)
         if nfit: _nm_fit_values(model, cfg, ents, nfit, S_slot, cap, D)
-        ents = [e for e in ents if e.get('nk') is not None and e.get('V') is not None]
+        ents = [e for e in ents if e.get('nk') is not None and (lgt or e.get('V') is not None)]
         model.__dict__['_nm_ents'] = ents
         G, O, ho = _nm_gate(model, cfg, ents, S_, S_slot, cap, int(cfg.seed) + 5151 + int(model.__dict__.get('_visit', 0)))
         NM = torch.stack([e['nk'] for e in ents]); QM = torch.stack([e['qk'] for e in ents]); mN = NM.mean(0); mQ = QM.mean(0)
@@ -316,13 +320,15 @@ def nm_sleep(model, cfg, S_, S_slot):
             if ok.any(): bn.append((F.normalize(k[torch.tensor(np.maximum(rg, 0))] - mN, dim=-1) @ NMc.T).max(1).values[ok])
         th_n = float(torch.quantile(torch.cat(bn), 0.99)) if bn else 1.0
         pn = (F.normalize(NM - mN, dim=-1) @ NMc.T).diagonal()                  # each entry's own name against the memory (what a true mention scores)
-        Lmax = max(len(e['V']) for e in ents); V = torch.zeros(len(ents), Lmax, D)
-        for i, e in enumerate(ents): V[i, :len(e['V'])] = e['V'].float().cpu()
+        Lmax = max(len(e['ans']) + 1 for e in ents); V = None
+        if not lgt:
+            V = torch.zeros(len(ents), Lmax, D)
+            for i, e in enumerate(ents): V[i, :len(e['V'])] = e['V'].float().cpu()
         dev = next(model.parameters()).device
         ANS = torch.full((len(ents), Lmax), 46, dtype=torch.long)               # the answer bytes (and the full stop), for the output-level value
         for i, e in enumerate(ents):
             ab9 = list((e['ans'] + '.').encode('latin-1', 'replace'))[:Lmax]; ANS[i, :len(ab9)] = torch.tensor(ab9)
-        M = dict(mN=mN, mQ=mQ, NMc=NMc, QMc=QMc, V=V, L=torch.tensor([len(e['V']) for e in ents]), th_n=th_n, ANS=ANS,
+        M = dict(mN=mN, mQ=mQ, NMc=NMc, QMc=QMc, V=V, L=torch.tensor([len(e['ans']) + 1 for e in ents]), th_n=th_n, ANS=ANS,
                  margin=float(getattr(cfg, 'inf_nm_margin', 1.0)), **G)
         _NM['M'] = {k: (v.to(dev) if torch.is_tensor(v) else v) for k, v in M.items()}; _NM['ready'] = True; _NM['ho'] = ho
         nf = sum(1 for e in ents if e['key'][0] == 'fact')
@@ -335,20 +341,73 @@ def nm_sleep(model, cfg, S_, S_slot):
         cnt9 = (f"facts chosen by sightings (at least {int(getattr(cfg, 'inf_nm_min_seen', 2))}; {cd9[0]} candidates, {cd9[1]} seen 3+ times): sightings median "
                 f"{np.median(sn9) if sn9 else float('nan'):.0f}, min {min(sn9) if sn9 else 0}{pl9}; ")
         print(f"  [NAME MEMORY | visit {int(model.__dict__.get('_visit', 0)) + 1}] {len(ents)} entries ({nf} recorded facts, {len(ents) - nf} conclusions); {cnt9}"
-              f"keys re-read from the current weights; values fitted {len(nfit)} ({nnew} new, {len(nfit) - nnew} refitted because they no longer produced "
-              f"their answer), kept {len(ents) - len(nfit)}; gate thresholds: slot {G['th_s']:.3f}, stored name {th_n:.3f} (entries' own names score median {float(pn.median()):.3f}, {float((pn > th_n).float().mean()):.2f} past it) | {time.time() - t0:.0f}s", flush=True)
+              f"keys re-read from the current weights; " + ("value: the answer bytes, boosted at the output (nothing fitted); " if lgt else
+              f"values fitted {len(nfit)} ({nnew} new, {len(nfit) - nnew} refitted because they no longer produced their answer), kept {len(ents) - len(nfit)}; ")
+              + f"gate thresholds: slot {G['th_s']:.3f}, stored name {th_n:.3f} (entries' own names score median {float(pn.median()):.3f}, {float((pn > th_n).float().mean()):.2f} past it) | {time.time() - t0:.0f}s", flush=True)
     except Exception as e:
         _fail('inference.namemem:sleep'); _NM['ready'] = False; print(f"  [NAME MEMORY] build failed, memory off ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
         _NM['force'] = was; h.remove(); back(); cap['on'] = False; cap['delta'] = None
-    _NM['mode'] = str(getattr(cfg, 'inf_nm_value', 'hidden'))
+    _NM['mode'] = str(getattr(cfg, 'inf_nm_value', 'logit')); vt9 = f"visit {int(model.__dict__.get('_visit', 0)) + 1}"
     try:
-        for md9 in ('hidden', 'logit'): nm_readout(model, cfg, S_, S_slot, f"visit {int(model.__dict__.get('_visit', 0)) + 1} | FRESH (just rebuilt) | value {md9}", mode=md9)
+        for md9 in (('logit',) if (_NM.get('M') or {}).get('V') is None else ('hidden', 'logit')): nm_readout(model, cfg, S_, S_slot, f"{vt9} | FRESH (just rebuilt) | value {md9}", mode=md9)
+        _NM['own_name'] = True                                                 # READOUT: the gate variant 'the CHOSEN fact's own name must match' (not active in the model)
+        try: nm_readout(model, cfg, S_, S_slot, f"{vt9} | FRESH | GATE VARIANT: the chosen fact's own name must match (readout only)", mode=_NM['mode'])
+        finally: _NM['own_name'] = False
+    except Exception as e:
+        _fail('inference.namemem:readout'); print(f"  [NAME MEMORY READOUT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    try: nm_weights_track(model, cfg, S_, S_slot, vt9)
     except Exception as e:
         _fail('inference.namemem:readout'); print(f"  [NAME MEMORY READOUT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
 # ---------------------------------------------------------------- readout
+def nm_weights_track(model, cfg, S_, S_slot, tag, nmax=96):
+    """FROM THE WEIGHTS, FIXED SET (readout, 10 Nov): the first nmax conclusions ever made, asked in the standard held-out wordings each sleep
+    with every memory off (name memory and fast store): open-ended recall as the weights stand, and with the accumulated closed-form edits
+    (model._cf_E, written into blocks[inf_cf_layer].mlp_out) subtracted for the measurement - what the trunk holds without the edits.
+    Split by whether the conclusion was ever edited, and by age."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    trk = model.__dict__.setdefault('_nm_track', []); have = {(a, c) for a, c, _, _ in trk}; vis = int(model.__dict__.get('_visit', 0))
+    for c in S_.get('conc', []):
+        if len(trk) >= nmax: break
+        if isinstance(c.get('A'), str) and isinstance(c.get('C'), str) and (c['A'], c['C']) not in have: trk.append((c['A'], c['C'], c['d'], vis)); have.add((c['A'], c['C']))
+    if len(trk) < 8: return
+    live = {(c['A'], c['C']): c for c in S_.get('conc', []) if isinstance(c.get('A'), str) and not c.get('freed') and not c.get('retracted')}
+    isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122
+    def ask(items):
+        r = []
+        for A, C, d, v0 in items:
+            for w in _HO_TWO:
+                pb = w.format(A=A).encode('latin-1', 'replace'); tb = (C + '.').encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb])
+                with torch.no_grad(): lg = _ws_run(model, X, int(S_slot(d)))[0]
+                p0 = len(pb) - 1; ps = torch.arange(p0, p0 + len(tb), device=lg.device)
+                if int(ps[-1]) >= lg.shape[0]: r.append((A, None)); continue
+                top = lg[ps].argmax(-1); tr = torch.tensor(list(tb), device=lg.device)
+                r.append((A, bool((top[:-1] == tr[:-1]).all()) and not isl(int(top[-1]))))
+        return r
+    E = model.__dict__.get('_cf_E'); mo = _nm_layer(model, cfg); was = _NM['force']; _NM['force'] = False
+    try:
+        R0 = ask(trk); R1 = None
+        if E is not None and E.shape == mo.weight.shape:
+            W0 = mo.weight.detach().clone()
+            try:
+                with torch.no_grad(): mo.weight.copy_((W0.float() - E.float().to(W0.device)).to(W0.dtype))
+                R1 = ask(trk)
+            finally:
+                with torch.no_grad(): mo.weight.copy_(W0)
+    finally: _NM['force'] = was
+    ed = {(a, c) for (a, c), x in live.items() if x.get('cfe') is not None}
+    def sh(R, keep):
+        v = [h for (A, h), (a, c, d, v0) in zip(R, [x for x in trk for _ in _HO_TWO]) if keep(a, c, v0) and h is not None]
+        return f"{np.mean(v):.2f} ({len(v)})" if v else "n/a"
+    parts = []
+    for nm, keep in (('all tracked', lambda a, c, v0: True), ('edited', lambda a, c, v0: (a, c) in ed), ('never edited', lambda a, c, v0: (a, c) not in ed),
+                     ('made 3+ visits ago', lambda a, c, v0: vis - v0 >= 3), ('made in the last 2 visits', lambda a, c, v0: vis - v0 < 3)):
+        parts.append(f"{nm}: {sh(R0, keep)}" + (f" -> without the closed-form edits {sh(R1, keep)}" if R1 is not None else ""))
+    print(f"  [FROM THE WEIGHTS, FIXED SET | {tag}] the first {len(trk)} conclusions, standard held-out wordings, every memory off, open-ended: " + " | ".join(parts), flush=True)
+
+
 def nm_readout(model, cfg, S_, S_slot, tag, n=48, mode=None):
     """held-out recall with the memory off / on, through the model's own forward (store off otherwise), and misfires"""
     if not _NM['ready']: return
