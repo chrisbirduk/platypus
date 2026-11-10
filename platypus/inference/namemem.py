@@ -116,8 +116,9 @@ def _nm_install(model, cfg):
         f0 = Model.forward
         def fwd(s, x, domain=0):
             _NM['X'] = x; _NM['plan'] = None
-            z = f0(s, x, domain)
-            pl = _NM['plan']; _NM['plan'] = None
+            try: z = f0(s, x, domain)
+            finally: _NM['X'] = None                                           # the bytes are valid for this call only: a later model.features() call
+            pl = _NM['plan']; _NM['plan'] = None                               #   of the same shape must never be read with them (10 Nov)
             if pl is not None and torch.is_tensor(z) and z.dim() == 3 and z.shape[:2] == pl[0].shape: z = _nm_boost(z, pl)
             return z
         fwd._nm_stash = True; Model.forward = fwd
