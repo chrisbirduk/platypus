@@ -92,6 +92,9 @@ def _jepa_question_codes(model, cfg, ed):
     def codes(txts):
         with torch.no_grad():
             E0 = enc(_jd_codes(model, cfg, txts)); c = g(E0)
+            if model.__dict__.get('_jdobj', 'hybrid') == 'lejepa':                # LeJEPA trains g only: the target head stays at its random init and the
+                return {'context': F.normalize(c, dim=-1).float().cpu(),           #   predictor is never trained, so only g is a JEPA code; the frozen random head
+                        'input, random projection': F.normalize(gt(E0), dim=-1).float().cpu()}   #   is kept as a control (the JEPA's pooled input, untrained)
             return {'context': F.normalize(c, dim=-1).float().cpu(), 'target': F.normalize(gt(E0), dim=-1).float().cpu(),
                     'predicted': F.normalize(Pq(c), dim=-1).float().cpu()}
     pf = [_CONC_CF[0].format(A=c['A']).encode('latin-1', 'replace') for c in ed]
@@ -151,7 +154,7 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
             Jf, Jh = JC
             for (Kq, Hq, NSq, NKq), Jq in zip(Kh, Jh):
                 for kind in Jf:
-                    rows.setdefault(f'JEPA {kind} code of the question', []).append(acc(sims(Jq[kind], Jf[kind], False)))
+                    rows.setdefault(f'JEPA {kind} code of the question' if kind != 'input, random projection' else "JEPA's pooled input, untrained random projection (control)", []).append(acc(sims(Jq[kind], Jf[kind], False)))
                 rows.setdefault('JEPA context code + NAME state', []).append(acc(zsum(sims(Jq['context'], Jf['context'], False), sims(NSq, NSf))))
         nA = len(set(c['A'] for c in ed))
         for (Kq, Hq, NSq, NKq) in Kh:
@@ -231,6 +234,8 @@ def _key_readout_rel(model, cfg, S_, S_slot, tag):
                 def J(prefixes):
                     with torch.no_grad():
                         E0 = enc(_jd_codes(model, cfg, [p.encode('latin-1', 'replace') for p in prefixes])); cc = g(E0)
+                        if model.__dict__.get('_jdobj', 'hybrid') == 'lejepa':    # only g is trained under LeJEPA (see _jepa_question_codes)
+                            return {'context': F.normalize(cc, dim=-1).float().cpu(), 'input, random projection': F.normalize(gt(E0), dim=-1).float().cpu()}
                         return {'context': F.normalize(cc, dim=-1).float().cpu(), 'target': F.normalize(gt(E0), dim=-1).float().cpu(),
                                 'predicted': F.normalize(Pq(cc), dim=-1).float().cpu()}
         except Exception: J = None
@@ -250,8 +255,8 @@ def _key_readout_rel(model, cfg, S_, S_slot, tag):
                 S = {'NAME: edit key at the name\'s last byte': sims(NKq, NKf), 'NAME: trunk state over the name': sims(NSq, NSf), 'edit key (question end)': sims(Kq, Kf)}
                 S['edit key + NAME'] = zsum(S['edit key (question end)'], S['NAME: trunk state over the name'])
                 if Jq is not None:
-                    for kd in ('context', 'target', 'predicted'): S[f'JEPA {kd}'] = sims(Jq[kd], Jf[kd], False)
-                    S['JEPA target + NAME'] = zsum(S['JEPA target'], S['NAME: trunk state over the name'])
+                    for kd in Jq: S[f'JEPA {kd}'] = sims(Jq[kd], Jf[kd], False)
+                    if 'target' in Jq: S['JEPA target + NAME'] = zsum(S['JEPA target'], S['NAME: trunk state over the name'])
                     S['JEPA context + NAME'] = zsum(S['JEPA context'], S['NAME: trunk state over the name'])
                 for k, v in S.items(): rows.setdefault(k, []).append(score(v))
             res.append(f"{fam} ({len(fs)} wording(s)): " + " | ".join(f"{k} {np.mean(v, 0)[0]:.2f} (subject {np.mean(v, 0)[1]:.2f}, relation {np.mean(v, 0)[2]:.2f})" for k, v in rows.items()))
