@@ -509,6 +509,10 @@ class Config:
     inf_mem_beta=0.5                #   fast store: delta-rule write strength
     inf_mem_gain=1.0                #   fast store: logit gain of the correction
     inf_mem_nofill=0.5              #   fast store: share of conclusion rows written with no context before them
+    inf_name_mem=1                  # 10 Nov NAME MEMORY (inference.namemem; on by default): one entry per fact beside the weights, two-part key
+                                    #   (subject name + answer slot), SERAC-style slot gate with re-anchoring; acts only where the fast store acts
+    inf_nm_max=384                  #   name memory: most entries (newest conclusions up to half, then newest recorded facts)
+    inf_nm_selfc=1.0                #   name memory: self-contrast weight when fitting values
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
                                     #   that domain's private units OFF, on the visit's VERIFIED windows (the NREM reservoir; needs nrem_res > 0)
