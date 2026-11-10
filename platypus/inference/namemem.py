@@ -278,7 +278,8 @@ def nm_sleep(model, cfg, S_, S_slot):
             o = old.get(e['key'])
             if o is not None: o['seen'] = e.get('seen')
             ents.append(o if o is not None else e)
-        if len(ents) < 8: _NM['ready'] = False; print(f"  [NAME MEMORY] {len(ents)} facts: not built yet", flush=True); return
+        mne = int(getattr(cfg, 'inf_nm_min_entries', 32))                     # a gate trained on a handful of facts fires everywhere (local, 10 Nov:
+        if len(ents) < mne: _NM['ready'] = False; print(f"  [NAME MEMORY] {len(ents)} facts (< {mne}): not built yet, memory off", flush=True); return   #   11 entries, 54 fires / 1000 bytes)
         _nm_keys_and_check(model, ents, S_slot, cap)
         nfit = [i for i, e in enumerate(ents) if e.get('V') is None or not e.get('ok')]; nnew = sum(1 for e in ents if e.get('V') is None)
         if nfit: _nm_fit_values(model, cfg, ents, nfit, S_slot, cap, D)

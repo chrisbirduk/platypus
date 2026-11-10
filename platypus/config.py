@@ -514,6 +514,7 @@ class Config:
     inf_nm_max=384                  #   name memory: most entries (newest conclusions up to half, then newest recorded facts)
     inf_nm_selfc=1.0                #   name memory: self-contrast weight when fitting values
     inf_nm_min_seen=2               #   name memory: a recorded fact must have been seen in at least this many sentences (most seen first)
+    inf_nm_min_entries=32           #   name memory: stays off until it holds this many facts (its slot gate needs material)
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
                                     #   that domain's private units OFF, on the visit's VERIFIED windows (the NREM reservoir; needs nrem_res > 0)
