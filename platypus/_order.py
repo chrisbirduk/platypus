@@ -678,6 +678,7 @@ ORDER = (
     ('inference.namemem', '_NM_WORD'),
     ('inference.namemem', '_nm_isname'),
     ('inference.namemem', '_nm_regs'),
+    ('inference.namemem', '_nm_gpu'),
     ('inference.namemem', '_nm_layer'),
     ('inference.namemem', '_nm_active'),
     ('inference.namemem', '_nm_hook'),

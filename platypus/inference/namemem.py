@@ -53,6 +53,12 @@ def _nm_regs(txt, T):
     return out[:T]
 
 
+def _nm_gpu(tag):
+    """GPU MEMORY HIGH-WATER MARK after a stage of the rebuild (10 Nov: the sleep peak is about 20 GB higher with the memory, from sleep 2;
+    the mark is never reset here, so a stage that does not raise it was not the cause)"""
+    if torch.cuda.is_available(): _NM.setdefault('gpu', []).append(f"{tag} {torch.cuda.max_memory_allocated() / 2**30:.1f}")
+
+
 def _nm_layer(model, cfg):
     return model.blocks[int(getattr(cfg, 'inf_cf_layer', -1))].mlp_out
 
@@ -299,6 +305,7 @@ def nm_sleep(model, cfg, S_, S_slot):
     from platypus.inference.closed_form import _ws_eager
     back = _ws_eager(model); h = mo.register_forward_hook(hk); was = _NM['force']; _NM['force'] = False
     try:
+        _NM['gpu'] = []; _nm_gpu('start')
         if _NM['ready']:                                                       # STALE: last sleep's memory after this visit's training = what the
             for md9 in (('logit',) if _NM['M'].get('V') is None else ('hidden', 'logit')):   #   model's own store-on evaluations used (drift test, 10 Nov)
                 try: nm_readout(model, cfg, S_, S_slot, f"visit {int(model.__dict__.get('_visit', 0)) + 1} | STALE (built last sleep, before this rebuild) | value {md9}", mode=md9)
@@ -312,7 +319,7 @@ def nm_sleep(model, cfg, S_, S_slot):
             ents.append(o if o is not None else e)
         mne = int(getattr(cfg, 'inf_nm_min_entries', 32))                     # a gate trained on a handful of facts fires everywhere (local, 10 Nov:
         if len(ents) < mne: _NM['ready'] = False; print(f"  [NAME MEMORY] {len(ents)} facts (< {mne}): not built yet, memory off", flush=True); return   #   11 entries, 54 fires / 1000 bytes)
-        _nm_keys_and_check(model, ents, S_slot, cap)
+        _nm_gpu('stale readouts'); _nm_keys_and_check(model, ents, S_slot, cap); _nm_gpu('keys and check')
         lgt = str(getattr(cfg, 'inf_nm_value', 'hidden')) == 'logit'            # the output-level value fits nothing (no gradient passes through the model)
         nfit = [] if lgt else [i for i, e in enumerate(ents) if e.get('V') is None or not e.get('ok')]; nnew = sum(1 for e in ents if e.get('V') is None)
         if nfit:
@@ -320,7 +327,7 @@ def nm_sleep(model, cfg, S_, S_slot):
             if torch.cuda.is_available(): torch.cuda.empty_cache()
         ents = [e for e in ents if e.get('nk') is not None and (lgt or e.get('V') is not None)]
         model.__dict__['_nm_ents'] = ents
-        G, O, ho = _nm_gate(model, cfg, ents, S_, S_slot, cap, int(cfg.seed) + 5151 + int(model.__dict__.get('_visit', 0)))
+        _nm_gpu('value fits'); G, O, ho = _nm_gate(model, cfg, ents, S_, S_slot, cap, int(cfg.seed) + 5151 + int(model.__dict__.get('_visit', 0)))
         NM = torch.stack([e['nk'] for e in ents]); QM = torch.stack([e['qk'] for e in ents]); mN = NM.mean(0); mQ = QM.mean(0)
         NMc = F.normalize(NM - mN, dim=-1); QMc = F.normalize(QM - mQ, dim=-1)
         bn = []
@@ -359,7 +366,9 @@ def nm_sleep(model, cfg, S_, S_slot):
         _NM['force'] = was; h.remove(); back(); cap['on'] = False; cap['delta'] = None
     _NM['mode'] = str(getattr(cfg, 'inf_nm_value', 'hidden')); vt9 = f"visit {int(model.__dict__.get('_visit', 0)) + 1}"
     try:
+        _nm_gpu('gate')
         for md9 in (('logit',) if (_NM.get('M') or {}).get('V') is None else ('hidden', 'logit')): nm_readout(model, cfg, S_, S_slot, f"{vt9} | FRESH (just rebuilt) | value {md9}", mode=md9)
+        _nm_gpu('fresh readouts')
         _NM['own_name'] = True                                                 # READOUT: the gate variant 'the CHOSEN fact's own name must match' (not active in the model)
         try: nm_readout(model, cfg, S_, S_slot, f"{vt9} | FRESH | GATE VARIANT: the chosen fact's own name must match (readout only)", mode=_NM['mode'])
         finally: _NM['own_name'] = False
@@ -372,9 +381,12 @@ def nm_sleep(model, cfg, S_, S_slot):
             slot_subject_readout(model, cfg, S_slot, vt9)
         except Exception as e:
             _fail('inference.carry:readout'); print(f"  [SLOT CARRIES THE SUBJECT?] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    _nm_gpu('slot readout')
     try: nm_weights_track(model, cfg, S_, S_slot, vt9)
     except Exception as e:
         _fail('inference.namemem:readout'); print(f"  [NAME MEMORY READOUT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    _nm_gpu('tracker')
+    if _NM.get('gpu'): print(f"  [NAME MEMORY | GPU] peak allocated so far this sleep (GB), after each stage: " + " | ".join(_NM['gpu']), flush=True)
 
 
 # ---------------------------------------------------------------- readout
