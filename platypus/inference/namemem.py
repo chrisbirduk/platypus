@@ -5,7 +5,8 @@ at no cost on ordinary text. It never changes the weights; it acts in the forwar
 evaluation; never in training, never in 'weights only' / 'from the weights' readouts), so its effect is reported in the store-on column.
 
 ENTRIES (one per fact): the system's own live conclusions ('A is connected to C', written in inf_cf_wordings edit wordings) and the
-  evidence record's name-to-name facts ('A <relation> O', the latest object per subject and relation), newest first, up to inf_nm_max.
+  evidence record's name-to-name facts ('A <relation> O', the latest object per subject and relation; seen in at least
+  inf_nm_min_seen sentences, most seen first - on the GPU the newest were prose co-occurrences seen once), up to inf_nm_max.
 KEY (two parts): the edited layer's input (blocks[inf_cf_layer].mlp_out) at the subject name's last byte, and at the byte where the
   answer starts; each averaged over the entry's written wordings.
 VALUE: the entry's own change to that layer's output at the answer bytes, fitted on its written wordings (inf_cf_steps Adam steps,
@@ -112,17 +113,18 @@ def _nm_material(model, cfg, S_):
         if k in seen: continue
         seen.add(k); out.append(dict(key=k, A=c['A'], r='is connected to', ans=c['C'], d=c['d'], pfs=[w.format(A=c['A']) for w in _CONC_CF[:nw]]))
         if len(out) >= nmax // 2: break
-    fx = []
+    fx = []; mins = int(getattr(cfg, 'inf_nm_min_seen', 2))
     for (a, r), objs in S_.get('rel', {}).items():
         a = bytes(a); r = bytes(r).decode('latin-1', 'replace').strip()
         if not _nm_isname(a) or not _NM_REL.match(r): continue
-        best = None
+        best = None                                                            # the latest object for this subject and relation (an update replaces)
         for o, ix in objs.items():
             o = bytes(o)
-            if _nm_isname(o) and ix and ix[-1] < len(it) and (best is None or ix[-1] > best[1]): best = (o, ix[-1])
-        if best is not None: fx.append((best[1], a.decode('latin-1'), r, best[0].decode('latin-1'), it[best[1]]['d']))
-    for _, A, r, o, d in sorted(fx, reverse=True)[:max(0, nmax - len(out))]:
-        out.append(dict(key=('fact', A, r, o), A=A, r=r, ans=o, d=d, pfs=[f"{A} {r} "]))
+            if _nm_isname(o) and ix and ix[-1] < len(it) and (best is None or ix[-1] > best[1]): best = (o, ix[-1], len(set(ix)))
+        if best is not None and best[2] >= mins: fx.append((best[2], best[1], a.decode('latin-1'), r, best[0].decode('latin-1'), it[best[1]]['d']))
+    for n9, _, A, r, o, d in sorted(fx, reverse=True)[:max(0, nmax - len(out))]:   # MOST SEEN first, then newest (10 Nov, GPU: the newest
+        out.append(dict(key=('fact', A, r, o), A=A, r=r, ans=o, d=d, pfs=[f"{A} {r} "], seen=n9))   #   were prose co-occurrences seen once)
+    model.__dict__['_nm_cand'] = (len(fx), sum(1 for x in fx if x[0] >= 3))
     return out
 
 
@@ -273,7 +275,9 @@ def nm_sleep(model, cfg, S_, S_slot):
         old = {e['key']: e for e in model.__dict__.get('_nm_ents', [])}
         ents = []
         for e in _nm_material(model, cfg, S_):
-            o = old.get(e['key']); ents.append(o if o is not None else e)
+            o = old.get(e['key'])
+            if o is not None: o['seen'] = e.get('seen')
+            ents.append(o if o is not None else e)
         if len(ents) < 8: _NM['ready'] = False; print(f"  [NAME MEMORY] {len(ents)} facts: not built yet", flush=True); return
         _nm_keys_and_check(model, ents, S_slot, cap)
         nfit = [i for i, e in enumerate(ents) if e.get('V') is None or not e.get('ok')]; nnew = sum(1 for e in ents if e.get('V') is None)
@@ -295,7 +299,15 @@ def nm_sleep(model, cfg, S_, S_slot):
         M = dict(mN=mN, mQ=mQ, NMc=NMc, QMc=QMc, V=V, L=torch.tensor([len(e['V']) for e in ents]), th_n=th_n, **G)
         _NM['M'] = {k: (v.to(dev) if torch.is_tensor(v) else v) for k, v in M.items()}; _NM['ready'] = True; _NM['ho'] = ho
         nf = sum(1 for e in ents if e['key'][0] == 'fact')
-        print(f"  [NAME MEMORY | visit {int(model.__dict__.get('_visit', 0)) + 1}] {len(ents)} entries ({nf} recorded facts, {len(ents) - nf} conclusions); "
+        sn9 = [e['seen'] for e in ents if e.get('seen')]; cd9 = model.__dict__.get('_nm_cand', (0, 0))
+        try:                                                                    # READOUT ONLY: how many entries are about planted probe names
+            from platypus.inference.probes import inf_probes
+            pn9 = {n for c in inf_probes(cfg) for n in c.get('names', [])}
+            pl9 = f"; planted probe subject and answer: facts {np.mean([e['A'] in pn9 and e['ans'] in pn9 for e in ents if e['key'][0] == 'fact'] or [np.nan]):.2f}, conclusions {np.mean([e['A'] in pn9 and e['ans'] in pn9 for e in ents if e['key'][0] == 'conclusion'] or [np.nan]):.2f} (readout)"
+        except Exception: pl9 = ""
+        cnt9 = (f"facts chosen by sightings (at least {int(getattr(cfg, 'inf_nm_min_seen', 2))}; {cd9[0]} candidates, {cd9[1]} seen 3+ times): sightings median "
+                f"{np.median(sn9) if sn9 else float('nan'):.0f}, min {min(sn9) if sn9 else 0}{pl9}; ")
+        print(f"  [NAME MEMORY | visit {int(model.__dict__.get('_visit', 0)) + 1}] {len(ents)} entries ({nf} recorded facts, {len(ents) - nf} conclusions); {cnt9}"
               f"keys re-read from the current weights; values fitted {len(nfit)} ({nnew} new, {len(nfit) - nnew} refitted because they no longer produced "
               f"their answer), kept {len(ents) - len(nfit)}; gate thresholds: slot {G['th_s']:.3f}, stored name {th_n:.3f} (entries' own names score median {float(pn.median()):.3f}, {float((pn > th_n).float().mean()):.2f} past it) | {time.time() - t0:.0f}s", flush=True)
     except Exception as e:
@@ -331,7 +343,9 @@ def nm_readout(model, cfg, S_, S_slot, tag, n=48):
         T = min(len(txt) - 1, lg.shape[0]); return float(F.cross_entropy(lg[:T].float(), X[0, 1:T + 1], reduction='sum')) / np.log(2), T, _NM['stats'][0]
     C = [e for e in ents if e['key'][0] == 'conclusion']; Fx = [e for e in ents if e['key'][0] == 'fact']
     C = [C[i] for i in rs.permutation(len(C))[:n]]; Fx = [Fx[i] for i in rs.permutation(len(Fx))[:n]]
-    fam = {'conclusions, standard held-out wordings': [(w.format(A=e['A']), e) for e in C for w in _HO_TWO],
+    own = [ents[i] for i in rs.permutation(len(ents))[:n]]
+    fam = {'OWN WRITTEN WORDING (is the value right?)': [(e['pfs'][0], e) for e in own],
+           'conclusions, standard held-out wordings': [(w.format(A=e['A']), e) for e in C for w in _HO_TWO],
            'facts, new frame': [(f"It is on record that {e['A']} {e['r']} ", e) for e in Fx],
            'facts, paraphrased relation': [(f"{e['A']} {_NM_PARA[e['r']]} ", e) for e in Fx if e['r'] in _NM_PARA]}
     parts = []
