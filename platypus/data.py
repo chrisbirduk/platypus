@@ -5,7 +5,7 @@ import time
 import torch
 import torch.nn.functional as F
 from platypus.common import (
-    DEVICE, LOG2,
+    DEVICE,
 )
 from platypus.layers import (
     _BPTT,
@@ -121,50 +121,6 @@ def set_stream_source(fn):
     """replace the text source (local stand-in data for tests): fn(domain, seed, n) -> bytes"""
     global _stream_bytes
     _stream_bytes=fn
-def _facts(cfg):
-    r_=__import__('random').Random(int(cfg.fact_seed)); C='bcdfghjklmnprstvz'; V='aeiou'
-    ks=[]; 
-    while len(ks)<int(cfg.fact_n):
-        k_=(r_.choice(C).upper()+r_.choice(V)+r_.choice(C)+r_.choice(V)+r_.choice(C))
-        if k_ not in ks: ks.append(k_)
-    va=[r_.randint(1000,9999) for _ in ks]; vb=[]
-    for a_ in va:
-        b_=r_.randint(1000,9999)
-        while b_==a_ or str(b_)[0]==str(a_)[0]: b_=r_.randint(1000,9999)        # B differs from A from the first digit
-        vb.append(b_)
-    return ks,va,vb
-def _inject_facts(raw,cfg,d,p):
-    """UPDATE-OR-PROTECT TEST: ' Name:1234;' sentences inserted every `every` bytes (random fact each time) into domain d's pass-p shard."""
-    sp=[e for e in cfg.fact_spec if int(e[0])==int(d) and int(e[1])==int(p)]
-    if not sp: return raw
-    ks,va,vb=_facts(cfg); out=bytearray(); b_=bytes(raw); r_=__import__('random').Random(1000*int(d)+int(p)+int(cfg.fact_seed)); n_=0
-    for _,_,ver,ev in sp:
-        ev=int(ev); i0=0
-        while i0<len(b_):
-            out+=b_[i0:i0+ev]; i0+=ev; j_=r_.randrange(len(ks)); out+=f" {ks[j_]}:{(va if int(ver)==0 else vb)[j_]};".encode(); n_+=1
-        b_=bytes(out); out=bytearray()
-    print(f"  [facts] domain {d} pass {p}: {n_} fact sentences inserted ({len(ks)} facts, version {'/'.join(str(int(e[2])) for e in sp)}, every {'/'.join(str(int(e[3])) for e in sp)} bytes)")
-    return b_
-@torch.no_grad()
-def fact_eval(model,cfg,vi,slots):
-    """log2 p of each fact's original (A) and changed (B) value given ' Name:' through each fact domain's slot."""
-    ks,va,vb=_facts(cfg); was=model.training; model.eval(); fs=model.feat_scale.clone(); dev=model.embed.weight.device; out=[]
-    try:
-        for nm_,s_ in slots:
-            la=lb=0.0; nb=0
-            for k_,a_,b_ in zip(ks,va,vb):
-                lp_=[]
-                for v_ in (a_,b_):
-                    t_=f"; {k_}:{v_};".encode(); x_=torch.tensor(list(t_),device=dev)[None]
-                    sv_=model.__dict__.get('_s0_dom'); model.__dict__['_s0_dom']=int(s_)
-                    try: lg_=F.log_softmax(model(x_[:,:-1],int(s_)).float(),-1)
-                    finally: model.__dict__['_s0_dom']=sv_
-                    P0=len(f"; {k_}:")-1; tg_=x_[0,P0+1:P0+5]
-                    lp_.append(float(lg_[0,P0:P0+4].gather(-1,tg_[:,None]).sum())/LOG2)
-                la+=lp_[0]; lb+=lp_[1]; nb+=int(lp_[1]>lp_[0])
-            n_=len(ks); out.append(f"{nm_} slot {s_}: original {la/n_:.2f} bits, changed {lb/n_:.2f} bits, changed preferred {nb}/{n_}")
-    finally: model.feat_scale.copy_(fs); model.train(was)
-    print(f"  [facts] visit {vi}: log2 p of the 4-digit value | "+" || ".join(out)+" | (chance -13.3)")
 def make_loader(raw,cfg,fixed_seed=None,no_revisit=False,lanes=False,span=1,jump=0,keep=False):
     """fixed_seed: eval loader that resets to the SAME batches on every bpc() call,
     so evaluation noise is identical across configs and seeds. no_revisit: non-overlapping windows in random order, each at most once."""

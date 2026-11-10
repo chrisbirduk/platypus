@@ -193,34 +193,6 @@ def inf_qtime3(model,cfg,tag='',D_=None):
         out_.append(f"DEPTH {depth_}: TEXT {acc_(st_['t_ok'],st_['t_ans'])}; PARAPHRASED question {acc_(st_['p_ok'],st_['p_ans'])}; ID {acc_(st_['i_ok'],st_['i_ans'])}; ID PARAPHRASED {acc_(st_['ip_ok'],st_['ip_ans'])} | "
                     f"decoys: abstained TEXT {st_['t_dab']/d_:.2f} / ID {st_['i_dab']/d_:.2f}, FALSE chain TEXT {st_['t_dfalse']/d_:.2f} / ID {st_['i_dfalse']/d_:.2f}")
     print(f"  [inference multi-hop question-time | {tag} | new chains only in the prompt, one distractor per hop, {nc_} competing-relation facts per chain node, {len(F0_)} long-term facts as background load, abstain margin {m_} nats / similarity {sim_}] "+" || ".join(out_),flush=True)
-@torch.no_grad()
-def inf_qtime(model,cfg,tag='',store_=False):
-    """QUESTION-TIME CHAINING BY TWO LOOKUPS on the CTX2 prompts (facts 'A r0 B. B r1 C. X r1 Y.' in both orders, plus the broken-bridge decoy
-    'A r0 D. B r1 C. X r1 Y.'). DIRECT: context + 'So A is connected to ' -> pick. TWO LOOKUPS (copying, twice): (1) context + 'A r0 ' -> the
-    bridge B^ among the candidate names; (2) context + 'B^ r ' for each relation in the context -> the best answer. Decoy: a correct reader
-    has NO chain to C, so answering C there is a FALSE chain. Candidates: every in-context name + 12 other probe names."""
-    ch_=[c_ for c_ in inf_probes(cfg) if len(c_['names'])==3 and not c_.get('upd')][:int(getattr(cfg,'inf_splice_n',150))]
-    alln_=[n_ for c_ in inf_probes(cfg) for n_ in c_['names']]; t2s_=model.__dict__.get('_t2s',{}); rs_=np.random.RandomState(99); out_=[]
-    for kind_ in ('AB','BA','decoy AB','decoy BA'):
-        st_={'n':0,'dir':0,'cp':0,'b':0,'c':0}; dec_='decoy' in kind_
-        for i_,c_ in enumerate(ch_):
-            A_,B_,C_=c_['names']; r0_,r1_=c_['rels']; fs_=[f_ for _,f_ in c_['facts']]; oth_=[x_ for x_ in alln_ if x_ not in c_['names']]
-            X_,Y_,D_=oth_[(3*i_)%len(oth_)],oth_[(3*i_+1)%len(oth_)],oth_[(3*i_+2)%len(oth_)]
-            f0_=fs_[0].replace(B_,D_) if dec_ else fs_[0]; fx_=f"{X_} {r1_} {Y_}."
-            ctx_=(f"{f0_} {fs_[1]} {fx_} " if kind_.endswith('AB') else f"{fs_[1]} {f0_} {fx_} ")
-            ic_=[B_,X_,Y_,C_]+([D_] if dec_ else []); cand_=ic_+list(rs_.choice([x_ for x_ in oth_ if x_ not in ic_],12,replace=False)); sl_=int(t2s_.get(c_['doms'][0],c_['doms'][0]))
-            lp_=_inf_lp(model,cfg,ctx_+f"So {A_} is connected to ",cand_,sl_,store_); pk_=cand_[int(np.argmax(lp_))]
-            st_['n']+=1; st_['dir']+=int(pk_==C_); st_['cp']+=int(pk_ in (B_,X_,Y_,D_))
-            lb_=_inf_lp(model,cfg,ctx_+f"{A_} {r0_} ",cand_,sl_,store_); Bh_=cand_[int(np.argmax(lb_))]; st_['b']+=int(Bh_==(D_ if dec_ else B_))
-            best_=None
-            for r_ in sorted({r0_,r1_}):
-                cc_=[x_ for x_ in cand_ if x_!=Bh_]; lc_=_inf_lp(model,cfg,ctx_+f"{Bh_} {r_} ",cc_,sl_,store_); j_=int(np.argmax(lc_))
-                if best_ is None or lc_[j_]>best_[0]: best_=(lc_[j_],cc_[j_])
-            st_['c']+=int(best_[1]==C_)
-        n0_=max(1,st_['n'])
-        if dec_: out_.append(f"DECOY {kind_[-2:]}: FALSE chain to C - direct {st_['dir']/n0_:.2f}, two lookups {st_['c']/n0_:.2f} (bridge read as the decoy {st_['b']/n0_:.2f})")
-        else: out_.append(f"{kind_}: direct {st_['dir']/n0_:.2f} (copied another in-context name {st_['cp']/n0_:.2f}) | two lookups: bridge {st_['b']/n0_:.2f}, answer {st_['c']/n0_:.2f}")
-    print(f"  [inference question-time chaining | {tag}{' | store on' if store_ else ''}] {len(ch_)} two-hop chains, facts in the context with a distractor fact last, 16 candidates (chance 0.06) || "+" || ".join(out_),flush=True)
 def _inf_auc(p_,n_):
     p_=np.asarray(p_,float)[:,None]; n_=np.asarray(n_,float)[None,:]
     return float(((p_>n_).sum()+0.5*(p_==n_).sum())/max(1,p_.size*n_.size))

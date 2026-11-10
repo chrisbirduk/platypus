@@ -226,9 +226,6 @@ def pu_consolidate(model,cfg,t,ts,vals,olds_,S_):
     if cap_>0 and len(RV_['e'])>cap_:                                             # (3) capacity cap: weakest-first eviction
         RV_['e']=sorted(RV_['e'],key=lambda e_:-float(e_.get('ck',1e9)))
         nev_=len(RV_['e'])-cap_; RV_['e']=RV_['e'][:cap_]
-    if float(cfg.pu_cons_shrink)>0:
-        with torch.no_grad():
-            for b_ in model.blocks: b_.pu_out.data[ts]*=(1.0-float(cfg.pu_cons_shrink))
     on1_=_ev(False); off1_=_ev(True); old1_=_evo(); _cs_rb_=''
     _cs_b_=float(getattr(cfg,'pu_cons_brake',0.0))
     if _cs_snap_ is not None and (old1_-old0_>_cs_b_ or on1_-on0_>_cs_b_):     # BRAKE: the phase hurt old domains or the domain itself -> undo it
@@ -246,4 +243,4 @@ def pu_consolidate(model,cfg,t,ts,vals,olds_,S_):
           f" | old domains mean {old0_:.3f} -> {old1_:.3f} ({old1_-old0_:+.4f})"
           f" | KL own (private off) {kl_o[0] if kl_o else float('nan'):.4f} -> {kl_o[-1] if kl_o else float('nan'):.4f}, anchors {np.mean(kl_a) if kl_a else float('nan'):.4f}"
           f" | retired {nret_} (absorbed), evicted {nev_} (cap {cap_ or 'none'}), kept {len(RV_['e'])}"
-          +(f" | private outputs x{1-float(cfg.pu_cons_shrink):.2f}" if float(cfg.pu_cons_shrink)>0 else "")+_cs_rb_)
+          +((""))+_cs_rb_)

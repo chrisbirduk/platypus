@@ -1,5 +1,4 @@
 """Replay and stream sources, slot scoring and slot (domain) inference."""
-import math
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -23,70 +22,6 @@ class _ReplayGet:
     def __call__(s):
         b=s._q.pop(0) if s._q else s._g(); s.last.append(b); return b
     def __getattr__(s,k): return getattr(s._g,k)
-class _StreamSource:
-    """NO VISIT BOUNDARIES: the visit schedule as one stream of batches (the true domain is known here for logging only)."""
-    def __init__(s,schedule,train_of,cfg,ndom):
-        s.sch=list(schedule); s.tr=train_of; s.L=int(cfg.steps_per_task); s.nd=ndom; s.pos=0; s.vi=0; s.k=0; s.bounds=[i*s.L for i in range(1,len(s.sch))]
-    @property
-    def done(s): return s.vi>=len(s.sch)
-    @property
-    def true_dom(s): return s.sch[min(s.vi,len(s.sch)-1)]
-    def __call__(s):
-        t=s.sch[s.vi]; b=s.tr(t,s.vi//s.nd)(); s.pos+=1; s.k+=1
-        if s.k>=s.L: s.k=0; s.vi+=1
-        return b
-class _StreamGet:
-    """The visit's batches from the stream, with change detection on the previous step's real-batch loss (bits)."""
-    def __init__(s,src,model,cfg,slot,vi,first=()):
-        s.src=src; s.m=model; s.cfg=cfg; s.slot=slot; s.vi=vi; s._q=list(first); s.last=__import__('collections').deque(maxlen=max(1,int(cfg.infer_batches)))
-        s.pending=None; s.ref_batches=None; s.w=__import__('collections').deque(maxlen=max(4,int(cfg.stream_win))); s.cs=0.0; s.n=0; s.log=[]; s.mu=0.0
-        s.rw=__import__('collections').deque(maxlen=max(8,4*int(cfg.stream_win))); s.rn=0; s.rz=0.0; s.rzmax=0.0   # cg15 representation detector
-        if getattr(cfg,'stream_rep',False): model.__dict__['_srep']=None; model.__dict__.pop('_rj',None)            #   running mean restarts with the visit
-    def _alarm_rep(s,r):
-        s.rn+=1; c=s.cfg
-        if s.rn<=int(c.stream_warm) or len(s.rw)<3: s.rw.append(r); return False                # statistics only
-        w=np.array(s.rw); med=float(np.median(w)); sd=max(float(c.stream_rep_floor),1.4826*float(np.median(np.abs(w-med)))); z=(r-med)/sd
-        if z>float(c.stream_rep_z): s.rz=z; return True
-        s.rzmax=max(s.rzmax,z); s.rw.append(r); return False
-    def _sd(s):
-        w=list(s.w)
-        if len(w)<3: return float(s.cfg.stream_sig_floor)
-        return max(float(s.cfg.stream_sig_floor),1.4826*float(np.median(np.abs(np.diff(w))))/math.sqrt(2.0))
-    def _alarm(s,l):
-        s.n+=1; c=s.cfg
-        if s.n<=int(c.stream_warm) or len(s.w)<3:
-            s.w.append(l)
-            if c.stream_trace: s.m.__dict__.setdefault('_strace',[]).append((s.src.pos,l,float('nan'),float('nan'),float('nan'),0.0))
-            return False                                                                       # statistics only
-        s.mu=float(np.median(list(s.w))); sd=s._sd(); z=(l-s.mu)/sd; s.cs=max(0.0,s.cs+z-float(c.stream_k))
-        if c.stream_trace: s.m.__dict__.setdefault('_strace',[]).append((s.src.pos,l,s.mu,sd,z,s.cs))
-        if s.cs>float(c.stream_h): s.cs=0.0; return True
-        if z<float(c.stream_k)+2.0: s.w.append(l)                                              # in-control points update the statistics
-        return False
-    def __call__(s):
-        if s._q: b=s._q.pop(0)
-        else:
-            l=s.m.__dict__.pop('_rl',None); al=s._alarm(float(l)/LOG2) if l is not None else False
-            if getattr(s.cfg,'stream_rep',False):                                                # cg15: the representation jump decides (loss stats kept for the log)
-                r_=s.m.__dict__.pop('_rj',None); ar_=s._alarm_rep(r_) if r_ is not None else False
-                al=ar_ or (al and bool(getattr(s.cfg,'stream_rep_or',True)))                        #   OR the loss CUSUM (GPU cdet logs, 92 switches: jump 91,
-                                                                                                 #   loss 69, either 92; the local model: loss in pass 1, jump in pass 2)
-            if al and not s.src.done:
-                p0=s.src.pos; th=s.mu+s._sd()
-                if getattr(s.cfg,'stream_rep',False): slot_ref(s.m,s.cfg,list(s.last)[:-1] or list(s.last),s.slot)   # cg15: the usual reference (BPC on
-                else: s.m.__dict__.setdefault('_slot_ref',{})[s.slot]=s.mu                       #   this visit's last batches, not the new text)
-                                                                                                 # (loss mode: the current slot's reference = its recent loss level)
-                                                                                                 #   (losses before each update: out of sample)
-                sl,bs=infer_slot(s.m,s.cfg,s.src,s.src.true_dom,s.vi)
-                s.log.append((p0,float(l)/LOG2,th,sl))
-                if sl==s.slot: s._q=list(bs); b=s._q.pop(0)                                       # false alarm: same slot, keep going
-                else:                                                                             # switch: one last step on this visit's own text
-                    s.pending=(sl,bs); s.ref_batches=list(s.last)[:-1] or list(s.last); b=s.ref_batches[-1]; s.m.__dict__['_vend']=True
-                    s.last.append(b); return b
-            elif s.src.done: b=s.last[-1]; s.m.__dict__['_vend']=True; s.last.append(b); return b
-            else: b=s.src()
-        if s.src.done and not s._q: s.m.__dict__['_vend']=True
-        s.last.append(b); return b
 @torch.no_grad()
 def _slot_score(model,xs,ys,s):
     """(BPC, mean top-block output) of the batches read through slot s (its codes, private units and head)"""
@@ -223,19 +158,6 @@ def _ngp_step_0(model,cfg,lr):
     if O2 is not None:
         for g_ in O2.param_groups: g_['lr']=lr*cfg.ngram_lr_mult
         O2.step(); O2.zero_grad(set_to_none=True)
-@torch.no_grad()
-def cfm_fold(model,cfg,d,val):
-    """memory -> head: the logits K M are projected onto the head's linear features [h,1] with the visit's key statistics G
-    (X = M_l + G_ll^-1 G_l,rf M_rf), added to the head, and the memory is cleared"""
-    C_=model._cfm
-    if d not in C_['M']: return
-    on_=bpc(model,val,d); M=C_['M'].pop(d); off_=bpc(model,val,d); G=C_['G'][d].double(); dm=model.heads[d].weight.shape[1]; l=dm+1
-    Gll=G[:l,:l]+1e-6*float(torch.diagonal(G[:l,:l]).mean())*torch.eye(l,device=G.device,dtype=G.dtype)
-    X=(M[:l].double()+torch.linalg.solve(Gll,G[:l,l:]@M[l:].double())).float()
-    model.heads[d].weight.add_(X[:dm].t()); model.heads[d].bias.add_(X[dm]); fo_=bpc(model,val,d)
-    for k_ in ('G','KE','n','w'): C_[k_].pop(d,None)
-    model.train()
-    print(f"  [closed-form fold] {_lab(cfg,d)}: BPC memory on {on_:.4f} | off {off_:.4f} (memory effect {on_-off_:+.4f}) | folded into the head {fo_:.4f}")
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
 _LATE = {

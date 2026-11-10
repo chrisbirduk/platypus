@@ -27,7 +27,6 @@ cg26u: inf_jx_route - JEPA ROUTING readout (routing unchanged): each visit's sto
   AUC for first visits (tools/toy_jroute.py: locally bytes win at 1 KB, JEPA reaches 1.00 from 4-8 windows, both detect a new domain at
   AUC 0.95-1.00 from 4 windows; masking names hurt routing)."""
 from platypus.common import _fail
-import math
 import numpy as np
 import torch
 import torch.nn as nn

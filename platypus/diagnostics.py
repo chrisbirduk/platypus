@@ -15,16 +15,6 @@ from platypus.capacity import (
 
 
 # ---------------- TOPIC IDENTIFICATION FROM BYTE CONTEXT (diagnostic: no effect on training) ----------------
-def ctx_profile(x, H, W):
-    """(B,T) bytes -> (B,T,H): hashed single-byte, byte-pair and byte-triple counts over the last W bytes (causal:
-    token t uses bytes <= t), square-rooted and L2-normalised."""
-    B,T=x.shape; u=x.long(); p1=torch.cat([torch.zeros_like(u[:,:1]),u[:,:-1]],1); p2=torch.cat([torch.zeros_like(u[:,:2]),u[:,:-2]],1)
-    oh=torch.zeros(B,T,H,device=x.device); one=torch.ones(B,T,1,device=x.device)
-    for h in ((u*2654435761)%H, ((p1*256+u)*40503+17)%H, ((p2*65536+p1*256+u)*97531+7)%H):
-        oh.scatter_add_(2,h.unsqueeze(-1),one)
-    cs=oh.cumsum(1); win=cs.clone()
-    if T>W: win[:,W:]-=cs[:,:-W]
-    f=win.sqrt(); return f/f.norm(dim=-1,keepdim=True).clamp(min=1e-6)
 
 _RECON_LAYERS=('Wk','Wv','gate','Wout','mlp_in','mlp_out')
 
@@ -223,95 +213,6 @@ def forget_diag(model, cfg, vals, t, snaps, post, doms=None):
                                     +(" | shared/specific rel. change (shared share): "+" ".join(f"b{i} {a:.3f}/{b_:.3f} ({c:.0%})" for i,(a,b_,c) in enumerate(r['fsplit'])) if 'fsplit' in r else ""))
     return out
 
-class TopicTracker:
-    """Online topic identification from byte context (up to topic_k topics).
-    - profiles are CENTRED on a running global mean profile (topics form around what is distinctive);
-    - topics are updated WINNER-TAKE-ALL, at rate topic_lr/(1+use/topic_mature) (young topics adapt, mature ones settle);
-    - a new topic opens on a NOVELTY JUMP: the short-term share of unmatched contexts (best cosine < topic_new) rises
-      topic_jump above its long-term level (at most once per topic_gap steps)."""
-    def __init__(s, cfg, dev):
-        s.cfg=cfg; s.K,s.H,s.W=cfg.topic_k,cfg.topic_h,cfg.topic_window
-        s.mu=torch.zeros(s.K,s.H,device=dev); s.used=torch.zeros(s.K,dtype=torch.bool,device=dev); s.n=torch.zeros(s.K,device=dev)
-        s.gm=None; s.u=0.0; s.us=None; s.since=0; s.own={}; s.T={}; s.events=[]
-    def feats(s, x, stride=None):
-        f=ctx_profile(x,s.H,s.W)[:,s.W-1:]
-        if stride: f=f[:,::stride]
-        f=f.reshape(-1,s.H)
-        if s.gm is None: s.gm=f.mean(0)
-        g=f-s.gm; return g/g.norm(dim=-1,keepdim=True).clamp(min=1e-6), f
-    def cen(s):
-        return s.mu
-        c=s.mu-s.gm; return c/c.norm(dim=-1,keepdim=True).clamp(min=1e-6)   # raw centroids centred with the CURRENT mean
-    def sims(s, g): return (g@s.cen().T).masked_fill(~s.used,-1e9)
-    def choose(s, sm):
-        """'argmax': nearest topic. 'art' (adaptive-resonance style): among topics whose similarity passes the vigilance
-        level, the OLDEST wins, so a newer topic only takes contexts that no older topic already resonates with."""
-        best,arg=sm.max(-1)
-        return best,arg
-    def post(s, g):
-        sm=s.sims(g)
-        p=F.softmax(sm/s.cfg.topic_temp,-1)
-        return p
-    @torch.no_grad()
-    def update(s, x, dom=None):
-        if s.W>x.shape[1]: s.W=x.shape[1]    # window can't exceed the sequence (local tests use short sequences)
-        g,f=s.feats(x,stride=max(1,s.W//4)); s.nup=getattr(s,'nup',0)+1
-        s.gm=0.999*s.gm+0.001*f.mean(0)
-        raw=s.cfg.topic_center=='raw'
-        if not s.used.any():
-            m=f.mean(0) if raw else g.mean(0); s.mu[0]=m if raw else m/m.norm().clamp(min=1e-6); s.used[0]=True; return
-        best,arg=s.choose(s.sims(g)); un=best<s.cfg.topic_new; fr=float(un.float().mean())
-        s.u=0.9*s.u+0.1*fr; s.us=fr if s.us is None else 0.995*s.us+0.005*fr; s.since+=1
-        if s.u-s.us>s.cfg.topic_jump and s.since>s.cfg.topic_gap and (~s.used).any() and un.any():
-            j=int(torch.nonzero(~s.used)[0]); parent=int(s.sims(g[un]).mean(0).argmax())   # nearest existing topic
-            s.events.append((j,parent))
-            if raw: s.mu[j]=f[un].mean(0)
-            else: m=g[un].mean(0); s.mu[j]=m/m.norm().clamp(min=1e-6)
-            s.used[j]=True
-            s.u=s.us; s.since=0; best,arg=s.choose(s.sims(g))
-        if dom is not None:                   # which topics this domain's TRAINING contexts went to (for head-coverage)
-            s.T.setdefault(dom,torch.zeros(s.K,device=s.mu.device)).add_(torch.bincount(arg,minlength=s.K).float())
-        for k in arg.unique():
-            kk=int(k); sel=(f if raw else g)[arg==kk]; eta=s.cfg.topic_lr/(1+float(s.n[kk])/s.cfg.topic_mature)
-            m=s.mu[kk]+eta*(sel.mean(0)-s.mu[kk]); s.mu[kk]=m if raw else m/m.norm().clamp(min=1e-6); s.n[kk]+=sel.shape[0]
-    @torch.no_grad()
-    def force_spawn(s, x):
-        """SURPRISE-driven birth: a new topic centred on the current batch's contexts (parent = nearest topic)."""
-        if not bool((~s.used).any()) or s.gm is None: return None
-        g,f=s.feats(x,stride=max(1,s.W//4)); j=int(torch.nonzero(~s.used)[0]); parent=int(s.sims(g).mean(0).argmax())
-        m=g.mean(0); s.mu[j]=m/m.norm().clamp(min=1e-6)
-        s.used[j]=True; s.events.append((j,parent)); s.since=0; s.u=s.us if s.us is not None else 0.0
-        return j
-    @torch.no_grad()
-    def token_post(s, x):
-        """Causal topic posterior for every position (B,T,K): position t uses bytes <= t."""
-        B,T=x.shape; f=ctx_profile(x,s.H,min(s.W,T)); g=f-s.gm
-        g=g/g.norm(dim=-1,keepdim=True).clamp(min=1e-6)
-        return s.post(g.reshape(-1,s.H)).reshape(B,T,s.K)
-    @torch.no_grad()
-    def assign(s, get, n=6):
-        if hasattr(get,'reset'): get.reset()
-        A=[];C=[]
-        for _ in range(n):
-            x,_=get()
-            if x.shape[1]<s.W: continue
-            p=s.post(s.feats(x)[0]); A.append(p.argmax(-1)); C.append(p.max(-1).values)
-        if not A: z=torch.zeros(0,device=s.mu.device); return z.long(), z
-        return torch.cat(A), torch.cat(C)
-    def report(s, vals, t):
-        """Topic/domain contingency over trained domains, purity, NMI, confidence, stability of each domain's topics."""
-        K=s.K; M=np.zeros((t+1,K)); conf=[]; stab={}; cover={}
-        for d in range(t+1):
-            a,c=s.assign(vals[d]); M[d]=np.bincount(a.cpu().numpy(),minlength=K); conf.append(float(c.mean()) if c.numel() else float('nan'))
-            if d==t: s.own[d]=a.clone()
-            elif d in s.own: stab[d]=float((a==s.own[d]).float().mean())
-            if d in s.T and a.numel():         # HEAD-COVERAGE: share of this domain's contexts now routed to a topic that
-                sh=s.T[d]/s.T[d].sum().clamp(min=1)      # received >= topic_cover of its training contexts (a head that saw it)
-                cover[d]=float((sh[a]>=s.cfg.topic_cover).float().mean())
-        tot=max(M.sum(),1); purity=float(M.max(0).sum()/tot)
-        pj=M/tot; pd_=pj.sum(1,keepdims=True); pk=pj.sum(0,keepdims=True); nz=pj>0
-        mi=float((pj[nz]*np.log(pj[nz]/(pd_@pk)[nz])).sum()); hd=-float((pd_[pd_>0]*np.log(pd_[pd_>0])).sum()); hk=-float((pk[pk>0]*np.log(pk[pk>0])).sum())
-        return dict(used=int(s.used.sum()),purity=purity,nmi=2*mi/max(hd+hk,1e-9),conf=conf,stab=stab,cover=cover,M=M.tolist())
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
 _LATE = {

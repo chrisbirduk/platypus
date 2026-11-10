@@ -13,16 +13,24 @@ from platypus.gating import (
     _DSPLIT, _NOISE,
 )
 from platypus.protection import (
-    _DP2, _FILM, _STF, probe_post, probe_pre, proj_setup, smem_reencode,
+    _DP2,
+    _FILM,
+    _STF,
+    probe_post,
+    probe_pre,
+    proj_setup,
 )
 from platypus.private import (
     _XDG, ngp_init,
 )
 from platypus.slots import (
-    _ReplayGet, _StreamGet, _StreamSource, _slot_score, infer_slot, slot_ref,
+    _ReplayGet,
+    _slot_score,
+    infer_slot,
+    slot_ref,
 )
 from platypus.layers import (
-    _CARRY, setup_kernel,
+    setup_kernel,
 )
 from platypus.capacity import (
     Reserve, Uniq, _lab,
@@ -39,17 +47,21 @@ from platypus.model import (
 from platypus.meta import (
     MetaController,
 )
-from platypus.diagnostics import (
-    TopicTracker,
-)
 from platypus.importance import (
     fold_domain_covariance, install_cov_hooks, rebuild_old_cov, revisit_begin, revisit_end, update_importance,
 )
 from platypus.data import (
-    _RUN_T0, _inject_facts, _using_hf_stream, fact_eval, locality_metrics, make_loader, overlap_check, prefetch_pile, stream_bytes,
+    _RUN_T0,
+    _using_hf_stream,
+    locality_metrics,
+    make_loader,
+    overlap_check,
+    prefetch_pile,
+    stream_bytes,
 )
 from platypus.heads import (
-    bpc_inferred, bpc_inferred_modes, mix_text_eval,
+    bpc_inferred_modes,
+    mix_text_eval,
 )
 from platypus.train import (
     calibrate_affinity, train_domain,
@@ -58,7 +70,8 @@ from platypus.orth import (
     orth_summary, print_orth,
 )
 from platypus.conduit import (
-    lora_merge, sem_rescore, set_seed,
+    lora_merge,
+    set_seed,
 )
 from platypus.inference.store import (
     bpc, bpc_weights,
@@ -82,11 +95,11 @@ from platypus.inference.need import (
     pu_consolidate,
 )
 from platypus.losses import (
-    oracle_final, recon_fidelity, replay_diag,
+    recon_fidelity,
+    replay_diag,
 )
 
 def run(cfg):
-    if cfg.stream: cfg.infer_ctx=True                  # NO VISIT BOUNDARIES: slots are always inferred
     for k in ('theta_low','theta_high','theta_dist','theta_sigma','theta_reserve','drive_ema','drive_slow','peak_decay','route_width','hebb_rate'): setattr(Config,k,getattr(cfg,k))  # buffers read class attrs
     set_seed(cfg.seed)
     _NOISE['gen']=torch.Generator().manual_seed(cfg.seed+12345)
@@ -129,7 +142,6 @@ def run(cfg):
     object.__setattr__(model,'_replay_buffer',[])
     install_cov_hooks(model, cfg)
     kl_log={}; dream_log={}; fd_log={}; fd_snaps={}; battr_log={}
-    if cfg.topic_diag: object.__setattr__(model,'_topics',TopicTracker(cfg,DEVICE)); topic_log={}
     cap_s=cfg.d_state*cfg.reserve_mult; cap_m=2*cfg.d_model*cfg.reserve_mult
     def _fx(li,base):                                # 'fresh' extra units held in reserve for later domains
         e=0.0
@@ -166,20 +178,12 @@ def run(cfg):
         def train_of(t,p):
             if (t,p) not in trp_:
                 for k_ in [k_ for k_ in trp_ if k_[1]<p]: del trp_[k_]               # earlier passes' shards are never used again
-                sh_=len(raw_tr_[t])//npass_; trp_[(t,p)]=make_loader(_inject_facts(raw_tr_[t][p*sh_:(p+1)*sh_],cfg,t,p) if cfg.fact_spec else (inf_plant(raw_tr_[t][p*sh_:(p+1)*sh_],cfg,t,p) if cfg.inf_on else raw_tr_[t][p*sh_:(p+1)*sh_]),cfg,no_revisit=cfg.no_revisit,lanes=bool(cfg.ctx_carry or cfg.ctx_lanes),jump=int(cfg.ctx_jump),keep=bool(cfg.ctx_jump_keep))
+                sh_=len(raw_tr_[t])//npass_; trp_[(t,p)]=make_loader((inf_plant(raw_tr_[t][p*sh_:(p+1)*sh_],cfg,t,p) if cfg.inf_on else raw_tr_[t][p*sh_:(p+1)*sh_]),cfg,no_revisit=cfg.no_revisit,lanes=bool(cfg.ctx_carry or cfg.ctx_lanes),jump=int(cfg.ctx_jump),keep=bool(cfg.ctx_jump_keep))
             return trp_[(t,p)]
         trains=None
     else:
         trains=[make_loader((inf_plant(stream_bytes(d,tseed_(i),TRN_),cfg,i,0) if cfg.inf_on else stream_bytes(d,tseed_(i),TRN_)),cfg,no_revisit=cfg.no_revisit,lanes=bool(cfg.ctx_carry or cfg.ctx_lanes),jump=int(cfg.ctx_jump),keep=bool(cfg.ctx_jump_keep)) for i,d in enumerate(PILE_DOMAINS)]
         train_of=lambda t,p: trains[t]
-        if cfg.fact_spec:                                                        # UPDATE-OR-PROTECT TEST (shared text across passes): a fact domain
-            fdom_={int(e[0]) for e in cfg.fact_spec}; ftr_={}                    #   gets its own loader per pass, the same text with that pass's facts
-            def train_of(t,p):
-                if t not in fdom_: return trains[t]
-                if (t,p) not in ftr_:
-                    raw_=_inject_facts(stream_bytes(PILE_DOMAINS[t],tseed_(t),TRN_),cfg,t,p)
-                    ftr_[(t,p)]=make_loader(raw_,cfg,no_revisit=cfg.no_revisit,lanes=bool(cfg.ctx_carry or cfg.ctx_lanes),jump=int(cfg.ctx_jump),keep=bool(cfg.ctx_jump_keep))
-                return ftr_[(t,p)]
     vals=[make_loader(stream_bytes(d,vseed_(i),500_000),cfg,fixed_seed=4242+i,span=1+int(cfg.eval_ctx)) for i,d in enumerate(PILE_DOMAINS)]
     if int(getattr(cfg,'data_overlap_check',1)):                                 # issue #30: validation text must not appear in the training text
         try:
@@ -200,20 +204,12 @@ def run(cfg):
     alt_m={}
     pre_lock=post_lock=None
     zeroshot=[None]*len(PILE_DOMAINS)
-    _src=_StreamSource(schedule,train_of,cfg,NDOM) if cfg.stream else None; _pend=None; _seen_true=set()   # NO VISIT BOUNDARIES
+    _src=(None); _pend=None; _seen_true=set()   # NO VISIT BOUNDARIES
     for vi,t in enumerate(schedule):                     # v = visit (position in the stream), t = domain (head) being trained
         pass_i=vi//NDOM; seen_d=sorted(set(schedule[:vi+1]))
-        if cfg.stream:                                                         # NO VISIT BOUNDARIES: the slot was decided by the detector
-            _eo=_src.done
-            if _eo: print(f"  [stream] the stream has ended ({vi} detected visits for a schedule of {len(schedule)}): evaluation only"); sh9_=model.__dict__.get('_slot_hist') or []; ts=sh9_[-1] if sh9_ else 0; _b0=[]
-            elif _pend is None: ts,_b0=infer_slot(model,cfg,_src,_src.true_dom,vi)
-            else: ts,_b0=_pend
-            if not _eo: t=_src.true_dom; _seen_true.add(t); seen_d=sorted(_seen_true|set(schedule[:vi+1]))   # bookkeeping (evaluation only) follows the true text
-            _gv=_StreamGet(_src,model,cfg,ts,vi,_b0)
-        else:
-            _eo=False
-            ts,_b0=infer_slot(model,cfg,train_of(t,pass_i),t,vi) if cfg.infer_ctx else (t,[])      # LABEL-FREE: the slot this visit trains
-            _gv=_ReplayGet(train_of(t,pass_i),_b0,cfg.infer_batches) if cfg.infer_ctx else train_of(t,pass_i)
+        _eo=False
+        ts,_b0=infer_slot(model,cfg,train_of(t,pass_i),t,vi) if cfg.infer_ctx else (t,[])
+        _gv=_ReplayGet(train_of(t,pass_i),_b0,cfg.infer_batches) if cfg.infer_ctx else train_of(t,pass_i)
         _tsp_=_t2s.get(t) if cfg.infer_ctx else None                        # FIX (review): the slot before this visit's routing (for 'before relearning')
         if cfg.infer_ctx and not _eo: _t2s[t]=ts
         shist_=model.__dict__.setdefault('_slot_hist',[]) if cfg.infer_ctx else None
@@ -221,11 +217,7 @@ def run(cfg):
         for d_ in reversed(shist_ if cfg.infer_ctx else schedule[:vi]):
             if d_!=ts and d_ not in olds: olds.append(d_)
         olds=olds[::-1]                                  # least -> most recently visited (single pass: range(t))
-        if cfg.dream_lesion: olds=[d_ for d_ in olds if d_ not in model.__dict__.get('_lesion',set())]   # LESION TEST: no dreams for lesioned slots
         model.__dict__['_self_slot']=None
-        if cfg.self_prot_w>0 and ts in (shist_ if cfg.infer_ctx else schedule[:vi]) and ts in model.__dict__.get('_bank',{}) and ts not in olds:
-            olds.append(ts); model.__dict__['_self_slot']=ts               # cg15b SELF-PROTECTION: a revisited slot keeps (part of) its own dreams
-            print(f"  [self protection] revisited slot {ts}: its own dream bank stays protected at share x{cfg.self_prot_w:g}")
         if (cfg.self_dream_nreal and cfg.real_w_pass and float(cfg.real_w_pass[min(pass_i,len(cfg.real_w_pass)-1)])==0.0
                 and ts in (shist_ if cfg.infer_ctx else schedule[:vi]) and ts not in olds): olds.append(ts)   # cg26i ORDER-SAFE: slots seen, not domain ids   # NO-REAL-TEXT PASS: the visited domain is protected by its OWN dreams too
         object.__setattr__(model,'_olds',olds); object.__setattr__(model,'_visit',vi); model.__dict__['_cur_dom']=int(t)
@@ -237,9 +229,6 @@ def run(cfg):
         _pf9=__import__('sys').modules.get('platypus.profiling')
         if _pf9 is not None and vi>0: _pf9._ft_report(f"visit {vi-1} and its sleep")
         print(f"\n=== Phase {vi+1}: {PILE_DOMAINS[t]}"+(f" (pass {pass_i+1}/{cfg.n_passes})" if cfg.n_passes>1 else "")+f" === [elapsed {(time.time()-_RUN_T0)/60:.1f} min]")
-        if cfg.fwt_zeroshot and vi>0 and t not in schedule[:vi] and cfg.scratch_domain is None:              # before ANY training on domain t
-            zeroshot[t]=bpc_inferred(model,vals[t],t,t,'bytes',cfg)[0]
-            print(f"  [forward transfer] {PILE_DOMAINS[t]} before training (earlier heads, inferred): {zeroshot[t]:.3f} BPC")
         model._curve_val=None
         # PROACTIVE difficulty-based widening: before training a HARD domain, open up
         # the shared manifold proportional to how much harder it is than the easiest
@@ -265,9 +254,8 @@ def run(cfg):
             model.__dict__['_s0_train']=None
             _pb=None
             try:
-                model.__dict__['_pass_lr']=float(cfg.pass_lr[min(pass_i,len(cfg.pass_lr)-1)]) if cfg.pass_lr else 1.0
-                model.__dict__['_dwp']=float(cfg.dream_w_pass[min(pass_i,len(cfg.dream_w_pass)-1)]) if cfg.dream_w_pass else 1.0   # cg14
-                if not olds and float(cfg.pass_lr_noold)>0: model.__dict__['_pass_lr']=float(cfg.pass_lr_noold)   # cg13: visits with no old domain
+                model.__dict__['_pass_lr']=(1.0)
+                model.__dict__['_dwp']=(1.0)   # cg14
                 model.__dict__['_real_w']=float(cfg.real_w_pass[min(pass_i,len(cfg.real_w_pass)-1)]) if cfg.real_w_pass else 1.0
                 model.__dict__['_pass_i']=int(pass_i)
                 _prb=probe_pre(model,cfg,olds,t,vals) if (vi in tuple(cfg.probe_visits) and olds and cfg.dream_bank and cfg.bank_targets) else None
@@ -290,26 +278,9 @@ def run(cfg):
                 if _prb is not None: probe_post(model,cfg,_prb,vi,vals)
             finally:
                 if _pb is not None: cfg.batch_size,cfg.steps_per_task,cfg.dream_batch,cfg.lr,cfg.dream_early_steps=_pb
-            if cfg.infer_ctx: _les_ or slot_ref(model,cfg,(_gv.ref_batches or _gv.last) if cfg.stream else _gv.last,ts); shist_.append(ts)
-            if cfg.fact_spec:                                                                                # UPDATE-OR-PROTECT TEST: every fact domain's slot
-                fd_=sorted({int(e[0]) for e in cfg.fact_spec}); fact_eval(model,cfg,vi,[(_lab(cfg,d_),_t2s[d_]) for d_ in fd_ if d_ in _t2s])
-            if cfg.dream_lesion and pass_i>=int(cfg.dream_lesion_pass) and t in tuple(cfg.dream_lesion):   # LESION TEST: after this visit the domain's
-                model.__dict__.setdefault('_lesion',set()).add(ts)                                          #   bank is never dreamed again
-                print(f"  [lesion] {_lab(cfg,t)} (slot {ts}): its dream bank is switched off for the rest of the run")
-            if cfg.stream:
-                _pend=_gv.pending
-                nb_=[b_ for b_ in _src.bounds if _gv.log and abs(b_-_gv.log[-1][0])<=4*max(1,int(cfg.infer_batches))]
-                tr_=model.__dict__.pop('_strace',None)
-                if tr_:
-                    for b_ in [b_ for b_ in _src.bounds if tr_[0][0]<=b_<=tr_[-1][0]+1]:
-                        print(f"  [stream trace] true boundary at batch {b_}: "+' '.join(f"{p_}:{l_:.2f}/{m_:.2f}/{sd_:.2f}/{z_:.1f}/{c_:.1f}" for p_,l_,m_,sd_,z_,c_ in tr_ if b_-4<=p_<=b_+8))
-                if cfg.stream_rep: print(f"  [stream rep] visit {vi}: alarm z {_gv.rz:.1f} | largest in-visit z without alarm {_gv.rzmax:.1f} (threshold {cfg.stream_rep_z})")
-                print(f"  [stream] visit {vi}: {len(_gv.log)} alarm(s) at stream batches "+' '.join(f'{p_} ({l_:.2f} > {th_:.2f} bits -> slot {sl_})' for p_,l_,th_,sl_ in _gv.log)
-                      +(f" | switch {_gv.log[-1][0]-nb_[0]:+d} batches from the true boundary" if (_pend is not None and nb_) else (' | no switch' if _pend is None else ' | switch NOT at a true boundary')))
+            if cfg.infer_ctx: _les_ or slot_ref(model,cfg,(_gv.last),ts); shist_.append(ts)
             if cfg.slot_mem and model.__dict__.get('_smem',{}).get(ts):
                 print("  [slot memory] slot "+str(ts)+": mean |S_d| per head, per block: "+' '.join(f"{float(v_.norm(dim=(1,2)).mean()):.2f}" for v_ in model._smem[ts].values())+f" | slots with memory {len(model._smem)}")
-            if cfg.ctx_carry and _CARRY['st']:
-                print("  [context carry] carried memory at the visit end, mean |S| per row-head: "+' '.join(f"{float(v_.norm(dim=(1,2)).mean()):.2f}" for k_,v_ in _CARRY['st'].items() if not isinstance(k_,tuple)))
             model.__dict__['_s0_train']=None
             if int(cfg.lm_rank)>=0 and float(model.__dict__.get('_real_w',1.0))==0.0: lora_merge(model, cfg, olds, ts)   # REM-like DREAM MERGE
             if cfg.dream_bank and cfg.dream and vi<len(schedule)-1:
@@ -317,8 +288,6 @@ def run(cfg):
                 if int(getattr(cfg,'infer_drift_fix',0)) and ts in model.__dict__.get('_bank',{}):   # cg20x: drift reference for routing
                     Xr_=model.__dict__['_bank'][ts][:16].long().to(model.embed.weight.device)
                     model.__dict__.setdefault('_bank_ref',{})[ts]=_slot_score(model,[Xr_[:,:-1]],[Xr_[:,1:]],ts)[0]   # the domain's dreams (v9h: not after the final visit - never read)
-            if float(cfg.sem_share)>0 and cfg.sem_tgt=='student': sem_rescore(model, cfg, ts)
-            if cfg.slot_mem and cfg.slot_mem_reenc>0: smem_reencode(model, cfg, ts)   # SLOT MEMORY RE-ENCODING
         object.__setattr__(model,'_live_dom',None)
         # add this domain's examples to the prior buffer (for future forgetting signal) - none when data_free
         for _ in range(0):
@@ -428,14 +397,6 @@ def run(cfg):
         if model._orth is not None and t>0:
             orth_log[t]=orth_summary(model._orth.log, t, cfg.orth_energies)
             if orth_log[t] is not None: print_orth(orth_log[t], PILE_DOMAINS[t], cfg.orth_energies)
-        if cfg.topic_diag:
-            tr=model._topics.report(vals,t); topic_log[t]=tr
-            top=[" ".join(f"t{k}:{int(100*v/max(sum(row),1))}%" for k,v in sorted(enumerate(row),key=lambda z:-z[1])[:3] if v>0) for row in tr['M']]
-            print(f"  [topics] {tr['used']} in use | purity {tr['purity']:.2f} NMI {tr['nmi']:.2f} | confidence "
-                  +" ".join(f"{c:.2f}" for c in tr['conf'])+" | kept own topic since trained: "
-                  +(" ".join(f"{PILE_DOMAINS[d][:6]} {v:.2f}" for d,v in tr['stab'].items()) or "-")
-                  +" | head-coverage "+" ".join(f"{v:.2f}" for v in tr['cover'].values()))
-            for d,tt in enumerate(top): print(f"     {PILE_DOMAINS[d][:10]:10} -> {tt}")
         rcs=model.__dict__.pop('_recon_stat',None)
         if rcs: model.__dict__.setdefault('_recon_log',{})[t]={li:v[0]/max(v[1],1e-12) for li,v in rcs.items()}
         rsh=model.__dict__.pop('_recon_share',None)
@@ -550,9 +511,6 @@ def run(cfg):
               f"|| with the slot given (task-incremental): {mf:+.3f} / {mb:.3f}",flush=True)
     if cfg.recon_diag: (replay_diag if cfg.recon_mark else recon_fidelity)(model,cfg,vals,NDOM,_S)
     orc_=None
-    if cfg.oracle_mem:                                                                # ORACLE LINEAR MEMORY
-        trs_=[make_loader(stream_bytes(d,tseed_(i),max(400_000,int(cfg.oracle_batches*cfg.batch_size*(cfg.seq_len+1)*1.2))),cfg) for i,d in enumerate(PILE_DOMAINS)]
-        orc_=oracle_final(model,cfg,vals,trs_,NDOM,bpc_m[-1],_S)
     interf=None; hc_=getattr(model,'_hconf_last',None)
     wall_run=time.perf_counter()-_t_run; tl_=getattr(model,'_timing_log',{})
     if tl_: print(f"RUN WALL-CLOCK: {wall_run/60:.1f} min in total (training {sum(v['wall'] for v in tl_.values())/60:.1f} min, of which dream sampling "
@@ -563,7 +521,7 @@ def run(cfg):
     return {'_model':model,'_slot':_S,'_vals':vals,'_raw_vals':(lambda: [stream_bytes(d,vseed_(i),500_000) for i,d in enumerate(PILE_DOMAINS)]),'_schedule':list(schedule),'oracle':orc_,'vlen':vl_,'cov':getattr(model,'_cov_log',{}),'fsplit':getattr(model,'_fsplit_log',{}),'interf':interf,'hconf':(None if hc_ is None else (hc_[0],hc_[1].tolist())),'fdrift':getattr(model,'_fdrift_log',{}),
             'klpos':getattr(model,'_klpos_log',{}),'wall_run':wall_run,'forget':mf,'bpc':mb,'forget_w':mfw,'bpc_w':mbw,'per_domain':[bpc_m[-1][p]-post[p] for p in range(len(PILE_DOMAINS)) if p!=schedule[-1] and post[p] is not None],'passes':pass_log,'domains':list(PILE_DOMAINS),
             'gut_after_wiki':(bpc_m[1][0]-post[0]) if (len(bpc_m)>1 and bpc_m[1][0] is not None) else None,'locality':locality_log,'orth':orth_log,
-            'post':list(post),'alt':alt,'topics':(topic_log if cfg.topic_diag else {}),'kl':kl_log,'dream':dream_log,'fdiag':fd_log,'stale':getattr(model,'_stale_log',{}),'beta':getattr(model,'_beta_log',{}),'timing':getattr(model,'_timing_log',{}),'recon':getattr(model,'_recon_log',{}),'sleep':getattr(model,'_sleep_log',{}),'battr':battr_log,'bw_dyn':getattr(model,'_bw_dyn',None),'tbirths':getattr(model,'_tspawn_log',[]),'tcombine':getattr(model,'_tcombine_log',[]),'tmerges':getattr(model,'_tmerge_log',[]),'treuse':getattr(model,'_tswitch_log',[]),'rollbacks':getattr(model,'_rb_log',[]),'cross':{int(k):v for k,v in (getattr(model,'_cross_log',None) or {}).items()},'zeroshot':zeroshot,'curve':getattr(model,'_curve',{}),'width':model.blocks[0].d_state,'mlp_width':model.blocks[0].mlp_hidden,
+            'post':list(post),'alt':alt,'topics':(({})),'kl':kl_log,'dream':dream_log,'fdiag':fd_log,'stale':getattr(model,'_stale_log',{}),'beta':getattr(model,'_beta_log',{}),'timing':getattr(model,'_timing_log',{}),'recon':getattr(model,'_recon_log',{}),'sleep':getattr(model,'_sleep_log',{}),'battr':battr_log,'bw_dyn':getattr(model,'_bw_dyn',None),'tbirths':getattr(model,'_tspawn_log',[]),'tcombine':getattr(model,'_tcombine_log',[]),'tmerges':getattr(model,'_tmerge_log',[]),'treuse':getattr(model,'_tswitch_log',[]),'rollbacks':getattr(model,'_rb_log',[]),'cross':{int(k):v for k,v in (getattr(model,'_cross_log',None) or {}).items()},'zeroshot':zeroshot,'curve':getattr(model,'_curve',{}),'width':model.blocks[0].d_state,'mlp_width':model.blocks[0].mlp_hidden,
             'recruit':getattr(model,'_recruit_log',{}),'merges':getattr(model,'_merge_log',[]),
             'final':[bpc_m[-1][q] for q in range(len(PILE_DOMAINS))],
             # decomposition (lock after domain L): for domains <=L, measure interference from the

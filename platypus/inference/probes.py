@@ -26,26 +26,20 @@ def inf_probes(cfg):
             n_=''.join(rs_.choice(_INF_SYL,rs_.randint(2,4))); n_=n_[0].upper()+n_[1:]
             if int(getattr(cfg,'inf_probe_rare',0)) and not any(ch_ in n_.lower() for ch_ in 'qxz'): continue   # cg20j: invented names carry q, x or z (no collision with real words)
             if 5<=len(n_)<=10 and n_ not in used: used.add(n_); return n_
-    if cfg.inf_probe_file:
-        import json as _js
-        for ln_ in open(cfg.inf_probe_file):
-            o_=_js.loads(ln_); c_=o_['chain']; dn_=[i_ for i_,d_ in enumerate(PILE_DOMAINS) if o_['domain'].split()[0].lower() in d_.lower()]
-            d0_=dn_[0] if dn_ else rs_.randint(nd_); rl_=c_['relations']; ds_=[d0_]+[int(rs_.randint(nd_)) for _ in rl_[1:]]
-            ch.append({'names':c_['entities'][:len(rl_)+1],'rels':[r_['phrase'] for r_ in rl_],'doms':ds_,'facts':[(ds_[i_],r_['snippet_explicit']) for i_,r_ in enumerate(rl_)],'api':True})
-    else:
-        for k_ in range(int(cfg.inf_probes)):
-            h_=3 if rs_.rand()<float(cfg.inf_hops3) else 2; n_=[nm() for _ in range(h_+1)]; tp_=[_INF_REL[rs_.randint(len(_INF_REL))] for _ in range(h_)]
-            ds_=[int(rs_.randint(nd_))]
-            for _ in range(h_-1): ds_.append(int((ds_[-1]+1+rs_.randint(nd_-1))%nd_))   # consecutive facts in DIFFERENT domains
-            ch.append({'names':n_,'rels':[_inf_phrase(t_) for t_ in tp_],'doms':ds_,'facts':[(ds_[i_],tp_[i_].format(a=n_[i_],b=n_[i_+1])) for i_ in range(h_)],'api':False,'tp':tp_})
-        uf_=float(getattr(cfg,'inf_upd_frac',0.0)); rsu_=np.random.RandomState(int(cfg.seed)+3030)
-        for c_ in ch:                                                           # BELIEF REVISION probes (two-hop chains): from pass 2 the first fact changes
-            if uf_<=0 or len(c_['names'])!=3 or rsu_.rand()>=uf_: continue
-            A_=c_['names'][0]; t0_,t1_=c_['tp'][0],c_['tp'][1]
-            if rsu_.rand()<2/3:                                                 #   TRUE UPDATE: 'A r0 B' becomes 'A r0 B2' (planted as often as any fact), plus 'B2 r1 C2'
-                B2_,C2_=nm(),nm(); c_['upd']={'type':'true','B2':B2_,'C2':C2_,'new':[(c_['doms'][0],t0_.format(a=A_,b=B2_)),(c_['doms'][1],t1_.format(a=B2_,b=C2_))]}
-            else:                                                               #   NOISE: one single contradicting sentence 'A r0 B3'; the old fact stays
-                B3_=nm(); c_['upd']={'type':'noise','B3':B3_,'new':[(c_['doms'][0],t0_.format(a=A_,b=B3_))]}
+    for k_ in range(int(cfg.inf_probes)):
+        h_=3 if rs_.rand()<float(cfg.inf_hops3) else 2; n_=[nm() for _ in range(h_+1)]; tp_=[_INF_REL[rs_.randint(len(_INF_REL))] for _ in range(h_)]
+        ds_=[int(rs_.randint(nd_))]
+        for _ in range(h_-1): ds_.append(int((ds_[-1]+1+rs_.randint(nd_-1))%nd_))   # consecutive facts in DIFFERENT domains
+        ch.append({'names':n_,'rels':[_inf_phrase(t_) for t_ in tp_],'doms':ds_,'facts':[(ds_[i_],tp_[i_].format(a=n_[i_],b=n_[i_+1])) for i_ in range(h_)],'api':False,'tp':tp_})
+    uf_=float(getattr(cfg,'inf_upd_frac',0.0))
+    rsu_=np.random.RandomState(int(cfg.seed)+3030)
+    for c_ in ch:                                                           # BELIEF REVISION probes (two-hop chains): from pass 2 the first fact changes
+        if uf_<=0 or len(c_['names'])!=3 or rsu_.rand()>=uf_: continue
+        A_=c_['names'][0]; t0_,t1_=c_['tp'][0],c_['tp'][1]
+        if rsu_.rand()<2/3:                                                 #   TRUE UPDATE: 'A r0 B' becomes 'A r0 B2' (planted as often as any fact), plus 'B2 r1 C2'
+            B2_,C2_=nm(),nm(); c_['upd']={'type':'true','B2':B2_,'C2':C2_,'new':[(c_['doms'][0],t0_.format(a=A_,b=B2_)),(c_['doms'][1],t1_.format(a=B2_,b=C2_))]}
+        else:                                                               #   NOISE: one single contradicting sentence 'A r0 B3'; the old fact stays
+            B3_=nm(); c_['upd']={'type':'noise','B3':B3_,'new':[(c_['doms'][0],t0_.format(a=A_,b=B3_))]}
     kf_=float(getattr(cfg,'inf_probe_known',0.0))
     if kf_>0 and not cfg.inf_probe_file:                                        # KNOWN-WORD PROBES: the chain ends in a real place name the trunk already knows
         KP_=['Lisbon','Porto','Seville','Valencia','Bilbao','Lyon','Toulouse','Marseille','Bordeaux','Nantes','Geneva','Zurich','Basel','Vienna','Salzburg',
@@ -95,7 +89,7 @@ def inf_probes(cfg):
     if int(getattr(cfg,'inf_prose',0)) and not cfg.inf_probe_file:           # NATURAL-PROSE PROBES: the same facts, written as varied natural sentences
         _inf_prose(ch,cfg)
     _INF['probes']=ch
-    print(f"  [inference] {len(ch)} probe chains ({sum(len(c_['rels'])==3 for c_ in ch)} three-hop){' from '+cfg.inf_probe_file if cfg.inf_probe_file else ' (templated, invented names)'}"
+    print(f"  [inference] {len(ch)} probe chains ({sum(len(c_['rels'])==3 for c_ in ch)} three-hop){(' (templated, invented names)')}"
           f", {sum(len(c_['facts']) for c_ in ch)} fact sentences, each planted x{cfg.inf_plant_k} per pass into its domain's text")
     return ch
 _PROSE_STYLES=('template','clause','fronted','cleft','apposition','pronoun','tail','modifier')
