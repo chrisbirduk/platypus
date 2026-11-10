@@ -31,7 +31,7 @@ import torch
 import torch.nn.functional as F
 from platypus.common import _fail, _CONC_CF, _HO_TWO
 
-_NM = {'ready': False, 'X': None, 'force': None, 'hooked': None, 'stats': [0, 0]}
+_NM = {'ready': False, 'X': None, 'force': None, 'hooked': None, 'stats': [0, 0], 'mode': 'hidden', 'plan': None}
 _NM_PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
             'trained under': 'was taught by', 'is connected to': 'is tied to'}
 _NM_FORMS = ("Notes on {A}: {A} {r} ", "Q: {A} {r} whom? A: ", "In short, {A} {r} ", "{A} {r} ... ")   # self-written, relation-agnostic, never a test wording
@@ -83,9 +83,23 @@ def _nm_hook(m, inp, out):
         valid = (last >= 0) & (off < M['L'][il])
         dv = M['V'][il, off.clamp(min=0, max=M['V'].shape[1] - 1)] * valid[..., None].float()
         _NM['stats'][0] += int(fire.sum()); _NM['stats'][1] += B * T
+        if _NM['mode'] == 'logit':                                             # OUTPUT-LEVEL VALUE: the answer byte is boosted in the logits
+            _NM['plan'] = (il, off.clamp(min=0, max=M['ANS'].shape[1] - 1), valid); return None   #   (applied by the Model.forward wrapper)
         return out + dv.to(out.dtype)
     except Exception:
         _fail('inference.namemem:hook'); return None
+
+
+def _nm_boost(z, pl):
+    """OUTPUT-LEVEL VALUE (inf_nm_value logit): at each byte the memory covers, the stored answer byte is raised just enough to beat the
+    model's best other byte by inf_nm_margin nats, computed on the fly from the current logits - nothing fitted to the trunk can go stale"""
+    try:
+        il, off, valid = pl; M = _NM['M']; tg = M['ANS'][il, off]                # (B,T) target byte per position
+        zf = z.float(); za = zf.gather(-1, tg[..., None])[..., 0]; zo = zf.scatter(-1, tg[..., None], -1e9).max(-1).values
+        b = (zo - za + M['margin']).clamp(min=0) * valid.float()
+        return z + (torch.zeros_like(zf).scatter(-1, tg[..., None], b[..., None])).to(z.dtype)
+    except Exception:
+        _fail('inference.namemem:boost'); return z
 
 
 def _nm_install(model, cfg):
@@ -98,8 +112,11 @@ def _nm_install(model, cfg):
     if not getattr(Model.forward, '_nm_stash', False):
         f0 = Model.forward
         def fwd(s, x, domain=0):
-            _NM['X'] = x
-            return f0(s, x, domain)
+            _NM['X'] = x; _NM['plan'] = None
+            z = f0(s, x, domain)
+            pl = _NM['plan']; _NM['plan'] = None
+            if pl is not None and torch.is_tensor(z) and z.dim() == 3 and z.shape[:2] == pl[0].shape: z = _nm_boost(z, pl)
+            return z
         fwd._nm_stash = True; Model.forward = fwd
 
 
@@ -272,6 +289,11 @@ def nm_sleep(model, cfg, S_, S_slot):
     from platypus.inference.closed_form import _ws_eager
     back = _ws_eager(model); h = mo.register_forward_hook(hk); was = _NM['force']; _NM['force'] = False
     try:
+        if _NM['ready']:                                                       # STALE: last sleep's memory after this visit's training = what the
+            for md9 in ('hidden', 'logit'):                                    #   model's own store-on evaluations used (drift test, 10 Nov)
+                try: nm_readout(model, cfg, S_, S_slot, f"visit {int(model.__dict__.get('_visit', 0)) + 1} | STALE (built last sleep, before this rebuild) | value {md9}", mode=md9)
+                except Exception as e9: print(f"  [NAME MEMORY READOUT] stale unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+            _NM['force'] = False
         old = {e['key']: e for e in model.__dict__.get('_nm_ents', [])}
         ents = []
         for e in _nm_material(model, cfg, S_):
@@ -297,7 +319,11 @@ def nm_sleep(model, cfg, S_, S_slot):
         Lmax = max(len(e['V']) for e in ents); V = torch.zeros(len(ents), Lmax, D)
         for i, e in enumerate(ents): V[i, :len(e['V'])] = e['V'].float().cpu()
         dev = next(model.parameters()).device
-        M = dict(mN=mN, mQ=mQ, NMc=NMc, QMc=QMc, V=V, L=torch.tensor([len(e['V']) for e in ents]), th_n=th_n, **G)
+        ANS = torch.full((len(ents), Lmax), 46, dtype=torch.long)               # the answer bytes (and the full stop), for the output-level value
+        for i, e in enumerate(ents):
+            ab9 = list((e['ans'] + '.').encode('latin-1', 'replace'))[:Lmax]; ANS[i, :len(ab9)] = torch.tensor(ab9)
+        M = dict(mN=mN, mQ=mQ, NMc=NMc, QMc=QMc, V=V, L=torch.tensor([len(e['V']) for e in ents]), th_n=th_n, ANS=ANS,
+                 margin=float(getattr(cfg, 'inf_nm_margin', 1.0)), **G)
         _NM['M'] = {k: (v.to(dev) if torch.is_tensor(v) else v) for k, v in M.items()}; _NM['ready'] = True; _NM['ho'] = ho
         nf = sum(1 for e in ents if e['key'][0] == 'fact')
         sn9 = [e['seen'] for e in ents if e.get('seen')]; cd9 = model.__dict__.get('_nm_cand', (0, 0))
@@ -315,15 +341,24 @@ def nm_sleep(model, cfg, S_, S_slot):
         _fail('inference.namemem:sleep'); _NM['ready'] = False; print(f"  [NAME MEMORY] build failed, memory off ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
         _NM['force'] = was; h.remove(); back(); cap['on'] = False; cap['delta'] = None
-    try: nm_readout(model, cfg, S_, S_slot, f"visit {int(model.__dict__.get('_visit', 0)) + 1}")
+    _NM['mode'] = str(getattr(cfg, 'inf_nm_value', 'hidden'))
+    try:
+        for md9 in ('hidden', 'logit'): nm_readout(model, cfg, S_, S_slot, f"visit {int(model.__dict__.get('_visit', 0)) + 1} | FRESH (just rebuilt) | value {md9}", mode=md9)
     except Exception as e:
         _fail('inference.namemem:readout'); print(f"  [NAME MEMORY READOUT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
 # ---------------------------------------------------------------- readout
-def nm_readout(model, cfg, S_, S_slot, tag, n=48):
+def nm_readout(model, cfg, S_, S_slot, tag, n=48, mode=None):
     """held-out recall with the memory off / on, through the model's own forward (store off otherwise), and misfires"""
     if not _NM['ready']: return
+    md0 = _NM['mode']
+    if mode is not None: _NM['mode'] = mode
+    try: _nm_readout(model, cfg, S_, S_slot, tag, n)
+    finally: _NM['mode'] = md0
+
+
+def _nm_readout(model, cfg, S_, S_slot, tag, n):
     from platypus.inference.closed_form import _ws_batch, _ws_run
     ents = model.__dict__.get('_nm_ents', []); rs = np.random.RandomState(int(cfg.seed) + 6161)
     isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122
