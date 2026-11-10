@@ -443,6 +443,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 if _kfm_: kf_main_on(model,cfg,x.shape[0])
                 _carry_on(cfg,x.shape[0])
                 _nr_=bool(cfg.cd_skip_real and cfg.cd_w>0 and float(model.__dict__.get('_real_w',1.0))==0.0 and not _kfm_)
+                _cs_=float(getattr(cfg,'inf_carry',0.0))>0 and float(model.__dict__.get('_real_w',1.0))>0 and not _nr_   # 10 Nov CARRY THE SUBJECT (inference.carry)
+                if _cs_:
+                    from platypus.inference.carry import carry_arm
+                    carry_arm(model,cfg)
                 try:
                     with _rf('real_forward'):
                         if _nr_:
@@ -456,6 +460,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             loss=F.cross_entropy(zc_.reshape(-1,256),y.reshape(-1))
             _rw_=float(model.__dict__.get('_real_w',1.0))
             if _rw_!=1.0: loss=loss*_rw_                                                     # REAL-TEXT LOSS WEIGHT (real_w_pass)
+            if float(getattr(cfg,'inf_carry',0.0))>0:
+                from platypus.inference.carry import carry_loss,carry_disarm
+                if locals().get('_cs_'): loss=loss+float(cfg.inf_carry)*carry_loss(model,cfg,x)
+                carry_disarm()
             klm=0.0
             fk_=bool(cfg.fast_kl and getattr(model,'_hstk',None) is not None and cfg.shunt_kl_mode=='fixed')
             skip_lwf_=False

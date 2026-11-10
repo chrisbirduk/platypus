@@ -289,6 +289,9 @@ def _nm_gate(model, cfg, ents, S_, S_slot, cap, seed):
 def nm_sleep(model, cfg, S_, S_slot):
     """the end-of-sleep rebuild (see the module note)"""
     t0 = time.time(); _nm_install(model, cfg)
+    if float(getattr(cfg, 'inf_carry', 0.0)) > 0:
+        from platypus.inference.carry import carry_report
+        carry_report(f"visit {int(model.__dict__.get('_visit', 0)) + 1}")
     mo = _nm_layer(model, cfg); D = mo.weight.shape[0]; cap = {'on': False, 'k': [], 'delta': None}
     def hk(m, i, o):
         if cap['on']: cap['k'].append(i[0].detach())

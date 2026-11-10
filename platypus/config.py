@@ -519,6 +519,12 @@ class Config:
                                     #   byte raised to beat the best other byte by inf_nm_margin nats, nothing fitted (local full run, 10 Nov: recall
                                     #   as good or better, but misfires cost 3-4x more on a full memory; staleness is mostly the keys, in both)
     inf_nm_margin=1.0               #   name memory, logit value: margin in nats
+    inf_carry=0.0                   # 10 Nov CARRY THE SUBJECT (inference.carry; off): weight of an auxiliary loss teaching the trunk to keep the latest name
+                                    #   readable at the bytes after it (InfoNCE among the batch's names, at the edited layer's input)
+    inf_carry_dist=32               #   carry: bytes after a name that are trained
+    inf_carry_n=128                 #   carry: sampled bytes per batch
+    inf_carry_tau=0.1               #   carry: InfoNCE temperature
+    inf_carry_dim=128               #   carry: projection size
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
                                     #   that domain's private units OFF, on the visit's VERIFIED windows (the NREM reservoir; needs nrem_res > 0)
