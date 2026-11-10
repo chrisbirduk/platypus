@@ -121,6 +121,9 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         if int(getattr(cfg,'inf_name_mem',0)):                                  # 10 Nov NAME MEMORY (inference.namemem): rebuilt after this sleep's weight changes
             try:
                 from platypus.inference.namemem import nm_sleep
+                if int(getattr(cfg,'inf_distill',0)):                           # 10 Nov DISTILLATION (inference.distill): the memory's facts taught to the
+                    from platypus.inference.distill import distill_sleep         #   trunk before the memory is rebuilt on the new weights
+                    distill_sleep(model,cfg,_inf_store(model),S_slot,vals,t,ts,olds_)
                 nm_sleep(model,cfg,_inf_store(model),S_slot)
             except Exception as e9_: _fail('inference.sleep:namemem'); print(f"  [NAME MEMORY] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if cai9_ is not None:                                                   # CAI TEST: after the whole sleep (inference, REM, writes, replay, closed-form edits)

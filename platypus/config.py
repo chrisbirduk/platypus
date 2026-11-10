@@ -526,6 +526,13 @@ class Config:
     inf_carry_tau=0.1               #   carry: InfoNCE temperature
     inf_carry_dim=128               #   carry: projection size
     inf_carry_every=1               #   carry: apply the loss every this many training steps
+    inf_distill=0                   # 10 Nov DISTILLATION IN SLEEP (inference.distill; off): the name memory's facts taught to the trunk's blocks each sleep in
+                                    #   self-written wordings (never a test wording), anchors on stored sentences, a brake with rollback
+    inf_distill_steps=40            #   distillation: steps per sleep
+    inf_distill_rows=16             #   distillation: questions per step
+    inf_distill_lr=0.03             #   distillation: learning rate as a multiple of lr
+    inf_distill_anchor=1.0          #   distillation: weight of the anchor KL on stored sentences
+    inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
                                     #   that domain's private units OFF, on the visit's VERIFIED windows (the NREM reservoir; needs nrem_res > 0)
