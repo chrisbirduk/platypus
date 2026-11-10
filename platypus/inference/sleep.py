@@ -121,6 +121,9 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         if int(getattr(cfg,'inf_name_mem',0)):                                  # 10 Nov NAME MEMORY (inference.namemem): rebuilt after this sleep's weight changes
             try:
                 from platypus.inference.namemem import nm_sleep
+                if float(getattr(cfg,'inf_distill_wake',0.0))>0:               # 10 Nov INTERLEAVED DISTILLATION: report the visit, rebuild the question pool
+                    from platypus.inference.distill import distill_wake_sleep
+                    distill_wake_sleep(model,cfg,_inf_store(model),S_slot)
                 if int(getattr(cfg,'inf_distill',0)):                           # 10 Nov DISTILLATION (inference.distill): the memory's facts taught to the
                     from platypus.inference.distill import distill_sleep         #   trunk before the memory is rebuilt on the new weights
                     distill_sleep(model,cfg,_inf_store(model),S_slot,vals,t,ts,olds_)

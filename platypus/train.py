@@ -468,6 +468,9 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 from platypus.inference.carry import carry_loss,carry_disarm
                 if locals().get('_cs_'): loss=loss+float(cfg.inf_carry)*carry_loss(model,cfg,x)
                 carry_disarm()
+            if float(getattr(cfg,'inf_distill_wake',0.0))>0 and _rw_>0:     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): a few question rows about stored
+                from platypus.inference.distill import distill_wake_loss          #   facts in this step's loss (same backward and optimiser as the real text)
+                loss=loss+float(cfg.inf_distill_wake)*distill_wake_loss(model,cfg)
             klm=0.0
             fk_=bool(cfg.fast_kl and getattr(model,'_hstk',None) is not None and cfg.shunt_kl_mode=='fixed')
             skip_lwf_=False

@@ -128,3 +128,58 @@ def distill_sleep(model, cfg, S_, S_slot, vals, t, ts, olds_):
         _NM['force'] = was_nm
         if had: _INFM['force'] = fz
         else: _INFM.pop('force', None)
+
+
+# ---------------------------------------------------------------- INTERLEAVED (wake) distillation
+def distill_wake_sleep(model, cfg, S_, S_slot):
+    """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
+    answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
+    question rows for the next visit; during the visit, distill_wake_loss adds inf_distill_wake_rows of them to each real-text training step
+    (same backward, same optimiser - its Fisher whitening, the real-text loss and the dream rows apply - no burst, no separate optimiser)"""
+    import zlib
+    from platypus.inference.namemem import _nm_material, _NM
+    vis = int(model.__dict__.get('_visit', 0)); D = model.__dict__.get('_dtw')
+    allm = _nm_material(model, cfg, S_)
+    ctl = lambda e: zlib.crc32(repr(e['key']).encode()) % 5 == 0
+    ents = [e for e in allm if not ctl(e)]; held = [e for e in allm if ctl(e)]
+    if D is not None and D.get('probe'):
+        was = _NM['force']; _NM['force'] = False
+        try:
+            r = _dt_recall(model, S_slot, D['probe']); h = _dt_recall(model, S_slot, D['hprobe']) if D.get('hprobe') else None
+        finally: _NM['force'] = was
+        f = lambda x: " | ".join(f"{k} {v[0]:.2f} ({v[1]})" for k, v in x.items()) if x else "none"
+        ls = D['losses']
+        print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] last visit: {D['n']} training steps with {int(getattr(cfg, 'inf_distill_wake_rows', 4))} question rows each "
+              f"(weight {float(cfg.inf_distill_wake):g}), answer loss {np.mean(ls[:20]) if ls else float('nan'):.3f} (first 20) -> {np.mean(ls[-20:]) if ls else float('nan'):.3f} (last 20) | "
+              f"from the trunk, test wordings, after the visit: {len(D['probe'])} taught facts {f(r)} || CONTROL, {len(D['hprobe'])} never-taught {f(h)}", flush=True)
+    rows = []
+    for e in ents:
+        for fm in _DT_FORMS:
+            rows.append(((fm.format(A=e['A'], r=e['r'])).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), int(S_slot(e['d']))))
+    rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
+    probe = [ents[int(i)] for i in rs.choice(len(ents), min(32, len(ents)), replace=False)] if ents else []
+    hprobe = [held[int(i)] for i in rs.choice(len(held), min(32, len(held)), replace=False)] if held else []
+    bysl = {}
+    for rw in rows: bysl.setdefault(rw[2], []).append(rw)
+    model.__dict__['_dtw'] = dict(bysl=bysl, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], probe=probe, hprobe=hprobe)
+
+
+def distill_wake_loss(model, cfg):
+    """inf_distill_wake_rows question rows (one slot, drawn from the pool) - cross-entropy on the answer bytes only; 0.0 when no pool"""
+    D = model.__dict__.get('_dtw')
+    if not D or not D['bysl']: return 0.0
+    try:
+        from platypus.inference.closed_form import _ws_batch, _ws_run
+        k = int(getattr(cfg, 'inf_distill_wake_rows', 4)); rs = D['rs']; sls = list(D['bysl']); sl = sls[rs.randint(len(sls))]; pool = D['bysl'][sl]
+        items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False)]
+        X, M = _ws_batch(model, [p + a for p, a, _ in items]); lg = _ws_run(model, X, sl, grad_=True)
+        rows, pos = [], []
+        for r9, (p, a, _) in enumerate(items):
+            p0 = len(p) - 1
+            for j in range(len(a)):
+                if p0 + j < lg.shape[1]: rows.append(r9); pos.append(p0 + j)
+        rows = torch.tensor(rows, device=X.device); pos = torch.tensor(pos, device=X.device)
+        loss = F.cross_entropy(lg[rows, pos], X[rows, pos + 1]); D['n'] += 1; D['losses'].append(float(loss.detach()))
+        return loss
+    except Exception:
+        _fail('inference.distill:wake'); return 0.0

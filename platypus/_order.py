@@ -710,6 +710,8 @@ ORDER = (
     ('inference.distill', '_dt_items'),
     ('inference.distill', '_dt_recall'),
     ('inference.distill', 'distill_sleep'),
+    ('inference.distill', 'distill_wake_sleep'),
+    ('inference.distill', 'distill_wake_loss'),
     ('inference.sticky', 'sticky_route'),
     ('inference.sticky', 'sticky_router_readout'),
     ('inference.sticky', '_readout'),

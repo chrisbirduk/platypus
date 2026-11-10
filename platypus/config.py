@@ -533,6 +533,9 @@ class Config:
     inf_distill_lr=0.01             #   distillation: learning rate as a multiple of lr (first dose; then a third, a ninth if over the brake; GPU 10 Nov: x0.03 cost +0.098 BPC)
     inf_distill_anchor=1.0          #   distillation: weight of the anchor KL on stored sentences
     inf_distill_arows=16            #   distillation: anchor rows per step
+    inf_distill_wake=0.0            # 10 Nov INTERLEAVED DISTILLATION (off): weight of a few question rows about stored facts added to every real-text
+                                    #   training step (same backward and optimiser: Fisher whitening, real-text loss and dream rows apply; no burst)
+    inf_distill_wake_rows=4         #   interleaved distillation: question rows per training step
     inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
