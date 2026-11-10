@@ -9,9 +9,9 @@ ENTRIES (one per fact): the system's own live conclusions ('A is connected to C'
   inf_nm_min_seen sentences, most seen first - on the GPU the newest were prose co-occurrences seen once), up to inf_nm_max.
 KEY (two parts): the edited layer's input (blocks[inf_cf_layer].mlp_out) at the subject name's last byte, and at the byte where the
   answer starts; each averaged over the entry's written wordings.
-VALUE (inf_nm_value): 'logit' (default since 10 Nov) - the entry's answer bytes; at each byte the memory covers, the stored byte is
+VALUE (inf_nm_value): 'hidden' (default) - see below; 'logit' - the entry's answer bytes; at each byte the memory covers, the stored byte is
   raised just enough to beat the model's best other byte by inf_nm_margin nats, from the current logits, so nothing fitted can go stale
-  (on the GPU no fitted hidden change survived the first visit, and fitting cost about 20 GB of sleep peak). 'hidden' - the entry's own
+  (local full run: recall as good or better, misfires 3-4x costlier on a full memory; staleness is mostly the keys). 'hidden' - the entry's own
   change to that layer's output at the answer bytes, fitted on its written wordings (inf_cf_steps Adam steps, self-contrast inf_nm_selfc).
 EVERY SLEEP (after the closed-form edit): all keys are re-read from the current weights (the trunk keeps learning, so keys drift);
   each kept value is checked (applied at its written wordings, does it still produce the answer?) and refitted only if not; new entries
@@ -170,7 +170,7 @@ def _nm_texts(ents):
     return T
 
 
-def _nm_fit_values(model, cfg, ents, idx, S_slot, cap, D, bs=24):
+def _nm_fit_values(model, cfg, ents, idx, S_slot, cap, D, bs=8):
     """fits V for ents[i], i in idx, on their written wordings; batched, one optimiser per batch of entries, gradients to the values only"""
     lr = float(getattr(cfg, 'inf_cf_lr', 0.5)) * 0.1; st = int(getattr(cfg, 'inf_cf_steps', 25)); selfc = float(getattr(cfg, 'inf_nm_selfc', 1.0))
     bysl = {}
@@ -307,9 +307,11 @@ def nm_sleep(model, cfg, S_, S_slot):
         mne = int(getattr(cfg, 'inf_nm_min_entries', 32))                     # a gate trained on a handful of facts fires everywhere (local, 10 Nov:
         if len(ents) < mne: _NM['ready'] = False; print(f"  [NAME MEMORY] {len(ents)} facts (< {mne}): not built yet, memory off", flush=True); return   #   11 entries, 54 fires / 1000 bytes)
         _nm_keys_and_check(model, ents, S_slot, cap)
-        lgt = str(getattr(cfg, 'inf_nm_value', 'logit')) == 'logit'            # the output-level value fits nothing (no gradient passes through the model)
+        lgt = str(getattr(cfg, 'inf_nm_value', 'hidden')) == 'logit'            # the output-level value fits nothing (no gradient passes through the model)
         nfit = [] if lgt else [i for i, e in enumerate(ents) if e.get('V') is None or not e.get('ok')]; nnew = sum(1 for e in ents if e.get('V') is None)
-        if nfit: _nm_fit_values(model, cfg, ents, nfit, S_slot, cap, D)
+        if nfit:
+            _nm_fit_values(model, cfg, ents, nfit, S_slot, cap, D)            # batches of 8 facts (was 24: about +20 GB of sleep peak on the GPU)
+            if torch.cuda.is_available(): torch.cuda.empty_cache()
         ents = [e for e in ents if e.get('nk') is not None and (lgt or e.get('V') is not None)]
         model.__dict__['_nm_ents'] = ents
         G, O, ho = _nm_gate(model, cfg, ents, S_, S_slot, cap, int(cfg.seed) + 5151 + int(model.__dict__.get('_visit', 0)))
@@ -349,7 +351,7 @@ def nm_sleep(model, cfg, S_, S_slot):
         _fail('inference.namemem:sleep'); _NM['ready'] = False; print(f"  [NAME MEMORY] build failed, memory off ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
         _NM['force'] = was; h.remove(); back(); cap['on'] = False; cap['delta'] = None
-    _NM['mode'] = str(getattr(cfg, 'inf_nm_value', 'logit')); vt9 = f"visit {int(model.__dict__.get('_visit', 0)) + 1}"
+    _NM['mode'] = str(getattr(cfg, 'inf_nm_value', 'hidden')); vt9 = f"visit {int(model.__dict__.get('_visit', 0)) + 1}"
     try:
         for md9 in (('logit',) if (_NM.get('M') or {}).get('V') is None else ('hidden', 'logit')): nm_readout(model, cfg, S_, S_slot, f"{vt9} | FRESH (just rebuilt) | value {md9}", mode=md9)
         _NM['own_name'] = True                                                 # READOUT: the gate variant 'the CHOSEN fact's own name must match' (not active in the model)
