@@ -33,5 +33,7 @@
  "inf_jx_gen_aud": 0.5,
  "_inf_jx_gen_aud": "weight of the audit-pair InfoNCE on arm G: question form 'So A is connected to ' -> the premise the audit verified, against other sentences naming the same name (toy, 2 seeds: held-out wording 0.08 -> 0.36, two-hop 0.43 -> 0.49)",
  "inf_distill_wake": 0.0,
- "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

@@ -91,5 +91,7 @@
  "inf_distill_bridge_syn": 1,
  "_inf_distill_bridge_syn": "the ONE model change: the bridges of the held-out chains (46 on seed 4), HALF by a hash of the name, get one fixed INVENTED attribute ('B keeps the green ledger.') after the answer in rows where B is the answer and before the question where B is the subject (BRACE used generated descriptors); the other half get none. The planted bridge names occur only in their own chain, so real descriptors do not exist (cg27a_distillbr: 1-2 of 19 bridges). Invented attributes enter the trunk only through question rows, never the store",
  "inf_distill_lchain": 300,
- "_inf_distill_lchain": "readout: LATENT CHAINING - trunk name codes; P(e_A, r) -> e_B trained on taught one-hop facts (InfoNCE, 300 steps), applied twice; Q(e_A, r1, r2) -> e_C trained on the chains the system concluded, applied once; both tested on the chains with no conclusion (the held-out chains), true C among 20 names; split by anchored bridge. The JEPA-style comparison for the trunk's own composition (local lab readout: P twice 0.34, chance 0.05)"
+ "_inf_distill_lchain": "readout: LATENT CHAINING - trunk name codes; P(e_A, r) -> e_B trained on taught one-hop facts (InfoNCE, 300 steps), applied twice; Q(e_A, r1, r2) -> e_C trained on the chains the system concluded, applied once; both tested on the chains with no conclusion (the held-out chains), true C among 20 names; split by anchored bridge. The JEPA-style comparison for the trunk's own composition (local lab readout: P twice 0.34, chance 0.05)",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

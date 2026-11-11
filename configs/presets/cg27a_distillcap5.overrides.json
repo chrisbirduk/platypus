@@ -81,5 +81,7 @@
  "inf_distill_ever": 256,
  "_inf_distill_ever": "readout: recall over a stable sample of every fact ever taught (and control ever held), by still/left the pool and by age",
  "inf_eval_chunk": 128,
- "_inf_eval_chunk": "memory: the probe evaluation in chunks of 128 rows (the 70 GB sleep peak); evaluation results unchanged"
+ "_inf_eval_chunk": "memory: the probe evaluation in chunks of 128 rows (the 70 GB sleep peak); evaluation results unchanged",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

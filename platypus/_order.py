@@ -442,6 +442,8 @@ ORDER = (
     ('inference.probes', '_bench'),
     ('inference.probes', 'inf_plant'),
     ('inference.probes', '_inf_bench_readout'),
+    ('inference.probes', '_RW_REL'),
+    ('inference.probes', 'inf_rule_world'),
     ('inference.probes', '_inf_plant_probes'),
     ('inference.sentences', '_inf_store'),
     ('inference.sentences', 'inf_store_add'),

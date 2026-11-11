@@ -37,5 +37,7 @@
  "cd_mem_hint": 0,
  "_cd_mem_hint": "memory hints stay off: locally they never fired (replays failed before a verified anchor); N > 0 lets the stored sentence matching the verified bytes before a replay's first wrong byte supply up to N bytes",
  "inf_distill_wake": 0.0,
- "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

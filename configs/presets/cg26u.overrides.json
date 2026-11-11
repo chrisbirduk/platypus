@@ -27,5 +27,7 @@
  "cd_klclass": 25,
  "_cd_klclass": "REPLAY SIGNAL BY BYTE CLASS readout: every 25th conduit call, share of the teacher KL and byte loss on space/punctuation, digits, function words, names and other words",
  "inf_distill_wake": 0.0,
- "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

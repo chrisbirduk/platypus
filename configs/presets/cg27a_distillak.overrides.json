@@ -89,5 +89,7 @@
  "inf_distill_comp_probe": 64,
  "_inf_distill_comp_probe": "readout: COMPOSITION PROBE on chains of taught facts with no conclusion (the held-out chains)",
  "inf_distill_lchain": 300,
- "_inf_distill_lchain": "readout: LATENT CHAINING - P(e_A, r) -> e_B on taught facts, applied twice; Q(e_A, r1, r2) -> e_C learned from the system's concluded chains; tested on the unconcluded chains, true C among 20 names (chance 0.05)"
+ "_inf_distill_lchain": "readout: LATENT CHAINING - P(e_A, r) -> e_B on taught facts, applied twice; Q(e_A, r1, r2) -> e_C learned from the system's concluded chains; tested on the unconcluded chains, true C among 20 names (chance 0.05)",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

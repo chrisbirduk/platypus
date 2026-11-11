@@ -17,5 +17,7 @@
  "inf_jx_pool": 200000,
  "_inf_jx_pool": "the most recent live stored sentences that are keyed",
  "inf_distill_wake": 0.0,
- "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

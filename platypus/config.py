@@ -548,6 +548,7 @@ class Config:
     inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
     inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
     inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each
     inf_distill_comp_probe=0        #   11 Nov READOUT: COMPOSITION PROBE - N chains of taught facts (A-B, B-C) with no conclusion for A-C, asked 'A is connected to'

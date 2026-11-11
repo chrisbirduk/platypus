@@ -31,5 +31,7 @@
  "inf_jx_ctxdiag": 1,
  "_inf_jx_ctxdiag": "CONTEXT DIAGNOSTIC line: one-hop picks by summed and by mean byte log-probability, the planted fact sentence in context, whether the stored true sentence holds the fact, share of wrong picks that are shorter names, two examples",
  "inf_distill_wake": 0.0,
- "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

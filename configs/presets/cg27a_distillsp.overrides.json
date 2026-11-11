@@ -83,5 +83,7 @@
  "inf_distill_wake_spaced": 1,
  "_inf_distill_wake_spaced": "the ONE model change against cg27a_distillcap: SPACED REHEARSAL of FACTS - a fact the trunk answers in a taught wording at a sleep has its sampling interval doubled (to 16), a missed fact goes back to 1; CONCLUSIONS are always rehearsed (inf_distill_wake_spaced_conc 0, the default: their check passes through the closed-form edits, and the question rows are their only recall without the edits - GPU control: 0.15 vs 0.00). Local short runs: taught 0.19 vs 0.11 at the same cost",
  "inf_eval_chunk": 128,
- "_inf_eval_chunk": "memory: the probe evaluation's beam search and name scoring in chunks of 128 rows (the 70 GB sleep peak was one pass of 134 probes x 26 beams); evaluation results unchanged"
+ "_inf_eval_chunk": "memory: the probe evaluation's beam search and name scoring in chunks of 128 rows (the 70 GB sleep peak was one pass of 134 probes x 26 beams); evaluation results unchanged",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }
