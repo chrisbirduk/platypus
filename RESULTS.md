@@ -440,6 +440,34 @@ the 0.81 expected from two noisy hops). The learned composite operator, by contr
 lookup is memorised per entity; only the composed operators generalise. Inference here comes from discovering which relations compose and
 then composing - not from training the conclusion.
 
+### Composition failure modes, fixed and tested (tools/relmod_hard.py, 11 November; the relational module _rm_mine)
+
+The failure analysis predicted where operator composition breaks: whole-matrix distances squeeze the contrast; paraphrase splits halve
+the evidence; a matrix cannot say "except self"; inverse and missing hops snap to the most similar name; written partial-rule facts
+confirm their own rule; noise compounds per inferred hop. A HARD RULE WORLD plants each one: 4-generation families (great-grandchild =
+three hops), the inverse "is the parent of" (one-to-many), siblings (child o parent-of, minus self), supervision said as "is supervised
+by" / "reports to" / both, a 70% partial rule (mentored), two arbitrary relations; 30% of the groups NEW (one-hop facts only); half of
+every composite held out elsewhere; 840 people. Rules graded by their TRUE confidence on the full world.
+
+| seed 0, clean | rules TRUE / PARTIAL / FALSE | facts that would be written, precision | held-out recall: grandchild / great-grandchild / sibling / overseen |
+|---|---|---|---|
+| as first built | 8 / 5 / 0 (the paraphrase split gives 4 copies of one rule) | 274, 1.00 | 232/232 / 64/156 / **0/273** / 177/177 |
+| fixed, round 1 | 6 / 3 / 0 (paraphrases merged) | **746, 1.00** | 232/232 / 64/156 / **273/273** / 177/177 |
+| fixed, round 2 (round 1's writes as hops, never evidence) | 6 / 3 / 0 | 92 more, **1.00** | 232/232 / **156/156** / 273/273 / 177/177 |
+| round 2 WITHOUT provenance | 7 / 2 / **2** ("mentored" merged into "overseen") | 92, 1.00 | mentored 0/174 |
+| seed 1, 10% wrong parents: fixed round 1 / round 2 | 6 / 2 / 0 both | 729 at **0.96** / 97 at **0.79** | great-grandchild 132/156 |
+
+Fixes kept: paraphrase merge (objects agree on 80%+ of shared subjects); rule distance on the subjects' codes (half the null-beaters of
+the whole-matrix distance in the stress check); except-self at each snap; every relation beating the null a candidate (a strict and a
+partial rule can share a product); the functional check counts only chains whose middle is a known subject AND needs an observed chain
+ending on someone else (rejects parent-of o child = self and grandchild o grandchild, both FALSE rules otherwise; a distance-to-identity
+test was tried and removed: it also killed the true sibling rule, child o parent-of being half identity); written facts carry
+PROVENANCE (hops, never evidence); WRITES only from a rule verified at 0.9+ through STORED premises - the latent chain finds and verifies
+rules but never writes alone (57 of 206 latent-only round-2 writes were wrong: it snaps through a missing hop). Not fixed: noise compounds
+through inferred premises (0.96 -> 0.79 at the second round); corroboration by a second rule did not help (0.77, recall down) because
+both routes share the corrupted fact - limit inference depth where sources are noisy (props carry a depth flag). Partial rules (true
+confidence 0.5-0.7) are found and labelled but not written.
+
 Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
 phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
 separable from where the random phases fell in 24-step visits; a full-run trio with bounded phases is queued. Spindle-style writing

@@ -865,118 +865,204 @@ def _dw_opalg(model, cfg, S_, ents, held, vis):
         _fail('inference.distill:opalg'); print(f"  [OPERATOR ALGEBRA] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
-def _rm_fit(rows, N, R, steps, seed, D=64):
+def _rm_fit(rows, N, R, steps, seed, D=64, ortho=()):
     """relational module fit: a free code per name (N x D, unit norm) and a linear operator per relation (R x D x D), trained JEPA-style:
-    the operator maps the subject's code to the object's (InfoNCE over every name, temperature 0.1) plus an isotropy term (SIGReg-like)"""
+    the operator maps the subject's code to the object's (InfoNCE over every name, temperature 0.1) plus an isotropy term (SIGReg-like);
+    relations in ORTHO (one-to-one: each subject one object, each object one subject) are also kept near-orthogonal, so their products
+    stay well-conditioned over several hops (many-to-one relations must stay singular and are left free)"""
     g = torch.Generator().manual_seed(seed); rr = np.random.RandomState(seed)
     E = torch.nn.Parameter(torch.randn(N, D, generator=g) * 0.1)
     P = torch.nn.Parameter(torch.eye(D).repeat(R, 1, 1) + 0.01 * torch.randn(R, D, D, generator=g))
-    opt = torch.optim.Adam([E, P], lr=3e-3); T = torch.tensor(rows, dtype=torch.long)
+    opt = torch.optim.Adam([E, P], lr=3e-3); T = torch.tensor(rows, dtype=torch.long); oi = torch.tensor(sorted(ortho), dtype=torch.long)
     for _ in range(steps):
         b = T[torch.from_numpy(rr.randint(len(rows), size=min(256, len(rows))))]; z = F.normalize(E, dim=-1)
         pred = F.normalize(torch.einsum('bd,bde->be', z[b[:, 1]], P[b[:, 0]]), dim=-1)
         zc = z - z.mean(0); cov = zc.t() @ zc / N
         loss = F.cross_entropy(pred @ z.t() / 0.1, b[:, 2]) + 0.1 * ((cov * N / D - torch.eye(D)) ** 2).mean()
+        if len(oi): Po = P[oi]; loss = loss + 0.1 * ((Po @ Po.transpose(1, 2) - torch.eye(D)) ** 2).mean()
         opt.zero_grad(); loss.backward(); opt.step()
     with torch.no_grad(): return F.normalize(E.detach(), dim=-1), P.detach()
+
+
+def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xself=True, ortho=True, derived=None, guards=True):
+    """THE RELATIONAL MODULE'S MINER (11 Nov; used by _dw_relmod and tools/relmod_hard.py). pairs = {relation phrase: set of (a, b)}.
+    The fixes from the failure analysis, each switchable for the comparison: MERGE - relation phrases whose objects agree on 80%+ of 3+
+    shared subjects are one relation (a paraphrase split halves each one's facts and hides rules that cross the two phrasings);
+    DATA_DIST - a product's distance to each operator is measured on the CODES OF REAL SUBJECTS of its first relation, not over the whole
+    matrix (off the data every operator stays near its identity start, which squeezes the contrast between relations); XSELF - the
+    subject and the middle name are excluded at each snap ('except self': a matrix cannot express it, the snap can); ORTHO - one-to-one
+    relations kept near-orthogonal (_rm_fit). Always: snap to the nearest name at EVERY hop (resets the residual instead of compounding
+    it); one-to-many facts are sets (a proposal is right if it is one of the true objects); a rule must beat 3 shuffled-fact nulls by
+    0.05 AND predict >= 0.5 of 3+ of its composite facts by the chain (the functional check). GUARDS (from the hard rule world): the
+    check counts only chains whose snapped middle is a known subject of r2 (no snapping through a missing hop), and at least half of the
+    checked subjects must have an OBSERVED chain ending on someone other than themselves (with 'except self', r o r-inverse would
+    otherwise become 'the most similar person', and grandchild o grandchild 'the nearest root'; a distance-to-identity test removed the
+    true sibling rule too: child o parent-of is half identity);
+    WRITES (the step-4 policy, readout here): only from a rule that predicts 0.9+ of its observed composite facts AND through STORED
+    premises (observed or written before) - the latent chain finds and verifies rules but never writes alone (it snaps through missing
+    hops: 57 of 206 latent-only round-2 writes in the hard world were wrong, every stored-premise write right).
+    DERIVED = facts the module itself proposed earlier (step 4): used as hops for later chains (three-hop closure), never as evidence -
+    not fitted, not merged, not a target of the check (written partial-rule facts would otherwise confirm their own rule). Returns a dict."""
+    out = dict(rels=[], merged=[], rules=[], cand=0, cand_alt=0, npairs=0, one=float('nan'), props=[], near=None, N=0, nfacts=0)
+    derived = derived or set(); allp = pairs; pairs = {r: {x for x in v if (r,) + tuple(x) not in derived} for r, v in allp.items()}
+    rels0 = sorted(pairs, key=lambda r: (-len(pairs[r]), r))
+    sub0 = {r: {} for r in rels0}
+    for r in rels0:
+        for a, b in pairs[r]: sub0[r].setdefault(a, set()).add(b)
+    par = {r: r for r in rels0}
+    def find(r):
+        while par[r] != r: r = par[r]
+        return r
+    if merge:
+        for i, r in enumerate(rels0):
+            for r2 in rels0[i + 1:]:
+                sh = [a for a in sub0[r2] if a in sub0[r]]
+                if len(sh) >= 3 and sum(1 for a in sh if sub0[r][a] & sub0[r2][a]) >= 0.8 * len(sh) and find(r) != find(r2):
+                    par[find(r2)] = find(r); out['merged'].append((r2, r))
+    cls = {}; cla = {}
+    for r in rels0: cls.setdefault(find(r), set()).update(pairs[r]); cla.setdefault(find(r), set()).update(allp[r])
+    rels = [r for _, r in sorted(((len(v), r) for r, v in cls.items() if len(v) >= 4), key=lambda x: (-x[0], x[1]))[:24]]
+    out['rels'] = rels
+    if len(rels) < 2: return out
+    sub = {r: {} for r in rels}; obj = {r: {} for r in rels}; suba = {r: {} for r in rels}
+    for r in rels:
+        for a, b in cls[r]: sub[r].setdefault(a, set()).add(b); obj[r].setdefault(b, set()).add(a)
+        for a, b in cla[r]: suba[r].setdefault(a, set()).add(b)
+    names = sorted({n for r in rels for a, b in cla[r] for n in (a, b)}); ix = {n: i for i, n in enumerate(names)}; N = len(names)
+    rows = sorted((k, ix[a], ix[b]) for k, r in enumerate(rels) for a, b in cls[r]); out['N'] = N; out['nfacts'] = len(rows)
+    oneone = [k for k, r in enumerate(rels) if ortho and np.mean([len(v) == 1 for v in sub[r].values()]) >= 0.9 and np.mean([len(v) == 1 for v in obj[r].values()]) >= 0.9]
+    out['ortho'] = [rels[k] for k in oneone]
+    E, P = _rm_fit(rows, N, len(rels), steps, seed, D, oneone)
+    def shuf(s):
+        rs = np.random.RandomState(seed + 31 * s); o = []
+        for k in range(len(rels)):
+            kr = [x for x in rows if x[0] == k]; tg = [x[2] for x in kr]; rs.shuffle(tg); o += [(k, x[1], t) for x, t in zip(kr, tg)]
+        return o
+    nulls = [_rm_fit(shuf(s), N, len(rels), steps, seed + s + 1, D, oneone) for s in range(3)]
+    S = [torch.tensor([ix[a] for a in sub[r]], dtype=torch.long) for r in rels]
+    def dists(Em, Pm, i, j, on_data):
+        M = Pm[i] @ Pm[j]                                                      # last entry: the IDENTITY (the guard's competitor)
+        if not on_data: return np.append((torch.norm(Pm - M, dim=(1, 2)) / torch.norm(M)).numpy(), float(torch.norm(torch.eye(M.shape[0]) - M) / torch.norm(M)))
+        Z = Em[S[i]]; Y = Z @ M; A = torch.einsum('nd,kde->kne', Z, Pm)
+        return np.append((torch.norm(A - Y, dim=(1, 2)) / torch.norm(Y)).numpy(), float(torch.norm(Z - Y) / torch.norm(Y)))
+    def chain(srcs, i, j):                                                     # compose, snap, compose, snap (excluding A and B: 'except self')
+        a_ = torch.tensor([ix[a] for a in srcs]); ar = torch.arange(len(srcs))
+        s1 = F.normalize(E[a_] @ P[i], dim=-1) @ E.t()
+        if xself: s1[ar, a_] = -9
+        t1 = s1.topk(2, dim=-1); B = t1.indices[:, 0]
+        s2 = F.normalize(E[B] @ P[j], dim=-1) @ E.t()
+        if xself: s2[ar, B] = -9; s2[ar, a_] = -9
+        t2 = s2.topk(2, dim=-1)
+        return [names[int(x)] for x in B], [names[int(x)] for x in t2.indices[:, 0]], torch.minimum(t1.values[:, 0] - t1.values[:, 1], t2.values[:, 0] - t2.values[:, 1])
+    def fcheck(i, j, b):                                                       # evidence: OBSERVED facts only (derived ones never count)
+        te = [a for a in sub[rels[b]] if a in sub[rels[i]]]
+        if not te: return 0.0, 0
+        if guards:                                                             # GUARD: the chain must EXIST in the observed facts and end
+            ex = sum(1 for a in te if any(c != a for x in sub[rels[i]][a] for c in sub[rels[j]].get(x, ())))   #   on someone other than
+            if ex < 0.5 * len(te): return 0.0, 0                               #   the subject (r o r-inverse; missing generations)
+        Bs, Cs, _ = chain(te, i, j)
+        ok = [(a, c) for a, B, c in zip(te, Bs, Cs) if not guards or B in sub[rels[j]]]    # GUARD: no snapping through a missing hop
+        return (sum(1 for a, c in ok if c in sub[rels[b]][a]) / len(ok) if ok else 0.0), len(ok)
+    with torch.no_grad():
+        pr_ = (F.normalize(torch.einsum('bd,bde->be', E[[x[1] for x in rows]], P[[x[0] for x in rows]]), dim=-1) @ E.t()).argmax(-1).tolist()
+        out['one'] = float(np.mean([names[p] in sub[rels[k]][names[a]] for (k, a, _), p in zip(rows, pr_)]))   # right if ANY true object
+        near = []
+        for i in range(len(rels)):
+            for j in range(len(rels)):
+                out['npairs'] += 1
+                for on_data in (data_dist, not data_dist):
+                    d = dists(E, P, i, j, on_data); dn = [dists(En, Pn, i, j, on_data) for En, Pn in nulls]; dI = d[-1]; d = d[:-1]; d[[i, j]] = np.inf
+                    best = int(np.argmin(d)); nb = [x[best] for x in dn]; margin = min(nb) - d[best]
+                    if on_data != data_dist:                                   # the other metric: counted only, for the comparison
+                        out['cand_alt'] += sum(1 for k in range(len(rels)) if np.isfinite(d[k]) and min(x[k] for x in dn) - d[k] > 0.05); continue
+                    near.append((margin, i, j, best))
+                    for k in np.argsort(d):                                    # EVERY relation beating the null, not only the nearest: one
+                        k = int(k)                                             #   product can fit two composites (a strict and a partial rule)
+                        if not np.isfinite(d[k]): break
+                        nk = [x[k] for x in dn]
+                        if min(nk) - d[k] <= 0.05: continue
+                        out['cand'] += 1
+                        fc, fn = fcheck(i, j, k)
+                        if fn >= 3 and fc >= 0.5:
+                            out['rules'].append((rels[i], rels[j], rels[k], float(d[k]), float(np.mean(nk)), float((np.mean(nk) - d[k]) / (np.std(nk) + 1e-6)), fc, fn))
+        rk = {(a, b, c) for a, b, c, *_ in out['rules']}
+        rej = [x for x in sorted(near, reverse=True) if (rels[x[1]], rels[x[2]], rels[x[3]]) not in rk]
+        out['near'] = (rels[rej[0][1]], rels[rej[0][2]], rels[rej[0][3]], rej[0][0]) if rej else None
+        if hist is not None:
+            for k in list(hist):
+                if k not in rk: hist.pop(k)
+            for k in rk: hist[k] = hist.get(k, 0) + 1
+        for r1, r2, r, *_ in out['rules']:
+            i, j = rels.index(r1), rels.index(r2)
+            srcs = [a for a in suba[r1] if a not in suba[r]]
+            if not srcs: continue
+            Bl, Cl, mg = chain(srcs, i, j)
+            for k, a in enumerate(srcs):
+                if Bl[k] not in suba[r2]: continue                             # the snapped middle must be a known subject of r2
+                st = sorted(c for b in suba[r1][a] for c in suba[r2].get(b, ()) if c != a)
+                fc_ = [x for x in out['rules'] if x[:3] == (r1, r2, r)][0][6]       # WRITE (step 4 policy): a rule verified at 0.9+ AND both
+                dep = 1 if any(c != a for x in sub[r1].get(a, ()) for c in sub[r2].get(x, ())) else 2   # depth: 2 = rests on an inferred fact
+                out['props'].append((a, r, Cl[k], float(mg[k]), st, fc_, fc_ >= 0.9 and bool(st), dep))   #   (noise compounds; corroboration by a
+                                                                               #   second rule did not help - both share the corrupted premise)
+    out['sub'] = suba
+    return out
 
 
 def _dw_relmod(model, cfg, ents, held, vis):
     """RELATIONAL MODULE (step 3 of the rule test, 11 Nov; inf_distill_relmod = training steps; READOUT ONLY, nothing is written).
     tools/toy_rules.py found the true composition rules against a shuffled null and applied them to new families (1.00), while a composite
-    relation trained directly did not transfer (0.00). Here the same module runs in sleep on the facts the STORE'S READER recorded (every
-    relation phrase, the rule world's and the arbitrary probe relations alike - no relation is marked as composable): a free code per name
-    (the entorhinal-style structure map, separate from the trunk, whose learned head chose the wrong rule on the GPU) and an operator per
-    relation. RULE DISCOVERY: for each ordered pair (r1, r2) the nearest single operator to P_r1 P_r2 (r1 then r2), kept only if it beats
-    the same distance in 3 fits on shuffled facts by 0.05 and is neither factor; rules found at consecutive sleeps are counted. PROPOSALS:
-    for each name A with an r1 fact and no recorded r fact, compose - snap to the nearest name - compose - snap, and propose 'A r C';
-    scored against the rule world's truth (grandchild = parent's parent, overseen = manager's manager), and RECALL of the HELD-OUT composite
-    facts (never planted) in the domains visited. Also the same proposals by two STORED hops (A r1 B, B r2 C both recorded)."""
+    relation trained directly did not transfer (0.00). Here the same module (_rm_mine, with the fixes from the failure analysis) runs in
+    sleep on the facts the STORE'S READER recorded (every relation phrase - the rule world's and the arbitrary probe relations alike; no
+    relation is marked as composable): a free code per name (the entorhinal-style structure map, separate from the trunk, whose learned
+    head chose the wrong rule on the GPU) and an operator per relation. Rules found at consecutive sleeps are counted. PROPOSALS: for each
+    name A with an r1 fact and no recorded r fact, compose - snap - compose - snap, and propose 'A r C'; scored against the rule world's
+    truth (grandchild = parent's parent, overseen = manager's manager) and RECALL of the HELD-OUT composite facts (never planted) in the
+    domains visited. Also the same proposals by two STORED hops (A r1 B, B r2 C both recorded)."""
     from platypus.inference.probes import inf_rule_world
     try:
         t0 = time.time(); steps = int(getattr(cfg, 'inf_distill_relmod', 0)); W = inf_rule_world(cfg)
-        fx = {}
+        pairs = {}
         for e in ents + held:
-            if e['key'][0] != 'fact': continue
-            r = str(e['r']).strip(); fx.setdefault(r, {})[e['A']] = e['ans']
-        cnt = sorted(((len(v), r) for r, v in fx.items() if len(v) >= 4), reverse=True)[:24]
-        rels = [r for _, r in cnt]
+            if e['key'][0] == 'fact': pairs.setdefault(str(e['r']).strip(), set()).add((e['A'], e['ans']))
+        R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}))
+        rels = R['rels']
         if len(rels) < 2: print(f"  [RELATIONAL MODULE | visit {vis + 1}] too few relations recorded ({len(rels)})", flush=True); return
-        names = sorted({n for r in rels for a, b in fx[r].items() for n in (a, b)}); ix = {n: i for i, n in enumerate(names)}; N = len(names)
-        rows = [(k, ix[a], ix[b]) for k, r in enumerate(rels) for a, b in fx[r].items()]
-        sd = int(cfg.seed) * 100 + 917
-        E, P = _rm_fit(rows, N, len(rels), steps, sd)
-        def shuf(s):
-            rs = np.random.RandomState(sd + 31 * s); out = []
-            for k in range(len(rels)):
-                kr = [x for x in rows if x[0] == k]; tg = [x[2] for x in kr]; rs.shuffle(tg); out += [(k, x[1], t) for x, t in zip(kr, tg)]
-            return out
-        nulls = [_rm_fit(shuf(s), N, len(rels), steps, sd + s + 1)[1] for s in range(3)]
-        def dist(Pm, i, j): M = Pm[i] @ Pm[j]; return (torch.norm(Pm - M, dim=(1, 2)) / torch.norm(M)).numpy()
-        def chain(srcs, i, j):                                                 # compose, snap to the nearest name, compose, snap
-            a_ = torch.tensor([ix[a] for a in srcs]); s1 = F.normalize(E[a_] @ P[i], dim=-1) @ E.t(); s1[torch.arange(len(srcs)), a_] = -9
-            t1 = s1.topk(2, dim=-1); B = t1.indices[:, 0]
-            s2 = F.normalize(E[B] @ P[j], dim=-1) @ E.t(); s2[torch.arange(len(srcs)), B] = -9; t2 = s2.topk(2, dim=-1)
-            return [names[int(x)] for x in B], [names[int(x)] for x in t2.indices[:, 0]], torch.minimum(t1.values[:, 0] - t1.values[:, 1], t2.values[:, 0] - t2.values[:, 1])
-        def fcheck(i, j, b):
-            te = [a for a in fx[rels[b]] if a in fx[rels[i]]]
-            if not te: return 0.0, 0
-            _, Cs, _ = chain(te, i, j); return sum(1 for a, c in zip(te, Cs) if fx[rels[b]][a] == c) / len(te), len(te)
-        cand = 0
-        with torch.no_grad():
-            one = float((F.normalize(torch.einsum('bd,bde->be', E[[x[1] for x in rows]], P[[x[0] for x in rows]]), dim=-1) @ E.t()).argmax(-1)
-                        .eq(torch.tensor([x[2] for x in rows])).float().mean())
-            rules = []; npairs = 0; near = []
-            for i in range(len(rels)):
-                for j in range(len(rels)):
-                    d = dist(P, i, j); dn = [dist(Pn, i, j) for Pn in nulls]; d[[i, j]] = np.inf
-                    best = int(np.argmin(d)); nb = [x[best] for x in dn]; npairs += 1
-                    margin = min(nb) - d[best]; near.append((margin, i, j, best, d[best], float(np.mean(nb))))
-                    if margin <= 0.05: continue
-                    cand += 1; fc, fn = fcheck(i, j, best)                    # FUNCTIONAL CHECK: the composed operator must predict the
-                    if fn >= 3 and fc >= 0.5:                                  #   composite facts the reader recorded (as the rule layer's bits)
-                        rules.append((i, j, best, float(d[best]), float(np.mean(nb)), float((np.mean(nb) - d[best]) / (np.std(nb) + 1e-6)), fc, fn))
-        hist = model.__dict__.setdefault('_rm_hist', {}); now = {(rels[i], rels[j], rels[b]) for i, j, b, *_ in rules}
-        for k in list(hist):
-            if k not in now: hist.pop(k)
-        for k in now: hist[k] = hist.get(k, 0) + 1
         rw = W.get('rel', {}); par, mgr = W.get('parent', {}), W.get('mgr', {})
-        truth_rel = {rw.get('grand'): par, rw.get('skip'): mgr}; true_rules = {(rw.get('parent'), rw.get('parent'), rw.get('grand')), (rw.get('mgr'), rw.get('mgr'), rw.get('skip'))}
+        cl = {r: r for r in rels}
+        for a, b in R['merged']: cl[a] = cl.get(b, b)
+        tr = {}
+        for k, m in (('grand', par), ('skip', mgr)):
+            if rw.get(k): tr[cl.get(rw[k], rw[k])] = m
+        true_rules = {tuple(cl.get(rw.get(x), rw.get(x)) for x in t) for t in (('parent', 'parent', 'grand'), ('mgr', 'mgr', 'skip'))}
         def truth(A, r):
-            m = truth_rel.get(r)                                               # rule-world names: the true composite, or '-' (none exists)
+            m = tr.get(r)                                                      # rule-world names: the true composite, or '-' (none exists)
             return (m.get(m.get(A)) or '-') if m is not None and A in m else None
         seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
-        H_ = [h for h in W.get('held', []) if h[0] in seen]; hk = {(h[3], rw.get(h[2])): h[4] for h in H_}
-        with torch.no_grad():
-            props = []
-            for i, j, b, *_ in rules:
-                r1, r2, r = rels[i], rels[j], rels[b]
-                srcs = [a for a in fx[r1] if a not in fx[r]]
-                if not srcs: continue
-                Bl, Cl, mg = chain(srcs, i, j)
-                for k, a in enumerate(srcs):
-                    if Bl[k] not in fx[r2]: continue                           # the snapped middle must be a known subject of r2
-                    Bs = fx[r2].get(fx[r1][a])
-                    props.append((a, r, Cl[k], float(mg[k]), Bs, (r1, r2, r) in true_rules))
+        H_ = [h for h in W.get('held', []) if h[0] in seen]; hk = {(h[3], cl.get(rw.get(h[2]), rw.get(h[2]))): h[4] for h in H_}
+        props = R['props']; hi = [p for p in props if p[3] >= 0.1]; st2 = [(p[0], p[1], p[4][0], p[3]) for p in props if p[4]]
+        wr = [(p[0], p[1], c, p[3]) for p in props if p[6] for c in p[4]]
+        agree = sum(1 for p in props if p[6] and p[2] in p[4]) / max(1, sum(1 for p in props if p[6]))
         def sc(pp):
             kn = [(p, truth(p[0], p[1])) for p in pp]; kn = [(p, t) for p, t in kn if t is not None]
             return len(pp), len(kn), (sum(1 for p, t in kn if p[2] == t) / len(kn) if kn else float('nan'))
-        hi = [p for p in props if p[3] >= 0.1]; st2 = [p[:2] + (p[4],) + p[3:] for p in props if p[4] is not None]
         rec = lambda pp: len({(p[0], p[1]) for p in pp if hk.get((p[0], p[1])) == p[2]})
-        f_rule = lambda t: f"'{rels[t[0]]}' o '{rels[t[1]]}' -> '{rels[t[2]]}' {t[3]:.2f} vs null {t[4]:.2f} (z {t[5]:+.0f}; predicts {t[6]:.2f} of its {t[7]} recorded facts; {hist.get((rels[t[0]], rels[t[1]], rels[t[2]]), 0)} sleeps running){'' if (rels[t[0]], rels[t[1]], rels[t[2]]) in true_rules else ' FALSE RULE'}"
-        nf = sum(1 for t in rules if (rels[t[0]], rels[t[1]], rels[t[2]]) not in true_rules)
-        miss = [t for t in true_rules if None not in t and all(x in rels for x in t) and t not in {(rels[i], rels[j], rels[b]) for i, j, b, *_ in rules}]
-        nr = sorted(near, reverse=True)[:1 + len(rules)]; nxt = [x for x in nr if x[0] <= 0.05][:1]
-        a1, k1, p1 = sc(props); a2, k2, p2 = sc(hi); a3, k3, p3 = sc(st2)
-        print(f"  [RELATIONAL MODULE | visit {vis + 1}] {N} names, {len(rels)} relations, {len(rows)} facts read by the store's reader; codes 64-d, {steps} steps, "
-              f"one-hop on its facts {one:.2f} || RULES ({npairs} ordered pairs; {cand} beat 3 shuffled-fact nulls, kept if the composed operator also predicts "
-              f">= 0.5 of 3+ recorded composite facts): {len(rules)} found, {nf} FALSE"
+        hist = model.__dict__.get('_rm_hist', {})
+        f_rule = lambda t: (f"'{t[0]}' o '{t[1]}' -> '{t[2]}' {t[3]:.2f} vs null {t[4]:.2f} (z {t[5]:+.0f}; predicts {t[6]:.2f} of its {t[7]} recorded facts; "
+                            f"{hist.get(t[:3], 0)} sleeps running){'' if t[:3] in true_rules else ' FALSE RULE'}")
+        nf = sum(1 for t in R['rules'] if t[:3] not in true_rules)
+        miss = [t for t in true_rules if None not in t and all(x in rels for x in t) and t not in {x[:3] for x in R['rules']}]
+        a1, k1, p1 = sc(props); a2, k2, p2 = sc(hi); a3, k3, p3 = sc(st2); a4, k4, p4 = sc(wr); nr = R['near']
+        print(f"  [RELATIONAL MODULE | visit {vis + 1}] {R['N']} names, {len(rels)} relations, {R['nfacts']} facts read by the store's reader"
+              + (f" (paraphrases merged: {'; '.join(f'{a} = {b}' for a, b in R['merged'][:4])})" if R['merged'] else "")
+              + f"; codes 64-d, {steps} steps, one-hop on its facts {R['one']:.2f} || RULES ({R['npairs']} ordered pairs; {R['cand']} beat 3 shuffled-fact nulls on the "
+              f"subjects' codes [{R['cand_alt']} over the whole matrix], kept if the chain also predicts >= 0.5 of 3+ recorded composite facts): {len(R['rules'])} found, {nf} FALSE"
               + (f" | true rules NOT found: {'; '.join(f'{a} o {b} -> {c}' for a, b, c in miss)}" if miss else "") + " | "
-              + (" | ".join(f_rule(t) for t in rules) if rules else "none")
-              + (f" | nearest rejected pair '{rels[nxt[0][1]]}' o '{rels[nxt[0][2]]}' -> '{rels[nxt[0][3]]}' margin {nxt[0][0]:+.2f}" if nxt else "")
-              + f" || PROPOSALS (compose, snap, compose; A without that fact): {a1}, rule-world truth known for {k1}, precision {p1:.2f} | snap margin >= 0.10: {a2} ({k2} known), precision {p2:.2f}"
-              f" | by two STORED hops: {a3} ({k3} known), precision {p3:.2f} || HELD-OUT composites in visited domains (never planted, n {len(H_)}): proposed correctly {rec(props)}"
-              f" (margin >= 0.10: {rec(hi)}; two stored hops: {rec(st2)}) | {time.time() - t0:.0f}s", flush=True)
+              + (" | ".join(f_rule(t) for t in R['rules']) if R['rules'] else "none")
+              + (f" | nearest rejected '{nr[0]}' o '{nr[1]}' -> '{nr[2]}' margin {nr[3]:+.2f}" if nr else "")
+              + f" || PROPOSALS (compose, snap, compose, snap; A without that fact): {a1}, rule-world truth known for {k1}, precision {p1:.2f} | snap margin >= 0.10: {a2} ({k2} known), precision {p2:.2f}"
+              f" | by two STORED hops: {a3} ({k3} known), precision {p3:.2f} | WOULD BE WRITTEN (rule verified 0.9+, premises stored): {a4} ({k4} known), precision {p4:.2f}, "
+              f"latent chain agrees {agree:.2f} || HELD-OUT composites in visited domains (never planted, n {len(H_)}): proposed correctly {rec(props)}"
+              f" (margin >= 0.10: {rec(hi)}; two stored hops: {rec(st2)}; would be written: {rec(wr)}) | {time.time() - t0:.0f}s", flush=True)
         if props:
             ex = [p for p in props if truth(p[0], p[1]) is not None][:2] + [p for p in props if truth(p[0], p[1]) is None][:1]
             print("    e.g. " + " || ".join(f"PROPOSED '{p[0]} {p[1]} {p[2]}.' margin {p[3]:.2f} ({'true' if truth(p[0], p[1]) == p[2] else ('wrong, true ' + str(truth(p[0], p[1])) if truth(p[0], p[1]) else 'truth unknown')})" for p in ex), flush=True)
