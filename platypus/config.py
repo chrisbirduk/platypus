@@ -553,6 +553,7 @@ class Config:
                                     #   sentences naming taught subjects, at the positions the memory changes (after arXiv 2610.05200)
     inf_gate_theta=0.0              #   11 Nov RHYTHM GATES (inference.distill): >0 = THETA phase gate, mean consolidation phase length in steps
     inf_gate_theta_jitter=1         #     1 = stochastic phase lengths (exponential), 0 = fixed (control)
+    inf_gate_theta_cap=0.0          #     >0 = stochastic phase lengths capped at this x the mean (no visit without replay in long phases)
     inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
     inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
     inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)

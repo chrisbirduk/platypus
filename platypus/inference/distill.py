@@ -567,7 +567,10 @@ def gate_dream(model, cfg, step, dk):
         if G['left'] <= 0:
             G['phase'] = 'con' if G['phase'] == 'enc' else 'enc'; G['sw'] += 1
             mean = L if G['phase'] == 'con' else L * max(1, dk - 1)
-            G['left'] = max(1, int(round(G['rs'].exponential(mean)))) if int(getattr(cfg, 'inf_gate_theta_jitter', 1)) else max(1, int(round(mean)))
+            cap = float(getattr(cfg, 'inf_gate_theta_cap', 0.0))                # 11 Nov: BOUNDED stochastic phases - at most cap x the mean (0 = unbounded)
+            ln = G['rs'].exponential(mean) if int(getattr(cfg, 'inf_gate_theta_jitter', 1)) else mean
+            if cap > 0: ln = min(ln, cap * mean)
+            G['left'] = max(1, int(round(ln)))
             G['lens'].append((G['phase'], G['left']))
         G['left'] -= 1; G['n'][G['phase']] += 1
     return G['phase'] == 'con'
