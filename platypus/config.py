@@ -533,14 +533,14 @@ class Config:
     inf_distill_lr=0.01             #   distillation: learning rate as a multiple of lr (first dose; then a third, a ninth if over the brake; GPU 10 Nov: x0.03 cost +0.098 BPC)
     inf_distill_anchor=1.0          #   distillation: weight of the anchor KL on stored sentences
     inf_distill_arows=16            #   distillation: anchor rows per step
-    inf_distill_wake=0.0            # 10 Nov INTERLEAVED DISTILLATION (off): weight of a few question rows about stored facts added to every real-text
+    inf_distill_wake=0.25           # 10 Nov INTERLEAVED DISTILLATION (on by default from 11 Nov; 0 = off): weight of a few question rows about stored facts added to every real-text
                                     #   training step (same backward and optimiser: Fisher whitening, real-text loss and dream rows apply; no burst)
     inf_distill_wake_rows=4         #   interleaved distillation: question rows per training step
-    inf_distill_wake_params=''      #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
+    inf_distill_wake_params='mlp_out' #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
     inf_distill_readonly=0          #   11 Nov CONTROL: 1 = the question pool, the never-taught split and every distillation readout as usual, but no question rows trained
-    inf_distill_pool_max=0          #   11 Nov CAPACITY: >0 = the question pool takes up to this many facts and conclusions from the store (0 = the name memory's material, cap inf_nm_max)
+    inf_distill_pool_max=2000       #   11 Nov CAPACITY: >0 = the question pool takes up to this many facts and conclusions from the store (0 = the name memory's material, cap inf_nm_max)
     inf_distill_conc22=1            #   11 Nov READOUT: conclusions taught vs never taught x closed-form edits in place vs subtracted (+ never taught with both premises taught)
     inf_distill_ever=256            #   11 Nov READOUT: recall over a stable sample of every fact EVER taught (and control ever held), by still/left the pool and age
     inf_distill_wake_ondream=0      #   11 Nov: 1 = question rows only on steps that also train on dream rows, weight x the dream interval (same dose)
@@ -576,9 +576,9 @@ class Config:
     inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
     inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
     inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)
-    inf_eval_chunk=0                # 11 Nov: >0 = probe evaluation's beam search and name scoring run in chunks of this many rows (0 = one pass; GPU: 128)
-    inf_sleep_phase_free=0          # 11 Nov: 1 = release the CUDA cache after each timed sleep phase (with inf_sleep_phases)
-    inf_gauss_drift=0               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep
+    inf_eval_chunk=128              # 11 Nov: >0 = probe evaluation's beam search and name scoring run in chunks of this many rows (0 = one pass; GPU: 128)
+    inf_sleep_phase_free=1          # 11 Nov: 1 = release the CUDA cache after each timed sleep phase (with inf_sleep_phases)
+    inf_gauss_drift=1               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep
     inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with

@@ -59,5 +59,7 @@
  "inf_eval_trie_inv": "seen",
  "_inf_eval_trie_inv": "known-name decoding over every capitalised word of the stored sentences (local: 5067 names, target always present) instead of the fast store's names",
  "inf_cf_selfc": 0.0,
- "_inf_cf_selfc": "0 here: cg27a_open_pass1 is the baseline WITHOUT self-contrast (GPU run 9 Nov, seed 1) for cg27a_selfc_pass1"
+ "_inf_cf_selfc": "0 here: cg27a_open_pass1 is the baseline WITHOUT self-contrast (GPU run 9 Nov, seed 1) for cg27a_selfc_pass1",
+ "inf_distill_wake": 0.0,
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
 }

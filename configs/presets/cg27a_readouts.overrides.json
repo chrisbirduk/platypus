@@ -64,5 +64,7 @@
  "_inf_latent_judge": "LATENT JUDGE readout in sleep: slow-feature cosine on the pairs the byte judge tests (AUC vs controls / random, cost per pair); the byte judge still decides",
  "sticky_router_eval": 1,
  "_sticky_router_eval": "STICKY ROUTING readout on mixed held-out streams at pass ends, with the rule cascade signals as reset gates (readout only)",
- "_readouts_9nov": "readouts only beyond cg27a_selfc: answer-slot gates (linear / SERAC-style / WISE-style), system-written question forms in the shadow edits, ROME-style fit diagnostic, latent judge hard controls, sleep phases, ceiling tests last"
+ "_readouts_9nov": "readouts only beyond cg27a_selfc: answer-slot gates (linear / SERAC-style / WISE-style), system-written question forms in the shadow edits, ROME-style fit diagnostic, latent judge hard controls, sleep phases, ceiling tests last",
+ "inf_distill_wake": 0.0,
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
 }
