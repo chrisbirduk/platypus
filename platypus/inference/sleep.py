@@ -105,6 +105,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     except Exception: pass
     try: torch.cuda.reset_peak_memory_stats() if gd_ is not None else None
     except Exception: pass
+    _PHASE_PK[0]=0                                                              # 11 Nov: after the reset, so the visit's peak is not counted as the sleep's
     try:
         ds9_=float(getattr(cfg,'inf_store_downscale',0.0)); _INFM['ds_on']=ds9_>0
         if ds9_>0 and _INFM.get('touch') is not None: _INFM['touch'].zero_()
