@@ -274,6 +274,72 @@ Width 32: trunk 0.1M + shared n-gram tables 6.6M (width 64: 0.3M + 13.1M). Witho
 the forgetting; replay removes all of it at either width (slight backward transfer). Replay, not parameter count, is the protection.
 The width-32 runs were stopped by container restarts during visit 9 (an idle container is reclaimed after about an hour).
 
+## Interleaved distillation on the GPU (11 November 2026, seed 4, pass 1)
+
+Three runs on the same seed and schedule: **cg27a_distillm** (question rows, mlp_out weights only, pool = the name memory's material,
+capped at 384; stopped in visit 6), **cg27a_distillcap** (the same with the pool taken from the store up to 2000; stopped after visit 6),
+**cg27a_distillctl** (the control: identical to distillcap, pool and readouts included, but no question rows trained; visits 1-4 here).
+Recall is from the trunk (memory and store off), open-ended (greedy answer exact), in two wordings never taught.
+
+**Facts.** 32-fact sample, taught vs never-taught:
+
+| After visit | distillm | distillcap | control (no question rows) |
+|---|---|---|---|
+| 2 | 0.29 (45) vs 0.00 (15) | 0.33 (43) vs 0.00 (15) | 0.00 (45) vs 0.00 (15) |
+| 3 | 0.62 (42) vs 0.02 (41) | 0.46 (39) vs 0.02 (41) | 0.00 (42) vs 0.00 (41) |
+| 4 | 0.64 (39) vs 0.00 (37) | 0.51 (39) vs 0.03 (37) | 0.03 (39) vs 0.00 (37) |
+| 5 | 0.71 (38) vs 0.05 (42) | 0.64 (42) vs 0.07 (42) | - |
+
+Fact recall from the weights is entirely the question rows' doing (control 0.00-0.03 on the same pool).
+
+**Capacity and accumulation (distillcap, ever-taught ledger).** Pool 68 / 164 / 255 / 307 / 406 taught after visits 1-5 (the name memory
+holds 0 / 78 / 198 / 311 / 382). Recall over a stable sample of everything ever taught: 0.12 / 0.31 / 0.42 / **0.55** after visits 2-5
+(the youngest bin includes facts that entered at that sleep and were not yet taught); by age after visit 5: taught 2-3 visits ago
+**0.73** (143 questions), 4+ visits ago **0.69** (61); never-taught control 0.03 / 0.05 / 0.06. Recall holds and rises while the pool
+grows six-fold past the memory's cap; facts taught early are not lost as new ones arrive.
+
+**Conclusions (2 x 2: closed-form edits in place -> subtracted).**
+
+| | Taught | Never taught | Never taught, both premises taught |
+|---|---|---|---|
+| distillcap, visit 4 | 0.48 -> 0.08 (50) | 0.25 -> 0.00 (8) | 0.17 -> 0.00 (6) |
+| distillcap, visit 5 | 0.69 -> **0.15** (68) | 0.19 -> **0.00** (16) | 0.07 -> 0.00 (14) |
+| control, visit 4 | 0.26 -> 0.00 (50) | 0.00 -> 0.00 (8) | 0.00 -> 0.00 (6) |
+
+Conclusions in the weights come from the closed-form edits (both rows fall to ~0 without them in the control); with the question
+rows, taught conclusions keep 0.08-0.15 without the edits against 0.00 never taught - a small distillation effect. No composition from
+taught premises.
+
+**Cost.** Post-train BPC of the visited domain, distillcap vs control: 2.020 / 2.009, 2.083 / 2.078, 2.031 / 2.033, 1.666 / 1.662
+(visits 1-4) - none. Old domains' BPC at each sleep (fast store on), distillcap vs control: 1.999 / 1.976, 2.021 / 2.002, 1.977 /
+1.959 (sleeps 2-4) - **+0.018 to +0.023, not growing**. End-of-run forgetting not measured (both runs stopped).
+
+**Probe recall from the weights** (standard 134 probes, store off), visit 4, distillcap vs control: one-hop 0.37 / 0.15, open one-hop
+0.19 / 0.00, two-hop 0.08 / 0.10, open two-hop 0.04 / 0.02. The one-hop rise is the distillation's; two-hop not separated by visit 4.
+**Replay retention** (two-hop from the weights on the last sleep's replayed sample after a visit): 0.75 / 0.88 / 0.96 at visits 4-6 with
+distillation, 0.67 at visit 4 in the control - conclusion replay sticks without question training; visits 5-6 of the control pending.
+**Gaussian drift** of old domains (output layer) identical with and without the question rows (0.31 / 0.29, 0.30 / 0.29, 0.22 visits 2-4).
+
+**Memory.** The 70 GB sleep peak was the probe evaluation's beam search (134 probes x 26 first-step beams of long prompts in one pass);
+chunked (`inf_eval_chunk 128`; local: evaluation lines identical over 7 visits) the sleep peak is 49-50 GB, now set by dream mixing.
+
+### Rhythm gates and other add-ons (11 November 2026, local short runs, mlp_out writes)
+
+| Add-on | Taught at the end | Forgetting | Final BPC |
+|---|---|---|---|
+| none (DWM) | 0.11 | -0.140 | 2.991 |
+| repair replay at each sleep (40 KL steps) | 0.11 | **-0.156** | 2.996 |
+| spindle: questions only inside the sleep burst | 0.00 | -0.087 | 3.068 |
+| beta drift brake (throttled 17-87% of steps, gate mean 0.52-0.98) | 0.11 | -0.142 | 2.988 |
+| theta, stochastic phases | 0.11 | -0.161 | 2.976 |
+| theta, fixed phases | 0.07 | -0.138 | 2.993 |
+| hinted self-distillation, all parameters (pool 3-9 sentences) | 0.11 | -0.128 | 2.999 |
+
+Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
+phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
+separable from where the random phases fell in 24-step visits; a full-run trio with bounded phases is queued. Spindle-style writing
+fails; the beta brake changes nothing measurable.
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
