@@ -430,6 +430,9 @@ def distill_wake_loss(model, cfg):
         tot = 0.0; cnt = 0; ce = []
         pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
         if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
+            from platypus.inference.jepa import cfg_seq_
+            L0_ = int(cfg_seq_(model))                                           # the context is trimmed from the LEFT to fit the window (the fact sits at the
+            items = [it[:5] + ((it[5][-max(0, L0_ - len(it[0]) - len(it[1]) - 1):] if L0_ - len(it[0]) - len(it[1]) - 1 > 0 else b''),) if len(it) > 5 and it[5] else it for it in items]   #   sentence's end; local windows are 64 bytes)
             Tt, Mt = _ws_batch(model, [(it[5] if len(it) > 5 and it[5] else b'') + it[0] + it[1] for it in items])
             with torch.no_grad(): LT = _ws_run(model, Tt, sl).float()
             T_ = float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)); ce_w = float(getattr(cfg, 'inf_distill_wake_pd_ce', 0.0)); H9 = D['pdst']
