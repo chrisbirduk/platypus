@@ -83,5 +83,7 @@
  "inf_distill_readonly": 1,
  "_inf_distill_readonly": "CONTROL: the question pool, the never-taught split and every distillation readout as in cg27a_distillcap, but NO question rows trained",
  "inf_eval_chunk": 128,
- "_inf_eval_chunk": "memory: the probe evaluation's beam search and name scoring in chunks of 128 rows (the 70 GB sleep peak was one pass of 134 probes x 26 beams); evaluation results unchanged"
+ "_inf_eval_chunk": "memory: the probe evaluation's beam search and name scoring in chunks of 128 rows (the 70 GB sleep peak was one pass of 134 probes x 26 beams); evaluation results unchanged",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

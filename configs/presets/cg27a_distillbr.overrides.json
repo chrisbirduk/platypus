@@ -87,5 +87,7 @@
  "inf_distill_comp_probe": 64,
  "_inf_distill_comp_probe": "readout: COMPOSITION PROBE - up to 64 chains A-B, B-C of facts taught last visit with no conclusion or direct fact for A-C (never edited, replayed or asked), 'A is connected to' in the held-out conclusion wordings; with premise recall and composition among chains whose premises the trunk answers; the same for never-taught chains",
  "inf_distill_ns_probe": 1,
- "_inf_distill_ns_probe": "readout: NULL SPACE PROBE - share of a question-row gradient inside the old domains' high-energy mlp_out input directions (local: 0.95 inside the 90% directions, so a hard projection would keep 0.05 of the fact update); the GPU width check"
+ "_inf_distill_ns_probe": "readout: NULL SPACE PROBE - share of a question-row gradient inside the old domains' high-energy mlp_out input directions (local: 0.95 inside the 90% directions, so a hard projection would keep 0.05 of the fact update); the GPU width check",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

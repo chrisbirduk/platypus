@@ -63,5 +63,7 @@
  "inf_cf_selfc": 1.0,
  "_inf_cf_selfc": "ON by default (9 Nov): self-contrast in the closed-form edit - every answer byte must beat the model's own top non-answer byte (fixed from the unedited model), beside competitor contrast. GPU shadow edits (3 sleeps, 42 conclusions, fitted without competitor contrast): fitted open 0.17 -> 0.57, held-out MC 0.48 -> 0.65, held-out answer bytes top-1 0.66 -> 0.80; local: no change (2 seeds)",
  "inf_distill_wake": 0.0,
- "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

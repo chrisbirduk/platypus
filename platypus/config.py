@@ -548,6 +548,10 @@ class Config:
     inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
     inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
     inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_opalg=0             # 11 Nov READOUT: OPERATOR ALGEBRA on the rule world - relation operators on the trunk's name codes compose? discover the rules (vs a shuffled null)?
+    inf_distill_relmod=0            # 11 Nov READOUT (step 3): RELATIONAL MODULE - N training steps of free name codes + relation operators on the reader's facts; rules vs a shuffled null, proposed composite facts scored (nothing written)
+    inf_distill_relmod_write=0      # 11 Nov STEP 4 (ONE MODEL CHANGE): 1 = the relational module's written facts (rule verified 0.9+, stored premises) join the question pool; a fifth held back
+    inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each
     inf_distill_comp_probe=0        #   11 Nov READOUT: COMPOSITION PROBE - N chains of taught facts (A-B, B-C) with no conclusion for A-C, asked 'A is connected to'
@@ -576,6 +580,7 @@ class Config:
     inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
     inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
     inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)
+    inf_jx_rag=1                    # 11 Nov (with inf_jx): RETRIEVAL-AUGMENTED ANSWERS readout / answer mode - one JEPA-ranked stored sentence naming A before the question, cited
     inf_eval_chunk=128              # 11 Nov: >0 = probe evaluation's beam search and name scoring run in chunks of this many rows (0 = one pass; GPU: 128)
     inf_sleep_phase_free=1          # 11 Nov: 1 = release the CUDA cache after each timed sleep phase (with inf_sleep_phases)
     inf_gauss_drift=1               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep

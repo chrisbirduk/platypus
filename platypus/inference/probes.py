@@ -196,6 +196,33 @@ def _inf_bench_readout(S_,cfg):
         l_,_,pr_=lab_(c_)
         if l_=='outside' or k9_>=5: continue
         k9_+=1; print(f"    BENCH: {dec_(c_.get('A'))} ~ {dec_(c_.get('C'))} via {dec_(c_.get('B'))} -> {l_}"+(f" [{nm_.get(str(pr_[0]),'?')} / {nm_.get(str(pr_[1]),'?')}]" if pr_ else ''),flush=True)
+_RW_REL = {'parent': "{a} is a child of {b}.", 'grand': "{a} is a grandchild of {b}.", 'mgr': "{a} is supervised by {b}.", 'skip': "{a} is overseen by {b}."}
+def inf_rule_world(cfg):
+    """RULE WORLD (11 Nov; inf_rule_world = N families and N org charts, on by default): planted facts that OBEY composition rules, beside the
+    arbitrary probe chains (whose chains obey none). Family: a root, 2 children, 4 grandchildren - 'X is a child of Y' for every child, and
+    'X is a grandchild of Z' for HALF the grandchildren (by a hash of the name); the other half is never planted (held out: only the rule
+    grandchild = child o child can give it). Org chart: the same shape with 'X is supervised by Y' and 'X is overseen by Z' (the skip
+    level). Each family / chart in one domain. Not probe chains: the probe readouts are unchanged; the RULE readouts use _INF['rulew']."""
+    if _INF.get('rulew') is not None: return _INF['rulew']
+    n_ = int(getattr(cfg, 'inf_rule_world', 0)); W_ = {'planted': [], 'held': [], 'parent': {}, 'mgr': {}}
+    if n_ <= 0: _INF['rulew'] = W_; return W_
+    import zlib
+    taken_ = {x_ for c_ in inf_probes(cfg) for x_ in c_['names']}; rs_ = np.random.RandomState(int(cfg.seed) + 6060); nd_ = len(PILE_DOMAINS)
+    def nm():
+        while True:
+            x_ = ''.join(rs_.choice(_INF_SYL, rs_.randint(2, 4))); x_ = x_[0].upper() + x_[1:]
+            if int(getattr(cfg, 'inf_probe_rare', 0)) and not any(c9_ in x_.lower() for c9_ in 'qxz'): continue
+            if 5 <= len(x_) <= 10 and x_ not in taken_: taken_.add(x_); return x_
+    for kind_, r1_, r2_ in (('parent', 'parent', 'grand'), ('mgr', 'mgr', 'skip')):
+        for f_ in range(n_):
+            d_ = int(rs_.randint(nd_)); root_ = nm(); mids_ = [nm(), nm()]; leaves_ = [(m_, nm()) for m_ in mids_ for _ in range(2)]
+            for m_ in mids_: W_['planted'].append((d_, _RW_REL[r1_].format(a=m_, b=root_), r1_, m_, root_)); W_[kind_][m_] = root_
+            for m_, l_ in leaves_:
+                W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_
+                rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)
+                (W_['held'] if zlib.crc32(l_.encode()) % 2 else W_['planted']).append(rec_)
+    W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
+    _INF['rulew'] = W_; return W_
 def _inf_plant_probes(raw,cfg,d,p):
     """insert domain d's probe fact sentences (each inf_plant_k times) at sentence boundaries of its pass-p text"""
     fs_=[]; once_=[]
@@ -211,13 +238,16 @@ def _inf_plant_probes(raw,cfg,d,p):
         if u_:
             for dd_,s_ in u_['new']:
                 if dd_==int(d): (fs_ if u_['type']=='true' else once_).append(s_)
+    nrw_ = 0
+    for dd_, s_, *_ in inf_rule_world(cfg)['planted']:                        # RULE WORLD facts of this domain, planted like probe facts
+        if dd_ == int(d): fs_.append(s_); nrw_ += 1
     if not fs_ and not once_: return raw
     b_=bytes(raw); rs_=np.random.RandomState(9000+97*int(d)+int(p)); cuts=[m_.end() for m_ in _re_inf.finditer(rb'[.!?] (?=[A-Z])',b_)]
     if len(cuts)<2: return raw
     ins=sorted([(int(cuts[rs_.randint(len(cuts))]),s_) for s_ in fs_ for _ in range(int(cfg.inf_plant_k))]+[(int(cuts[rs_.randint(len(cuts))]),s_) for s_ in once_]); out=bytearray(); j_=0
     for c_,s_ in ins: out+=b_[j_:c_]+s_.encode('latin-1')+b' '; j_=c_
     out+=b_[j_:]
-    print(f"  [inference] domain {d} pass {p}: {len(ins)} probe fact sentences planted ({len(fs_)} facts)")
+    print(f"  [inference] domain {d} pass {p}: {len(ins)} probe fact sentences planted ({len(fs_)} facts" + (f", of them {nrw_} RULE WORLD facts" if nrw_ else "") + ")")
     return bytes(out)
 
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded

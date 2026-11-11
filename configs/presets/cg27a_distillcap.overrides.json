@@ -79,5 +79,7 @@
  "inf_distill_pool_max": 2000,
  "_inf_distill_pool_max": "the ONE model change against cg27a_distillm: question pool up to 2000 facts and conclusions from the store, beyond the name memory's cap (GPU cg27a_distillm: the memory reached 381 of 384 entries at visit 4, so the taught set stopped growing at about 300)",
  "inf_distill_ever": 256,
- "_inf_distill_ever": "readout: recall over a stable sample of every fact ever taught (and control ever held), by still/left the pool and by age"
+ "_inf_distill_ever": "readout: recall over a stable sample of every fact ever taught (and control ever held), by still/left the pool and by age",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

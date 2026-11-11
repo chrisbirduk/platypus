@@ -380,6 +380,158 @@ distillation at this scale.
 | hinted self-distillation, all parameters (pool 3-9 sentences) | 0.11 | -0.128 | 2.999 |
 | soft anchor: KL to the old slots' predictions during the visit, x1.0 (DWA) | **0.22** | -0.144 | 2.988 |
 | hinted self-distillation, mlp_out only (HM; pool 5-9 sentences) | 0.11 (n 9) | -0.152 | 2.979 |
+| soft anchor, SEED 1 (DWA1) vs plain distillation seed 1 (DWM1) | 0.14 vs 0.08 (n 50) | -0.020 vs -0.023 | 2.913 vs 2.912 |
+
+**Soft anchor on the GPU** (cg27a_distillak = distillcap + inf_distill_wake_akl 1.0 + held-out chains; seed 4; stopped after sleep 5), against
+distillcap: sleep 3 still in the pool 0.29 / 0.31, 2-3 visits 0.62 / 0.59, drift 0.265 / ~0.30; sleep 4 0.40 / 0.42, 0.56 / 0.54, drift
+0.198 / 0.202; **sleep 5 still in the pool 0.43 / 0.55, 2-3 visits 0.49 / 0.73, 4+ visits 0.65 / 0.69, after the visit 0.48 / 0.64, drift
+0.163 / 0.186**. Locally (two seeds) a small recall gain at the same cost; on the GPU a TRADE: about 13% less old-domain drift for less fact
+recall - the anchor resists the very directions the facts are written in (null-space probe). Not carried forward.
+
+**JEPA readouts on the GPU** (same run, sleeps 2-5): HYBRID retrieval (sentences naming A, ranked by the JEPA key) 0.92-1.00 written,
+0.77-0.85 held-out wording (name lookup alone 0.55); one-hop with the generic-hybrid sentence in context 0.64-0.81 vs weights alone 0.49-0.73
+(+0.08 to +0.15). Two-hop by retrieval no better than its random-bridge control (0.62 vs 0.65 at sleep 5, n 26). Latent judge with the name
+masked: masked controls vs same-topic pairs 0.25-0.36 (no relational signal beyond names). LATENT CHAINING: P(e_A, r) -> e_B memorises
+(1.00 on its facts, 0.13-0.19 on never-taught facts, chance 0.05), P twice 1.00 on the unconcluded chains (two lookups, n 1-5); **Q (composition
+learned from 20-37 concluded chains) 1.00 on its training chains, 0.00 on every unconcluded chain (n 1-5)**. JEPA is a strong memory key;
+no sign of learned inference structure.
+Sleeps 6-8 of the same run (more chains): COMPOSITION PROBE (trunk) 0.00 on 7 / 11 / **18 chains (15 with both premises answered)**; Q 0.29 (n 7,
+65 training chains) / 0.09 (n 11, 81) / **0.06 (n 18, 144)** - chance; two-hop by two JEPA retrievals 0.57 vs 0.33 random-bridge control (n 40) /
+0.70 vs 0.58 (n 50) / **0.76 vs 0.53 (n 76)**; one-hop with the generic-hybrid sentence 0.73 -> 0.81 / 0.72 -> 0.86 / 0.75 -> 0.83 (n 62-100). The
+trunk and the learned composer do not compose; chaining two retrievals does, by about +0.2 over its control.
+
+### JEPA mathematics, toy test (tools/toy_jop.py, 11 November, seed 0, 1500 steps)
+
+A world WITH composition rules (family tree: grandparent = parent o parent; org chart: skip_manager = manager o manager) plus two random
+relations; 600 entities, linear relation operators P_r on entity codes, InfoNCE + isotropy (JEPA-style); half of the grandparent and
+skip-manager facts held out (true answer among all 600, chance 0.0017).
+
+| | composed P_r P_r, held-out | two lookups | learned composite operator, held-out | schema: nearest single operator to P_r P_r |
+|---|---|---|---|---|
+| TIED (one space, as JEPA) | **1.00 / 1.00** | 1.00 / 1.00 | 0.40 / 0.51 | parent o parent -> **grandparent** (0.73 vs 0.91); manager o manager -> **skip_manager** (0.62 vs 1.03) |
+| UNTIED (keys vs values, as attention) | **0.00 / 0.00** | 1.00 / 1.00 | 0.27 / 0.26 | parent o parent -> parent; manager o manager -> manager (wrong) |
+| TIED + 150 trained two-step paths | 1.00 / 0.99 | 1.00 / 1.00 | **0.78 / 0.66** | grandparent (0.56 vs 0.83); skip_manager (0.56 vs 0.99) |
+
+(grandparent / skip_manager.) With one embedding space the relation operators compose algebraically (no intermediate lookup), the
+composite relation partly LEARNS the rule for people never seen with it (0.40-0.51; 0.66-0.78 with a few trained paths), and the nearest
+operator to each product names the right composite relation - **rules discovered from facts alone**. With separate key and value spaces
+(attention-like) the algebra breaks (0.00) and the schema is wrong. Caveats: random relations also find a 'nearest' operator (lives_near o
+lives_near -> lives_near, 0.79 vs 1.16) - a schema needs a null (shuffled facts) and a functional check before it is trusted; and the planted
+facts in Platypus have no composition rules (every chain is arbitrary, the conclusion generic), which is why the GPU composer Q could only
+memorise. Testing this in Platypus needs planted facts that obey rules.
+
+**Rule world on by default, local short-run check (11 November, seed 0, default build with inf_rule_world 12):** 17-97 rule-world facts planted per domain, no errors; pass 1 3.649 / -1.420, pass 2 **3.008 / -0.139** against the defaults check without it 2.997 / -0.150 and the retrieval check 2.992 / -0.139 - within seed noise (0.017). The rule world is safe as a default.
+
+### Rule discovery against a null, and transfer to new families (tools/toy_rules.py, 11 November, seed 0, 1500 steps)
+
+40 families and 40 org charts of 7 people (child-of, grandchild-of; supervised-by, overseen-by), plus works_with (one-to-many, 3 each, no
+rule); 560 entities, chance 0.0018. 30% of the families and charts are NEW: only their one-hop facts are seen, none of their composites. A
+rule counts only if the product's nearest operator beats the same distance in 3 shuffled-fact nulls by 0.05 and is neither factor.
+
+| | child o child | sup o sup | grand o grand, over o over, child o sup, works_with o works_with | new groups: grandchild / overseen, discovered rule applied (compose, snap, compose) | composed without snap | learned composite operator directly |
+|---|---|---|---|---|---|---|
+| clean | **grand** 0.74 vs null 1.27 (z +18) | **over** 0.79 vs 1.27 (z +77) | no rule (all within 0.01-0.08 of the null) | **1.00 / 1.00** (n 48 / 48) | 0.94 / 0.94 | **0.00 / 0.00** |
+| 10% wrong parents | **grand** 0.84 vs 1.26 (z +17) | **over** 0.79 vs 1.27 (z +45) | no rule | **0.85** / 1.00 | 0.83 / 0.98 | 0.00 / 0.00 |
+
+The null does its job: the two true rules stand far outside it, and every relation with no rule (including the one-to-many works_with and
+the cross-domain child o sup) is rejected - the caveat from toy_jop.py is answered. The discovered rule TRANSFERS: applied by composition to
+families and charts never seen with a composite fact, it gets every grandchild and skip-level right (0.85 with 10% corrupted parents, close to
+the 0.81 expected from two noisy hops). The learned composite operator, by contrast, does not transfer at all (0.00): a relation learned as a
+lookup is memorised per entity; only the composed operators generalise. Inference here comes from discovering which relations compose and
+then composing - not from training the conclusion.
+
+### The reader against gold relations, and a frame-JEPA probe (tools/reader_audit.py, tools/frame_probe.py; 11 November, local)
+
+READER AUDIT on the embedded Re-DocRED benchmark (4,726 gold Wikidata relations, ~2,000 sentences; window frequencies estimated from
+English word frequencies): every clause read gives 1,252 records, of which 163 have both arguments benchmark entities and 37 of those
+(0.23) a gold relation; **gold pairs covered 36 of 4,726 (0.8%)**; the first record per sentence (what the evidence record keeps) 0.7%;
+after the name-memory / distillation filters 116 records, 17 gold pairs (0.4%); facts must be seen twice (benchmark documents appear
+once): about 0. Causes: the arguments are the clause's two RAREST words (918 of 2,864 entities have no word rare enough; rare common words
+become arguments: 'microscopic' ... 'spinal'), multi-word names are split (1,771 of 2,864), the relation must lie between the arguments
+with no punctuation, one record per sentence, single capitalised words only downstream, latest object only, seen twice. Only 12% of the
+gold pairs have both entities named in one sentence (the rest need coreference / cross-sentence reading).
+
+FRAME PROBE: a frame encoder (word embeddings, BiGRU, the states at the two masked fillers -> a relation code -> an operator) trained
+WITHOUT labels on 80,551 frames from local Wikipedia (the operator maps one filler's code to the other's, InfoNCE); tested on 724
+benchmark frames with the gold entities masked - is the nearest other frame of the same gold relation type?
+
+| majority type | untrained encoder | bag of connector words | trained frame code (3 epochs) | trained + connector words |
+|---|---|---|---|---|
+| 0.24 | 0.39 | **0.44** | 0.40 | 0.47 |
+
+The connector words carry the relation (0.44 against 0.24); the frame-JEPA objective as built does NOT learn it (0.40, level with
+untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) stayed at chance: most spans occur once. Likely causes: the
+partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
+capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
+
+### Step 4 on the GPU: written conclusions consolidate (cg27a_relwrite, seed 4; interim, sleeps 1-3)
+
+The fixed relational module on the reader's facts: sleep 2 - paraphrases merged (resides close to = lives near, was taught by = trained
+under, works with = is a colleague of; all true), supervised o supervised -> overseen (6 of 6), 0 false, 6 WRITTEN (precision 1.00, 3
+never planted); sleep 3 - four true paraphrase merges (+ partners with = is a partner of, answers to = reports to), both rules (child o
+child -> grandchild 11 of 11; overseen 2 sleeps running), 0 false, 5 more written (11 in all, precision 1.00, 8 never planted; 8 taught,
+3 held back). **FROM THE TRUNK (store and memory off), written at sleep 2 and taught for one visit: 0.75 (3 of 4) vs held back 0.00 (0 of
+2); composites NEVER PLANTED anywhere: taught 1.00 (2 of 2) vs held back 0.00 (0 of 1).** Ordinary facts taught one visit: 0.33,
+control 0.00. Tiny n - the first sign that facts the model inferred itself, never stated in its text, consolidate into its weights.
+
+### A fast sequence channel as the reader (tools/chunk_reader.py, 11 November, local)
+
+Frames are the short COMMON word sequences, fillers what varies between them - counted on local Wikipedia plus the benchmark text
+(68,123 sentences, 1.86 M tokens), no labels, no word lists. Frame material: the K most frequent word types and punctuation, and (variant
+B) words that are rarely capitalised when not first in a sentence (a statistic of the text); filler runs between them, joined across one
+frame word when the three words are a strong collocation ('Gulf of Mexico'); a record per pair of fillers with the frame between them
+(punctuation included: 'Stockholm , Sweden'). Scored against the Re-DocRED gold relations like the current reader:
+
+| reader | records | gold pairs covered (of 4,726) | precision on benchmark-entity records |
+|---|---|---|---|
+| current (two rarest words of a clause) | 1,252 | 36 (0.8%) | 0.23 |
+| A: frequent words are frame material, K 1000 | 8,763 | 195 (4.1%) | 0.27 |
+| B: + rarely capitalised words, K 300, adjacent fillers | 4,345 | 194 (4.1%) | 0.28 |
+| C: Harris slot entropy instead (best threshold) | 11,558 | 150 (3.2%) | 0.25 |
+| **B, fillers up to 3 apart, frames up to 12 tokens** | 8,613 | **325 (6.9%)** | 0.26 |
+
+Ceiling with both entities named in one sentence: 555 (11.7%) - the best variant reaches 59% of it, 9x the current reader. Multi-word
+names are read whole ('Fredrik Laurentz Ekman', 'Margaret Thatcher' - 'and her husband' - 'Denis Thatcher'); the commonest frames of
+gold records are punctuation (',' and '(' - appositions, 'Stockholm , Sweden'), 'in', 'was born in'. Precision stays near 0.26 (the
+gold annotation is incomplete, so this is a floor). Still missing: pronouns and cross-sentence reading (88% of the gold pairs).
+
+### Relational module on the GPU (cg27a_relmod, seed 4, first version: nearest-only candidates, whole-matrix distance, no guards)
+
+On the facts the store's reader recorded (every relation, none marked composable): sleep 1 (70 facts, 10 relations) no rule - too
+few composites; sleep 2 (168 facts, 16 relations) **supervised o supervised -> overseen** (0.73 vs null 0.81; predicts 6 of 6), 0
+false, 6 proposals all right, **3 of 4 held-out composites** (never planted) proposed; sleep 3 (300 facts, 21 relations) **child o child
+-> grandchild** (0.71 vs 0.88; 11 of 11), 5 proposals all right, 5 of 8 held-out composites - but overseen was missed (nearest-only
+candidates) and one FALSE rule passed on 2 of 4 facts ('was taught by' o 'reports to' -> 'answers to'): the check now needs a Wilson
+95% lower bound >= 0.5 (2 of 4 gives 0.15; 6 of 6 0.61; 11 of 11 0.74) - in the hard world it also drops the 50% partial rules, writes
+unchanged (746 and 92, precision 1.00).
+
+### Composition failure modes, fixed and tested (tools/relmod_hard.py, 11 November; the relational module _rm_mine)
+
+The failure analysis predicted where operator composition breaks: whole-matrix distances squeeze the contrast; paraphrase splits halve
+the evidence; a matrix cannot say "except self"; inverse and missing hops snap to the most similar name; written partial-rule facts
+confirm their own rule; noise compounds per inferred hop. A HARD RULE WORLD plants each one: 4-generation families (great-grandchild =
+three hops), the inverse "is the parent of" (one-to-many), siblings (child o parent-of, minus self), supervision said as "is supervised
+by" / "reports to" / both, a 70% partial rule (mentored), two arbitrary relations; 30% of the groups NEW (one-hop facts only); half of
+every composite held out elsewhere; 840 people. Rules graded by their TRUE confidence on the full world.
+
+| seed 0, clean | rules TRUE / PARTIAL / FALSE | facts that would be written, precision | held-out recall: grandchild / great-grandchild / sibling / overseen |
+|---|---|---|---|
+| as first built | 8 / 5 / 0 (the paraphrase split gives 4 copies of one rule) | 274, 1.00 | 232/232 / 64/156 / **0/273** / 177/177 |
+| fixed, round 1 | 6 / 3 / 0 (paraphrases merged) | **746, 1.00** | 232/232 / 64/156 / **273/273** / 177/177 |
+| fixed, round 2 (round 1's writes as hops, never evidence) | 6 / 3 / 0 | 92 more, **1.00** | 232/232 / **156/156** / 273/273 / 177/177 |
+| round 2 WITHOUT provenance | 7 / 2 / **2** ("mentored" merged into "overseen") | 92, 1.00 | mentored 0/174 |
+| seed 1, 10% wrong parents: fixed round 1 / round 2 | 6 / 2 / 0 both | 729 at **0.96** / 97 at **0.79** | great-grandchild 132/156 |
+
+Fixes kept: paraphrase merge (objects agree on 80%+ of shared subjects); rule distance on the subjects' codes (half the null-beaters of
+the whole-matrix distance in the stress check); except-self at each snap; every relation beating the null a candidate (a strict and a
+partial rule can share a product); the functional check counts only chains whose middle is a known subject AND needs an observed chain
+ending on someone else (rejects parent-of o child = self and grandchild o grandchild, both FALSE rules otherwise; a distance-to-identity
+test was tried and removed: it also killed the true sibling rule, child o parent-of being half identity); written facts carry
+PROVENANCE (hops, never evidence); WRITES only from a rule verified at 0.9+ through STORED premises - the latent chain finds and verifies
+rules but never writes alone (57 of 206 latent-only round-2 writes were wrong: it snaps through a missing hop). Not fixed: noise compounds
+through inferred premises (0.96 -> 0.79 at the second round); corroboration by a second rule did not help (0.77, recall down) because
+both routes share the corrupted fact - limit inference depth where sources are noisy (props carry a depth flag). Partial rules (true
+confidence 0.5-0.7) are found and labelled but not written.
 
 Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
 phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
@@ -390,7 +542,7 @@ fails; the beta brake changes nothing measurable.
 pass 1 mean forgetting -0.045 / -0.036, BPC 2.753 / 2.758; pass 2 forgetting +0.014 / +0.008, final BPC 2.428 / 2.438; lost between
 visits at the revisits (Gutenberg, Wikipedia, ArXiv, PubMed, FreeLaw) -0.136 / -0.134, -0.046 / -0.031, +0.010 / -0.010, -0.015 / -0.017,
 -0.010 / +0.009 (means -0.039 / -0.037). **No effect** - every difference inside seed noise; the short-run gain was the dream allocation.
-(Replay-only reference without distillation, FR: -0.005 / 2.415.) Rhythm gating is not carried forward.
+(Replay-only reference without distillation, FR: -0.005 / 2.415.) Fixed phases (THF): pass 1 -0.047 / 2.751, pass 2 +0.011 / 2.432, lost between visits at the revisits -0.145, -0.043, +0.002, -0.019, -0.017 (mean -0.044) - the trio is level within noise. Rhythm gating is not carried forward.
 
 ### Null-space probe (11 November, local full runs, seed 0; readout only)
 

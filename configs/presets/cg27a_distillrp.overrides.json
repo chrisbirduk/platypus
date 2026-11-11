@@ -85,5 +85,7 @@
  "inf_distill_repair": 160,
  "_inf_distill_repair": "the ONE model change against cg27a_distillcap: REPAIR REPLAY - at each sleep, 160 steps (8 rows each, Adam at lr x 0.1, mlp_out only) of KL to the previous sleep's predictions on 32 stored real sentences per OLD slot (not the one just visited); the [DISTILLATION, REPAIR REPLAY] line gives the KL before -> after per slot. Local short runs: forgetting -0.156 vs -0.140 without (back to the replay-only level), final BPC 2.996 vs 2.991, taught recall unchanged (0.11). 160 steps keeps about 40 per old slot once four slots are old (local: 40 steps, 1-2 old slots). Target: the steady +0.02 BPC on old domains (GPU distillcap vs control)",
  "inf_distill_pd_probe": 1,
- "_inf_distill_pd_probe": "readout: SOURCE IN CONTEXT - up to 64 taught and 64 never-taught facts answered WITHOUT vs WITH their stored source sentence before the question, taught and test wordings (exact, answer bytes, KL per byte); decides whether prompt distillation (soft targets) has a teacher better than the student (local 64-byte window: 0.79 vs 0.79)"
+ "_inf_distill_pd_probe": "readout: SOURCE IN CONTEXT - up to 64 taught and 64 never-taught facts answered WITHOUT vs WITH their stored source sentence before the question, taught and test wordings (exact, answer bytes, KL per byte); decides whether prompt distillation (soft targets) has a teacher better than the student (local 64-byte window: 0.79 vs 0.79)",
+ "inf_rule_world": 0,
+ "_pinned_rule_world": "rule world (on by default from 11 Nov evening) pinned off so this preset reproduces its run"
 }

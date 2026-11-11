@@ -251,6 +251,63 @@ def _jx_readout(model, cfg, S_, tag_):
           f"NAME LOOKUP (most recent sentence naming A) {f_('name')} | HYBRID (sentences naming A, ranked by the JEPA key) {f_('hyb')}, held-out wording {f_('ho_hyb')} || ONE-HOP answer (20 candidates, store off): weights only {f_('w')} | RETRIEVED sentence in context {f_('ret')} | GENERIC-HYBRID sentence in context {f_('ret_g')} | "
           f"TRUE sentence in context {f_('true')} | held-out wording, retrieved {f_('ho_ret')} || TWO-HOP BY RETRIEVAL: hop 1 {f_('h1')}, two-hop {f_('two')} | control, hop 2 about a RANDOM name {f_('two_rand')} | "
           f"true sentences {f_('two_true')} (chance 0.05)" + ("".join(" || " + e_ for e_ in ex_)), flush=True)
+@torch.no_grad()
+def _jx_rag(model, cfg, S_, tag_):
+    """RETRIEVAL-AUGMENTED ANSWERS (inf_jx_rag; an answer mode, the trunk and training unchanged): a question about A is answered with ONE
+    stored sentence in front of it - the sentences that name A, ranked by the JEPA key (the generic arm G if trained, else arm V) - and
+    that sentence is CITED as the answer's source. For the probe one-hop questions in the written wording and in a HELD-OUT wording (store
+    off): OPEN-ENDED (the whole answer greedy from the trunk, as every open readout) and among 20 candidates, weights only vs with the
+    retrieved sentence vs with the true sentence (ceiling); and CITATION: the cited sentence names A and B (it holds the fact)."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    dev_ = model.embed.weight.device; nm_ = 'G' if 'G' in _JX else 'V'
+    lv_, K_ = _jx_keys(cfg, S_, dev_, nm_); pos_ = {i_: j_ for j_, i_ in enumerate(lv_)}
+    ch_ = [c_ for c_ in inf_probes(cfg) if len(c_['names']) >= 2 and not c_.get('upd')][:int(getattr(cfg, 'inf_jx_n', 60))]
+    alln_ = sorted({n_ for c_ in inf_probes(cfg) for n_ in c_['names']}); rs_ = np.random.RandomState(9300)
+    t2s_ = model.__dict__.get('_t2s', {})
+    import re as _re
+    rx_ = _re.compile(rb'\b(' + b'|'.join(_re.escape(n_.encode('latin-1')) for n_ in sorted(alln_, key=len, reverse=True)) + rb')\b'); NX_ = {}
+    for i_ in lv_:
+        for m_ in set(rx_.findall(S_['it'][i_]['s'])): NX_.setdefault(m_.decode('latin-1'), []).append(i_)
+    has_ = lambda s_, a_, b_: {a_.encode('latin-1'), b_.encode('latin-1')} <= set(rx_.findall(s_))
+    L0_ = int(cfg_seq_(model)); isl_ = lambda b_: 65 <= b_ <= 90 or 97 <= b_ <= 122
+    def opn_(ctx_, q_, tgt_, sl_):                                           # open-ended: every answer byte the trunk's top-1, then a non-letter
+        qb_ = q_.encode('latin-1', 'replace'); ab_ = (tgt_ + '.').encode('latin-1', 'replace')
+        cb_ = (bytes(ctx_).strip() + b' ') if ctx_ else b''
+        room_ = L0_ - len(qb_) - len(ab_) - 1
+        if room_ <= 0: return False
+        cb_ = cb_[-room_:] if cb_ else b''
+        X_, _ = _ws_batch(model, [cb_ + qb_ + ab_]); lg_ = _ws_run(model, X_, sl_)[0]
+        p0_ = len(cb_) + len(qb_) - 1
+        if p0_ + len(ab_) - 1 >= lg_.shape[0]: return False
+        t_ = lg_[p0_:p0_ + len(ab_)].argmax(-1); tr_ = torch.tensor(list(ab_), device=lg_.device)
+        return bool((t_[:-1] == tr_[:-1]).all()) and not isl_(int(t_[-1]))
+    def mc_(ctx_, q_, tgt_, oth_, sl_):
+        c9_ = (ctx_.decode('latin-1', 'replace') + ' ' + q_) if ctx_ else q_; cs_ = [tgt_] + oth_
+        return int(np.argmax(_inf_lps(model, cfg, c9_, cs_, sl_, False))) == 0
+    def hyb_(q_, A_):
+        c9_ = [pos_[i_] for i_ in NX_.get(A_, []) if i_ in pos_]
+        if not c9_: return None
+        return c9_[int((K_[c9_] - _jx_pred(cfg, q_, dev_, nm_)).abs().sum(-1).argmin())]
+    R_ = {}
+    add_ = lambda k_, v_: R_.setdefault(k_, []).append(bool(v_))
+    for c_ in ch_:
+        A_, B_ = c_['names'][:2]; r0_ = c_['rels'][0]; sl_ = int(t2s_.get(int(c_['facts'][0][0]), 0))
+        tr_ = next((S_['it'][i_]['s'] for i_ in reversed(NX_.get(A_, [])) if has_(S_['it'][i_]['s'], A_, B_)), None)
+        if tr_ is None: continue                                             # the fact is not (yet) in the store
+        oth_ = list(rs_.choice([x_ for x_ in alln_ if x_ not in c_['names']], 19, replace=False))
+        for w_, q_ in (('w', f"{A_} {r0_} "),) + ((('h', f"{A_} {_INF_PARA[r0_]} "),) if r0_ in _INF_PARA else ()):
+            j_ = hyb_(q_, A_); rt_ = S_['it'][lv_[j_]]['s'] if j_ is not None else None
+            add_(w_ + 'cite', rt_ is not None and has_(rt_, A_, B_))
+            add_(w_ + 'o0', opn_(None, q_, B_, sl_)); add_(w_ + 'o1', rt_ is not None and opn_(rt_, q_, B_, sl_)); add_(w_ + 'o2', opn_(tr_, q_, B_, sl_))
+            add_(w_ + 'm0', mc_(None, q_, B_, oth_, sl_)); add_(w_ + 'm1', rt_ is not None and mc_(rt_, q_, B_, oth_, sl_)); add_(w_ + 'm2', mc_(tr_, q_, B_, oth_, sl_))
+            if rt_ is not None: add_(w_ + 'both', opn_(rt_, q_, B_, sl_) and has_(rt_, A_, B_))
+    f_ = lambda k_: f"{np.mean(R_[k_]):.2f}" if R_.get(k_) else "-"
+    n_ = lambda w_: len(R_.get(w_ + 'o0', []))
+    part_ = lambda w_, nmw_: (f"{nmw_} (n {n_(w_)}): OPEN-ENDED weights only {f_(w_ + 'o0')} -> with the retrieved sentence {f_(w_ + 'o1')} (true sentence {f_(w_ + 'o2')}) | "
+                              f"20 candidates {f_(w_ + 'm0')} -> {f_(w_ + 'm1')} (true {f_(w_ + 'm2')}) | CITED SOURCE holds the fact {f_(w_ + 'cite')} | open answer right AND source right {f_(w_ + 'both')}")
+    print(f"  [RETRIEVAL-AUGMENTED ANSWERS | {tag_}] one-hop probe questions, store off; one stored sentence (those naming A, ranked by the JEPA key, arm {nm_}) before the question, "
+          f"cited as the source || " + part_('w', 'WRITTEN wording') + " || " + part_('h', 'HELD-OUT wording'), flush=True)
 def _jx_bytes(bs_):
     """byte unigram + hashed byte-pair profile, square-rooted (the routing toy's BYTES router)"""
     out_ = np.zeros((len(bs_), 256 + 4096), dtype=np.float32)
@@ -329,6 +386,9 @@ def _jx_sleep_(model, cfg, S_):
               + (f" | InfoNCE weight {float(getattr(cfg, 'inf_jx_nce', 0.0)):g}" if float(getattr(cfg, 'inf_jx_nce', 0.0)) > 0 else "")
               + (f" | PAIRED WORDINGS: {pg9_} groups of different sentences naming the same two names, {npr9_} pair rows per batch" if float(getattr(cfg, 'inf_jx_pair', 0.0)) > 0 else ""), flush=True)
         if (v_ + 1) % max(1, int(getattr(cfg, 'inf_jx_every', 1))) == 0: _jx_readout(model, cfg, S_, f"visit {v_ + 1}")
+        if int(getattr(cfg, 'inf_jx_rag', 1)) and (v_ + 1) % max(1, int(getattr(cfg, 'inf_jx_every', 1))) == 0:
+            try: _jx_rag(model, cfg, S_, f"visit {v_ + 1}")
+            except Exception as e9_: _fail('inference.jindex:rag'); print(f"  [RETRIEVAL-AUGMENTED ANSWERS] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
         if int(getattr(cfg, 'inf_jx_route', 0)):
             try: _jx_route(model, cfg, S_)
             except Exception as e9_: _fail('inference.jindex:334'); print(f"  [JEPA ROUTING] unavailable ({type(e9_).__name__}: {e9_})"[:240], flush=True)
