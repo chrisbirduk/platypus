@@ -246,20 +246,22 @@ def _dw_ever(model, cfg, S_slot, ents, held, D, vis):
     if not L: return
     pick = sorted(L, key=lambda k: zlib.crc32(k.encode()))
     tk = [k for k in pick if L[k]['g'] == 't'][:nmax]; ck = [k for k in pick if L[k]['g'] == 'c'][:max(32, nmax // 4)]
+    tk1 = [k for k in tk if vis - L[k]['v'] >= 1]                              # entered at an earlier sleep, so trained for at least one visit
     f = lambda x: " | ".join(f"{k_} {v_[0]:.2f} ({v_[1]})" for k_, v_ in x.items() if v_[1]) or "none"
     def grp_(keys, cur):
         out = []
         for nm, sel in (('still in the pool', lambda k: k in cur), ('left the pool', lambda k: k not in cur)):
             ks = [k for k in keys if sel(k)]
             if ks: out.append(f"{nm} ({len(ks)}): {f(_dt_recall(model, S_slot, [L[k]['e'] for k in ks]))}")
-        for nm, lo, hi in (('taught 0-1 visits ago', 0, 1), ('2-3 visits ago', 2, 3), ('4+ visits ago', 4, 999)):
+        for nm, lo, hi in (('ENTERED AT THIS SLEEP (not yet taught)', 0, 0), ('taught 1 visit', 1, 1), ('2-3 visits', 2, 3), ('4+ visits', 4, 999)):
             ks = [k for k in keys if lo <= vis - L[k]['v'] <= hi]
             if ks: out.append(f"{nm} ({len(ks)}): {f(_dt_recall(model, S_slot, [L[k]['e'] for k in ks]))}")
         return " || ".join(out)
     try:
         nt = sum(1 for v in L.values() if v['g'] == 't'); nc = sum(1 for v in L.values() if v['g'] == 'c')
         print(f"  [DISTILLATION, EVER TAUGHT | visit {vis + 1}] ledger: {nt} facts and conclusions ever taught ({len(now)} in the pool now), {nc} control ever held back "
-              f"({len(nowc)} now) | from the trunk, test wordings, sample of {len(tk)} ever taught: ALL {f(_dt_recall(model, S_slot, [L[k]['e'] for k in tk]))} || "
+              f"({len(nowc)} now) | from the trunk, test wordings, sample of {len(tk)} ever in the pool: TAUGHT FOR AT LEAST ONE VISIT ({len(tk1)}) "
+              f"{f(_dt_recall(model, S_slot, [L[k]['e'] for k in tk1])) if tk1 else 'none'} || "
               + grp_(tk, now) + f" ||| CONTROL, sample of {len(ck)} ever held back: ALL {f(_dt_recall(model, S_slot, [L[k]['e'] for k in ck]))}", flush=True)
     except Exception as e:
         _fail('inference.distill:ever'); print(f"  [DISTILLATION, EVER TAUGHT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
