@@ -131,48 +131,199 @@ def distill_sleep(model, cfg, S_, S_slot, vals, t, ts, olds_):
 
 
 # ---------------------------------------------------------------- INTERLEAVED (wake) distillation
-def distill_wake_sleep(model, cfg, S_, S_slot):
+# 11 Nov options that pair the question rows with protection (each off by default; see distill_wake_step and distill_wake_sleep):
+#   inf_distill_wake_params='mlp_out'   only the blocks' mlp_out weights take the question gradient
+#   inf_distill_wake_proj=1             anchor projection (A-GEM) against next-byte loss on stored real sentences
+#   inf_distill_wake_ondream=1          question rows only on steps that also train on dream rows, weight x the dream interval (same dose)
+#   inf_distill_wake_akl=lam            soft anchor: + lam x KL(the model at the last sleep || now) on stored real sentences of OLD slots
+#   inf_distill_repair=N                repair replay at each sleep: N steps of that KL on the old slots (previous sleep's predictions) before
+#                                       the new pool is built (lr = cfg.lr x inf_distill_repair_lr)
+#   inf_distill_wake_spaced=1           spaced rehearsal: a fact the trunk answers in a taught wording at a sleep has its sampling interval
+#                                       doubled (to 16), a fact it misses goes back to 1; rows drawn with weight 1/interval
+#   inf_distill_wake_selfkl=1           a fact the trunk answers in a taught wording is held by KL to its own answer distribution at that
+#                                       sleep instead of pushed by cross-entropy
+_ISL = lambda b: 65 <= b <= 90 or 97 <= b <= 122
+
+
+def _dw_known(model, S_slot, ents):
+    """facts the trunk answers in a TAUGHT wording (the first self-written form, never a test wording): repr(key) -> bool"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    out = {}
+    for e in ents:
+        pb = _DT_FORMS[0].format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); tb = (e['ans'] + '.').encode('latin-1', 'replace')
+        X, _ = _ws_batch(model, [pb + tb])
+        with torch.no_grad(): lg = _ws_run(model, X, int(S_slot(e['d'])))[0]
+        p0 = len(pb) - 1
+        if p0 + len(tb) - 1 >= lg.shape[0]: out[repr(e['key'])] = False; continue
+        top = lg[p0:p0 + len(tb)].argmax(-1); tr = torch.tensor(list(tb), device=lg.device)
+        out[repr(e['key'])] = bool((top[:-1] == tr[:-1]).all()) and not _ISL(int(top[-1]))
+    return out
+
+
+def _dw_cache(model, cfg, S_, S_slot, slots, vis):
+    """32 stored real sentences per slot with the model's log-probabilities now (the anchor targets until the next sleep)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    ra = np.random.RandomState(int(cfg.seed) + 9696 + vis); by = {}
+    for i in ra.permutation(len(real)):
+        x = real[int(i)]; sl = int(S_slot(x['d']))
+        if sl in slots and len(by.setdefault(sl, [])) < 32: by[sl].append(bytes(x['s']))
+    C = {}
+    for sl, txt in by.items():
+        if len(txt) < 4: continue
+        X, M = _ws_batch(model, txt)
+        with torch.no_grad(): lp = F.log_softmax(_ws_run(model, X, sl).float(), -1).half()
+        C[sl] = (X, M, lp)
+    return C
+
+
+def _dw_kl(model, C, sl, rs, k, grad=True):
+    from platypus.inference.closed_form import _ws_run
+    X, M, lp = C[sl]
+    idx = torch.tensor(rs.choice(len(X), min(k, len(X)), replace=False), device=X.device) if k else torch.arange(len(X), device=X.device)
+    if grad: lg = F.log_softmax(_ws_run(model, X[idx], sl, grad_=True).float(), -1)
+    else:
+        with torch.no_grad(): lg = F.log_softmax(_ws_run(model, X[idx], sl).float(), -1)
+    T = lg.shape[1]; m = M[idx][:, 1:T + 1].float(); t_ = lp[idx][:, :T].float()
+    return ((t_.exp() * (t_ - lg)).sum(-1) * m).sum() / m.sum().clamp(min=1)
+
+
+def _dw_params(model, cfg):
+    P = [p for p in model.parameters() if p.requires_grad]
+    only = str(getattr(cfg, 'inf_distill_wake_params', '') or '')
+    if only == 'mlp_out':
+        keep = set(id(t) for b in model.blocks for t in (b.mlp_out.weight, b.mlp_out.bias))
+        return [p for p in P if id(p) in keep], [p for p in P if id(p) not in keep]
+    if only: raise ValueError(f"inf_distill_wake_params {only!r}")
+    return P, []
+
+
+def _dw_repair(model, cfg, D, vslot, oslots, vis):
+    """REPAIR REPLAY: N steps of KL to the previous sleep's predictions on stored real sentences of the old slots (not the one just visited)"""
+    n = int(getattr(cfg, 'inf_distill_repair', 0)); C = (D or {}).get('cache') or {}
+    sls = [s for s in oslots if s in C and s != vslot]
+    if not n or not sls: return
+    t0 = time.time(); P, frz = _dw_params(model, cfg); allp = list(model.parameters()); g_saved = [p.grad for p in allp]
+    for p in allp: p.grad = None
+    for p in frz: p.requires_grad_(False)
+    rs = np.random.RandomState(int(cfg.seed) + 9797 + vis)
+    try:
+        b = {s: float(_dw_kl(model, C, s, rs, 0, grad=False)) for s in sls}
+        op = torch.optim.Adam(P, lr=float(cfg.lr) * float(getattr(cfg, 'inf_distill_repair_lr', 0.1)))
+        for st in range(n):
+            sl = sls[rs.randint(len(sls))]; loss = _dw_kl(model, C, sl, rs, 8)
+            op.zero_grad(); loss.backward(); op.step()
+        for p in allp: p.grad = None
+        a = {s: float(_dw_kl(model, C, s, rs, 0, grad=False)) for s in sls}
+        print(f"  [DISTILLATION, REPAIR REPLAY | visit {vis + 1}] {n} steps on {len(sls)} old slots ({'mlp_out only' if frz else 'all parameters'}): KL to the previous "
+              f"sleep's predictions on their stored real sentences {np.mean(list(b.values())):.4f} -> {np.mean(list(a.values())):.4f} | per slot "
+              + " ".join(f"{s}:{b[s]:.4f}->{a[s]:.4f}" for s in sls) + f" | {time.time() - t0:.0f}s", flush=True)
+    except Exception as e:
+        _fail('inference.distill:repair'); print(f"  [DISTILLATION, REPAIR REPLAY] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    finally:
+        for p in frz: p.requires_grad_(True)
+        for p, g in zip(allp, g_saved): p.grad = g
+
+
+def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
-    question rows for the next visit; during the visit, distill_wake_loss adds inf_distill_wake_rows of them to each real-text training step
-    (same backward, same optimiser - its Fisher whitening, the real-text loss and the dream rows apply - no burst, no separate optimiser)"""
+    question rows for the next visit; during the visit, distill_wake_step adds inf_distill_wake_rows of them to each real-text training step
+    (same optimiser - its Fisher whitening, the real-text loss and the dream rows apply - no burst, no separate optimiser)"""
     import zlib
     from platypus.inference.namemem import _nm_material, _NM
     vis = int(model.__dict__.get('_visit', 0)); D = model.__dict__.get('_dtw')
     allm = _nm_material(model, cfg, S_)
     ctl = lambda e: zlib.crc32(repr(e['key']).encode()) % 5 == 0
     ents = [e for e in allm if not ctl(e)]; held = [e for e in allm if ctl(e)]
-    if D is not None and D.get('probe'):
-        was = _NM['force']; _NM['force'] = False
-        try:
+    f = lambda x: " | ".join(f"{k} {v[0]:.2f} ({v[1]})" for k, v in x.items()) if x else "none"
+    was = _NM['force']; _NM['force'] = False
+    try:
+        if D is not None and D.get('probe'):
             r = _dt_recall(model, S_slot, D['probe']); h = _dt_recall(model, S_slot, D['hprobe']) if D.get('hprobe') else None
-        finally: _NM['force'] = was
-        f = lambda x: " | ".join(f"{k} {v[0]:.2f} ({v[1]})" for k, v in x.items()) if x else "none"
-        ls = D['losses']
-        print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] last visit: {D['n']} training steps with {int(getattr(cfg, 'inf_distill_wake_rows', 4))} question rows each "
-              f"(weight {float(cfg.inf_distill_wake):g}), answer loss {np.mean(ls[:20]) if ls else float('nan'):.3f} (first 20) -> {np.mean(ls[-20:]) if ls else float('nan'):.3f} (last 20) | "
-              f"from the trunk, test wordings, after the visit: {len(D['probe'])} taught facts {f(r)} || CONTROL, {len(D['hprobe'])} never-taught {f(h)}", flush=True)
-    rows = []
-    for e in ents:
-        for fm in _DT_FORMS:
-            rows.append(((fm.format(A=e['A'], r=e['r'])).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), int(S_slot(e['d']))))
-    rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
-    probe = [ents[int(i)] for i in rs.choice(len(ents), min(32, len(ents)), replace=False)] if ents else []
-    hprobe = [held[int(i)] for i in rs.choice(len(held), min(32, len(held)), replace=False)] if held else []
-    bysl = {}
-    for rw in rows: bysl.setdefault(rw[2], []).append(rw)
-    anc = {}                                                                   # 11 Nov: ANCHOR SENTENCES per slot (stored real text) for inf_distill_wake_proj
-    if int(getattr(cfg, 'inf_distill_wake_proj', 0)):
-        it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]; ra = np.random.RandomState(int(cfg.seed) + 9595 + vis)
-        for x in [real[int(i)] for i in ra.permutation(len(real))]:
-            sl = int(S_slot(x['d']))
-            if len(anc.setdefault(sl, [])) < 64: anc[sl].append(bytes(x['s']))
-    st = (D or {}).get('st', dict(proj=0, conf=0, cut=[]))
-    if D is not None and int(getattr(cfg, 'inf_distill_wake_proj', 0)) and st['proj']:
-        print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] ANCHOR PROJECTION last visit: {st['proj']} steps, question gradient in conflict with the anchor gradient "
-              f"in {st['conf']} ({st['conf'] / max(1, st['proj']):.2f}); share of the question gradient removed when in conflict: mean {np.mean(st['cut']) if st['cut'] else float('nan'):.3f}", flush=True)
-    model.__dict__['_dtw'] = dict(bysl=bysl, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], probe=probe, hprobe=hprobe, anc=anc,
-                                  st=dict(proj=0, conf=0, cut=[]))
+            ls = D['losses']; ak = D.get('akl') or []
+            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] last visit: {D['n']} training steps with {int(getattr(cfg, 'inf_distill_wake_rows', 4))} question rows each "
+                  f"(weight {float(cfg.inf_distill_wake):g}), answer loss {np.mean(ls[:20]) if ls else float('nan'):.3f} (first 20) -> {np.mean(ls[-20:]) if ls else float('nan'):.3f} (last 20) | "
+                  f"from the trunk, test wordings, after the visit: {len(D['probe'])} taught facts {f(r)} || CONTROL, {len(D['hprobe'])} never-taught {f(h)}"
+                  + (f" | soft anchor KL during the visit {np.mean(ak[:20]):.4f} (first 20) -> {np.mean(ak[-20:]):.4f} (last 20)" if ak else ""), flush=True)
+        st = (D or {}).get('st') or dict(proj=0, conf=0, cut=[])
+        if D is not None and int(getattr(cfg, 'inf_distill_wake_proj', 0)) and st['proj']:
+            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] ANCHOR PROJECTION last visit: {st['proj']} steps, question gradient in conflict with the anchor gradient "
+                  f"in {st['conf']} ({st['conf'] / max(1, st['proj']):.2f}); share of the question gradient removed when in conflict: mean {np.mean(st['cut']) if st['cut'] else float('nan'):.3f}", flush=True)
+        if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
+        sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
+        known = _dw_known(model, S_slot, ents) if (sp or sk) else {}
+        iv = dict((D or {}).get('iv') or {})
+        if sp:
+            for k_, ok in known.items(): iv[k_] = min(16, 2 * iv.get(k_, 1)) if ok else 1
+        rows = []; nt = 0
+        from platypus.inference.closed_form import _ws_batch, _ws_run
+        for e in ents:
+            k_ = repr(e['key']); sl = int(S_slot(e['d']))
+            for fm in _DT_FORMS:
+                pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
+                if sk and known.get(k_):
+                    X, _ = _ws_batch(model, [pb + ab])
+                    with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
+                    p0 = len(pb) - 1; n_ = min(len(ab), lg.shape[0] - p0)
+                    if n_ > 0: tl = F.log_softmax(lg[p0:p0 + n_].float(), -1).half(); nt += 1
+                rows.append((pb, ab, sl, k_, tl))
+        if sp or sk:
+            nk = sum(known.values())
+            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught facts in a taught wording"
+                  + (f" | spaced rehearsal: mean interval {np.mean([iv.get(repr(e['key']), 1) for e in ents]):.2f}, at 16: {sum(1 for e in ents if iv.get(repr(e['key']), 1) >= 16)}" if sp else "")
+                  + (f" | held by KL to their own answers: {nt} rows" if sk else ""), flush=True)
+        rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
+        probe = [ents[int(i)] for i in rs.choice(len(ents), min(32, len(ents)), replace=False)] if ents else []
+        hprobe = [held[int(i)] for i in rs.choice(len(held), min(32, len(held)), replace=False)] if held else []
+        bysl = {}
+        for rw in rows: bysl.setdefault(rw[2], []).append(rw)
+        w = {}
+        if sp:
+            for sl, pool in bysl.items():
+                a_ = np.array([1.0 / iv.get(rw[3], 1) for rw in pool]); w[sl] = a_ / a_.sum()
+        anc = {}                                                               # ANCHOR SENTENCES per slot (stored real text) for the projection
+        if int(getattr(cfg, 'inf_distill_wake_proj', 0)):
+            it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]; ra = np.random.RandomState(int(cfg.seed) + 9595 + vis)
+            for x in [real[int(i)] for i in ra.permutation(len(real))]:
+                sl = int(S_slot(x['d']))
+                if len(anc.setdefault(sl, [])) < 64: anc[sl].append(bytes(x['s']))
+        cache = None
+        if float(getattr(cfg, 'inf_distill_wake_akl', 0.0)) > 0 or int(getattr(cfg, 'inf_distill_repair', 0)):
+            cache = _dw_cache(model, cfg, S_, S_slot, set([int(s) for s in oslots] + ([int(vslot)] if vslot is not None else [])), vis)
+        model.__dict__['_dtw'] = dict(bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+                                      anc=anc, cache=cache, st=dict(proj=0, conf=0, cut=[]))
+    finally: _NM['force'] = was
+
+
+def distill_wake_loss(model, cfg):
+    """inf_distill_wake_rows question rows (one slot, drawn from the pool, by spaced-rehearsal weight when on) - cross-entropy on the answer
+    bytes, or KL to the trunk's own answer at the last sleep for rows of facts it already answers (inf_distill_wake_selfkl); 0.0 when no pool"""
+    D = model.__dict__.get('_dtw')
+    if not D or not D['bysl']: return 0.0
+    try:
+        from platypus.inference.closed_form import _ws_batch, _ws_run
+        k = int(getattr(cfg, 'inf_distill_wake_rows', 4)); rs = D['rs']; sls = list(D['bysl']); sl = sls[rs.randint(len(sls))]; pool = D['bysl'][sl]
+        pw = (D.get('w') or {}).get(sl)
+        items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False, p=pw)]
+        X, M = _ws_batch(model, [it[0] + it[1] for it in items]); lg = _ws_run(model, X, sl, grad_=True)
+        tot = 0.0; cnt = 0; ce = []
+        for r9, it in enumerate(items):
+            p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg.shape[1] - p0)
+            if n_ <= 0: continue
+            z = lg[r9, p0:p0 + n_].float(); tl = it[4] if len(it) > 4 else None
+            if tl is not None:
+                t_ = tl[:n_].float(); tot = tot + (t_.exp() * (t_ - F.log_softmax(z, -1))).sum()
+            else:
+                c_ = F.cross_entropy(z, X[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); tot = tot + c_; ce.append(float(c_.detach()) / n_)
+            cnt += n_
+        if not cnt: return 0.0
+        loss = tot / cnt; D['n'] += 1; D['losses'].append(float(np.mean(ce)) if ce else float(loss.detach()))
+        return loss
+    except Exception as e:
+        _fail('inference.distill:wake')
+        if not D.get('err'): D['err'] = 1; print(f"  [DISTILLATION, INTERLEAVED] a step failed ({type(e).__name__}: {e})"[:300], flush=True)
+        return 0.0
 
 
 def _dw_anchor_loss(model, cfg, D):
@@ -187,20 +338,15 @@ def _dw_anchor_loss(model, cfg, D):
     return (ce * m).sum() / m.sum().clamp(min=1)
 
 
-def distill_wake_step(model, cfg):
-    """the interleaved question rows' backward, after the real step's backward (gradients add before the optimiser step). Options (11 Nov):
-    inf_distill_wake_params='mlp_out': only the blocks' mlp_out weights take the question gradient (where the closed-form edits and the name
-    memory's keys sit) - embeddings, shared n-gram tables, heads, mixers get none; inf_distill_wake_proj=1: ANCHOR PROJECTION (A-GEM) - the
-    gradient of next-byte loss on stored real sentences is computed on the same parameters, and when the question gradient conflicts with
-    it (negative dot product) its component along it is removed, so to first order the question rows cannot raise the loss on real text"""
+def distill_wake_step(model, cfg, olds=None, dream=None, dk=1):
+    """the interleaved question rows' backward, after the real step's backward (gradients add before the optimiser step); options above"""
     D = model.__dict__.get('_dtw')
     if not D: return
-    only = str(getattr(cfg, 'inf_distill_wake_params', '') or ''); proj = int(getattr(cfg, 'inf_distill_wake_proj', 0))
-    P = [p for p in model.parameters() if p.requires_grad]; frz = []
-    if only == 'mlp_out':
-        keep = set(id(t) for b in model.blocks for t in (b.mlp_out.weight, b.mlp_out.bias))
-        frz = [p for p in P if id(p) not in keep]; P = [p for p in P if id(p) in keep]
-    elif only: raise ValueError(f"inf_distill_wake_params {only!r}")
+    ond = int(getattr(cfg, 'inf_distill_wake_ondream', 0))
+    if ond and not dream: return
+    w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
+    proj = int(getattr(cfg, 'inf_distill_wake_proj', 0)); akl = float(getattr(cfg, 'inf_distill_wake_akl', 0.0))
+    P, frz = _dw_params(model, cfg)
     for p in frz: p.requires_grad_(False)
     try:
         g0 = None
@@ -209,7 +355,14 @@ def distill_wake_step(model, cfg):
         if not torch.is_tensor(dl_):
             if g0 is not None: [setattr(p, 'grad', g) for p, g in zip(P, g0)]
             return
-        (float(cfg.inf_distill_wake) * dl_).backward()
+        tot = w * dl_
+        C = D.get('cache') or {}
+        if akl > 0 and C and olds:
+            sls = [int(s) for s in olds if int(s) in C]
+            if sls:
+                kl = _dw_kl(model, C, sls[D['rs'].randint(len(sls))], D['rs'], int(getattr(cfg, 'inf_distill_wake_rows', 4)))
+                tot = tot + akl * kl; D['akl'].append(float(kl.detach()))
+        tot.backward()
         if proj:
             gq = [p.grad for p in P]; [setattr(p, 'grad', None) for p in P]
             la = None
@@ -229,26 +382,3 @@ def distill_wake_step(model, cfg):
                 p.grad = q if g is None else (g if q is None else g + q)
     finally:
         for p in frz: p.requires_grad_(True)
-
-
-def distill_wake_loss(model, cfg):
-    """inf_distill_wake_rows question rows (one slot, drawn from the pool) - cross-entropy on the answer bytes only; 0.0 when no pool"""
-    D = model.__dict__.get('_dtw')
-    if not D or not D['bysl']: return 0.0
-    try:
-        from platypus.inference.closed_form import _ws_batch, _ws_run
-        k = int(getattr(cfg, 'inf_distill_wake_rows', 4)); rs = D['rs']; sls = list(D['bysl']); sl = sls[rs.randint(len(sls))]; pool = D['bysl'][sl]
-        items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False)]
-        X, M = _ws_batch(model, [p + a for p, a, _ in items]); lg = _ws_run(model, X, sl, grad_=True)
-        rows, pos = [], []
-        for r9, (p, a, _) in enumerate(items):
-            p0 = len(p) - 1
-            for j in range(len(a)):
-                if p0 + j < lg.shape[1]: rows.append(r9); pos.append(p0 + j)
-        rows = torch.tensor(rows, device=X.device); pos = torch.tensor(pos, device=X.device)
-        loss = F.cross_entropy(lg[rows, pos], X[rows, pos + 1]); D['n'] += 1; D['losses'].append(float(loss.detach()))
-        return loss
-    except Exception as e:
-        _fail('inference.distill:wake')
-        if not D.get('err'): D['err'] = 1; print(f"  [DISTILLATION, INTERLEAVED] a step failed ({type(e).__name__}: {e})"[:300], flush=True)
-        return 0.0

@@ -539,6 +539,12 @@ class Config:
     inf_distill_wake_params=''      #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
+    inf_distill_wake_ondream=0      #   11 Nov: 1 = question rows only on steps that also train on dream rows, weight x the dream interval (same dose)
+    inf_distill_wake_akl=0.0        #   11 Nov: >0 = SOFT ANCHOR: + this x KL(the model at the last sleep || now) on stored real sentences of old slots
+    inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
+    inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
+    inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with

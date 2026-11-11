@@ -521,6 +521,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 _dk_=int(model.__dict__.get('_dream_k',max(1,cfg.dream_every)))
                 if step==0 and (cfg.sleep_eps>0 or cfg.sleep_rel>0): model.__dict__['_dream_k']=1; _dk_=1
                 if model.__dict__.get('_sleep_phase')=='rem': _dk_=1
+            _dws_=bool(cfg.dream_stream and getattr(model,'_dsq',None) and step%_dk_==0 and not cfg.proj_nodream)   # (11 Nov: read by inf_distill_wake_ondream)
             if cfg.dream_stream and getattr(model,'_dsq',None) and step%_dk_==0 and not cfg.proj_nodream:   # CONTINUOUS STREAMS (every dream_every steps)
                 sb_=pre_[0] if pre_ is not None else stream_batch(model,cfg,olds)
                 if sb_ is not None:
@@ -796,7 +797,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         with _rf('backward'): loss.backward()
         if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
             from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the
-            distill_wake_step(model,cfg)                                             #   real forward and its backward changed a tensor in place: autograd error); the
+            distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1))                                             #   real forward and its backward changed a tensor in place: autograd error); the
                                                                                      #   gradients add up before the optimiser step and its whitening (11 Nov: options
                                                                                      #   inf_distill_wake_params / inf_distill_wake_proj, see distill_wake_step)
         if _pg is not None:
