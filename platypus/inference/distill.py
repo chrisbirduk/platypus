@@ -346,6 +346,9 @@ def _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis):
         _fail('inference.distill:pdprobe'); print(f"  [SOURCE IN CONTEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+_BRG = {'held': set(), 'anch': set()}
+
+
 def _dw_bridge(cfg, S_, ents, held, vis):
     """BRIDGE ANCHORING (11 Nov; inf_distill_bridge = N descriptors; after BRACE, NeurIPS 2026): two-hop recall from injected facts fails when
     the bridge entity B is represented differently as the ANSWER of hop 1 (A - B) and as the SUBJECT of hop 2 (B - C); reusing the same
@@ -357,6 +360,28 @@ def _dw_bridge(cfg, S_, ents, held, vis):
     both premises taught, edits subtracted (inf_distill_conc_ctl 1 holds every conclusion back)."""
     import zlib
     n = int(getattr(cfg, 'inf_distill_bridge', 0)); part = {}
+    if int(getattr(cfg, 'inf_distill_bridge_syn', 0)):                        # 11 Nov SYNTHETIC, HALF: the bridges of the HELD-OUT chains (inf_kgx_hold: never
+        from platypus.inference.probes import inf_probes                      #   concluded, stored, replayed or edited); half of them, by a hash of the name,
+        N9 = int(getattr(cfg, 'inf_kgx_hold', 0)); held_b = set()            #   get one fixed INVENTED attribute as descriptor ('B keeps the green ledger.'),
+        if N9 > 0:                                                            #   the other half none: anchored vs unanchored held-out chains in one run
+            for i9, c9 in enumerate(inf_probes(cfg)):
+                if i9 % N9 == N9 - 1:
+                    nm9 = list(c9['names'])
+                    for k9 in range(1, len(nm9) - 1): held_b.add(nm9[k9])
+        adj = ('green', 'silver', 'oak', 'copper', 'amber', 'blue', 'iron', 'linen', 'stone', 'cedar')
+        nou = ('ledger', 'lantern', 'compass', 'satchel', 'kettle', 'harp', 'anchor', 'quill', 'clock', 'ribbon')
+        anch = {B for B in held_b if zlib.crc32(B.encode('latin-1', 'replace')) % 2 == 0}
+        out = {}
+        for B in anch:
+            h9 = zlib.crc32(('d|' + B).encode('latin-1', 'replace'))
+            out[B] = [f"{B} keeps the {adj[h9 % 10]} {nou[(h9 // 10) % 10]}.".encode('latin-1', 'replace')]
+        _BRG['held'] = held_b; _BRG['anch'] = anch
+        fs = [e for e in ents if e['key'][0] == 'fact']
+        h1 = sum(1 for e in fs if e['ans'] in out); h2 = sum(1 for e in fs if e['A'] in out)
+        print(f"  [DISTILLATION, BRIDGE | visit {vis + 1}] SYNTHETIC, HALF: {len(held_b)} bridges of held-out chains (every {N9}th chain never concluded), "
+              f"{len(anch)} anchored with an invented attribute, {len(held_b) - len(anch)} not | taught facts anchored: {h1} with the bridge as answer, {h2} as subject"
+              + (f" | e.g. {sorted(out)[0]}: {out[sorted(out)[0]][0].decode('latin-1')}" if out else ""), flush=True)
+        return out
     for c in S_.get('conc', []):
         if c.get('freed') or c.get('retracted'): continue
         if isinstance(c.get('A'), str) and isinstance(c.get('B'), str) and isinstance(c.get('C'), str): part.setdefault(c['B'], set()).update((c['A'], c['C']))
@@ -477,7 +502,8 @@ def _fu_init(model, cfg):
     P = {}
     for b in model.blocks:
         d = int(b.d_model)
-        P[id(b)] = dict(K=torch.zeros(fm, d, device=dev), g=torch.full((fm,), g0, device=dev), V=torch.zeros(fm, d, device=dev), n=0)
+        P[id(b)] = dict(K=torch.zeros(fm, d, device=dev), g=torch.full((fm,), g0, device=dev), V=torch.zeros(fm, d, device=dev), n=0,
+                        mu=torch.zeros(d, device=dev), t=torch.full((fm,), float(getattr(cfg, 'inf_distill_fu_tau', 0.5)), device=dev), mu_set=False)
     _FU['P'] = P; _FU['on'] = True; _FU['tau'] = float(getattr(cfg, 'inf_distill_fu_tau', 0.5))
     ts = [t for v in P.values() for t in (v['V'], v['g'])]
     st = dict(P=P, map={}, opt=torch.optim.Adam(ts, lr=float(cfg.lr) * float(getattr(cfg, 'inf_distill_fu_lr', 3.0))), steps=0, ql=[])
@@ -535,6 +561,23 @@ def _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis):
         import zlib
         new.sort(key=lambda e: zlib.crc32(repr(e['key']).encode()))
         new = new[:k]; acc = {id(b): [] for b in blocks}
+        real = _fu_old_sents(cfg, S_, S_slot, set(int(S_slot(x['d'])) for x in S_.get('it', [])[:20000] if x.get('k') == 'real'), int(cfg.seed) + 7373 + vis, n=16)
+        rcap = {id(b): [] for b in blocks}                                     # MLP inputs on ordinary stored text (centring and thresholds)
+        for sl, txt in real.items():
+            if not txt: continue
+            X, M = _ws_batch(model, txt); _FU['cap'] = {}
+            try:
+                with torch.no_grad(): _ws_run(model, X, sl)
+                cap = dict(_FU['cap'])
+            finally: _FU['cap'] = None
+            m9 = M[:, :-1] > 0
+            for b in blocks:
+                h = cap.get(id(b))
+                if h is not None: rcap[id(b)].append(h[m9[:, :h.shape[1]]].float())
+        for b in blocks:                                                       #   CENTRE once, at the first births: the MLP inputs share a large common
+            Pb = P[id(b)]                                                      #   direction, so raw cosines fire everywhere (first local run: 0.36-0.48 of text)
+            if not Pb['mu_set'] and rcap[id(b)]:
+                Pb['mu'] = torch.cat(rcap[id(b)]).mean(0); Pb['mu_set'] = True
         for e in new:
             txt = [(fm_.format(A=e['A'], r=e['r']) + e['ans'] + '.').encode('latin-1', 'replace') for fm_ in _DT_FORMS[:3]]
             pl = [len(fm_.format(A=e['A'], r=e['r']).encode('latin-1', 'replace')) for fm_ in _DT_FORMS[:3]]
@@ -549,17 +592,22 @@ def _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis):
                 if h is None: continue
                 rows = []
                 for r9, p0 in enumerate(pl):
-                    seg = h[r9, p0 - 1:min(p0 - 1 + na, h.shape[1])].float()
+                    seg = h[r9, p0 - 1:min(p0 - 1 + na, h.shape[1])].float() - P[id(b)]['mu']
                     if seg.shape[0]: rows.append(F.normalize(seg, dim=-1).mean(0))
                 acc[id(b)].append(F.normalize(torch.stack(rows).mean(0), dim=-1) if rows else None)
-        for b in blocks:
-            Pb = P[id(b)]; j0 = Pb['n']
+        q9 = float(getattr(cfg, 'inf_distill_fu_q', 0.99)); tmin = float(getattr(cfg, 'inf_distill_fu_tau', 0.5)); tl9 = []
+        for b in blocks:                                                       # PER-UNIT THRESHOLD: the q-quantile of the unit's cosine on ordinary stored
+            Pb = P[id(b)]; j0 = Pb['n']                                        #   text (at least tau), so at birth it fires on at most 1 - q of text positions
+            R9 = F.normalize(torch.cat(rcap[id(b)]) - Pb['mu'], dim=-1) if rcap[id(b)] else None
             for i, kv in enumerate(acc[id(b)]):
-                if kv is not None: Pb['K'][j0 + i] = kv
+                if kv is None: continue
+                Pb['K'][j0 + i] = kv; t9 = tmin
+                if R9 is not None and R9.shape[0] > 50: t9 = max(tmin, float(torch.quantile((R9 @ kv).float(), q9)))
+                Pb['t'][j0 + i] = t9; tl9.append(t9)
             Pb['n'] = j0 + len(new)
         for i, e in enumerate(new): st['map'][repr(e['key'])] = P[id(blocks[0])]['n'] - len(new) + i
         print(f"  [FACT UNITS | visit {vis + 1}] {len(new)} new units per block for {len(new)} new taught facts (keys from three taught wordings' answer positions); "
-              f"{P[id(blocks[0])]['n']} active of {fm}", flush=True)
+              f"{P[id(blocks[0])]['n']} active of {fm} | centred inputs, per-unit thresholds at the {q9:.2f} quantile of cosine on ordinary text: mean {np.mean(tl9) if tl9 else float('nan'):.3f}", flush=True)
     except Exception as e:
         _fail('inference.distill:fu'); print(f"  [FACT UNITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
@@ -573,6 +621,7 @@ def _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis):
     import zlib
     n = int(getattr(cfg, 'inf_distill_comp_probe', 0))
     if not n or not D or not D.get('bysl'): return
+    if _BRG['held']: n = max(n, 256)                                           # held-out chains: ask them all
     try:
         prev = {rw[3] for pool in D['bysl'].values() for rw in pool}
         live = set()
@@ -603,10 +652,120 @@ def _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis):
         rt, rh = run(T), run(H)
         f = lambda r: (f"{r[0]} chains, both premises answered in a test wording {r[1]} | composed (held-out wordings) ALL {r[2]:.2f}, among those with both premises answered "
                        + (f"{r[3]:.2f}" if r[1] else "-")) if r else "none"
+        xtra = ""
+        if _BRG['held']:
+            ta = [p for p in T if p[0]['ans'] in _BRG['anch']]; tu = [p for p in T if p[0]['ans'] in _BRG['held'] and p[0]['ans'] not in _BRG['anch']]
+            xtra = f" || HELD-OUT CHAINS, bridge ANCHORED (invented attribute): {f(run(ta))} | bridge NOT anchored: {f(run(tu))}"
         print(f"  [COMPOSITION PROBE | visit {vis + 1}] 'A is connected to C' for chains A-B, B-C of facts, no conclusion or direct fact for A-C (never edited, replayed or asked) || "
-              f"TAUGHT premises: {f(rt)} || NEVER-TAUGHT premises: {f(rh)}", flush=True)
+              f"TAUGHT premises: {f(rt)} || NEVER-TAUGHT premises: {f(rh)}" + xtra, flush=True)
     except Exception as e:
         _fail('inference.distill:comp'); print(f"  [COMPOSITION PROBE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis):
+    """LATENT CHAINING (readout, 11 Nov; inf_distill_lchain = training steps): can a small JEPA-style predictor over the trunk's own name codes do
+    rule-free inference? Entity code: the last block's output mean-pooled over the name in 'About NAME.' (frozen, centred, normalised).
+    P(e_A, r) -> e_B: an MLP with a learned relation embedding, trained by InfoNCE against every entity code on the TAUGHT facts (one-hop only,
+    never a chain). Q(e_A, r1, r2) -> e_C: the same, trained on the chains the SYSTEM ITSELF concluded (live conclusions with both premise facts
+    found) - composition learned from examples, no rule. Tested on chains of taught facts with NO conclusion (never concluded, stored,
+    replayed or edited; with inf_kgx_hold the held-out chains): the true C among 20 candidate names (chance 0.05), by P twice (chaining
+    through the predicted bridge) and by Q in one step; and P on held-back (never-taught) facts as a baseline. Training is not changed."""
+    import zlib
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    n_st = int(getattr(cfg, 'inf_distill_lchain', 0))
+    if not n_st: return
+    try:
+        fs = [e for e in ents if e['key'][0] == 'fact']; hf = [e for e in held if e['key'][0] == 'fact']
+        if len(fs) < 16: return
+        names = sorted({e['A'] for e in fs + hf} | {e['ans'] for e in fs + hf}); ix = {n: i for i, n in enumerate(names)}
+        rels = sorted({e['r'] for e in fs + hf}); rx = {r: i for i, r in enumerate(rels)}
+        dev = model.embed.weight.device; cap = {}
+        h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach()))
+        E = []
+        try:
+            for i0 in range(0, len(names), 64):
+                chunk = names[i0:i0 + 64]; txt = [f"About {n}.".encode('latin-1', 'replace') for n in chunk]
+                X, _ = _ws_batch(model, txt)
+                with torch.no_grad(): _ws_run(model, X, 0)
+                h = cap['h'].float()
+                for j, n in enumerate(chunk):
+                    E.append(h[j, 5:5 + len(n.encode('latin-1', 'replace'))].mean(0))
+        finally: h9.remove()
+        E = torch.stack(E); E = F.normalize(E - E.mean(0), dim=-1); d = E.shape[1]
+        g = torch.Generator(device='cpu').manual_seed(int(cfg.seed) + 4242 + vis)
+        def mlp(k_in):
+            return torch.nn.Sequential(torch.nn.Linear(k_in, 512), torch.nn.GELU(), torch.nn.Linear(512, d)).to(dev)
+        def train(net, emb, X_idx, R_idx, Y_idx):
+            opt = torch.optim.Adam(list(net.parameters()) + list(emb.parameters()), lr=1e-3)
+            n = len(Y_idx); Xi = torch.tensor(X_idx, device=dev); Ri = torch.tensor(R_idx, device=dev); Yi = torch.tensor(Y_idx, device=dev)
+            for st in range(n_st):
+                b = torch.randint(0, n, (min(256, n),), generator=g).to(dev)
+                z = F.normalize(net(torch.cat([E[Xi[b]], emb(Ri[b]).flatten(1)], -1)), dim=-1)
+                loss = F.cross_entropy(z @ E.t() / 0.05, Yi[b]); opt.zero_grad(); loss.backward(); opt.step()
+            return float(loss)
+        def rank(z, true, rs):                                                 # true among 20 candidates (19 random other names)
+            cand = [true] + [int(c) for c in rs.choice([i for i in range(len(names)) if i != true], min(19, len(names) - 1), replace=False)]
+            sc = (F.normalize(z, dim=-1) @ E[cand].t()); return int(sc.argmax()) == 0
+        torch.manual_seed(int(cfg.seed) + 4343 + vis)
+        P = mlp(2 * d); Pe = torch.nn.Embedding(len(rels), d).to(dev)
+        lp = train(P, Pe, [ix[e['A']] for e in fs], [[rx[e['r']]] for e in fs], [ix[e['ans']] for e in fs])
+        rs = np.random.RandomState(int(cfg.seed) + 4444 + vis)
+        with torch.no_grad():
+            pz = lambda a, r: P(torch.cat([E[a][None], Pe(torch.tensor([[r]], device=dev)).flatten(1)], -1))[0]
+            one = np.mean([rank(pz(ix[e['A']], rx[e['r']]), ix[e['ans']], rs) for e in fs[:256]])
+            base = np.mean([rank(pz(ix[e['A']], rx[e['r']]), ix[e['ans']], rs) for e in hf[:256]]) if hf else float('nan')
+        # chains: taught facts, no live conclusion, no direct fact (as the composition probe)
+        prev = {rw[3] for pool in D['bysl'].values() for rw in pool} if D and D.get('bysl') else {repr(e['key']) for e in fs}
+        live = set()
+        for c in S_.get('conc', []):
+            if not c.get('freed') and not c.get('retracted') and isinstance(c.get('A'), str) and isinstance(c.get('C'), str): live |= {(c['A'], c['C']), (c['C'], c['A'])}
+        direct = {(e['A'], e['ans']) for e in fs + hf} | {(e['ans'], e['A']) for e in fs + hf}
+        tf = [e for e in fs if repr(e['key']) in prev]; byA = {}
+        for e in tf: byA.setdefault(e['A'], []).append(e)
+        test = [(e1, e2) for e1 in tf for e2 in byA.get(e1['ans'], []) if e1['A'] != e2['ans'] and (e1['A'], e2['ans']) not in live and (e1['A'], e2['ans']) not in direct]
+        allf = {}
+        for e in fs + hf: allf.setdefault(e['A'], []).append(e)
+        trc = []                                                               # the system's own concluded chains, with their premise facts
+        for c in S_.get('conc', []):
+            if c.get('freed') or c.get('retracted') or not all(isinstance(c.get(k), str) for k in ('A', 'B', 'C')): continue
+            e1 = next((e for e in allf.get(c['A'], []) if e['ans'] == c['B']), None); e2 = next((e for e in allf.get(c['B'], []) if e['ans'] == c['C']), None)
+            if e1 is not None and e2 is not None and c['C'] in ix: trc.append((e1, e2))
+        res = {}
+        with torch.no_grad():
+            if test:
+                pp = [rank(pz(int((F.normalize(pz(ix[a['A']], rx[a['r']]), dim=-1) @ E.t()).argmax()), rx[b['r']]), ix[b['ans']], rs) for a, b in test[:256]]
+                hop1 = [rank(pz(ix[a['A']], rx[a['r']]), ix[a['ans']], rs) and rank(pz(ix[b['A']], rx[b['r']]), ix[b['ans']], rs) for a, b in test[:256]]
+                res['pp'] = (np.mean(pp), len(pp), np.mean([x for x, h in zip(pp, hop1) if h]) if any(hop1) else float('nan'), int(sum(hop1)))
+        lq = float('nan')
+        if test and len(trc) >= 8:
+            Q = mlp(3 * d); Qe = torch.nn.Embedding(len(rels), d).to(dev)
+            lq = train(Q, Qe, [ix[a['A']] for a, b in trc], [[rx[a['r']], rx[b['r']]] for a, b in trc], [ix[b['ans']] for a, b in trc])
+            with torch.no_grad():
+                qz = lambda a, r1, r2: Q(torch.cat([E[a][None], Qe(torch.tensor([[r1, r2]], device=dev)).flatten(1)], -1))[0]
+                q_tr = np.mean([rank(qz(ix[a['A']], rx[a['r']], rx[b['r']]), ix[b['ans']], rs) for a, b in trc[:256]])
+                q_te = [rank(qz(ix[a['A']], rx[a['r']], rx[b['r']]), ix[b['ans']], rs) for a, b in test[:256]]
+                res['q'] = (q_tr, np.mean(q_te), len(q_te))
+        def split(sel):
+            if not _BRG['held'] or not test: return ""
+            out = []
+            for nm9, keep in (('ANCHORED', lambda a: a['ans'] in _BRG['anch']), ('NOT anchored', lambda a: a['ans'] in _BRG['held'] and a['ans'] not in _BRG['anch'])):
+                tt = [(a, b) for a, b in test if keep(a)]
+                if tt:
+                    with torch.no_grad():
+                        v = [rank(pz(int((F.normalize(pz(ix[a['A']], rx[a['r']]), dim=-1) @ E.t()).argmax()), rx[b['r']]), ix[b['ans']], rs) for a, b in tt]
+                    out.append(f"{nm9} {np.mean(v):.2f} (n {len(v)})")
+            return (" || held-out chains, P twice: " + " | ".join(out)) if out else ""
+        pp = res.get('pp'); q = res.get('q')
+        print(f"  [LATENT CHAINING | visit {vis + 1}] trunk name codes (last block, centred) for {len(names)} names, {len(rels)} relations; true C among 20 names (chance 0.05) || "
+              f"P(e_A, r) -> e_B trained on {len(fs)} taught facts ({n_st} steps, loss {lp:.2f}): one-hop on them {one:.2f} | on never-taught facts {base:.2f} || "
+              f"CHAINS with no conclusion ({len(test)}): P twice {pp[0]:.2f} (n {pp[1]}), among chains whose both hops P gets right {pp[2]:.2f} (n {pp[3]})" if pp else
+              f"  [LATENT CHAINING | visit {vis + 1}] {len(names)} names, P one-hop {one:.2f} on taught facts, {base:.2f} never taught || no test chains", end="", flush=True)
+        if pp:
+            print((f" || Q(e_A, r1, r2) -> e_C trained on {len(trc)} chains the system concluded (loss {lq:.2f}): on them {q[0]:.2f} | on the unconcluded chains {q[1]:.2f} (n {q[2]})" if q else
+                   f" || Q: too few concluded chains ({len(trc)})") + split(None), flush=True)
+        else: print("", flush=True)
+    except Exception as e:
+        _fail('inference.distill:lchain'); print(f"  [LATENT CHAINING] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
@@ -646,6 +805,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
+        if int(getattr(cfg, 'inf_distill_lchain', 0)): _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check

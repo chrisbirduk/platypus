@@ -61,5 +61,7 @@
  "inf_cf_selfc": 1.0,
  "_inf_cf_selfc": "self-contrast in the closed-form edit: every answer byte must beat the model's own top non-answer byte (fixed from the unedited model), beside competitor contrast; GPU shadow edits (3 sleeps, 42 conclusions): fitted open 0.17 -> 0.57, held-out MC 0.48 -> 0.65, held-out answer bytes top-1 0.66 -> 0.80, held-out open 0/84 -> 6/84 (shadow without competitor contrast); local: no change (2 seeds)",
  "inf_latent_judge": 1,
- "_inf_latent_judge": "LATENT JUDGE readout in sleep: slow-feature cosine on the pairs the byte judge tests (AUC vs controls / random, cost per pair); the byte judge still decides"
+ "_inf_latent_judge": "LATENT JUDGE readout in sleep: slow-feature cosine on the pairs the byte judge tests (AUC vs controls / random, cost per pair); the byte judge still decides",
+ "inf_distill_wake": 0.0,
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
 }

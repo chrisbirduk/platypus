@@ -347,6 +347,16 @@ Sleep 5 (pool 412): taught 4+ visits **0.71 / 0.69**, 2-3 visits 0.61 / 0.73, st
 drift 0.194 / 0.186; sleep peak 49.8 GB. Conclusions 2x2: never taught with both premises taught 0.42 -> 0.08 with the edits subtracted
 (12 questions, 6 conclusions: one answered; conclusion replay still runs for them) - not evidence of composition at this n.
 
+**Composition from distilled facts, held-out chains** (cg27a_distillbr2: distillcap + inf_kgx_hold 4 + synthetic bridge anchoring on half
+the held-out chains' bridges; seed 4; stopped at visit 6). The first build (cg27a_distillbr, real descriptors) anchored 1-3 facts per sleep:
+the planted bridge names occur only in their own chain, so no true descriptor exists. In distillbr2, 51 held-out bridges, 16 anchored with
+an invented attribute ('Fazora keeps the amber ledger.'), 21 taught facts anchored by visit 6. COMPOSITION PROBE (chains of facts taught
+for a visit, never concluded): visit 5: 5 chains, 3 with both premises answered, composed 0.00; **visit 6: 7 chains, 4 with both premises
+answered, composed 0.00** (anchored: 2 chains, premises not both known; not anchored: 3 chains, 2 known, 0.00). Conclusions 2x2, never
+taught with both premises taught: 0.45 -> **0.05** with the edits subtracted (20 questions; conclusion replay still trains them). Fact
+recall unchanged (4+ visits 0.68-0.72, 2-3 visits 0.65-0.71, control 0.01-0.04). **The trunk does not compose two distilled facts**,
+even when it answers both premises; the anchoring arm reached too few testable chains (2) to judge.
+
 **Repair replay on the GPU** (cg27a_distillrp = distillcap + `inf_distill_repair 160`, seed 4): **a clear failure, stopped at sleep 2.**
 The repair burst took the old slot's KL to the previous sleep's predictions from 0.062 to 0.0035 (3 s) - a near-complete revert of
 the mlp_out weights - and took the visit's fact learning with it: taught facts right after the visit 0.31 (before the repair), facts
@@ -368,6 +378,8 @@ distillation at this scale.
 | theta, stochastic phases | 0.11 | -0.161 | 2.976 |
 | theta, fixed phases | 0.07 | -0.138 | 2.993 |
 | hinted self-distillation, all parameters (pool 3-9 sentences) | 0.11 | -0.128 | 2.999 |
+| soft anchor: KL to the old slots' predictions during the visit, x1.0 (DWA) | **0.22** | -0.144 | 2.988 |
+| hinted self-distillation, mlp_out only (HM; pool 5-9 sentences) | 0.11 (n 9) | -0.152 | 2.979 |
 
 Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
 phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
@@ -388,6 +400,16 @@ fact update lies inside them** (an isotropic update would put 0.04-0.05 / 0.22-0
 directions the old domains use most - which is why the question rows cost old-domain BPC and why repair replay, pulling those directions
 back, erased the facts. A hard null-space projection (AlphaEdit) would keep 0.05 / 0.01 / 0.00 of the fact update: **not viable at this
 width**; any separation has to come from elsewhere (separate weights for facts, or a key that is not the old text's main directions).
+
+### Fact units (neurogenesis), first local test (11 November, short runs, seed 0)
+
+New units beside each block's MLP, one per new taught fact (up to 64 per sleep), keyed on the fact's question context; the question rows
+train only them. First version (raw cosine, tau 0.5): the units fired on 0.36-0.48 of ordinary text - the MLP inputs share one dominant
+direction. Second (inputs centred, per-unit thresholds at the 0.99 quantile of cosine on ordinary text; FU): at visit 10, 22 units, any
+unit firing on 0.08 of old-domain and 0.05 of visited text positions against 0.18 / 0.11 of taught questions (taught / test wording) - about
+2x selective; question-row answer loss flat (1.77 -> 1.76); **taught recall 0.00** (DWM 0.11); forgetting -0.151, final BPC 2.980
+(DWM -0.139 / 2.991) - the same as soft targets alone (PD, -0.152 / 2.977, taught 0.00): no fact learning, so no cost. Not a trade yet;
+the units do not reach enough answer positions of their own fact.
 
 ### Prompt distillation (soft targets from a teacher that reads the source sentence; 11 November 2026, local full runs, mlp_out writes)
 

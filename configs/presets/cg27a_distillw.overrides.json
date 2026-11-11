@@ -68,5 +68,8 @@
  "inf_carry": 0.1,
  "inf_distill": 0,
  "inf_distill_wake": 0.25,
- "inf_mem_guard": 0.7
+ "inf_mem_guard": 0.7,
+ "inf_distill_wake_params": "",
+ "inf_distill_pool_max": 0,
+ "_pinned_12nov": "old defaults pinned when distillation, mlp_out writes and the capacity pool became defaults (11 Nov), so this preset reproduces its run"
 }
