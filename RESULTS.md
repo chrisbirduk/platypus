@@ -364,6 +364,12 @@ phases and coincides with a 10-dream-step final visit (its allocation per visit 
 separable from where the random phases fell in 24-step visits; a full-run trio with bounded phases is queued. Spindle-style writing
 fails; the beta brake changes nothing measurable.
 
+**Theta, full runs (11 November, seed 0, mlp_out distillation, bounded stochastic phases):** no gate (TH0) vs stochastic theta (THS):
+pass 1 mean forgetting -0.045 / -0.036, BPC 2.753 / 2.758; pass 2 forgetting +0.014 / +0.008, final BPC 2.428 / 2.438; lost between
+visits at the revisits (Gutenberg, Wikipedia, ArXiv, PubMed, FreeLaw) -0.136 / -0.134, -0.046 / -0.031, +0.010 / -0.010, -0.015 / -0.017,
+-0.010 / +0.009 (means -0.039 / -0.037). **No effect** - every difference inside seed noise; the short-run gain was the dream allocation.
+(Replay-only reference without distillation, FR: -0.005 / 2.415.) Rhythm gating is not carried forward.
+
 ### Prompt distillation (soft targets from a teacher that reads the source sentence; 11 November 2026, local full runs, mlp_out writes)
 
 | Run | Taught at the end | Forgetting | Final BPC | Teacher vs student, answer bytes right |
