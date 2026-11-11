@@ -68,11 +68,15 @@ def gauss_drift(model, cfg, S_, S_slot, vslot, oslots):
         def fmt(d):
             return " ".join(f"L{l}{'(out)' if l == nL else ''} {np.mean([x[0] + x[1] for x in v]):.4f} (mean {np.mean([x[0] for x in v]):.4f}, cov {np.mean([x[1] for x in v]):.4f}, erank {np.mean([x[2] for x in v]):.1f})"
                             for l, v in sorted(d.items()))
+        per_ = []                                                              # per old domain, output layer (does each settle, or is the mean diluted?)
+        for sl in sorted(cur):
+            if sl in G['prev'] and sl != vslot and nL in cur[sl] and nL in G['prev'][sl]:
+                m0, S0 = G['prev'][sl][nL]; a, b = _bures(m0, S0, *cur[sl][nL]); per_.append(f"slot {sl} {(a + b) / (float(torch.trace(S0)) or 1e-30):.4f}")
         if rows:
             G['hist'].append((vis + 1, {k: {l: float(np.mean([x[0] + x[1] for x in v])) for l, v in d.items()} for k, d in rows.items()}))
             print(f"  [GAUSSIAN DRIFT | visit {vis + 1}] W2^2 to the previous sleep / tr(Sigma prev), residual stream into each block, fixed stored sentences "
                   f"(store and memory off) | OLD SLOTS ({len([s for s in cur if s in G['prev'] and s != vslot])}): {fmt(rows.get('old', {})) or 'none'} || "
-                  f"VISITED SLOT: {fmt(rows.get('visited', {})) or 'none'}", flush=True)
+                  f"VISITED SLOT: {fmt(rows.get('visited', {})) or 'none'}" + (f" || PER OLD DOMAIN, output layer: {', '.join(per_)}" if per_ else ""), flush=True)
         G['prev'] = cur
     except Exception as e:
         _fail('inference.gaussdrift'); print(f"  [GAUSSIAN DRIFT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

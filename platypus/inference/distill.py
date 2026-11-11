@@ -265,6 +265,44 @@ def _dw_ever(model, cfg, S_slot, ents, held, D, vis):
         _fail('inference.distill:ever'); print(f"  [DISTILLATION, EVER TAUGHT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _dw_conc22(model, cfg, S_, S_slot, ents, held, vis):
+    """CONCLUSIONS 2 x 2 (readout, 11 Nov): live conclusions TAUGHT by the question rows vs NEVER TAUGHT (the hashed control fifth), recall
+    from the trunk in the held-out wordings with the closed-form edits IN PLACE and SUBTRACTED (the accumulated edit model._cf_E removed
+    from blocks[inf_cf_layer].mlp_out for the measurement, as [FROM THE WEIGHTS, FIXED SET]); never-taught conclusions also split by
+    whether BOTH their premise facts (A - bridge, bridge - C) are in the taught pool - composition from taught premises. Edits explain
+    it if both rows fall to ~0 without them; replay if both survive equally; distillation adds only if the taught row survives better."""
+    from platypus.inference.namemem import _nm_layer
+    tc = [e for e in ents if e['key'][0] == 'conclusion']; cc = [e for e in held if e['key'][0] == 'conclusion']
+    if not tc and not cc: return
+    tf = {(e['A'], e['ans']) for e in ents if e['key'][0] == 'fact'}
+    br = {}
+    for c in S_.get('conc', []):
+        if isinstance(c.get('A'), str) and isinstance(c.get('C'), str) and isinstance(c.get('B'), str): br[(c['A'], c['C'])] = c['B']
+    def prem(e):
+        B = br.get((e['A'], e['ans']))
+        return B is not None and ((e['A'], B) in tf or (B, e['A']) in tf) and ((B, e['ans']) in tf or (e['ans'], B) in tf)
+    cp = [e for e in cc if prem(e)]; cn = [e for e in cc if not prem(e)]
+    E = model.__dict__.get('_cf_E'); mo = _nm_layer(model, cfg)
+    g = lambda r: f"{r['conclusions'][0]:.2f} ({r['conclusions'][1]})" if r.get('conclusions', (0, 0))[1] else "-"
+    def ask():
+        return [g(_dt_recall(model, S_slot, x)) if x else "-" for x in (tc, cc, cp, cn)]
+    try:
+        a_ = ask(); b_ = None
+        if E is not None and mo is not None and tuple(E.shape) == tuple(mo.weight.shape):
+            W0 = mo.weight.detach().clone()
+            try:
+                with torch.no_grad(): mo.weight.copy_((W0.float() - E.float().to(W0.device)).to(W0.dtype))
+                b_ = ask()
+            finally:
+                with torch.no_grad(): mo.weight.copy_(W0)
+        nb = b_ if b_ is not None else ["no edits"] * 4
+        print(f"  [DISTILLATION, CONCLUSIONS 2x2 | visit {vis + 1}] from the trunk, held-out wordings (n = questions) | edits IN PLACE -> SUBTRACTED: "
+              f"TAUGHT {a_[0]} -> {nb[0]} | NEVER TAUGHT {a_[1]} -> {nb[1]} || never taught, BOTH PREMISES TAUGHT {a_[2]} -> {nb[2]} | "
+              f"premises not both taught {a_[3]} -> {nb[3]} | conclusions: {len(tc)} taught, {len(cc)} never taught ({len(cp)} with both premises taught)", flush=True)
+    except Exception as e:
+        _fail('inference.distill:conc22'); print(f"  [DISTILLATION, CONCLUSIONS 2x2] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -298,6 +336,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         _gate_report(model, cfg, vis)
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
+        if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         known = _dw_known(model, S_slot, ents) if (sp or sk) else {}
         iv = dict((D or {}).get('iv') or {})
