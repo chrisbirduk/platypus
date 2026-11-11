@@ -346,6 +346,32 @@ def _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis):
         _fail('inference.distill:pdprobe'); print(f"  [SOURCE IN CONTEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _dw_bridge(cfg, S_, ents, held, vis):
+    """BRIDGE ANCHORING (11 Nov; inf_distill_bridge = N descriptors; after BRACE, NeurIPS 2026): two-hop recall from injected facts fails when
+    the bridge entity B is represented differently as the ANSWER of hop 1 (A - B) and as the SUBJECT of hop 2 (B - C); reusing the same
+    descriptors of B in both hops' training text aligned it (composition up to 0.78 at 1.7-14B). For each live conclusion's bridge B: up to N
+    TAUGHT facts about B whose other name is not a chain partner of B (never A or C of any chain through B, so no row holds both hops of a
+    chain), fixed per B by a hash; every question row with B as answer gets one after the answer (trained bytes), every row with B as
+    subject gets one before the question. Never a control fact. The test: [DISTILLATION, CONCLUSIONS 2x2] never-taught conclusions with
+    both premises taught, edits subtracted (inf_distill_conc_ctl 1 holds every conclusion back)."""
+    import zlib
+    n = int(getattr(cfg, 'inf_distill_bridge', 0)); part = {}
+    for c in S_.get('conc', []):
+        if c.get('freed') or c.get('retracted'): continue
+        if isinstance(c.get('A'), str) and isinstance(c.get('B'), str) and isinstance(c.get('C'), str): part.setdefault(c['B'], set()).update((c['A'], c['C']))
+    fs = [e for e in ents if e['key'][0] == 'fact']; out = {}
+    for B, pt in part.items():
+        cand = sorted({f"{e['A']} {e['r']} {e['ans']}." for e in fs if (e['A'] == B and e['ans'] not in pt) or (e['ans'] == B and e['A'] not in pt)})
+        if not cand: continue
+        cand.sort(key=lambda t: zlib.crc32((B + '|' + t).encode('latin-1', 'replace')))
+        out[B] = [t.encode('latin-1', 'replace') for t in cand[:n]]
+    h1 = sum(1 for e in fs if e['ans'] in out); h2 = sum(1 for e in fs if e['A'] in out)
+    print(f"  [DISTILLATION, BRIDGE | visit {vis + 1}] {len(part)} bridge names in live conclusions, {len(out)} with a descriptor (a taught fact about the bridge, "
+          f"no chain partner; up to {n} each, mean {np.mean([len(v) for v in out.values()]) if out else 0:.2f}) | taught facts anchored: {h1} with the bridge as answer, "
+          f"{h2} as subject" + (f" | e.g. {list(out)[0]}: {out[list(out)[0]][0].decode('latin-1')}" if out else ""), flush=True)
+    return out
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -356,7 +382,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     vis = int(model.__dict__.get('_visit', 0)); D = model.__dict__.get('_dtw')
     pmx = int(getattr(cfg, 'inf_distill_pool_max', 0))                         # 11 Nov CAPACITY: the question pool no longer stops at the name memory's cap
     allm = _nm_material(model, cfg, S_, nmax=pmx if pmx > 0 else None)          #   (inf_nm_max): every fact the store holds (seen 2+ times, latest object)
-    ctl = lambda e: zlib.crc32(repr(e['key']).encode()) % 5 == 0               #   and every live conclusion, up to inf_distill_pool_max
+    cct = int(getattr(cfg, 'inf_distill_conc_ctl', 0))                        # 11 Nov: 1 = EVERY conclusion held back (never asked) - a powered composition test
+    ctl = lambda e: (cct and e['key'][0] == 'conclusion') or zlib.crc32(repr(e['key']).encode()) % 5 == 0   #   and every live conclusion, up to inf_distill_pool_max
     ents = [e for e in allm if not ctl(e)]; held = [e for e in allm if ctl(e)]
     if pmx > 0:
         nmm = len(model.__dict__.get('_nm_ents', []) or [])
@@ -411,10 +438,20 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                       f"answer bytes the TEACHER gets right {H9['t'] / max(1, H9['b']):.2f}, the STUDENT {H9['s'] / max(1, H9['b']):.2f} (of {H9['b']}); rows without a source sentence {H9['nos']} (hard targets)", flush=True)
             if int(getattr(cfg, 'inf_distill_wake_pd', 0)):
                 print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] {len(ctx_)} of {len(ents)} taught facts and conclusions have a stored source sentence for the teacher", flush=True)
+        brd = _dw_bridge(cfg, S_, ents, held, vis) if int(getattr(cfg, 'inf_distill_bridge', 0)) else {}
+        from platypus.inference.jepa import cfg_seq_
+        L09 = int(cfg_seq_(model))
         for e in ents:
             k_ = repr(e['key']); sl = int(S_slot(e['d']))
-            for fm in _DT_FORMS:
+            own9 = f"{e['A']} {e['r']} {e['ans']}.".encode('latin-1', 'replace')   #   (never the row's own fact as its descriptor)
+            d1 = [d for d in brd.get(e['ans'], []) if d != own9] if e['key'][0] == 'fact' else None
+            d2 = [d for d in brd.get(e['A'], []) if d != own9] if e['key'][0] == 'fact' else None
+            for j9, fm in enumerate(_DT_FORMS):
                 pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
+                if d2:                                                         #   BRIDGE ANCHORING: the bridge as SUBJECT - its descriptor before the question,
+                    rm9 = L09 - 1 - len(pb) - len(ab) - 1                          #   trimmed from the left to keep the answer in the window
+                    if rm9 >= 8: pb = d2[j9 % len(d2)][-rm9:] + b' ' + pb
+                if d1: ab = ab + b' ' + d1[j9 % len(d1)]                     #   the bridge as ANSWER - the same descriptor pool after it (trained bytes)
                 if sk and known.get(k_):
                     X, _ = _ws_batch(model, [pb + ab])
                     with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
