@@ -548,12 +548,14 @@ class Config:
     inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
     inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
     inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each
     inf_distill_comp_probe=0        #   11 Nov READOUT: COMPOSITION PROBE - N chains of taught facts (A-B, B-C) with no conclusion for A-C, asked 'A is connected to'
     inf_distill_fu=0                #   11 Nov FACT UNITS (neurogenesis): N > 0 = up to N new units per block at each sleep, one per new taught fact, keyed on its
                                     #     question context; the question rows train ONLY the fact units (the trunk takes no question gradient)
     inf_distill_fu_max=1024         #     reserve of fact units per block
     inf_distill_fu_tau=0.5          #     cosine threshold: a unit fires where cos(MLP input, its key) > tau
+    inf_distill_fu_q=0.99           #     per-unit threshold: this quantile of the unit's cosine on ordinary stored text (inputs centred)
     inf_distill_fu_g=4.0            #     initial gain (trained, >= 0)
     inf_distill_fu_lr=3.0           #     Adam lr of the fact units = cfg.lr x this
     inf_distill_ns_probe=0          #   11 Nov READOUT: NULL SPACE PROBE - share of a question-row gradient inside the old domains' high-energy mlp_out input directions

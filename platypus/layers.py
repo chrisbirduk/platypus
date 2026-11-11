@@ -806,7 +806,7 @@ class DeltaBlock(nn.Module):
             fu_=_FU['P'][id(s)]                                                 #   written only by the question rows
             if _FU['cap'] is not None: _FU['cap'][id(s)]=hn.detach()
             if fu_['n']>0:
-                xn_=F.normalize(hn.float(),dim=-1); u_=F.relu(fu_['g'][:fu_['n']]*(xn_@fu_['K'][:fu_['n']].t()-_FU['tau']))
+                xn_=F.normalize(hn.float()-fu_['mu'],dim=-1); u_=F.relu(fu_['g'][:fu_['n']]*(xn_@fu_['K'][:fu_['n']].t()-fu_['t'][:fu_['n']]))
                 if _FU['st'] is not None:
                     st_=_FU['st'].setdefault(id(s),[0.0,0.0,0.0]); st_[0]+=float((u_>0).any(-1).float().sum()); st_[1]+=float(u_.sum()); st_[2]+=float(u_.shape[0]*u_.shape[1])
                 o2_=o2_+(u_@fu_['V'][:fu_['n']]).to(o2_.dtype)
