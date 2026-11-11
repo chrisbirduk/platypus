@@ -456,6 +456,105 @@ def _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis):
         for p, g, q in zip(allp, g_saved, rq): p.grad = g; p.requires_grad_(q)
 
 
+def _fu_init(model, cfg):
+    """FACT UNITS (11 Nov; inf_distill_fu = units added per block at each sleep; neurogenesis): a reserve of inf_distill_fu_max units beside each
+    block's MLP, none active at first. Unit j: u_j = relu(g_j (cos(hn, K_j) - tau)), output V_j (zero at birth: no disruption). K_j is fixed
+    at birth to the mean normalised MLP input at the answer positions of one fact's question (three taught wordings) - the unit fires on
+    that fact's context and, by the cosine threshold, little elsewhere; V and g are trained by the question rows ONLY (the trunk's own
+    weights take no question gradient in this mode). Kept outside model.parameters(): the main optimiser never sees them."""
+    from platypus.layers import _FU
+    if model.__dict__.get('_fu') is not None: return model.__dict__['_fu']
+    dev = model.embed.weight.device; fm = int(getattr(cfg, 'inf_distill_fu_max', 1024)); g0 = float(getattr(cfg, 'inf_distill_fu_g', 4.0))
+    P = {}
+    for b in model.blocks:
+        d = int(b.d_model)
+        P[id(b)] = dict(K=torch.zeros(fm, d, device=dev), g=torch.full((fm,), g0, device=dev), V=torch.zeros(fm, d, device=dev), n=0)
+    _FU['P'] = P; _FU['on'] = True; _FU['tau'] = float(getattr(cfg, 'inf_distill_fu_tau', 0.5))
+    ts = [t for v in P.values() for t in (v['V'], v['g'])]
+    st = dict(P=P, map={}, opt=torch.optim.Adam(ts, lr=float(cfg.lr) * float(getattr(cfg, 'inf_distill_fu_lr', 3.0))), steps=0, ql=[])
+    model.__dict__['_fu'] = st
+    return st
+
+
+def _fu_old_sents(cfg, S_, S_slot, sls, seed, n=32):
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    ra = np.random.RandomState(seed); by = {}
+    for i in ra.permutation(len(real)):
+        x = real[int(i)]; sl = int(S_slot(x['d']))
+        if sl in sls and len(by.setdefault(sl, [])) < n: by[sl].append(bytes(x['s']))
+    return by
+
+
+def _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis):
+    """FACT UNITS at a sleep: report last visit (question steps, answer loss, firing on OLD-DOMAIN text vs on taught questions and the
+    never-taught control's questions), then give each new taught fact (no unit yet; up to inf_distill_fu per block) its own unit"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.layers import _FU
+    st = _fu_init(model, cfg); P = st['P']; blocks = list(model.blocks); fm = int(getattr(cfg, 'inf_distill_fu_max', 1024))
+    def fire(groups):
+        _FU['st'] = {}
+        try:
+            for sl, txt in groups:
+                if not txt: continue
+                X, _ = _ws_batch(model, txt)
+                with torch.no_grad(): _ws_run(model, X, sl)
+            r = [v for v in _FU['st'].values()]
+        finally: _FU['st'] = None
+        if not r: return None
+        a = sum(x[0] for x in r) / max(1.0, sum(x[2] for x in r)); m = sum(x[1] for x in r) / max(1.0, sum(x[2] for x in r))
+        return a, m
+    try:
+        n0 = P[id(blocks[0])]['n']
+        if n0 > 0:
+            sls = [int(s) for s in oslots if vslot is None or int(s) != int(vslot)]
+            old = fire(list(_fu_old_sents(cfg, S_, S_slot, sls, int(cfg.seed) + 7171 + vis).items())) if sls else None
+            vis_ = fire(list(_fu_old_sents(cfg, S_, S_slot, [int(vslot)], int(cfg.seed) + 7172 + vis).items())) if vslot is not None else None
+            tq = [e for e in ents if repr(e['key']) in st['map']][:64]; nf = lambda e: f"It is on record that {e['A']} {e['r']} "
+            byq = lambda es, wf: [(int(S_slot(e['d'])), [(wf(e) + e['ans'] + '.').encode('latin-1', 'replace')]) for e in es]
+            q1 = fire(byq(tq, lambda e: _DT_FORMS[0].format(A=e['A'], r=e['r']))); q2 = fire(byq(tq, nf))
+            hq = fire(byq([e for e in held if e['key'][0] == 'fact'][:64], nf))
+            fmt = lambda r: f"{r[0]:.3f} of positions (mean drive {r[1]:.4f})" if r else "-"
+            ql = st['ql']
+            print(f"  [FACT UNITS | visit {vis + 1}] {n0} units per block (cap {fm}), {len(st['map'])} facts with a unit | last visit: {st['steps']} question steps "
+                  f"(fact units only; the trunk takes no question gradient), answer loss {np.mean(ql[:20]) if ql else float('nan'):.3f} (first 20) -> {np.mean(ql[-20:]) if ql else float('nan'):.3f} (last 20) || "
+                  f"ANY UNIT FIRING: old-domain text {fmt(old)} | the visited domain's text {fmt(vis_)} | taught facts' questions, taught wording {fmt(q1)}, TEST wording {fmt(q2)} | "
+                  f"never-taught facts' questions {fmt(hq)} || |V| mean {float(torch.stack([P[id(b)]['V'][:n0].norm(dim=-1).mean() for b in blocks]).mean()):.3f}", flush=True)
+        st['steps'] = 0; st['ql'] = []
+        new = [e for e in ents if e['key'][0] == 'fact' and repr(e['key']) not in st['map']]
+        k = min(int(getattr(cfg, 'inf_distill_fu', 0)), fm - P[id(blocks[0])]['n'], len(new))
+        if k <= 0: return
+        import zlib
+        new.sort(key=lambda e: zlib.crc32(repr(e['key']).encode()))
+        new = new[:k]; acc = {id(b): [] for b in blocks}
+        for e in new:
+            txt = [(fm_.format(A=e['A'], r=e['r']) + e['ans'] + '.').encode('latin-1', 'replace') for fm_ in _DT_FORMS[:3]]
+            pl = [len(fm_.format(A=e['A'], r=e['r']).encode('latin-1', 'replace')) for fm_ in _DT_FORMS[:3]]
+            X, _ = _ws_batch(model, txt); _FU['cap'] = {}
+            try:
+                with torch.no_grad(): _ws_run(model, X, int(S_slot(e['d'])))
+                cap = dict(_FU['cap'])
+            finally: _FU['cap'] = None
+            na = len(e['ans'])
+            for b in blocks:
+                h = cap.get(id(b))
+                if h is None: continue
+                rows = []
+                for r9, p0 in enumerate(pl):
+                    seg = h[r9, p0 - 1:min(p0 - 1 + na, h.shape[1])].float()
+                    if seg.shape[0]: rows.append(F.normalize(seg, dim=-1).mean(0))
+                acc[id(b)].append(F.normalize(torch.stack(rows).mean(0), dim=-1) if rows else None)
+        for b in blocks:
+            Pb = P[id(b)]; j0 = Pb['n']
+            for i, kv in enumerate(acc[id(b)]):
+                if kv is not None: Pb['K'][j0 + i] = kv
+            Pb['n'] = j0 + len(new)
+        for i, e in enumerate(new): st['map'][repr(e['key'])] = P[id(blocks[0])]['n'] - len(new) + i
+        print(f"  [FACT UNITS | visit {vis + 1}] {len(new)} new units per block for {len(new)} new taught facts (keys from three taught wordings' answer positions); "
+              f"{P[id(blocks[0])]['n']} active of {fm}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:fu'); print(f"  [FACT UNITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -492,6 +591,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
+        if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
         kn_ents = ents if (sk or spc) else [e for e in ents if e['key'][0] != 'conclusion']   #   runs with the closed-form edits in place, so it would take edit-held
@@ -654,6 +754,25 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     gw = _gate_weight(model, cfg, dkl)
     if gw <= 0: return
     w *= gw
+    if int(getattr(cfg, 'inf_distill_fu', 0)) and model.__dict__.get('_fu') is not None:   # FACT UNITS: the question rows train the fact units only
+        st = model.__dict__['_fu']; allp = list(model.parameters()); rq = [p.requires_grad for p in allp]
+        ts = [t for v in st['P'].values() for t in (v['V'], v['g'])]
+        try:
+            for p in allp: p.requires_grad_(False)
+            for t in ts: t.requires_grad_(True)
+            dl_ = distill_wake_loss(model, cfg)
+            if torch.is_tensor(dl_) and dl_.requires_grad:
+                gs = torch.autograd.grad(w * dl_, ts, allow_unused=True)
+                for t, g in zip(ts, gs): t.grad = g
+                st['opt'].step(); st['opt'].zero_grad(set_to_none=True); st['steps'] += 1; st['ql'].append(float(dl_.detach()))
+                with torch.no_grad():
+                    for v in st['P'].values(): v['g'].clamp_(min=0.0)
+        except Exception:
+            _fail('inference.distill:fu_step')
+        finally:
+            for t in ts: t.requires_grad_(False); t.grad = None
+            for p, q in zip(allp, rq): p.requires_grad_(q)
+        return
     proj = int(getattr(cfg, 'inf_distill_wake_proj', 0)); akl = float(getattr(cfg, 'inf_distill_wake_akl', 0.0))
     P, frz = _dw_params(model, cfg)
     for p in frz: p.requires_grad_(False)
