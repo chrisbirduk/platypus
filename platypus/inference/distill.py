@@ -359,15 +359,30 @@ def _dw_bridge(cfg, S_, ents, held, vis):
     for c in S_.get('conc', []):
         if c.get('freed') or c.get('retracted'): continue
         if isinstance(c.get('A'), str) and isinstance(c.get('B'), str) and isinstance(c.get('C'), str): part.setdefault(c['B'], set()).update((c['A'], c['C']))
-    fs = [e for e in ents if e['key'][0] == 'fact']; out = {}
+    fs = [e for e in ents if e['key'][0] == 'fact']; out = {}; nsent = 0
+    ctl_names = {e['A'] for e in held} | {e['ans'] for e in held}
+    real = None
     for B, pt in part.items():
         cand = sorted({f"{e['A']} {e['r']} {e['ans']}." for e in fs if (e['A'] == B and e['ans'] not in pt) or (e['ans'] == B and e['A'] not in pt)})
+        if not cand:                                                           # FALLBACK: a stored real sentence naming B and no chain partner of B,
+            if real is None:                                                   #   clipped to 48 bytes around B (the local harness's bridges rarely
+                real = []                                                      #   have a third taught fact)
+                for x in S_.get('it', []):
+                    if x.get('k') != 'real': continue
+                    b9 = x['s']; b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
+                    real.append(b9.decode('latin-1'))
+            bb = []
+            for t in real:
+                i9 = t.find(B)
+                if i9 < 0 or any(q in t for q in pt): continue
+                a9 = max(0, i9 - 12); bb.append(t[a9:a9 + 48].strip())
+            cand = sorted(set(bb)); nsent += 1 if cand else 0
         if not cand: continue
         cand.sort(key=lambda t: zlib.crc32((B + '|' + t).encode('latin-1', 'replace')))
         out[B] = [t.encode('latin-1', 'replace') for t in cand[:n]]
     h1 = sum(1 for e in fs if e['ans'] in out); h2 = sum(1 for e in fs if e['A'] in out)
-    print(f"  [DISTILLATION, BRIDGE | visit {vis + 1}] {len(part)} bridge names in live conclusions, {len(out)} with a descriptor (a taught fact about the bridge, "
-          f"no chain partner; up to {n} each, mean {np.mean([len(v) for v in out.values()]) if out else 0:.2f}) | taught facts anchored: {h1} with the bridge as answer, "
+    print(f"  [DISTILLATION, BRIDGE | visit {vis + 1}] {len(part)} bridge names in live conclusions, {len(out)} with a descriptor ({len(out) - nsent} a taught fact about the bridge, "
+          f"{nsent} a stored sentence clip; no chain partner; up to {n} each, mean {np.mean([len(v) for v in out.values()]) if out else 0:.2f}) | taught facts anchored: {h1} with the bridge as answer, "
           f"{h2} as subject" + (f" | e.g. {list(out)[0]}: {out[list(out)[0]][0].decode('latin-1')}" if out else ""), flush=True)
     return out
 
