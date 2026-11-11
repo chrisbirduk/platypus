@@ -210,6 +210,37 @@ of fading. The question rows are displacing older domains between visits. Next f
 gradient to the kv or middle blocks, or project it away from the anchors. Conclusions stay low (0.10-0.15 on 8-20) and are not
 separated from control (0.00 on 8).
 
+### Where the question gradient goes (11 November 2026, 07:45, local short runs)
+
+Seed 0, carry 0.1, interleaved weight 0.25, short mode; weights only.
+
+| Short run | Taught facts after visits 7-10 | Control | Forgetting | Final BPC |
+|---|---|---|---|---|
+| No distillation | - | - | -0.168 | 2.981 |
+| All parameters (DWS2) | 0.08, 0.38, 0.26, 0.26 | 0.00 | -0.091 | 3.033 (+0.052) |
+| All parameters + anchor projection, A-GEM (DWP) | 0.08, 0.31, 0.32, 0.26 | 0.00 | -0.103 | 3.029 (+0.048) |
+| **mlp_out weights only** (DWM, `inf_distill_wake_params=mlp_out`) | 0.08, 0.15, 0.16, 0.11 | 0.00 | -0.140 | **2.991 (+0.010)** |
+
+Restricting the question gradient to the blocks' mlp_out weights cuts the cost about 80% (final BPC within seed noise) and halves
+recall: recall per unit of BPC about 11 vs 5. Most of the damage, and most of the recall, came through parameters every domain shares
+(embeddings, shared n-gram tables). The anchor projection conflicts on 57-70% of steps but removes only about 1% of the question
+gradient (4.5% at most): one averaged anchor direction cannot protect drift spread over many directions.
+
+## Width and replay (11 November 2026, local full runs, seed 0)
+
+Forgetting at each revisit (BPC before retraining minus after the previous visit; visits 6-9):
+
+| Run | Revisits | Pass-1 mean forgetting | Final forgetting / BPC |
+|---|---|---|---|
+| Width 64, replay (CB0) | -0.066, -0.028, -0.034, -0.173 | -0.076 | -0.005 / 2.415 |
+| Width 32, replay | -0.073, -0.038, -0.029, -0.137 | -0.059 | (stopped at visit 9) |
+| Width 64, no replay | +0.180, +0.055, +0.015, +0.098 | +0.207 | +0.071 / 2.484 |
+| Width 32, no replay | +0.392, +0.284, +0.177, +0.484 | +0.319 | (stopped at visit 9) |
+
+Width 32: trunk 0.1M + shared n-gram tables 6.6M (width 64: 0.3M + 13.1M). Without replay, doubling the width removes about a third of
+the forgetting; replay removes all of it at either width (slight backward transfer). Replay, not parameter count, is the protection.
+The width-32 runs were stopped by container restarts during visit 9 (an idle container is reclaimed after about an hour).
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
