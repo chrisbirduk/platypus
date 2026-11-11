@@ -177,6 +177,39 @@ Conclusions 0.00 (4). Facts are not touched by the closed-form edits, so this is
 weights 0.25 and 0.1 next (recall gained per unit of BPC). Earlier fix: a forward between the real forward and its backward changed a
 tensor in place (autograd error); the question rows now run after the real backward.
 
+### Dose curve, full runs (11 November 2026, 02:20, local; both runs stopped by a container restart during visit 9 of 10)
+
+Seed 0, carry 0.1 in all three; reference CR1 = carry 0.1 without distillation. Recall from the trunk in the test wordings after each
+visit; control = the never-taught fifth.
+
+| After visit | 0.25: taught facts | 0.25: conclusions | 0.1: taught facts | 0.1: conclusions | Control facts (both) |
+|---|---|---|---|---|---|
+| 2 | 0.58 (12) | - | 0.58 (12) | - | 0.00 (4) |
+| 4 | 0.42 (50) | 0.25 (4) | 0.26 (50) | 0.25 (4) | 0.00 (12) |
+| 6 | 0.44 (45) | 0.12 (8) | 0.38 (45) | 0.12 (8) | 0.00 (18) |
+| 8 | 0.47 (43) | 0.14 (14) | 0.30 (43) | 0.00 (14) | 0.00 (29) |
+| 9 | **0.49 (39)** | 0.10 (20) | 0.13 (38) | 0.15 (20) | 0.00 (37); conclusions 0.00 (8) |
+
+**Cost.** BPC right after training each domain is unchanged (within 0.012 of CR1 at every visit). The cost is in retention: a
+domain's BPC when it is revisited, before retraining, is higher than in CR1 and **grows rather than fades**:
+
+| Revisit (visits 6-9) | CR1 | 0.25 | 0.1 |
+|---|---|---|---|
+| visit 6 | 2.626 | 2.654 (+0.028) | 2.645 (+0.019) |
+| visit 7 | 2.578 | 2.613 (+0.035) | 2.606 (+0.028) |
+| visit 8 | 2.520 | 2.559 (+0.039) | 2.544 (+0.024) |
+| visit 9 | 3.077 | 3.125 (+0.048) | 3.108 (+0.031) |
+
+End of pass 1 (all domains): mean BPC 2.729 / forgetting -0.074 (CR1); 2.766 / -0.031 (0.25); 2.755 / -0.043 (0.1). Seed noise is
+about 0.017.
+
+**Reading.** Taught facts beat control at both doses, from the trunk, and at 0.25 recall holds near 0.45-0.49 as the taught set
+grows; at 0.1 it falls to 0.13 by visit 9. Recall per unit of BPC (visit 9, revisit cost) is about 10 at 0.25 (0.49 / 0.048) and 4 at
+0.1 (0.13 / 0.031), so 0.25 is the better dose. But the cost does not pass the consolidation test: it grows over the revisits instead
+of fading. The question rows are displacing older domains between visits. Next fixes from the critique: restrict the question
+gradient to the kv or middle blocks, or project it away from the anchors. Conclusions stay low (0.10-0.15 on 8-20) and are not
+separated from control (0.00 on 8).
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
