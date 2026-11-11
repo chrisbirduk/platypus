@@ -372,6 +372,75 @@ def _dw_bridge(cfg, S_, ents, held, vis):
     return out
 
 
+def _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis):
+    """NULL-SPACE PROBE (readout, 11 Nov; inf_distill_ns_probe): could the question rows be confined to directions the old domains do not
+    use (AlphaEdit-style null-space projection)? For each block's mlp_out (the weights the question rows write): the covariance of its
+    INPUTS on 32 stored real sentences per OLD slot (not the one just visited); the number of input directions holding 90 / 99 / 99.9% of
+    that energy (of H); and the share of a question-row gradient (up to 64 taught facts, taught wordings) that lies INSIDE those
+    directions - what a hard projection at that cut-off would remove (an isotropic update would lose k / H). Training is not changed."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    sls = [int(s) for s in oslots if int(s) != int(vslot)] if vslot is not None else []
+    fs = [e for e in ents if e['key'][0] == 'fact']
+    if not sls or not fs: return
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    ra = np.random.RandomState(int(cfg.seed) + 9898 + vis); by = {}
+    for i in ra.permutation(len(real)):
+        x = real[int(i)]; sl = int(S_slot(x['d']))
+        if sl in sls and len(by.setdefault(sl, [])) < 32: by[sl].append(bytes(x['s']))
+    blocks = list(model.blocks); C = [None] * len(blocks); hs = []; cur = {}
+    def mk(j):
+        def h(mod, inp, out):
+            x = inp[0].detach().float(); m = cur.get('m')
+            x = x.reshape(-1, x.shape[-1]) if m is None else x[m[:, :x.shape[1]] > 0]
+            c = x.t() @ x; C[j] = c if C[j] is None else C[j] + c
+        return h
+    allp = list(model.parameters()); g_saved = [p.grad for p in allp]; rq = [p.requires_grad for p in allp]
+    try:
+        for j, b in enumerate(blocks): hs.append(b.mlp_out.register_forward_hook(mk(j)))
+        npos = 0
+        for sl, txt in by.items():
+            if len(txt) < 4: continue
+            X, M = _ws_batch(model, txt); cur['m'] = M[:, :-1]; npos += int(M[:, :-1].sum())
+            with torch.no_grad(): _ws_run(model, X, sl)
+        for h in hs: h.remove()
+        hs = []; cur.clear()
+        if npos == 0: return
+        rs = np.random.RandomState(int(cfg.seed) + 9899 + vis); pick = [fs[int(i)] for i in rs.choice(len(fs), min(64, len(fs)), replace=False)]
+        for p in allp: p.grad = None
+        W = [b.mlp_out.weight for b in blocks]
+        for w in W: w.requires_grad_(True)
+        bys = {}
+        for e in pick: bys.setdefault(int(S_slot(e['d'])), []).append(e)
+        for sl, es in bys.items():
+            rows = [(_DT_FORMS[int(rs.randint(len(_DT_FORMS)))].format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace')) for e in es]
+            X, _ = _ws_batch(model, [a + b for a, b in rows]); lg = _ws_run(model, X, sl, grad_=True); loss = 0.0
+            for r9, (a, b) in enumerate(rows):
+                p0 = len(a) - 1; n_ = min(len(b), lg.shape[1] - p0)
+                if n_ > 0: loss = loss + F.cross_entropy(lg[r9, p0:p0 + n_].float(), X[r9, p0 + 1:p0 + 1 + n_], reduction='sum')
+            if torch.is_tensor(loss): loss.backward()
+        res = []
+        for j, w in enumerate(W):
+            if w.grad is None or C[j] is None: continue
+            G = w.grad.detach().float(); ev, V = torch.linalg.eigh(C[j].double()); ev = ev.flip(0).clamp_min(0); V = V.flip(1).float()
+            cs = torch.cumsum(ev, 0) / ev.sum().clamp_min(1e-12); H = int(ev.numel()); gn = float((G * G).sum()) + 1e-30; r = []
+            for q in (0.9, 0.99, 0.999):
+                k = int((cs < q).sum()) + 1; GU = G @ V[:, :k]; r.append((k, float((GU * GU).sum()) / gn))
+            res.append((j, H, r))
+        if not res: return
+        fmt = lambda r: " / ".join(f"{k}" for k, _ in r); fs_ = lambda r: " / ".join(f"{v:.2f}" for _, v in r)
+        mean = [np.mean([x[2][i][1] for x in res]) for i in range(3)]; iso = [np.mean([x[2][i][0] / x[1] for x in res]) for i in range(3)]
+        print(f"  [NULL SPACE PROBE | visit {vis + 1}] mlp_out inputs on old slots {sls} ({npos} byte positions) || per block: input directions holding 90 / 99 / 99.9% "
+              f"of the old-domain energy (of H) -> share of a question-row gradient ({len(pick)} taught facts) INSIDE them: "
+              + " | ".join(f"block {j}: {fmt(r)} of {H} -> {fs_(r)}" for j, H, r in res)
+              + f" || MEAN share inside {mean[0]:.2f} / {mean[1]:.2f} / {mean[2]:.2f} (an isotropic update: {iso[0]:.2f} / {iso[1]:.2f} / {iso[2]:.2f}); "
+              f"a hard projection at that cut-off keeps {1 - mean[0]:.2f} / {1 - mean[1]:.2f} / {1 - mean[2]:.2f} of the fact update", flush=True)
+    except Exception as e:
+        _fail('inference.distill:nsprobe'); print(f"  [NULL SPACE PROBE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    finally:
+        for h in hs: h.remove()
+        for p, g, q in zip(allp, g_saved, rq): p.grad = g; p.requires_grad_(q)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -407,6 +476,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
+        if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
         kn_ents = ents if (sk or spc) else [e for e in ents if e['key'][0] != 'conclusion']   #   runs with the closed-form edits in place, so it would take edit-held
