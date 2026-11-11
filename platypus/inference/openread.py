@@ -70,8 +70,39 @@ def open_diag(model, cfg, S_, S_slot, tag, keys=False):
                 R = _tf_items(model, [(w.format(A=c['A']), c['C'], S_slot(c['d'])) for c in L for w in ws]); parts.append(f"{wn}: {_summ(R)}")
             print(f"  [OPEN DIAGNOSTIC | {tag} | {grp} conclusions, from the weights] " + " || ".join(parts), flush=True)
         if keys and len(ed) >= 8: _key_readout(model, cfg, S_, S_slot, ed, tag)
+        if keys and tag == 'END OF RUN':
+            for fn9, nm9 in ((lambda: _two_part_memory(model, cfg, S_, S_slot, tag), 'TWO-PART KEY MEMORY'), (lambda: _jepa_hop_readout(model, cfg, S_, tag), 'JEPA HOPS')):
+                try: fn9()
+                except Exception as e3: _fail('inference.openread:' + nm9); print(f"  [{nm9}] unavailable ({type(e3).__name__}: {e3})"[:240], flush=True)
+        if keys:
+            try: _key_readout_rel(model, cfg, S_, S_slot, tag)
+            except Exception as e2: _fail('inference.openread:relkeys'); print(f"  [RUNG 3 KEYS, TWO RELATIONS PER SUBJECT] unavailable ({type(e2).__name__}: {e2})"[:240], flush=True)
     except Exception as e:
         _fail('inference.openread'); print(f"  [OPEN DIAGNOSTIC] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _jepa_question_codes(model, cfg, ed):
+    """the trained JEPA's codes of each conclusion's question PREFIX (the text up to the answer slot, i.e. what a key at the slot can see), in
+    the first written wording and in each held-out wording: 'context' (the online encoder), 'target' (the target encoder) and 'predicted'
+    (the predictor applied to the context code, as the dream selector scores partners). None when no JEPA has been trained."""
+    from platypus.inference.jepa import _jd_codes
+    SH = model.__dict__.get('_jdS'); EN = model.__dict__.get('_jdenc')
+    if SH is None or EN is None: return None
+    g, gt, Pq, _ = SH; mu, sd, V = EN
+    def enc(Z):
+        Y = (Z - mu) / sd
+        if model.__dict__.get('_jdpca') and V is not None: return Y @ V.T
+        return Y - (Y @ V.T) @ V if V is not None else Y
+    def codes(txts):
+        with torch.no_grad():
+            E0 = enc(_jd_codes(model, cfg, txts)); c = g(E0)
+            if model.__dict__.get('_jdobj', 'hybrid') == 'lejepa':                # LeJEPA trains g only: the target head stays at its random init and the
+                return {'context': F.normalize(c, dim=-1).float().cpu(),           #   predictor is never trained, so only g is a JEPA code; the frozen random head
+                        'input, random projection': F.normalize(gt(E0), dim=-1).float().cpu()}   #   is kept as a control (the JEPA's pooled input, untrained)
+            return {'context': F.normalize(c, dim=-1).float().cpu(), 'target': F.normalize(gt(E0), dim=-1).float().cpu(),
+                    'predicted': F.normalize(Pq(c), dim=-1).float().cpu()}
+    pf = [_CONC_CF[0].format(A=c['A']).encode('latin-1', 'replace') for c in ed]
+    return codes(pf), [codes([w.format(A=c['A']).encode('latin-1', 'replace') for c in ed]) for w in _HO_TWO]
 
 
 def _key_readout(model, cfg, S_, S_slot, ed, tag):
@@ -122,6 +153,13 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
                 mu, P, _ = sfa
                 rows.setdefault('[SFA 32 ; NAME state]', []).append(acc(zsum(sims((Hq - mu) @ P, (Hf - mu) @ P, False), sims(NSq, NSf))))
                 rows.setdefault('[SFA 32 ; NAME state ; edit key]', []).append(acc(zsum(sims((Hq - mu) @ P, (Hf - mu) @ P, False), sims(NSq, NSf), sims(Kq, Kf))))
+        JC = _jepa_question_codes(model, cfg, ed)                              # 10 Nov: KEYING FROM THE JEPA (the trained dream selector's codes)
+        if JC is not None:
+            Jf, Jh = JC
+            for (Kq, Hq, NSq, NKq), Jq in zip(Kh, Jh):
+                for kind in Jf:
+                    rows.setdefault(f'JEPA {kind} code of the question' if kind != 'input, random projection' else "JEPA's pooled input, untrained random projection (control)", []).append(acc(sims(Jq[kind], Jf[kind], False)))
+                rows.setdefault('JEPA context code + NAME state', []).append(acc(zsum(sims(Jq['context'], Jf['context'], False), sims(NSq, NSf))))
         nA = len(set(c['A'] for c in ed))
         for (Kq, Hq, NSq, NKq) in Kh:
             rows.setdefault('edit key raw', []).append(r1(Kq, Kf)); mk = Kf.mean(0); rows.setdefault('edit key centred', []).append(r1(Kq - mk, Kf - mk))
@@ -134,6 +172,423 @@ def _key_readout(model, cfg, S_, S_slot, ed, tag):
     finally:
         h.remove(); back()
 
+
+def _key_readout_rel(model, cfg, S_, S_slot, tag):
+    """RUNG 3 KEYS, TWO RELATIONS PER SUBJECT (10 Nov; readout only). The conclusion test cannot show a key that carries the relation: every
+    conclusion says 'is connected to', so the name key's ceiling is distinct subjects / conclusions. Here each subject X brings TWO items with
+    different relations: its planted fact 'X <rel> Y' (written 'X <rel> ') and one of its conclusions 'X is connected to Z' (written as the
+    first conclusion wording). A key that knows only the subject can reach at most 0.50; going above 0.50 needs the relation in the key.
+    Held-out questions: SAME RELATION, NEW FRAME ('It is on record that X <rel> ') and PARAPHRASED RELATION ('X <paraphrase> ',
+    'We read that X <paraphrase> '). Facts whose relation is 'is linked to' are left out (a synonym of the conclusions' relation).
+    Per key: top-1 retrieval of its own item, and of the retrieved items the share with the right subject and with the right relation."""
+    import numpy as np, torch, torch.nn.functional as F
+    from platypus.common import _CONC_CF
+    from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_eager
+    from platypus.inference.probes import inf_probes, _inf_phrase
+    from platypus.conduit import _carry_save, _carry_load
+    from platypus.layers import _CARRY
+    PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
+            'trained under': 'was taught by', 'is connected to': 'is tied to'}
+    fact_of = {}
+    for ch in inf_probes(cfg):
+        if ch.get('upd') or ch.get('known'): continue
+        for i, r in enumerate(ch['rels']):
+            if r in PARA and r != 'is connected to': fact_of.setdefault(ch['names'][i], (r, ch['names'][i + 1], ch['doms'][i]))
+    seen, subj = set(), []
+    lv = [c for c in S_.get('conc', []) if not c.get('freed') and isinstance(c.get('C'), str) and isinstance(c.get('A'), str)]
+    for c in lv:
+        if c['A'] in fact_of and c['A'] not in seen: seen.add(c['A']); subj.append((c['A'], c))
+    rs = np.random.RandomState(int(cfg.seed) + 4143); subj = [subj[i] for i in rs.permutation(len(subj))[:32]]
+    if len(subj) < 8: print(f"  [RUNG 3 KEYS, TWO RELATIONS PER SUBJECT | {tag}] skipped: {len(subj)} subjects with a planted fact and a conclusion", flush=True); return
+    items = []                                                             # (subject, relation, answer, domain, fitted prefix)
+    for A, c in subj:
+        r, B, d = fact_of[A]; items.append((A, r, B, d, f"{A} {r} ")); items.append((A, 'is connected to', c['C'], c['d'], _CONC_CF[0].format(A=A)))
+    HO = {'SAME RELATION, new frame': [lambda A, r: f"It is on record that {A} {r} "],
+          'PARAPHRASED RELATION': [lambda A, r: f"{A} {PARA[r]} ", lambda A, r: f"We read that {A} {PARA[r]} "]}
+    li = int(getattr(cfg, 'inf_cf_layer', -1)); mo = model.blocks[li].mlp_out; back = _ws_eager(model); cap = {'on': False, 'k': []}
+    def hk(m, i, o):
+        if cap['on']: cap['k'].append(i[0].detach().float())
+    h = mo.register_forward_hook(hk)
+    try:
+        def keys(prefixes):
+            K, NS, NK = [], [], []
+            for (A, r, ans, d, _), pf in zip(items, prefixes):
+                pb = pf.encode('latin-1', 'replace'); X, M = _ws_batch(model, [pb + (ans + '.').encode('latin-1', 'replace')]); p0 = len(pb) - 1
+                cap['on'] = True; cap['k'] = []
+                try: _ws_run(model, X, int(S_slot(d)))
+                finally: cap['on'] = False
+                ab = A.encode('latin-1', 'replace'); i0 = pb.find(ab); i1 = i0 + len(ab)
+                K.append(cap['k'][-1][0][p0].cpu()); NK.append(cap['k'][-1][0][i1 - 1].cpu())
+                sv = _carry_save(); _CARRY.update(on=False, st={}, new={}); was = model.training; model.eval()
+                try:
+                    with torch.no_grad(): hf = model.features(X[:, :-1])
+                finally: _carry_load(sv); model.train(was)
+                hf = hf[0] if isinstance(hf, (tuple, list)) else hf; NS.append(hf[0, i0:i1].float().mean(0).cpu())
+            return torch.stack(K), torch.stack(NS), torch.stack(NK)
+        J = None
+        try:
+            from platypus.inference.jepa import _jd_codes
+            SH = model.__dict__.get('_jdS'); EN = model.__dict__.get('_jdenc')
+            if SH is not None and EN is not None:
+                g, gt, Pq, _ = SH; mu, sd, V = EN
+                def enc(Z):
+                    Y = (Z - mu) / sd
+                    if model.__dict__.get('_jdpca') and V is not None: return Y @ V.T
+                    return Y - (Y @ V.T) @ V if V is not None else Y
+                def J(prefixes):
+                    with torch.no_grad():
+                        E0 = enc(_jd_codes(model, cfg, [p.encode('latin-1', 'replace') for p in prefixes])); cc = g(E0)
+                        if model.__dict__.get('_jdobj', 'hybrid') == 'lejepa':    # only g is trained under LeJEPA (see _jepa_question_codes)
+                            return {'context': F.normalize(cc, dim=-1).float().cpu(), 'input, random projection': F.normalize(gt(E0), dim=-1).float().cpu()}
+                        return {'context': F.normalize(cc, dim=-1).float().cpu(), 'target': F.normalize(gt(E0), dim=-1).float().cpu(),
+                                'predicted': F.normalize(Pq(cc), dim=-1).float().cpu()}
+        except Exception: J = None
+        def sims(Q, Kb, ctr=True):
+            if ctr: m = Kb.mean(0); Q = Q - m; Kb = Kb - m
+            return F.normalize(Q, dim=-1) @ F.normalize(Kb, dim=-1).T
+        def zsum(*S): return sum((x - x.mean(1, keepdim=True)) / (x.std(1, keepdim=True) + 1e-6) for x in S)
+        sA = np.array([it[0] for it in items]); sR = np.array([it[1] == 'is connected to' for it in items])
+        def score(S):
+            p = S.argmax(1).numpy(); n = np.arange(len(p)); return np.array([(p == n).mean(), (sA[p] == sA).mean(), (sR[p] == sR).mean()])
+        fit_pf = [it[4] for it in items]; Kf, NSf, NKf = keys(fit_pf); Jf = J(fit_pf) if J else None
+        res = []
+        for fam, fs in HO.items():
+            rows = {}
+            for f in fs:
+                pf = [f(it[0], it[1]) for it in items]; Kq, NSq, NKq = keys(pf); Jq = J(pf) if J else None
+                S = {'NAME: edit key at the name\'s last byte': sims(NKq, NKf), 'NAME: trunk state over the name': sims(NSq, NSf), 'edit key (question end)': sims(Kq, Kf)}
+                S['edit key + NAME'] = zsum(S['edit key (question end)'], S['NAME: trunk state over the name'])
+                if Jq is not None:
+                    for kd in Jq: S[f'JEPA {kd}'] = sims(Jq[kd], Jf[kd], False)
+                    if 'target' in Jq: S['JEPA target + NAME'] = zsum(S['JEPA target'], S['NAME: trunk state over the name'])
+                    S['JEPA context + NAME'] = zsum(S['JEPA context'], S['NAME: trunk state over the name'])
+                for k, v in S.items(): rows.setdefault(k, []).append(score(v))
+            res.append(f"{fam} ({len(fs)} wording(s)): " + " | ".join(f"{k} {np.mean(v, 0)[0]:.2f} (subject {np.mean(v, 0)[1]:.2f}, relation {np.mean(v, 0)[2]:.2f})" for k, v in rows.items()))
+        print(f"  [RUNG 3 KEYS, TWO RELATIONS PER SUBJECT | {tag}] {len(subj)} subjects x (planted fact + conclusion) = {len(items)} items; a subject-only key "
+              f"is capped at 0.50 (chance {1 / len(items):.3f}); e.g. '{items[0][4]}{items[0][2]}' / '{items[1][4]}{items[1][2]}' || " + " || ".join(res), flush=True)
+    finally:
+        h.remove(); back()
+
+
+def _two_part_memory(model, cfg, S_, S_slot, tag, n_subj=32, quick=False):
+    """TWO-PART KEY MEMORY, END TO END (10 Nov; gates: SUM / QUESTION PART / AND thresholds, the SERAC-style slot gate (alone and with a stored
+    name present), and the model's own P(capital next); every gate RE-ANCHORS: each firing restarts the memory from that byte; readout - the weights are never changed). One entry per fact: key = (the edited layer's
+    input at the subject name's last byte, the same layer's input where the answer starts), value = that fact's own output change at the
+    answer bytes, fitted on the WRITTEN wordings only (facts: 'X <rel> '; conclusions: the edit wordings) with self-contrast. Material: each
+    subject's planted fact and one of its conclusions (two relations per subject: a name-only key is capped at half).
+    At test, on held-out questions (same relation in a new frame; paraphrased relation) and on held-out ordinary sentences:
+      SUBJECT REGISTER: the latest name-like word before each byte gives the name key; the byte's own key is the question key.
+      score(item) = centred cosine(name key, item name key) + centred cosine(byte key, item question key).
+      GATE = the memory itself: it fires at the first byte whose best score passes a threshold set at the 99th percentile of best scores
+      on held-in ordinary sentences; the best item's change is applied from that byte for its answer length. No oracle slot, no oracle item.
+    Reported beside it: no memory; ORACLE (the true item at the true slot: is the value right at all); the two-part key and a NAME-ONLY key
+    at the true slot (is the address right); fires at the slot / earlier / later / never; ordinary text: fires per 1000 bytes and BPC change."""
+    import re as _re, numpy as np, torch, torch.nn.functional as F
+    from platypus.common import _CONC_CF
+    from platypus.inference.closed_form import _ws_batch, _ws_run, _ws_eager
+    from platypus.inference.probes import inf_probes
+    PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
+            'trained under': 'was taught by', 'is connected to': 'is tied to'}
+    fact_of = {}
+    for ch in inf_probes(cfg):
+        if ch.get('upd') or ch.get('known'): continue
+        for i, r in enumerate(ch['rels']):
+            if r in PARA and r != 'is connected to': fact_of.setdefault(ch['names'][i], (r, ch['names'][i + 1], ch['doms'][i]))
+    seen, subj = set(), []
+    for c in S_.get('conc', []):
+        if c.get('freed') or not isinstance(c.get('C'), str) or not isinstance(c.get('A'), str): continue
+        if c['A'] in fact_of and c['A'] not in seen: seen.add(c['A']); subj.append((c['A'], c))
+    rs = np.random.RandomState(int(cfg.seed) + 4144); subj = [subj[i] for i in rs.permutation(len(subj))[:n_subj]]
+    if len(subj) < 8: print(f"  [TWO-PART KEY MEMORY | {tag}] skipped: {len(subj)} subjects", flush=True); return
+    nw = max(1, min(len(_CONC_CF), int(getattr(cfg, 'inf_cf_wordings', 1))))
+    items = []                                                                 # subject, relation, answer, domain, written prefixes, kind
+    for A, c in subj:
+        r, B, d = fact_of[A]; items.append((A, r, B, d, [f"{A} {r} "], 'fact'))
+        items.append((A, 'is connected to', c['C'], c['d'], [w.format(A=A) for w in _CONC_CF[:nw]], 'conclusion'))
+    HO = {'SAME RELATION, new frame': [lambda A, r: f"It is on record that {A} {r} "],
+          'PARAPHRASED RELATION': [lambda A, r: f"{A} {PARA[r]} ", lambda A, r: f"We read that {A} {PARA[r]} "]}
+    isname = lambda b: len(b) >= 3 and 65 <= b[0] <= 90 and all(65 <= x <= 90 or 97 <= x <= 122 for x in b)
+    def regs(txt, T):
+        out = np.full(T, -1, dtype=np.int64)
+        for m in _re.finditer(rb"[A-Za-z]+", txt):
+            if isname(m.group(0)): out[m.end():] = m.end() - 1
+        return out[:T]
+    isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122
+    li = int(getattr(cfg, 'inf_cf_layer', -1)); mo = model.blocks[li].mlp_out; back = _ws_eager(model); cap = {'on': False, 'k': [], 'delta': None}
+    def hk(m, i, o):
+        if cap['on']: cap['k'].append(i[0].detach().float())
+        if cap['delta'] is not None: return o + cap['delta'].to(o.dtype)
+    h = mo.register_forward_hook(hk)
+    lr_ = float(getattr(cfg, 'inf_cf_lr', 0.5)); st_ = int(getattr(cfg, 'inf_cf_steps', 25)); selfc = float(getattr(cfg, 'inf_cf_shadow_self', 1.0))
+    try:
+        def run(txt, sl, delta=None):
+            X, M = _ws_batch(model, [txt]); cap['on'] = True; cap['k'] = []; cap['delta'] = delta(X) if delta is not None else None
+            try:
+                with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
+            finally: cap['on'] = False; cap['delta'] = None
+            return X, cap['k'][-1][0].float(), lg
+        def dmat(X, t0, V):                                                    # the change V (L, D) placed from key position t0 on
+            T1 = X.shape[1] - 1; ps = torch.arange(t0, min(T1, t0 + len(V)), device=X.device)
+            return torch.zeros(1, T1, V.shape[1], device=X.device).index_put((torch.zeros_like(ps), ps), V[:len(ps)].to(X.device))
+        def dre(X, fz, j):                                                     # RE-ANCHORING: at each byte, the item of the latest firing at or before it
+            T1 = X.shape[1] - 1; D9 = VV[0].shape[1]; out = torch.zeros(1, T1, D9, device=X.device); last = -1
+            for q in range(min(T1, len(fz))):
+                if bool(fz[q]): last = q
+                if last >= 0:
+                    V9 = VV[int(j[last])]
+                    if q - last < len(V9): out[0, q] = V9[q - last].to(X.device)
+            return out
+        def answer_ok(lg, p0, tb):
+            ps = torch.arange(p0, p0 + len(tb), device=lg.device)
+            if int(ps[-1]) >= lg.shape[0]: return None
+            top = lg[ps].argmax(-1); tr = torch.tensor(list(tb), device=lg.device); okb = (top[:-1] == tr[:-1]).float()
+            return bool(okb.all()) and not isl(int(top[-1])), float(okb.mean())
+        # ---- WRITE: one entry per item from the written wordings
+        NM, QM, VV, WT, PU = [], [], [], [], []
+        for A, r, ans, d, pfs, kind in items:
+            tb = (ans + '.').encode('latin-1', 'replace'); sl = int(S_slot(d)); L = len(tb); nks, qks, tx = [], [], []
+            for pf in pfs:
+                pb = pf.encode('latin-1', 'replace'); X, K, lgw = run(pb + tb, sl); p0 = len(pb) - 1; i0 = pb.find(A.encode('latin-1', 'replace')); PU.append((torch.softmax(lgw.float(), -1)[:, 65:91].sum(1).cpu(), regs(pb + tb, len(K)), p0))
+                nks.append(K[i0 + len(A) - 1].cpu()); qks.append(K[p0].cpu()); tx.append((X, p0)); WT.append((K.cpu(), regs(pb + tb, len(K)), p0))
+            NM.append(torch.stack(nks).mean(0)); QM.append(torch.stack(qks).mean(0))
+            D = mo.weight.shape[0]; dl = torch.zeros(L, D, device=tx[0][0].device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); comp = {}
+            with torch.enable_grad():
+                for s in range(st_):
+                    loss = 0.0
+                    for k, (X, p0) in enumerate(tx):
+                        T1 = X.shape[1] - 1; ps = torch.arange(p0, min(T1, p0 + L), device=X.device)
+                        cap['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(ps), ps), dl[:len(ps)])
+                        try: lg = _ws_run(model, X, sl, grad_=True)[0, ps]
+                        finally: cap['delta'] = None
+                        yt = X[0, ps + 1]; l = F.cross_entropy(lg, yt)
+                        if selfc > 0:
+                            if k not in comp: comp[k] = lg.detach().scatter(1, yt[:, None], -1e9).argmax(1)
+                            mg = lg.gather(1, yt[:, None])[:, 0] - lg.gather(1, comp[k][:, None])[:, 0]; l = l + selfc * F.softplus(-mg).mean()
+                        loss = loss + l
+                    loss = loss / len(tx) + 1e-3 * (dl ** 2).sum(); op.zero_grad(); loss.backward(); op.step()
+            VV.append(dl.detach())
+        NM = torch.stack(NM); QM = torch.stack(QM); mN = NM.mean(0); mQ = QM.mean(0); NMc = F.normalize(NM - mN, dim=-1); QMc = F.normalize(QM - mQ, dim=-1)
+        def scores(Kn, Kq, two=True):                                          # (T, n): per byte, per item
+            s = F.normalize(Kn.cpu() - mN, dim=-1) @ NMc.T
+            return s + F.normalize(Kq.cpu() - mQ, dim=-1) @ QMc.T if two else s
+        def parts(K, rg):                                                      # per byte x item: name part, question part; ok = a name came before
+            T = len(K); ok = torch.tensor(rg[:T] >= 0); Kn = K[torch.tensor(np.maximum(rg[:T], 0))]
+            return F.normalize(Kn.cpu() - mN, dim=-1) @ NMc.T, F.normalize(K.cpu() - mQ, dim=-1) @ QMc.T, ok
+        TH = {}
+        def gate(kind, K, rg, lg=None):                                                 # per byte: fires?, item
+            sn, sq, ok = parts(K, rg)
+            if kind.startswith('cap'):                                         # the model expects a capitalised word next (P(A-Z) over the next byte)
+                pu = torch.softmax(lg.float(), -1)[:len(K), 65:91].sum(1).cpu(); f9 = (pu > TH['cap']) & ok
+                if kind == 'cap+n': f9 = f9 & (sn.max(1).values > TH['n'])
+                return f9, (sn + sq).argmax(1)
+            if kind.startswith('serac'):
+                f9 = ser(feat(K, rg)) > TH['serac']
+                if kind == 'serac+n': f9 = f9 & (sn.max(1).values > TH['n'])
+                return f9, (sn + sq).argmax(1)
+            if kind == 'and':
+                m = (sn > TH['n']) & (sq > TH['q']); s = torch.where(m, sn + sq, torch.full_like(sn, -1e9)); b, j = s.max(1); return (b > -1e8) & ok, j
+            s = sn + sq if kind.startswith('sum') else sq
+            b, j = s.max(1); return (b > TH[kind]) & ok, j
+        # ---- thresholds: held-in ordinary sentences (99th pct of the best score per byte); HARD NEGATIVES: the system's own written texts at
+        #      every byte after the name except the answer slot (never a test wording)
+        it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+        sel = [real[int(k)] for k in rs.choice(len(real), min(160 if quick else 400, len(real)), replace=False)] if real else []
+        hi, ho = sel[:len(sel) // 2], sel[len(sel) // 2:]
+        Ob = {'sum': [], 'q': [], 'n': []}; Wb = {'sum': [], 'q': []}; HI = []
+        for x in hi:
+            txt = bytes(x['s']); X, K, _ = run(txt, int(S_slot(x['d']))); HI.append((K.cpu(), regs(txt, len(K)))); sn, sq, ok = parts(K, regs(txt, len(K)))
+            Ob['sum'].append((sn + sq).max(1).values[ok]); Ob['q'].append(sq.max(1).values[ok]); Ob['n'].append(sn.max(1).values[ok])
+        for K, rg, p0 in WT:
+            sn, sq, ok = parts(K, rg); ok = ok.clone(); ok[p0] = False
+            Wb['sum'].append((sn + sq).max(1).values[ok]); Wb['q'].append(sq.max(1).values[ok])
+        q99 = lambda v: float(torch.quantile(torch.cat(v), 0.99))
+        TH['sum-ord'] = q99(Ob['sum']); TH['sum'] = max(q99(Ob['sum']), q99(Wb['sum'])); TH['q'] = max(q99(Ob['q']), q99(Wb['q'])); TH['n'] = q99(Ob['n'])
+        # ---- SERAC-STYLE SLOT GATE (as in _slot_gate): where an answer starts, from the edited layer's key (64 principal directions) plus bytes
+        #      since the subject register's name; trained on the system's own written texts and four more self-written forms (relation-agnostic;
+        #      'It is recorded that' is replaced by 'In short,' here because it is close to this test's held-out frame), hard negatives just
+        #      after names in ordinary text (x3); threshold the 99th percentile on held-in ordinary bytes
+        FC = ("Notes on {A}: {A} {r} ", "Q: {A} {r} whom? A: ", "In short, {A} {r} ", "{A} {r} ... ")
+        TMF = []
+        for A, r, ans, d, pfs, kind in items:
+            tb = (ans + '.').encode('latin-1', 'replace'); sl = int(S_slot(d))
+            for fc in FC:
+                pb = fc.format(A=A, r=r).encode('latin-1', 'replace'); X, K, lgw = run(pb + tb, sl); TMF.append((K.cpu(), regs(pb + tb, len(K)), len(pb) - 1)); PU.append((torch.softmax(lgw.float(), -1)[:, 65:91].sum(1).cpu(), regs(pb + tb, len(K)), len(pb) - 1))
+        Kall = torch.cat([k for k, _, _ in WT + TMF] + [k for k, _ in HI]); muS = Kall.mean(0)
+        Vs = torch.linalg.svd(Kall[torch.randperm(len(Kall), generator=torch.Generator().manual_seed(7))[:4000]] - muS, full_matrices=False)[2]
+        PS = Vs[:64].T; sdS = ((Kall - muS) @ PS).std(0) + 1e-6; del Kall
+        def feat(k, rg):
+            t = torch.arange(len(k)); rr = torch.tensor(rg[:len(k)]); hr = (rr >= 0).float()
+            return torch.cat([((k.float().cpu() - muS) @ PS) / sdS, (torch.log1p((t - rr).clamp(min=0).float()) * hr)[:, None], hr[:, None]], 1)
+        def fit_logit(Xp, Xn, wn, hidden=32):
+            g0 = torch.Generator().manual_seed(11); din = Xp.shape[1]
+            W1 = (torch.randn(din, hidden, generator=g0) / din ** 0.5).requires_grad_(True); w = torch.zeros(hidden, requires_grad=True); b = torch.zeros(1, requires_grad=True)
+            ps = [w, b, W1]; op = torch.optim.Adam(ps, lr=0.03); fwd = lambda Z: F.relu(Z @ W1) @ w + b; wp = float(wn.sum()) / len(Xp)
+            with torch.enable_grad():
+                for _ in range(400):
+                    loss = -(wp * F.logsigmoid(fwd(Xp)).sum() + (wn * F.logsigmoid(-fwd(Xn))).sum()) / (wp * len(Xp) + float(wn.sum()))
+                    loss = loss + 1e-3 * sum((q ** 2).sum() for q in (w, W1)); op.zero_grad(); loss.backward(); op.step()
+            return lambda Z: fwd(Z).detach()
+        Sp, Sn, Sw = [], [], []
+        for k, rg, sp in WT + TMF:
+            Z = feat(k, rg)
+            if sp < len(Z): Sp.append(Z[sp]); Sn.append(torch.cat([Z[:sp], Z[sp + 1:]])); Sw.append(torch.ones(len(Z) - 1))
+        for i9, (k, rg) in enumerate(HI):
+            Z = feat(k, rg); ix = torch.randperm(len(Z), generator=torch.Generator().manual_seed(i9))[:30]; Sn.append(Z[ix]); Sw.append(torch.ones(len(ix)))
+            hard = [t for t in range(1, len(Z)) if rg[t] >= 0 and 1 <= t - rg[t] <= 3]
+            if hard: Sn.append(Z[hard]); Sw.append(torch.full((len(hard),), 3.0))
+        ser = fit_logit(torch.stack(Sp), torch.cat(Sn), torch.cat(Sw))
+        neg9 = torch.cat([pu[[t for t in range(len(pu)) if rg[t] >= 0 and t < p0]] for pu, rg, p0 in PU]); pos9 = torch.stack([pu[p0] for pu, rg, p0 in PU])
+        TH['cap'] = float(torch.quantile(neg9, 0.99)); CAPD = f"P(capital next) on own texts: at the slot median {float(pos9.median()):.2f}, 10th pct {float(torch.quantile(pos9, 0.1)):.2f}; before the slot after the name 99th pct {TH['cap']:.2f}"
+        TH['serac'] = float(torch.quantile(torch.cat([ser(feat(k, rg)) for k, rg in HI]), 0.99))
+        GATES = (('sum', 'SUM, + hard negatives'), ('q', 'QUESTION PART only, + hard negatives'),
+                 ('and', 'AND (name part AND question part each past its own threshold)'),
+                 ('serac+n', 'SERAC GATE + stored name, TWO-PART KEY says which'), ('serac', 'SERAC GATE alone, TWO-PART KEY says which'),
+                 ('cap', 'THE MODEL EXPECTS A NAME NEXT (P(capital) past the 99th pct of own-text bytes before slots), TWO-PART KEY says which'),
+                 ('cap+n', 'THE MODEL EXPECTS A NAME NEXT + a stored name is present, TWO-PART KEY says which'))
+        ordinary = []
+        for kind, nm in GATES:
+            nf, nb, dbits = 0, 0, 0.0
+            for x in ho:
+                txt = bytes(x['s']); sl = int(S_slot(x['d'])); X, K, lg0 = run(txt, sl); fz, j = gate(kind, K, regs(txt, len(K)), lg0); nb += len(K)
+                if not bool(fz.any()): continue
+                nf += int(fz.sum())
+                _, _, lg1 = run(txt, sl, lambda X_: dre(X_, fz, j))
+                dbits += float(F.cross_entropy(lg1, X[0, 1:], reduction='sum') - F.cross_entropy(lg0, X[0, 1:], reduction='sum')) / np.log(2)
+            ordinary.append(f"{kind}: fires {1000 * nf / max(1, nb):.1f} per 1000 bytes, BPC {dbits / max(1, nb):+.4f}")
+        ordinary = "ordinary text (held out) per gate: " + "; ".join(ordinary)
+        # ---- READ: held-out questions
+        res = []
+        for fam, fs in HO.items():
+            R = {k: [] for k in ('none', 'oracle', 'two@slot', 'name@slot')}; G = {k: [] for k, _ in GATES}; FR = {k: [] for k, _ in GATES}
+            ret2, retn, PUS = [], [], []; bykind = {'fact': [], 'conclusion': []}; byk0 = {'fact': [], 'conclusion': []}
+            for f in fs:
+                for i, (A, r, ans, d, pfs, kind) in enumerate(items):
+                    pb = f(A, r).encode('latin-1', 'replace'); tb = (ans + '.').encode('latin-1', 'replace'); sl = int(S_slot(d)); txt = pb + tb; p0 = len(pb) - 1
+                    X, K, lg0 = run(txt, sl); rg = regs(txt, len(K)); a0 = answer_ok(lg0, p0, tb)
+                    if a0 is None: continue
+                    R['none'].append(a0); byk0[kind].append(a0[0]); PUS.append(float(torch.softmax(lg0[p0].float(), -1)[65:91].sum()))
+                    R['oracle'].append(answer_ok(run(txt, sl, lambda X_: dmat(X_, p0, VV[i]))[2], p0, tb))
+                    Kn = K[int(rg[p0])][None] if rg[p0] >= 0 else K[p0][None]
+                    j2 = int(scores(Kn, K[p0][None]).argmax()); jn = int(scores(Kn, K[p0][None], two=False).argmax()); ret2.append(j2 == i); retn.append(jn == i)
+                    o2 = answer_ok(run(txt, sl, lambda X_: dmat(X_, p0, VV[j2]))[2], p0, tb); R['two@slot'].append(o2); bykind[kind].append(o2[0])
+                    R['name@slot'].append(answer_ok(run(txt, sl, lambda X_: dmat(X_, p0, VV[jn]))[2], p0, tb))
+                    for gk, _ in GATES:
+                        fb, j = gate(gk, K, rg, lg0); fz = fb[:p0 + 1].nonzero()
+                        if len(fz) == 0 and not bool(fb[:p0 + len(tb)].any()): FR[gk].append('never'); G[gk].append(a0); continue
+                        t0 = int(fz[-1]) if len(fz) else -1; FR[gk].append('slot' if t0 == p0 else ('earlier' if t0 >= 0 else 'later'))
+                        G[gk].append(answer_ok(run(txt, sl, lambda X_: dre(X_, fb, j))[2], p0, tb))
+            m = lambda L: (np.mean([x[0] for x in L]), np.mean([x[1] for x in L]))
+            gs = []
+            for gk, gn in GATES:
+                fr = {k: np.mean([x == k for x in FR[gk]]) for k in ('slot', 'earlier', 'later', 'never')}
+                gs.append(f"{gn}: latest firing up to the slot is AT the slot {fr['slot']:.2f}, earlier {fr['earlier']:.2f}, only inside the answer {fr['later']:.2f}, never {fr['never']:.2f}; open {m(G[gk])[0]:.2f}, bytes {m(G[gk])[1]:.2f}")
+            res.append(f"{fam} ({len(fs)} wording(s), {len(R['none'])} questions): "
+                       f"no memory: open {m(R['none'])[0]:.2f}, answer bytes {m(R['none'])[1]:.2f} (facts {np.mean(byk0['fact']):.2f}, conclusions {np.mean(byk0['conclusion']):.2f}) | "
+                       f"ORACLE value (true item, true slot): open {m(R['oracle'])[0]:.2f}, bytes {m(R['oracle'])[1]:.2f} | "
+                       f"TWO-PART key at the true slot: right item {np.mean(ret2):.2f}, open {m(R['two@slot'])[0]:.2f}, bytes {m(R['two@slot'])[1]:.2f} "
+                       f"(facts {np.mean(bykind['fact']):.2f}, conclusions {np.mean(bykind['conclusion']):.2f}) | "
+                       f"NAME-ONLY key at the true slot: right item {np.mean(retn):.2f}, open {m(R['name@slot'])[0]:.2f} | "
+                       f"P(capital next) at the held-out slot: median {np.median(PUS):.2f}, share past the threshold {np.mean(np.array(PUS) > TH['cap']):.2f} | END TO END, no oracle :: " + " :: ".join(gs))
+        print(f"  [TWO-PART KEY MEMORY | {tag}] {len(subj)} subjects x (planted fact + conclusion) = {len(items)} entries, values fitted on written wordings only "
+              f"(facts 1, conclusions {nw}), self-contrast x{selfc:g}; thresholds (99th pct) "
+              + ", ".join(f"{k} {v:.3f}" for k, v in TH.items()) + f" || {CAPD} || {ordinary} || " + " || ".join(res), flush=True)
+    finally:
+        cap['delta'] = None; cap['on'] = False; h.remove(); back()
+
+
+def _jepa_hop_readout(model, cfg, S_, tag):
+    """JEPA AS A TRANSITION OPERATOR (10 Nov; readouts only).
+    TEST 1 NEXT HOP: query = the predictor applied to the code of a planted fact sentence 'A r0 B.'; bank = target codes of every planted
+      fact sentence plus stored ordinary sentences (distractors). Forward hit = the next fact of the chain ('B r1 C.') ranks first (top-1)
+      / in the top 5; also how often the top-1 is the PREVIOUS fact, or another fact with the same subject. Baselines: the query's own
+      target code (no predictor: finds sentences sharing a name), the symbolic lookup (facts whose subject is the query's object), chance.
+      Split: links the JEPA was trained on (both sentences inside one of its training pairs) vs links it never saw. TWO HOPS: the
+      predictor applied twice, 'A r0 B.' -> 'C r2 D.' on three-hop chains.
+    TEST 2 WHAT AN UPDATE SHOULD REVISE: belief-revision probes; ground truth = live conclusions whose recorded source sentences contain the
+      OLD fact. Query = the predictor on the old fact / on the new fact, and the target code of the new fact; bank = every live conclusion
+      written as 'So A is connected to C.'; recall@5 of the true dependents and precision of the top 5, against the name baseline
+      (conclusions whose subject or answer is a name in the fact)."""
+    import numpy as np, torch, torch.nn.functional as F
+    from platypus.inference.probes import inf_probes
+    from platypus.inference.jepa import _jd_codes, _jd_pairs
+    from platypus.common import _CONC_CF
+    SH = model.__dict__.get('_jdS'); EN = model.__dict__.get('_jdenc')
+    if SH is None or EN is None: print(f"  [JEPA HOPS | {tag}] skipped: no trained JEPA", flush=True); return
+    g, gt, Pq, _ = SH; mu, sd, V = EN; obj = model.__dict__.get('_jdobj', 'hybrid')
+    def enc(Z):
+        Y = (Z - mu) / sd
+        if model.__dict__.get('_jdpca') and V is not None: return Y @ V.T
+        return Y - (Y @ V.T) @ V if V is not None else Y
+    def codes(txts):
+        out = {'t': [], 'p': [], 'pp': []}
+        with torch.no_grad():
+            for i in range(0, len(txts), 64):
+                E0 = enc(_jd_codes(model, cfg, [t.encode('latin-1', 'replace') if isinstance(t, str) else bytes(t) for t in txts[i:i + 64]]))
+                if obj == 'lejepa': t_ = g(E0); p_ = g(E0); pp_ = g(E0)
+                else: t_ = gt(E0); p_ = Pq(g(E0)); pp_ = Pq(Pq(g(E0)))
+                for k, v in (('t', t_), ('p', p_), ('pp', pp_)): out[k].append(F.normalize(v.float(), dim=-1).cpu())
+        return {k: torch.cat(v) for k, v in out.items()}
+    rs = np.random.RandomState(int(cfg.seed) + 4146)
+    CH = inf_probes(cfg); facts = []; subj = []; obj_ = []; links = []; links2 = []
+    for ch in CH:
+        ix = []
+        for i, (d, s) in enumerate(ch['facts']):
+            ix.append(len(facts)); facts.append(s); subj.append(ch['names'][i]); obj_.append(ch['names'][i + 1])
+        for i in range(len(ix) - 1): links.append((ix[i], ix[i + 1]))
+        for i in range(len(ix) - 2): links2.append((ix[i], ix[i + 2]))
+        for d, s in (ch.get('upd') or {}).get('new', []):
+            facts.append(s); w = s.rstrip('.').split(' '); subj.append(w[0]); obj_.append(w[-1])
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    dis = [bytes(real[int(k)]['s']) for k in rs.choice(len(real), min(300, len(real)), replace=False)] if real else []
+    C = codes(facts); Cd = codes(dis) if dis else None
+    bankT = torch.cat([C['t'], Cd['t']]) if Cd is not None else C['t']; nF = len(facts)
+    try: P = _jd_pairs(S_, np.random.RandomState(0), 10 ** 9)
+    except Exception: P = []
+    P = [(bytes(a), bytes(b)) for a, b in P]
+    core = [f.rstrip('.').encode('latin-1', 'replace') for f in facts]
+    def seen(a, b): return any((core[a] in x and core[b] in y) or (core[b] in x and core[a] in y) for x, y in P)
+    def rank_hits(Q, qi, target, other=None):
+        S = Q @ bankT.T; S[torch.arange(len(qi)), torch.tensor(qi)] = -9
+        top = S.topk(5, dim=1).indices; t = torch.tensor(target)
+        return (top[:, 0] == t).float(), (top == t[:, None]).any(1).float(), top[:, 0]
+    out = []
+    for nm, L, key in (('NEXT HOP', links, 'p'), ('TWO HOPS (predictor twice)', links2, 'pp')):
+        if not L: continue
+        a = [x for x, _ in L]; b = [y for _, y in L]; sn = np.array([seen(x, y) for x, y in L]) if nm == 'NEXT HOP' else np.zeros(len(L), bool)
+        h1, h5, t1 = rank_hits(C[key][a], a, b); n1, n5, nt1 = rank_hits(C['t'][a], a, b)
+        prev = {y: x for x, y in links}; t1n = t1.numpy()
+        back = np.mean([prev.get(int(x)) == int(t) for x, t in zip(a, t1n)]); same = np.mean([int(t) < nF and subj[int(t)] == subj[x] for x, t in zip(a, t1n)])
+        dist = np.mean(t1n >= nF)
+        sym = np.mean([subj[y] == obj_[x] and sum(1 for k in range(nF) if subj[k] == obj_[x]) == 1 for x, y in L]) if nm == 'NEXT HOP' else float('nan')
+        def sp(v, m): return f"{float(v[torch.tensor(m)].mean()):.2f}" if m.any() else "n/a"
+        out.append(f"{nm} ({len(L)} links; bank {len(bankT)} = {nF} planted facts + {len(bankT) - nF} ordinary sentences; chance {1 / len(bankT):.3f}): "
+                   f"PREDICTOR top-1 {float(h1.mean()):.2f}, top-5 {float(h5.mean()):.2f} [seen links ({int(sn.sum())}) {sp(h1, sn)}, UNSEEN links ({int((~sn).sum())}) {sp(h1, ~sn)}] | "
+                   f"its top-1 is: the previous fact {back:.2f}, another fact of the same subject {same:.2f}, an ordinary sentence {dist:.2f} | "
+                   f"NO PREDICTOR (own target code) top-1 {float(n1.mean()):.2f}, top-5 {float(n5.mean()):.2f} [unseen {sp(n1, ~sn)}]"
+                   + (f" | SYMBOLIC (unique fact whose subject is the object) {sym:.2f}" if nm == 'NEXT HOP' else ""))
+    # ---- TEST 2
+    lv = [c for c in S_.get('conc', []) if not c.get('freed') and not c.get('retracted') and isinstance(c.get('A'), str) and isinstance(c.get('C'), str)]
+    up = [ch for ch in CH if ch.get('upd') and len(ch['names']) == 3]
+    t2 = "UPDATE DEPENDENTS skipped"
+    if lv and up:
+        ct = [_CONC_CF[0].format(A=c['A']) + c['C'] + '.' for c in lv]; Cc = codes(ct)
+        def srcs(c):
+            return [bytes(it[i]['s']) for i in (c.get('src') or ()) if isinstance(i, int) and i < len(it)]
+        R = {'PREDICTOR on the OLD fact': [], 'PREDICTOR on the NEW fact': [], 'NEW fact target code (no predictor)': [], 'NAME baseline': []}; Pr = {k: [] for k in R}; nd = []
+        for ch in up:
+            old = ch['facts'][0][1]; new = ch['upd']['new'][0][1]; oc = old.rstrip('.').encode('latin-1', 'replace')
+            dep = [j for j, c in enumerate(lv) if any(oc in s for s in srcs(c))]
+            if not dep: continue
+            nd.append(len(dep)); q = codes([old, new]); names = {w for s_ in (old, new) for w in (s_.rstrip('.').split(' ')[0], s_.rstrip('.').split(' ')[-1])}
+            for nm, v in (('PREDICTOR on the OLD fact', q['p'][0]), ('PREDICTOR on the NEW fact', q['p'][1]), ('NEW fact target code (no predictor)', q['t'][1])):
+                top = (Cc['t'] @ v).topk(min(5, len(lv))).indices.tolist(); R[nm].append(len(set(top) & set(dep)) / min(5, len(dep))); Pr[nm].append(len(set(top) & set(dep)) / len(top))
+            nmh = [j for j, c in enumerate(lv) if c['A'] in names or c['C'] in names]
+            R['NAME baseline'].append(len(set(nmh) & set(dep)) / len(dep)); Pr['NAME baseline'].append(len(set(nmh) & set(dep)) / max(1, len(nmh)))
+        if nd:
+            t2 = (f"UPDATE DEPENDENTS ({len(nd)} updated facts with live dependent conclusions, median {int(np.median(nd))} dependents; bank {len(lv)} live conclusions): "
+                  + " | ".join(f"{k}: recall@5 {np.mean(R[k]):.2f}, precision {np.mean(Pr[k]):.2f}" for k in R))
+        else: t2 = f"UPDATE DEPENDENTS skipped ({len(up)} updated chains, none with a live conclusion built on the old fact)"
+    print(f"  [JEPA HOPS | {tag}] objective {obj}; {len(P)} JEPA training pairs || " + " || ".join(out) + " || " + t2, flush=True)
 
 def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp_):
     """(2)+(3) shadow edits on up to 16 of this sleep's conclusions (NOTE: the shadow fits leave out competitor contrast, inf_cf_contrast, so
@@ -150,23 +605,21 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     ws_self = float(getattr(cfg, 'inf_cf_shadow_self', 1.0)); D = mo_.weight.shape[0]
     def name_pos(pr, A, ps0):
         ab = A.encode('latin-1', 'replace'); i0 = pr.find(ab); return (i0 + len(ab) - 1) if i0 >= 0 else int(ps0)
-    FITLOG = []                                                                # (answer-byte loss, top-1) at the first and last fit step, subject site only
-    def fit(words, selfc, infow=0.0, items=None, site='answer', cp=None, kall=None):
+    def fit(words, selfc, infow=0.0, items=None):
         """items: (prompt, answer, domain, subject) to fit; by default this sleep's conclusions in each of the given wordings.
         infow > 0: INFORMATION-WEIGHTED answer bytes (as in replay, inf_cons_infow): each byte's loss weighted by its bits under a neutral cue
         (the subject replaced by 'someone'), divided by the mean over the answer and clipped to [0.25, infow].
-        site 'subject' (ROME-style, Meng et al. 2022): the output change is fitted at the subject name's LAST BYTE only, keyed by the layer's
-        input there, and must reach the answer through the trunk's own attention; solved, it is a plain weight edit (no oracle positions)"""
+        (The ROME-style subject-site fit was removed 10 Nov: negative, see RESULTS.md.)"""
         Ks, Rs, Ns, Js = [], [], [], []
         its = items if items is not None else [(w.format(A=c['A']), c['C'], c['d'], c['A']) for c in E for w in words]
         for prs, Cs, dd, As in its:
                 pr = prs.encode('latin-1', 'replace'); tg = (Cs + '.').encode('latin-1', 'replace'); X, M = _ws_batch(model, [pr + tg])
                 T1 = X.shape[1] - 1; ps = torch.arange(len(pr) - 1, min(T1, len(pr) + len(tg) - 1), device=X.device)
                 if ps.numel() == 0: continue
-                cq = cp if cp is not None else cap_
-                sl = int(S_slot(dd)); cq['on'] = True; cq['k'] = []; _ws_run(model, X, sl); cq['on'] = False; K1 = cq['k'][-1][0][ps]
-                nk = cq['k'][-1][0][name_pos(pr, As, ps[0])]
-                if kall is not None: kall.append(cq['k'][-1][0].float())
+                cq = cap_; sl = int(S_slot(dd)); cq['on'] = True; cq['k'] = []
+                try: _ws_run(model, X, sl)
+                finally: cq['on'] = False                                         # never left on: it would keep every later forward's keys
+                K1 = cq['k'][-1][0][ps]; nk = cq['k'][-1][0][name_pos(pr, As, ps[0])]
                 wb = None
                 if infow > 0:
                     prn = prs.replace(As, 'someone').encode('latin-1', 'replace'); Xn, Mn = _ws_batch(model, [prn + tg]); psn = torch.arange(len(prn) - 1, len(prn) - 1 + len(ps), device=X.device)
@@ -174,13 +627,11 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
                         lgn = _ws_run(model, Xn, sl)[0]
                         if int(psn[-1]) < lgn.shape[0]:
                             bn = F.cross_entropy(lgn[psn].float(), Xn[0, psn + 1], reduction='none'); wb = (bn / bn.mean().clamp(min=1e-6)).clamp(0.25, infow)
-                pd = torch.tensor([name_pos(pr, As, ps[0])], device=X.device) if site == 'subject' else ps   # where the output change is fitted
-                if site == 'subject': K1 = cq['k'][-1][0][pd]
+                pd = ps                                                           # the output change is fitted at the answer positions
                 dl = torch.zeros(len(pd), D, device=X.device, requires_grad=True); op = torch.optim.Adam([dl], lr=lr_ * 0.1); yt = X[0, ps + 1]; comp = None
-                for s in range(st_ * (2 if site == 'subject' else 1)):
+                for s in range(st_):
                     cq['delta'] = torch.zeros(1, T1, D, device=X.device).index_put((torch.zeros_like(pd), pd), dl)
                     lg = _ws_run(model, X, sl, grad_=True)[0, ps]; ce = F.cross_entropy(lg, yt, reduction='none')
-                    if site == 'subject' and s in (0, st_ * 2 - 1): FITLOG.append((s == 0, float(ce.mean()) / 0.6931, float((lg.argmax(1) == yt).float().mean())))
                     l = (ce * wb).mean() if wb is not None else ce.mean(); l = l + 1e-3 * (dl ** 2).sum()
                     if selfc > 0:
                         if comp is None:                                          # the model's own top non-answer byte at each answer position (before fitting)
@@ -197,28 +648,6 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         return ridge(K, R, C0_)
     def ridge(K, R, Cr):
         H = K.shape[1]; return torch.linalg.solve(K.T @ K + lam_ * len(K) * Cr.float() + 1e-4 * torch.eye(H, device=K.device), K.T @ R).T
-    def _rome_shadow(fit, words, ws_self, ridge, measure, lam_):
-        nb = len(model.blocks); lays = sorted({max(0, nb // 4), max(0, nb // 2 - (1 if nb // 2 == nb - 1 else 0))} - {nb - 1})
-        txt = []
-        for li in lays:
-            mo2 = model.blocks[li].mlp_out; W2 = mo2.weight.detach().clone(); cp = {'on': False, 'k': [], 'delta': None}
-            def hook2(m_, inp_, out_, cp=cp):
-                if cp['on']: cp['k'].append(inp_[0].detach().float())
-                if cp['delta'] is not None: return out_ + cp['delta'].to(out_.dtype)
-            hk2 = mo2.register_forward_hook(hook2)
-            try:
-                kall = []; FITLOG.clear(); K, R, N, J = fit(words, ws_self, 0.0, None, 'subject', cp, kall)
-                f0 = [x for x in FITLOG if x[0]]; f1 = [x for x in FITLOG if not x[0]]
-                fl = (f"fit with the change itself at the name (fitted wordings): answer-byte loss {np.mean([x[1] for x in f0]):.2f} -> {np.mean([x[1] for x in f1]):.2f} bits, "
-                      f"answer bytes top-1 {np.mean([x[2] for x in f0]):.2f} -> {np.mean([x[2] for x in f1]):.2f}") if f0 and f1 else "fit log empty"
-
-                KA = torch.cat(kall); C2 = (KA.T @ KA) / max(1, len(KA)); moved = float(R.norm(dim=1).mean())
-                with torch.no_grad(): mo2.weight.copy_((W2.float() + scale * ridge(K, R, C2).float()).to(W2.dtype))
-                txt.append(f"block {li} of {nb} (fitted output change at the name, mean norm {moved:.3f}; {fl}) solved into the weights: {measure()}")
-            finally:
-                with torch.no_grad(): mo2.weight.copy_(W2)
-                hk2.remove()
-        return f"ROME-STYLE subject-site edit (no oracle, + SELF-CONTRAST x{ws_self:g}) :: " + " :: ".join(txt)
     def measure():
         f_ = lambda w, dec: _ws_twohop(model, cfg, E, Cp_, S_slot, np.random.RandomState(3), w, dec)
         Rf = _tf_items(model, [(_CONC_CF[0].format(A=c['A']), c['C'], S_slot(c['d'])) for c in E])
@@ -279,18 +708,15 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
     def _slot_gate(FITs, put):
         """ANSWER-SLOT GATES (north-star rung 3 without the oracle; readout). The NAME x POSITION memory needs to know WHERE an answer starts
         and WHOSE answer it is; neither is given. SUBJECT REGISTER: the most recent name-like word before the position (capitalised, 3+
-        letters: the store's own name pattern); its last byte's key is the name key the memory reads. Three ways to decide where to fire,
+        letters: the store's own name pattern); its last byte's key is the name key the memory reads. Two ways to decide where to fire,
         each trained only on the system's own material (this sleep's conclusions in the written edit wordings, recorded name-to-name facts in
         their source wording, ordinary stored sentences); the held-out question wordings are never seen:
           LINEAR: logistic regression on the edited layer's key at the byte (64 principal directions);
           SERAC-STYLE (Mitchell et al. 2022): a small two-layer gate on the same key plus the bytes since the register's name ended, trained on
             MORE FORMS the system writes itself (relation-agnostic: 'Notes on A: ...', 'Q: A <rel> whom? A: ', 'It is recorded that A <rel> ',
             'A <rel> ... '; never a test wording) and HARD NEGATIVES (the 1-3 bytes after a name in ordinary sentences, weighted x3);
-          WISE-STYLE (Wang et al. 2024): no separate gate - a closed-form first-byte memory on [key at the byte ; key at the register's name]
-            fitted to the first answer byte's change at the slots and to ZERO at every other byte with a register (ordinary sentences and the
-            training texts); it fires where its own output norm passes the smallest it reaches on a stored conclusion (WISE's rule), or the
-            1% point of ordinary text.
-        Thresholds for the gates: the 99th percentile on held-in ordinary sentences (and for WISE also its own rule). Measured on held-out
+          (A WISE-style self-firing memory was removed 10 Nov: negative on both scales, see RESULTS.md.)
+        Thresholds for the gates: the 99th percentile on held-in ordinary sentences. Measured on held-out
         wordings of this sleep's conclusions: fires at the slot / fires earlier in the prompt / recall with the memory applied from the FIRST
         firing byte for as many bytes as the longest fitted answer; and on held-out ordinary sentences: fires per 1000 bytes, BPC change with
         the memory applied at the first firing byte of each sentence. Pre-edit weights, store off, the memory at the kept scale."""
@@ -369,27 +795,10 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             hard = [t for t in range(1, len(Z)) if rg[t] >= 0 and 1 <= t - rg[t] <= 3]   # HARD NEGATIVES: just after a name in ordinary text
             if hard: Sn.append(Z[hard]); Sw.append(torch.full((len(hard),), 3.0))
         ser = fit_logit(torch.stack(Sp), torch.cat(Sn), torch.cat(Sw), hidden=32)
-        # ---- WISE-STYLE (closed-form first-byte memory fitted with zero targets elsewhere; fires on its own output norm)
-        def fw(k, rg):                                                            # [key at the byte ; key at the register's name] (zeros without a register)
-            Fk = f(k); rr = torch.tensor(rg[:len(k)]); hn = torch.zeros_like(Fk); ok = rr >= 0
-            if bool(ok.any()): hn[ok] = Fk[rr[ok]]
-            return torch.cat([Fk, hn], 1), ok
-        m0 = J == 0; Xpos = torch.cat([f(K[m0]), f(N[m0])], 1); Ypos = R[m0].float().cpu()
-        negs = []
-        for k, rg, sp in TB:
-            Z, ok = fw(k, rg); ok[sp:sp + 1] = False; negs.append(Z[ok])
-        for i, (k, rg) in enumerate(TO):
-            Z, ok = fw(k, rg); ix = [int(t) for t in sub30(len(Z), i) if bool(ok[int(t)])]; negs.append(Z[ix])
-        Xneg = torch.cat(negs); wpos = float(len(Xneg)) / max(1, len(Xpos))
-        A = wpos * Xpos.T @ Xpos + Xneg.T @ Xneg + 1e-1 * (len(Xpos) * wpos + len(Xneg)) / Xpos.shape[1] * torch.eye(Xpos.shape[1])
-        Wm = torch.linalg.solve(A, wpos * Xpos.T @ Ypos).T                        # (D, 128): the first answer byte's change; ~0 off the slots
-        act = lambda Z: (Z @ Wm.T).norm(dim=1)
-        wise_min = float(act(Xpos).min()); wise_med = float(act(Xpos).median())
         # ---- scoring of a text by each gate
         def score(kind, k, rg):
             if kind == 'linear': return lin(f(k))
-            if kind == 'serac': return ser(fz(k, rg))
-            Z, ok = fw(k, rg); s = act(Z); s[~ok] = 0.0; return s
+            return ser(fz(k, rg))
         ordo = []
         for x in held_out:
             txt = bytes(x['s']); sl = int(S_slot(x['d'])); X, Kt = keys_of(txt, sl); ordo.append((txt, sl, X, Kt, regs(txt, Kt.shape[0])))
@@ -398,7 +807,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             for w9 in _HO_TWO:
                 pb = w9.format(A=c['A']).encode('latin-1', 'replace'); tb = (c['C'] + '.').encode('latin-1', 'replace'); txt = pb + tb; sl = int(S_slot(c['d']))
                 X, Kt = keys_of(txt, sl); qs.append((txt, sl, X, Kt, regs(txt, Kt.shape[0]), len(pb) - 1, tb))
-        held_in_scores = {kind: torch.cat([score(kind, k, rg) for k, rg in TO]) for kind in ('linear', 'serac', 'wise')}
+        held_in_scores = {kind: torch.cat([score(kind, k, rg) for k, rg in TO]) for kind in ('linear', 'serac')}
         def apply_memory(X, Kt, sl, rg, t0):                                      # name-keyed memory bytes from t0 on, keyed by the register at t0
             ne = int(rg[t0]) if t0 < len(rg) else -1
             if ne < 0: return None
@@ -431,9 +840,8 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             return (f"fires AT the slot {np.mean(at):.2f}, earlier {np.mean(early):.2f} | recall (no oracle): open {np.mean(hit):.2f}, first byte {np.mean(fb):.2f}, "
                     f"answer bytes {np.mean(ab):.2f} | ordinary text: {1000 * nfire / max(1, nby):.1f} fires per 1000 bytes, BPC {dbits / max(1, nby):+.4f}")
         res = []
-        for kind, nm in (('linear', 'LINEAR'), ('serac', 'SERAC-STYLE (more forms, hard negatives, recency, 2 layers)'), ('wise', 'WISE-STYLE (self-firing memory)')):
+        for kind, nm in (('linear', 'LINEAR'), ('serac', 'SERAC-STYLE (more forms, hard negatives, recency, 2 layers)')):
             th = float(torch.quantile(held_in_scores[kind], 0.99)); res.append(f"{nm} at 1% of ordinary text: {evaluate(kind, th)}")
-            if kind == 'wise': res.append(f"WISE-STYLE at its own rule (the smallest output on a stored conclusion, {wise_min:.3g}; median {wise_med:.3g}): {evaluate(kind, wise_min)}")
         return (f"{len(TB)} base + {len(TM)} extra-form training texts ({len(E)} conclusions, {len(facts)} recorded facts), {len(TO)} ordinary sentences; "
                 f"memory: NAME x POSITION + self-contrast, {jmax} bytes; held-out questions {len(qs)} || " + " || ".join(res))
     out = []
@@ -447,10 +855,7 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = FIT[sc]
             put(solve_cfg(K, R)); out.append(f"as configured ({nw} wording(s)){tag}: {measure()}")
-            put(ridge(K, R, C0_)); out.append(f"own key, plain ridge{tag} (control for NAME-KEYED): {measure()}")
-            Cx = torch.block_diag(C0_.float(), cI.float()); dWx = ridge(torch.cat([K, N], 1), R, Cx); dWn = dWx[:, H:]
-            put(dWx[:, :H]); out.append(f"NAME-KEYED [own ; name]{tag}: {measure_nk(lambda nk, n: (dWn @ nk)[None].expand(n, -1))}")
-            put(torch.zeros_like(dWx[:, :H])); dWo = ridge(N, R, cI); out.append(f"NAME key only{tag}: {measure_nk(lambda nk, n: (dWo @ nk)[None].expand(n, -1))}")
+            put(torch.zeros_like(W0_, dtype=torch.float32))
             PJ = {}                                                                # NAME x POSITION: one small memory per answer byte j, keyed by the name
             for j in range(int(J.max()) + 1):
                 m = J == j
@@ -458,37 +863,19 @@ def _cf_shadow(model, cfg, E_, mo_, cap_, S_slot, W0_, scale, Pm_, C0_, lam_, Cp
             zero = torch.zeros(D, device=N.device)
             out.append(f"NAME x POSITION (a memory per answer byte, keyed by the name){tag}: "
                        f"{measure_nk(lambda nk, n: torch.stack([(PJ[j] @ nk) if j in PJ else zero for j in range(n)]))}")
-            dWk = ridge(K, R, C0_); Rr = R - K @ dWk.T; PR = {}                  # own key, then NAME x POSITION on what the own key leaves (the residual)
-            for j in range(int(J.max()) + 1):
-                m = J == j
-                if int(m.sum()) >= 2: PR[j] = ridge(N[m], Rr[m], cI)
-            put(dWk); out.append(f"own key + NAME x POSITION on the residual{tag}: "
-                       f"{measure_nk(lambda nk, n: torch.stack([(PR[j] @ nk) if j in PR else zero for j in range(n)]))}")
-        # ROME-STYLE: a plain weight edit at the subject's last byte in an EARLIER block's MLP, so later attention can carry it to the answer.
-        # (9 Nov: fitted in the edited block - the last - it could not: nothing after the last MLP moves information between positions, the fit's
-        # gradient was zero and the result equalled 'no edit' exactly. Void, not negative.) Key covariance of that block from the fitting texts.
-        put(torch.zeros_like(W0_, dtype=torch.float32))
-        try: out.append(_rome_shadow(fit, words, ws_self, ridge, measure, lam_))
-        except Exception as e8: out.append(f"ROME-STYLE unavailable ({type(e8).__name__}: {str(e8)[:80]})")   # edited block back at the pre-edit weights
         iwc = float(getattr(cfg, 'inf_cons_infow', 0.0)) or 4.0                                                              # INFORMATION-WEIGHTED edit fits (as configured solver)
         for sc, tag in ((0.0, ''), (ws_self, f' + SELF-CONTRAST x{ws_self:g}')):
             K, R, N, J = fit(words, sc, iwc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + INFORMATION-WEIGHTED bytes (cap {iwc:g}): {measure()}")
-        # 9 Nov SYSTEM-WRITTEN QUESTION FORMS (the store-as-teacher test, readout): the edit fitted on the written wordings PLUS relation-agnostic
-        # question and wrapper forms the system writes itself - a different KIND of form from the extra paraphrase templates that added nothing
-        # (six wordings = three, GPU). None is a test wording (_HO_TWO, reworded, context, pronoun probes).
-        QF = ("Notes on {A}: So {A} is connected to ", "Q: {A} is connected to whom? A: ", "It is recorded that {A} is connected to ", "{A} is connected to ... ")
-        for sc, tag in ((ws_self, f' + SELF-CONTRAST x{ws_self:g}'),):
-            K, R, N, J = fit(list(words) + list(QF), sc); put(solve_cfg(K, R)); out.append(f"as configured{tag} + {len(QF)} SYSTEM-WRITTEN QUESTION FORMS: {measure()}")
         try: out.append(_source_shadow())
-        except Exception as e9: out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
+        except Exception as e9: cap_['delta'] = None; cap_['on'] = False; out.append(f"SOURCE FACTS unavailable ({type(e9).__name__}: {str(e9)[:80]})")
         if int(getattr(cfg, 'inf_slot_gate', 1)):
             try: print(f"  [ANSWER-SLOT GATES | visit {int(model.__dict__.get('_visit', 0)) + 1}] " + _slot_gate(FIT[ws_self], put), flush=True)
-            except Exception as e7: _fail('inference.openread:slotgate'); print(f"  [ANSWER-SLOT GATES] unavailable ({type(e7).__name__}: {str(e7)[:160]})", flush=True)
+            except Exception as e7: cap_['delta'] = None; cap_['on'] = False; _fail('inference.openread:slotgate'); print(f"  [ANSWER-SLOT GATES] unavailable ({type(e7).__name__}: {str(e7)[:160]})", flush=True)
             with torch.no_grad(): mo_.weight.copy_(W0_)
         print(f"  [CF SHADOW EDITS] {len(E)} of this sleep's conclusions, each variant fitted on them alone and applied to the pre-edit weights at x{scale:g}, measured, removed "
               f"(the kept edit is restored) || " + " || ".join(out), flush=True)
     except Exception as e:
         _fail('inference.openread:shadow'); print(f"  [CF SHADOW EDITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
-        cap_['delta'] = None
+        cap_['delta'] = None; cap_['on'] = False; cap_['k'] = []                 # 10 Nov: capture can never be left on (it would keep every forward's keys)
         with torch.no_grad(): mo_.weight.copy_(Wk)

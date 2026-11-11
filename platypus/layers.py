@@ -66,27 +66,8 @@ def _smem_seed(slot,nr):
     """slot memory -> per-row initial states (each block's S_d repeated over the rows)"""
     SM=(_CARRY['sm'] or {}).get(slot) or {}
     return {k_:v_.unsqueeze(0).expand(int(nr),*v_.shape).reshape(int(nr)*v_.shape[0],*v_.shape[1:]) for k_,v_ in SM.items()}
-def _pair_on(model,cfg,nreal):
-    """PAIRED-DREAM EPISODES: the memory the current network writes while reading each paired row's first half A (no gradient) becomes the
-    initial state of that row's second half B in the merged pass (alongside any real-row memories)."""
-    pa_=model.__dict__.pop('_pairA',None)
-    if not pa_ or not pa_[0]: return
-    pj_,XA_,dA_=pa_; was=model.training; fs=model.feat_scale.clone(); s0_=model.__dict__.get('_s0_dom')
-    sv_={k_:_CARRY[k_] for k_ in ('on','nr','st','new','rows')}
-    try:
-        model.eval(); _CARRY.update(on=True,nr=len(pj_),st={},new={},rows=None); model.__dict__['_s0_dom']=list(dA_)
-        with torch.no_grad(): model.features(XA_)
-        stA=dict(_CARRY['new'])                                               # memories (+ preconditioner statistics) after A
-    finally:
-        model.train(was); model.feat_scale.copy_(fs); model.__dict__['_s0_dom']=s0_; _CARRY.update(sv_)
-    rp_=torch.tensor([int(nreal)+j for j in pj_],dtype=torch.long)
-    if _CARRY['on']:                                                       # real rows carry memories too: stack (preconditioner statistics dropped)
-        nr_=int(_CARRY['nr']); _CARRY['rows']=torch.cat([torch.arange(nr_),rp_]); stA={k_:v_ for k_,v_ in stA.items() if not isinstance(k_,tuple)}
-        _CARRY['st']={k_:torch.cat([_CARRY['st'][k_] if (k_ in _CARRY['st'] and _CARRY['st'][k_].shape[0]==nr_*v_.shape[0]//len(pj_)) else torch.zeros(nr_*v_.shape[0]//len(pj_),*v_.shape[1:],device=v_.device),v_]) for k_,v_ in stA.items()}
-    else: _CARRY.update(on=True,nr=0,new={},rows=rp_,st=stA)
-    st_=model.__dict__.setdefault('_pairst',[0,0]); st_[0]+=len(pj_); st_[1]+=1
 def _carry_on(cfg,nr):
-    if cfg.ctx_carry or cfg.slot_mem:
+    if cfg.slot_mem:
         _CARRY['on']=True; _CARRY['nr']=int(nr); _CARRY['new']={}
         if cfg.slot_mem and not cfg.ctx_carry: _CARRY['st']=_smem_seed(_CARRY['slot'],nr)
 def _carry_off(cfg):
@@ -103,7 +84,7 @@ def _carry_off(cfg):
                     if isinstance(k_,tuple): continue
                     nr_=int(_CARRY['nr']); m_=v_.reshape(nr_,v_.shape[0]//nr_,*v_.shape[1:]).mean(0)
                     o_=SM.get(k_); SM[k_]=m_ if (o_ is None or o_.shape!=m_.shape) else g_*o_+(1-g_)*m_
-            _CARRY['st']=_CARRY['new'] if cfg.ctx_carry else {}
+            _CARRY['st']=({})
         else: _CARRY['st']=_CARRY['new']
         _CARRY['new']={}
 def _kw_par(k):

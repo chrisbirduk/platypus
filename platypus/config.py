@@ -55,7 +55,6 @@ class Config:
     replay_buffer_batches=0         # >0: dedicated replay store of this many batches per domain (else the small prior_buffer)
     shared_head=False               # one output head shared by all domains (instead of one per domain)
     head_select_eval=()             # also evaluate with INFERRED heads: ('bytes','features') - training unchanged
-    scratch_domain=None             # FORWARD-TRANSFER reference: train a fresh model on this one domain only
     fwt_zeroshot=False              # score each domain before training on it (earlier heads, inferred from bytes)
     gate_start_domain=0             # no write gating before this domain index (1 = first domain ungated)
     hs_alpha=0.1                    # byte-pair count smoothing
@@ -87,7 +86,6 @@ class Config:
     dream_recency=None              # SYSTEMS CONSOLIDATION - dreams guard RECENT memories: old domain d's share of the dream budget
     dream_graduate=None             # domains of age >= this GRADUATE: dream share dream_grad_floor (0 = no dreams, structural
     dream_grad_floor=0.0            # protection only; >0 = occasional maintenance dreams)
-    block_attr=False                # DATA-FREE BLOCK ATTRIBUTION (works for any future domain/topic): every block_attr_every steps,
     block_auto=False                # use the attribution to set each block's write strength automatically: blocks whose damage
     block_write=None                # e.g. (1,1,0.5,0.5): write strength per block once there is something to protect
     forget_diag=False               # at each domain end: which part (backbone / each block / heads / routing) lost each earlier domain
@@ -95,14 +93,12 @@ class Config:
     logit_cap=0.0                   # ARCHITECTURE: >0 soft-caps every head's logits at +-logit_cap (cap*tanh(z/cap))
     gate_ln=False                   # ARCHITECTURE: the SSM output gate reads LayerNorm(x) instead of the raw residual x
     dream_cap=0.0                   # >0: ROBUST dream KL, per-token KL -> cap*log(1+KL/cap) (bounded influence of outliers)
-    dream_filter=False              # generate 1.5x dreams and keep the most varied (distinct bytes, no long single-byte runs)
     dream_refresh=50                # every N steps, dream_batch fresh sequences replace the oldest in one old domain's pool
     cross_lr=0.01; cross_min=-1.0; cross_max=2.0
     pg_mode=None                    # POLARISATION gating of weight writes: None | 'weight' | 'proj' | 'proj_uniform' | 'proj_seqnov'
     polar_diag=False                # print, once per domain, whether token angles separate old from new content (no training effect)
     data_free=False                 # NO stored samples: sensitivity from each domain's last live batches, orthogonal
     cov_every=10; cov_tokens=512    # data-free covariance sampling: every N steps, token subsample size
-    topic_diag=False                # TOPICS from byte context (diagnostic only)
     topic_k=16; topic_h=1024; topic_window=128
     topic_center='running'          # profiles centred on a running mean: 'running' (centroids stored centred: drift as the mean
     topic_cover=0.05                # head-coverage: a topic 'knows' a domain if it got >= this share of its training contexts
@@ -152,7 +148,6 @@ class Config:
     pass_fresh_data=False           # with n_passes > 1: every pass trains on UNSEEN text - each domain's training text is collected n_passes times
     mix_decay=False                 # MIXER: per-token, per-head DECAY (Gated DeltaNet): S_t = a_t S_{t-1} + beta_t (v_t - a_t S_{t-1} k_t) k_t^T,
     mix_decay_bias=-8.0             #        log a_t = -softplus(W_a h + b); starts at a ~ 0.9997 (almost no forgetting inside a sequence)
-    grow_blocks_at=None             # DEPTH: domain indices at whose start a new TOP block is added (identity at first: zero output
     stat_every=25                   # SPEED: host-side diagnostics (worst dream etc.) only every this many steps
     amp=None                        # SPEED: 'bf16' = blocks run under bfloat16 autocast (delta-rule solve, norms, heads stay fp32)
     timing=True; timing_every=10    # SPEED: per-phase wall-clock per step, measured on regular steps (step % timing_every == 3)
@@ -232,11 +227,9 @@ class Config:
     ctx_lanes=False                 #   control: the same lanes (consecutive segments) without carrying the memory
     ctx_bptt=1                      # WRITE-PATH TRAINING ON REAL TEXT (with ctx_carry): every training row is K = ctx_bptt CONSECUTIVE segments of its lane
     ctx_bptt_from=1                 #   CURRICULUM (short first - essential in the passkey test): visits 1..ctx_bptt_from train single segments, later
-    oracle_mem=False                # ORACLE LINEAR MEMORY (diagnostic, at the end of the run): the best a linear (delta-rule) memory could do with the
     oracle_batches=64
     oracle_lams=(1e-2,1e-1,1.0,10.0)
     oracle_scales=(0.25,0.5,1.0)        #   S* also scaled by each of these (the trunk was trained reading memories of the delta rule's own scale)
-    oracle_gd=0
     oracle_gd_lr=0.01
     oracle_persist=True             #   also the PERSISTENT-READ oracle: S* read at EVERY position (out += scale S* k~, no decay) instead of as the window's
     oracle_pscales=(0.1,0.25,0.5,1.0)   #   initial state (which the short-horizon decay gates fade within the window); oracle_gd optimises it too
@@ -250,7 +243,6 @@ class Config:
     mk_pool=128
     mk_w=1.0
     mk_teacher='mem'                #   'mem' = teacher reads with the snapshot memory; 'none' = control (teacher without memory: self-distillation)
-    mk_always=False
     recon_w=0.0                     # REPLAY TRAINING (memory as a CONDUIT): with real-text gradient on, recon_rows windows per step are encoded into their
     recon_rows=8                    #   end-of-window delta-rule memory (differentiable) and the model is trained to REGENERATE each window starting from its
     recon_mark=False                # REPLAY TRAINING v2 (harness encoder/decoder): each of recon_rows random cd_seg-byte SEGMENTS is encoded into its
@@ -259,7 +251,6 @@ class Config:
     cd_seg=64                       #   from the trace (cd_mark, temperature cd_temp), checked for EXACTNESS by re-encoding the replay (trace mismatch <= eps; up to
     cd_tries=4                      #   cd_tries draws for the inexact rows), and the student learns the teacher's trace-conditioned targets reading the replay as
     cd_temp=0.7                     #   ORDINARY text (KL, weight cd_w; inexact rows count 1/4). The weights never get a gradient from the real bytes.
-    cd_eps=0.0                      #   exactness tolerance (relative trace mismatch); 0 = calibrated every step as 10 x the mismatch of re-encoding the same
     cd_mark=1                       #   segments (the numerical floor of the kernels)
     cd_chain=1                      # conduit: windows of cd_chain x cd_seg bytes, each sub-segment with its own trace, joined for the student
     cd_ngp_frozen=False             # conduit student pass reads the private n-gram rows without training them (10x lr: they blew up)
@@ -292,7 +283,6 @@ class Config:
     cd_runs_mask=False              # v9 FIX 1 (with cd_runs): each exact run after an inexact piece is read as its OWN CLEAN SEGMENT - the local filter
     cd_run_excl=0                   #   and the n-gram contexts do not reach across the run start, the memory is reset AT it; the run's first byte (+
                                     #   cd_run_excl more) does not teach. Replaces the cd_run_skip dead zone (one whole 8-byte piece per run start)
-    cd_kl_norm=False                # v9 FIX 2a: the conduit KL averaged over the positions that TEACH (not all positions): its share of the clipped
                                     #   update no longer shrinks when few positions teach
     cd_lr_teach=False               # v9 FIX 2b: the conduit step scaled by the share of positions that teach (parameter interpolation, as cd_lr)
     cd_reuse=1                      # v9 ROUTE 3: replays generated every cd_reuse-th conduit step; the steps between learn again from the last batch
@@ -365,7 +355,6 @@ class Config:
     cd_gen_chunk1=0                 # v9c: > 0: generation chunk (pieces) for domains on ONE try (cd_fok_1try reached)
     cd_prof=False                   # v9: profile of a conduit GENERATION step at the conduit calls in cd_prof_calls (first generation step from there)
     cd_prof_calls=(50,1650)         #   (50: the first pass-2 domain; 1650: the 5th, typically high exactness - single try, confidence gate on)
-    cd_ngp_mask=False               # v8b (with cd_ngp_frozen False): private n-gram rows learn in conduit passes only from the positions that TEACH
     rs_sel=False                    # v8 SELECTIVE REPLAY TRAINING: of the recon_rows (pass 1) / cd_recon_rows (conduit) replay-training pieces, a rs_frac
     rs_frac=0.5                     #   share is sampled from a pool rs_pool x larger in proportion to p(1 - p), p = exp(-L x the live model's
     rs_pool=4                       #   teacher-forced replay loss per byte) (scored without gradient: the BORDERLINE pieces), the rest at random
@@ -387,7 +376,6 @@ class Config:
     slot_mem=False                  # MEDIUM-TIMESCALE MEMORY PER SLOT: every slot d keeps a persistent delta-rule state S_d per block; its real rows start
     slot_mem_gamma=0.98
     dream_pair_full=False           # WRITE-PATH TRAINING (with dream_pair > 0 for the 2 x length bank): every dream row is a WHOLE 2 x seq_len dream
-    dream_pair_both=False           # True: each pair spends two of the dream rows - the first half A as a normal row AND the second half B carried
     slot_mem_reenc=0                # >0: at every visit end each other slot's memory is RE-ENCODED with the current weights: S_d = mean segment-end
     dream_pair=0.0                  # PAIRED-DREAM EPISODES (learning to use carried memory): the bank holds 2 x seq_len dreams with stored targets from the
     eval_ctx=0                      # evaluation windows of (1 + eval_ctx) x seq_len bytes, scored on the last seq_len bytes only (long-context reading)
@@ -404,7 +392,6 @@ class Config:
     guard_atr_n=5                   #   true range |KL_t - KL_t-1| of its held-out KL; flag on a channel breakout KL > EMA(KL) + guard_atr_k x ATR (EMA over the same
     guard_atr_k=3.0                 #   with guard_atr_share the dream-row shares follow ATR_d / mean ATR (clipped to [0.5, guard_boost]) all the time - the
     guard_atr_share=True            #   domains whose function is moving fastest get more of the (unchanged) dream rows
-    guard_atr_rows=False            # ATR-CONTROLLED DREAM ROWS: rows per dream step = dream_batch x (mean ATR now / its running mean over the run so far), clipped
     guard_rows_min=0.5              #   to [guard_rows_min, guard_rows_max] x dream_batch: more rows while the old domains' functions move fast, fewer when calm
     guard_rows_max=2.0              #   (the ratio averages ~1: about the same total dream rows)
     stream=False                    # NO VISIT BOUNDARIES (implies infer_ctx): one byte stream; the model is never told where a domain ends. It watches its
@@ -421,14 +408,10 @@ class Config:
     stream_rep_floor=1e-4           #   floor on that noise
     stream_cap=3.0                  #   longest visit, x steps_per_task (only a safety bound: visits end by detection)
     ema_tail=0.0                    # >0: TAIL AVERAGING - an exponential moving average of all weights (private rows included) with horizon
-    sleep_keep=0.0                  # >0: WAKE / SLEEP - every fresh batch is scored (no-grad forward, head + private rows); its top sleep_keep share of
     sleep_merge=1                   #   rows per training step = sleep_merge x batch_size (merged batch)
-    sleep_lr=0.0                    #   lr multiplier on merged steps (0: sqrt(rows / batch_size))
     sleep_dream=True                #   dream rows scaled with the merged batch (same real : dream ratio as a normal step)
     sleep_wake=True                 #   rows not queued train their domain's private rows (head-only backward)
-    sleep_random=False              #   control: queued rows chosen at random (no scoring forward)
     sleep_score='loss'              #   'loss' = rows ranked by loss; 'mem' = by MEMORY GAIN: loss on the window's second half read WITHOUT the first half minus
-    sleep_revisit=False             #   True: wake / sleep only on REVISITS (a domain's first visit trains normally)
     ngo_lr_mult=1.0                 #   x ngram_lr_mult
     ngram_in_mult=1.0               # learning-rate multiplier of the INPUT-side n-gram tables only (lazy optimiser), e.g. 0.1 = slow input features
     gn_diag=0                       # >0: GRADIENT-NOISE DIAGNOSTIC every gn_diag steps: per-row (window) gradients of the real-text loss on the current batch
@@ -446,11 +429,9 @@ class Config:
     head_center=False               # SOFTMAX SHIFT SYMMETRY: after every step each head's rows (and bias) are centred (adding a vector to every row
     muon=False                      # MUON for the trunk: every 2-D weight in the blocks gets orthogonalised Nesterov momentum (5 Newton-Schulz steps),
     muon_lr=1.0                     #   update RMS matched to Adam (0.2 sqrt(max(m,n)); Moonshot 2025) at lr x muon_lr; Adam for everything else.
-    muon_precise=False              # v9.8 cg11: PRECISE SHARED UPDATE (local PX_PS): the shared block matrices step along the Fisher-whitened momentum
                                     #   itself, rescaled to Muon's size (no Newton-Schulz orthogonalisation); the per-domain private units (pu_*) and
                                     #   FiLM matrices keep Muon. Local d128: with private units 2.006 -> 1.960 law at the same near-zero forgetting
     muon_ns_steps=5                 # cg12a: Newton-Schulz iterations per Muon step (5 = standard; 3 = cheaper, weak directions amplified ~41x instead of ~490x)
-    muon_precise_cap=0.0            # >0 (cg11b): cap the precise step's largest singular value at this multiple of Muon's (1.0 = Muon's spectral size)
     muon_precise_pit=2              #   power-iteration steps per update (warm-started)
     muon_mom=0.95                   #   Zero rows / columns of a gradient stay zero (private / reserve units keep their isolation).
     dec_prot=0.0                    # >0: DECOUPLED PROTECTION (AdamW-style): the dream-KL gradient of the trunk's 2-D weights is taken OUT of the Muon
@@ -480,7 +461,6 @@ class Config:
     ema_pull_rel=0.0                #   >0: the pull scaled to the averaging window instead: per step 1 / (ema_pull_rel x horizon), horizon = ema_tail x visit
     kf_maxdim=4096                  #   factors larger than this are kept diagonal (memory)
     kf_source='sample'              #   'sample': extra forward/backward with model-sampled labels (true Fisher); 'main': the factors come FREE from the
-    pass_lr_noold=0.0               # cg13: >0 = lr multiplier for visits with NO old domain (the run's first visit); replaces the direct step's
     cd_reuse_k=0                    # >0: SPACED REPLAY REUSE (same domain), see cd_reuse_mode
     cd_reuse_lag=15
     cd_reuse_mode='uniform'         #   'uniform' | 'mix' (half by fragility, half uniform) | 'upw' (fragile pieces x cd_reuse_upw) | 'loop' (maintenance loop)
@@ -489,8 +469,6 @@ class Config:
     cd_loop_fail=0.05               #   then dropped; else interval halved; dropped when consolidated (KL < kldrop) or after maxuse re-checks
     cd_loop_maxuse=4
     cd_loop_kldrop=0.02
-    cd_win_keep=0.0                 # 0<k<1: WINDOW-LEVEL SURPRISE GATING of the batch rows (fewer generations)
-    cd_win_rand=False               #   control: chosen at random
     cd_gate_mode='surprise'         # with cd_gate_keep: 'surprise' (most surprising pieces) | 'kpp' (DIVERSITY: k-means++ / BADGE-style sampling on each
                                     #   piece's teaching-gradient embedding sum(p_student - p_target), origin as first centre so tiny-signal pieces are rarely
                                     #   chosen) | 'rand' (random control)
@@ -531,13 +509,63 @@ class Config:
     inf_mem_beta=0.5                #   fast store: delta-rule write strength
     inf_mem_gain=1.0                #   fast store: logit gain of the correction
     inf_mem_nofill=0.5              #   fast store: share of conclusion rows written with no context before them
+    inf_name_mem=1                  # 10 Nov NAME MEMORY (inference.namemem; on by default): one entry per fact beside the weights, two-part key
+                                    #   (subject name + answer slot), SERAC-style slot gate with re-anchoring; acts only in the store-on probe evaluation and its readouts
+    inf_nm_max=384                  #   name memory: most entries (newest conclusions up to half, then newest recorded facts)
+    inf_nm_selfc=1.0                #   name memory: self-contrast weight when fitting values
+    inf_nm_min_seen=2               #   name memory: a recorded fact must have been seen in at least this many sentences (most seen first)
+    inf_nm_min_entries=32           #   name memory: stays off until it holds this many facts (its slot gate needs material)
+    inf_nm_value='hidden'           #   name memory: 'hidden' (default) = a fitted change to the edited layer's output; 'logit' = the stored answer
+                                    #   byte raised to beat the best other byte by inf_nm_margin nats, nothing fitted (local full run, 10 Nov: recall
+                                    #   as good or better, but misfires cost 3-4x more on a full memory; staleness is mostly the keys, in both)
+    inf_nm_margin=1.0               #   name memory, logit value: margin in nats
+    inf_carry=0.0                   # 10 Nov CARRY THE SUBJECT (inference.carry; off): weight of an auxiliary loss teaching the trunk to keep the latest name
+                                    #   readable at the bytes after it (InfoNCE among the batch's names, at the edited layer's input)
+    inf_carry_dist=32               #   carry: bytes after a name that are trained
+    inf_carry_n=128                 #   carry: sampled bytes per batch
+    inf_carry_tau=0.1               #   carry: InfoNCE temperature
+    inf_carry_dim=128               #   carry: projection size
+    inf_carry_every=1               #   carry: apply the loss every this many training steps
+    inf_distill=0                   # 10 Nov DISTILLATION IN SLEEP (inference.distill; off): the name memory's facts taught to the trunk's blocks each sleep in
+                                    #   self-written wordings (never a test wording), anchors on stored sentences, a brake with rollback
+    inf_distill_steps=40            #   distillation: steps per sleep
+    inf_distill_rows=16             #   distillation: questions per step
+    inf_distill_lr=0.01             #   distillation: learning rate as a multiple of lr (first dose; then a third, a ninth if over the brake; GPU 10 Nov: x0.03 cost +0.098 BPC)
+    inf_distill_anchor=1.0          #   distillation: weight of the anchor KL on stored sentences
+    inf_distill_arows=16            #   distillation: anchor rows per step
+    inf_distill_wake=0.0            # 10 Nov INTERLEAVED DISTILLATION (off): weight of a few question rows about stored facts added to every real-text
+                                    #   training step (same backward and optimiser: Fisher whitening, real-text loss and dream rows apply; no burst)
+    inf_distill_wake_rows=4         #   interleaved distillation: question rows per training step
+    inf_distill_wake_params=''      #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
+    inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
+                                    #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
+    inf_distill_readonly=0          #   11 Nov CONTROL: 1 = the question pool, the never-taught split and every distillation readout as usual, but no question rows trained
+    inf_distill_pool_max=0          #   11 Nov CAPACITY: >0 = the question pool takes up to this many facts and conclusions from the store (0 = the name memory's material, cap inf_nm_max)
+    inf_distill_conc22=1            #   11 Nov READOUT: conclusions taught vs never taught x closed-form edits in place vs subtracted (+ never taught with both premises taught)
+    inf_distill_ever=256            #   11 Nov READOUT: recall over a stable sample of every fact EVER taught (and control ever held), by still/left the pool and age
+    inf_distill_wake_ondream=0      #   11 Nov: 1 = question rows only on steps that also train on dream rows, weight x the dream interval (same dose)
+    inf_distill_wake_akl=0.0        #   11 Nov: >0 = SOFT ANCHOR: + this x KL(the model at the last sleep || now) on stored real sentences of old slots
+    inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
+    inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
+    inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
+    inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
+                                    #   sentences naming taught subjects, at the positions the memory changes (after arXiv 2610.05200)
+    inf_gate_theta=0.0              #   11 Nov RHYTHM GATES (inference.distill): >0 = THETA phase gate, mean consolidation phase length in steps
+    inf_gate_theta_jitter=1         #     1 = stochastic phase lengths (exponential), 0 = fixed (control)
+    inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
+    inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
+    inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)
+    inf_eval_chunk=0                # 11 Nov: >0 = probe evaluation's beam search and name scoring run in chunks of this many rows (0 = one pass; GPU: 128)
+    inf_sleep_phase_free=0          # 11 Nov: 1 = release the CUDA cache after each timed sleep phase (with inf_sleep_phases)
+    inf_gauss_drift=0               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep
+    inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with
                                     #   that domain's private units OFF, on the visit's VERIFIED windows (the NREM reservoir; needs nrem_res > 0)
     pu_cons_lr=0.3                  #   lr multiplier (plain Adam over the blocks' shared weights, fresh per phase)
     pu_cons_rows=16                 #   rows per step
     pu_cons_anchor=0.25             #   share of rows from OLD domains' kept verified windows, taught to keep the frozen copy's output (interleaving)
-    pu_cons_shrink=0.0              #   >0: after the phase the domain's private-unit outputs x (1 - shrink) (frees capacity; 0 = keep)
     pu_cons_retire=0.25             # cg19 (3) TRACE-LEVEL RETIREMENT: a window is retired (not kept) once its KL with the private units off falls below
                                     #   this share of its value at the phase start (the shared weights reproduce it: absorbed); <0 = never
     pu_cons_cap=0                   # cg19 (3) CAPACITY CAP: >0 = each domain keeps at most this many verified windows (weakest-first eviction:
@@ -545,7 +573,6 @@ class Config:
     pu_cons_eval=4                  #   held-out batches per domain for the phase's before/after diagnostics
     trace_lesion=()                 # cg19 (2) TRACE LESION: true domains whose visits are SKIPPED from pass trace_lesion_pass (0-based) on: no traces,
     trace_lesion_pass=2             #   no replay (their old dreams stay) - does the knowledge hold without the hippocampus?
-    sleep_phase=0.0                 # >0: OFFLINE SLEEP after every no-real-text visit: sleep_phase x steps_per_task extra steps with NO new experience
     sleep_nrem=0.5                  #   share of them NREM (hippocampal: re-replay the long-term store's tagged windows, highest signal first; retire)
                                     #   the rest REM (cortical: dreams only, every step); needs cd_store_cap > 0 for NREM
     sleep_ctrl=False                #   control: the same extra steps, but awake (the visit simply continues)
@@ -559,7 +586,6 @@ class Config:
     lm_merge='ties'                 #   'ties' (trim 80% smallest, elect sign, mean of agreeing) | 'mean' | 'sum'
     lm_scales=(1.0,0.5,0.25)
     lm_eps=0.0                      #   no old domain's held-out dream KL may rise above (1 + lm_eps) x its value before
-    lm_store_check=False            #   the no-harm check also on the LONG-TERM STORE's real windows of the old domains (needs cd_store_cap)
     lm_cur_eps=0.01                 #   and the visited domain's last verified replays may not move by more than this KL (nats/byte)
     sem_share=0.0                   # >0: SEMANTIC ROWS (shared memory): every episode admitted to the long-term store also leaves a TRACE-FREE copy in its
                                     #   domain's semantic bank (real verified bytes + the trace-reading teacher's evidence-blended targets, top-k); in dream
@@ -574,9 +600,7 @@ class Config:
                                     #   its latest visit; replaced when the domain is visited again); each window is taught under its own domain
     nrem_mix_sel='signal'           #   'signal': other-domain windows with the highest remaining signal | 'rand': uniform
     nrem_own_sel='signal'           #   current-visit windows: 'signal' (highest remaining) | 'rand' (uniform; use with nrem_retire<0)
-    nrem_mix_add=False              #   True: other-domain windows are ADDED (nrem_mix x nrem_k extra) instead of replacing current-visit ones; the current
                                     #   visit's teaching weight is unchanged (normalised by its own windows)
-    nrem_real=False                 #   DIAGNOSTIC (breaks the closed loop): the sleep sample holds random REAL pass-1 windows of the domain (same length and
                                     #   teaching weights) instead of recalled ones - plain replay vs recall
     nrem_real_cap=512               #   pass-1 rows kept per domain for nrem_real
     sleep_ctrl_bytes=False          #   with sleep_ctrl: the extra AWAKE steps teach the fresh checked replays by next-byte cross-entropy only (no teacher
@@ -588,7 +612,6 @@ class Config:
     nrem_retire=0.25                #   retire a window when its remaining signal falls to this share of its value at storage
     cd_gate_keep=0.0                # >0: SURPRISE-GATED REPLAY (test): only the most surprising share of each call's replayed pieces teaches (surprise = the plain
                                     #   model's loss on the piece); the rest get weight 0. Diagnostic: surprise predicts the replay signal (r 0.80-0.99 locally)
-    cd_evid_adapt=0.0               # >0: ADAPTIVE EVIDENCE WEIGHT (acetylcholine-like): at a disagreeing position the blend is cd_evid_w + (cd_evid_adapt - cd_evid_w)
                                     #   x the share of disagreeing positions in its piece (novel pieces trust the evidence more)
     prot_decay=1.0                  # <1: PROTECTION DECAYS WITH DISUSE: an old domain's dream rows are weighted prot_decay ** (visits since its last visit)
     cd_sig_every=0                  # >0: REPLAY-SIGNAL DIAGNOSTIC every this many conduit calls (no training effect): distribution of the learning signal per
@@ -596,26 +619,20 @@ class Config:
     cd_evid_w=0.0                   # EVIDENCE TARGETS (pass-2 closed loop): at positions where the teacher's top byte differs from the VERIFIED replayed byte,
                                     #   the target becomes (1 - w) x teacher + w x that byte (the model's own verified reconstruction, no real text). Fact test:
                                     #   with teacher-only targets a corrected fact never overwrote an entrenched one (self-distillation confirmation bias)
-    cd_evid_all=False               #   True: blend at every teaching position, not only where the teacher disagrees
     fact_spec=()                    # UPDATE-OR-PROTECT TEST: synthetic facts ' Name:1234;' injected into training text, entries [domain, pass, version, every_bytes]
                                     #   (version 0 = the original values, 1 = the changed values); evaluated through every fact domain's slot at each visit end
     fact_n=8                        #   number of facts (names and 4-digit values drawn from fact_seed)
     fact_seed=5
-    dream_lesion=()                 # SCHEMA / LESION TEST: true domains whose dream bank is switched off after their visit in pass >= dream_lesion_pass
     dream_lesion_pass=1             #   (the hippocampal-lesion analogue of Tse et al. 2007: does the domain's knowledge survive without its replay?)
     dream_prio=0.0                  # cg16: PRIORITISED DREAM ROWS within each old domain's bank: this share of rows is drawn in proportion to the row's KL
                                     #   the last time it was used (rows never used: the domain's mean; no extra forward), the rest uniformly. Local dream_test:
                                     #   forgetting -8% (4 rows/step), -2% (every 2nd step), -3% (16 rows), no cost to learning
     dream_prio_sync=8               #   priorities copied to the host every this many dream steps (one sync)
-    bank_anchor=0.0                 # cg16: ANCHORED BANK: this share of each domain's bank is its FIRST bank's rows, kept for the whole run; at every later
                                     #   bank write only the rest is re-sampled, and ALL rows get fresh targets from the current weights (the GPU writes a
                                     #   domain's bank right after its own visit, so stale pass-1 targets would pull towards the weaker pass-1 model). Local
                                     #   prot2 test (anchored inputs AND targets): drift +0.031 vs +0.119 regenerated, +0.010 fully fixed
-    dream_clip_pass=()              # cg14b: per-pass gradient-clip threshold on DREAM steps (other steps stay at 1.0); cg14: dream weight x2 did not reach the
                                     #   update because every dream step is clipped to norm 1 (only the real/dream mix changed), so raise the clip instead
-    dream_w_pass=()                 # cg14: per-pass multiplier on dream_weight (e.g. (1.0,2.0) doubles pass-2 dream weight; local P2 harness: x2 cut 9-old-domain BPC 0.018)
                                     #   behaviour there (it acted only once old domains existed and settled at 0.25-0.28 from the second visit)
-    pass_lr=()                      # LR MULTIPLIER PER PASS (lr_sched 'warmup_once'), e.g. (1.5,1.0): first exposure faster, revisits at the base lr
     trunk_lr_mult=1.0               # Adam CONTROL for muon: the Adam update of the same 2-D block weights scaled by trunk_lr_mult (everything else unchanged)
     sim_diag=False                  # CROSS-DOMAIN SIMILARITY DIAGNOSTIC: every seen domain is evaluated after EVERY visit ('[allbpc]' lines: the measured
     sim_rows=64

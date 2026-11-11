@@ -56,7 +56,14 @@ from platypus.inference.jindex import (
     _jx_sleep,
 )
 
-_PHASE_T={}
+_PHASE_T={}; _PHASE_M={}; _PHASE_PK=[0]; _PHASE_FREE=[0]
+_MW={'on':False,'pk':0,'m':{}}
+def _mw_mark(tag_):
+    """11 Nov: GPU peak of each stage inside the store-write phase (readout): the peak since the last mark, then reset"""
+    if not _MW['on']: return
+    try:
+        p_=torch.cuda.max_memory_allocated(); _MW['m'][tag_]=max(_MW['m'].get(tag_,0),p_); _MW['pk']=max(_MW['pk'],p_); torch.cuda.reset_peak_memory_stats()
+    except Exception: pass
 def _phase_wrap(on_):
     """SLEEP PHASE TIMING (9 Nov, readout only): while a sleep runs, every function this module calls by its global name is timed
     (inclusive, outermost call only, so nothing is counted twice). Returns the names wrapped and their originals, to restore"""
@@ -66,9 +73,20 @@ def _phase_wrap(on_):
     def mk_(nm_,f_):
         def w_(*a_,**k_):
             if depth_['d']: return f_(*a_,**k_)
-            depth_['d']=1; t_=_tm.time()
+            depth_['d']=1; t_=_tm.time(); cu_=torch.cuda.is_available()
+            if cu_:                                                             # 11 Nov: each phase's OWN peak (the running peak is kept in _PHASE_PK, so the
+                try:                                                            #   sleep's peak and the memory guard still see it): allocated at entry, then reset
+                    _PHASE_PK[0]=max(_PHASE_PK[0],torch.cuda.max_memory_allocated()); b_=torch.cuda.memory_allocated(); torch.cuda.reset_peak_memory_stats()
+                except Exception: cu_=False
             try: return f_(*a_,**k_)
-            finally: depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
+            finally:
+                depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
+                if cu_:
+                    try:
+                        m1_=max(torch.cuda.max_memory_allocated(),_MW['pk']); _MW['pk']=0; _PHASE_PK[0]=max(_PHASE_PK[0],m1_)
+                        o_=_PHASE_M.get(nm_,(0.0,0.0)); _PHASE_M[nm_]=(max(o_[0],(m1_-b_)/2**30),max(o_[1],m1_/2**30))   # (above its entry level, own peak)
+                        if _PHASE_FREE[0]: torch.cuda.empty_cache()             # 11 Nov: cached blocks released after each phase (inf_sleep_phase_free)
+                    except Exception: pass
         return w_
     called_=set(g_['_inf_sleep_body'].__code__.co_names)|set(g_['inf_sleep'].__code__.co_names)   # only what the sleep calls by name (also right in a single-file build)
     for nm_,f_ in list(g_.items()):
@@ -81,10 +99,12 @@ def _phase_report(orig_,tt_):
     if not orig_: return
     top_=sorted(_PHASE_T.items(),key=lambda x_:-x_[1]); acc_=sum(v_ for _,v_ in top_)
     print(f"  [inference SLEEP PHASES] {tt_:.0f}s in all | "+" | ".join(f"{k_} {v_:.0f}s" for k_,v_ in top_[:14] if v_>=1.0)
-          +f" | not in a timed call {max(0.0,tt_-acc_):.0f}s",flush=True); _PHASE_T.clear()
+          +f" | not in a timed call {max(0.0,tt_-acc_):.0f}s"
+          +(" || GPU, EACH PHASE'S OWN PEAK (GB above its entry level -> peak): "+" | ".join(f"{k_} +{v_[0]:.1f} -> {v_[1]:.1f}" for k_,v_ in sorted(_PHASE_M.items(),key=lambda x_:-x_[1][1])[:10] if v_[1]>=0.5) if _PHASE_M else ""),flush=True)
+    _PHASE_T.clear(); _PHASE_M.clear()
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     """timing wrapper: wall time of the whole sleep and of the linking step"""
-    t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb(); ph9_=_phase_wrap(int(getattr(cfg,'inf_sleep_phases',1)))
+    t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb(); _PHASE_PK[0]=0; _PHASE_FREE[0]=int(getattr(cfg,'inf_sleep_phase_free',0)); ph9_=_phase_wrap(int(getattr(cfg,'inf_sleep_phases',1)))
     try:                                                                        # READOUT: visits per TRUE domain, so UPDATED probes are scored only after a revisit
         S9v_=_inf_store(model); td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); vv9_=int(model.__dict__.get('_visit',0))
         if '_vdom' not in S9v_: S9v_['_vdom']={}; S9v_['_vdom_from']=vv9_
@@ -92,6 +112,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     except Exception: pass
     try: torch.cuda.reset_peak_memory_stats() if gd_ is not None else None
     except Exception: pass
+    _PHASE_PK[0]=0                                                              # 11 Nov: after the reset, so the visit's peak is not counted as the sleep's
     try:
         ds9_=float(getattr(cfg,'inf_store_downscale',0.0)); _INFM['ds_on']=ds9_>0
         if ds9_>0 and _INFM.get('touch') is not None: _INFM['touch'].zero_()
@@ -118,6 +139,22 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         if int(getattr(cfg,'inf_cf_apply',0)): _cf_apply(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26l closed-form consolidation (kept under its brake)
         if float(getattr(cfg,'inf_sup',0))>0: _sup_dreams(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # MERGED-MEMORY DREAMS (inference.supmem, under their own brake)
         if int(getattr(cfg,'inf_jx',0)): _jx_sleep(model,cfg,_inf_store(model))     # cg26s JEPA INDEX (inference.jindex): readouts only, the trunk is not trained
+        if int(getattr(cfg,'inf_gauss_drift',0)):                               # 11 Nov GAUSSIAN DRIFT READOUT (inference.gaussdrift; readout only)
+            try:
+                from platypus.inference.gaussdrift import gauss_drift
+                gauss_drift(model,cfg,_inf_store(model),S_slot,S_slot(t),[s_ for _,s_ in olds_])
+            except Exception as e9_: _fail('inference.sleep:gd'); print(f"  [GAUSSIAN DRIFT] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
+        if int(getattr(cfg,'inf_name_mem',0)):                                  # 10 Nov NAME MEMORY (inference.namemem): rebuilt after this sleep's weight changes
+            try:
+                from platypus.inference.namemem import nm_sleep
+                if float(getattr(cfg,'inf_distill_wake',0.0))>0:               # 10 Nov INTERLEAVED DISTILLATION: report the visit, rebuild the question pool
+                    from platypus.inference.distill import distill_wake_sleep
+                    distill_wake_sleep(model,cfg,_inf_store(model),S_slot,vslot=S_slot(t),oslots=[s_ for _,s_ in olds_])
+                if int(getattr(cfg,'inf_distill',0)):                           # 10 Nov DISTILLATION (inference.distill): the memory's facts taught to the
+                    from platypus.inference.distill import distill_sleep         #   trunk before the memory is rebuilt on the new weights
+                    distill_sleep(model,cfg,_inf_store(model),S_slot,vals,t,ts,olds_)
+                nm_sleep(model,cfg,_inf_store(model),S_slot)
+            except Exception as e9_: _fail('inference.sleep:namemem'); print(f"  [NAME MEMORY] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if cai9_ is not None:                                                   # CAI TEST: after the whole sleep (inference, REM, writes, replay, closed-form edits)
             try:
                 td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); _cai_report(model,cfg,td9_,cai9_,_cai_score(model,cfg))
@@ -130,6 +167,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         return r9_
     finally:
         gs_=_gpu_gb()
+        if gs_ is not None and _PHASE_PK[0]: gs_=(max(gs_[0],_PHASE_PK[0]/2**30),gs_[1])   # 11 Nov: per-phase resets: the sleep's peak is the running one
         try:
             if gs_ is not None: torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
         except Exception: pass
@@ -392,16 +430,6 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
     byA9_={}; byC9_={}
     for x9_ in (locals().get('lv_') or []): byA9_.setdefault(x9_['A'],set()).add(x9_['C']); byC9_.setdefault(x9_['C'],set()).add(x9_['A'])
     aA9_=sorted(byA9_); aC9_=sorted(byC9_); CTL9_=[]; IWL9_=[]
-    FF9p_=float(getattr(cfg,'inf_fact_forms',0.0)) if cm_=='both' else 0.0; FF9_=[]   # 9 Nov ROUTE 2: recorded facts replayed in VARIED FORMS (or plain, the control)
-    if FF9p_>0:
-        it9f_=S_.get('it',[]); nmf9_=lambda b_: len(b_)>=3 and 65<=b_[0]<=90 and all(65<=x_<=90 or 97<=x_<=122 for x_ in b_)
-        for (a9f_,r9f_),ob9_ in S_.get('rel',{}).items():
-            for o9f_,ix9f_ in ob9_.items():
-                if nmf9_(bytes(a9f_)) and nmf9_(bytes(o9f_)) and ix9f_ and ix9f_[-1]<len(it9f_) and not it9f_[ix9f_[-1]].get('gone'):
-                    FF9_.append((bytes(a9f_).decode('latin-1'),bytes(r9f_).decode('latin-1').strip(),bytes(o9f_).decode('latin-1'),it9f_[ix9f_[-1]]['d']))
-        rf9_=np.random.RandomState(int(cfg.seed)+7411+int(model.__dict__.get('_visit',0)))   # own random stream (the other rows drawn stay those of the baseline)
-    # relation-agnostic forms (the stored relation phrase is kept; no test wording: not _HO_TWO, reworded, context, pronoun or paraphrase probes)
-    FFV9_=("{A} {r} {B}.","Notes on {A}: {A} {r} {B}.","It is recorded that {A} {r} {B}.","Q: {A} {r} whom? A: {B}.","{A} {r} ... {B}.","Regarding {A}: {A} {r} {B}, as recorded.")
     for att_ in range(1+NRT_):
         model.train(); CTL9_.clear(); IWL9_.clear()
         for st in range(int(cfg.inf_steps) if cm_!='both' else int(getattr(cfg,'inf_cons_wsteps',60))):
@@ -471,12 +499,6 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
                 if cm_=='both' and S_.get('rgrows') and rs_.rand()<float(getattr(cfg,'inf_remgen_dream',0.0)):   # SELF-CONFIRMED REM ROW: an inference the model made itself from
                     pq_,aq_,_=S_['rgrows'][rs_.randint(len(S_['rgrows']))]                 #   the attended spans, replayed with the answer as the only target
                     if len(pq_)+len(aq_)+2<=Lr_-8: sn_=pq_+aq_; q0_=len((' '+pq_).encode('latin-1')); model.__dict__['_nrg']=model.__dict__.get('_nrg',0)+1
-                if FF9_ and rf9_.rand()<FF9p_:                                   # ROUTE 2 FACT ROW (inf_fact_forms p): a recorded fact in a varied form, or plain
-                    af_,rf_,bf_,df_=FF9_[rf9_.randint(len(FF9_))]                  #   (inf_fact_forms_mode 'plain': the exposure-matched control), in a window of its domain
-                    fm_=FFV9_[rf9_.randint(len(FFV9_))] if str(getattr(cfg,'inf_fact_forms_mode','varied'))=='varied' else FFV9_[0]
-                    sf_=fm_.format(A=af_,r=rf_,B=bf_)
-                    if len(sf_)<=Lr_-10:
-                        dz8_=df_; w_=bytearray(filler(df_)[:Lr_]); w_+=b' '*(Lr_-len(w_)); sn_=sf_; q0_=0; model.__dict__['_nff']=model.__dict__.get('_nff',0)+1
                 it_=(' '+sn_+' ').encode('latin-1','replace')[:Lr_-8]; o_=rs_.randint(4,max(5,Lr_-len(it_)-4)); w_[o_:o_+len(it_)]=it_; w_=w_[:Lr_]
                 mk_=torch.zeros(Lr_-1); mk_[max(0,o_+max(0,q0_-1)):o_+len(it_)-1]=1.0       # targets = the conclusion's bytes only (pattern rows: after the premises)
                 exz7_=None
@@ -602,7 +624,6 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             print(f"  [inference CONCLUSION REPLAY INTO THE TRUNK] {len(ls_)} steps at lr x{op_.param_groups[0]['lr']/float(cfg.lr):.4f} (store off){(' [retry '+str(att_)+']') if att_ else ''} on {len(pool_)} conclusions ({kc_} rows/step"+(f", relation-pattern rows with fresh names so far {model.__dict__.get('_npat',0)} (too long, skipped {model.__dict__.get('_npat_skip',0)})" if float(getattr(cfg,'inf_cons_pattern',0.0))>0 else "")+(f", SPLICED-PREMISE dream rows so far {model.__dict__.get('_nsplice',0)} (attended-span compact {model.__dict__.get('_ncompact',0)}; too long to fit whole, skipped {model.__dict__.get('_nsplice_skip',0)})" if float(getattr(cfg,'inf_cons_splice',0.0))>0 else "")+(f", self-confirmed REM rows so far {model.__dict__.get('_nrg',0)}" if float(getattr(cfg,'inf_remgen_dream',0.0))>0 else "")+(f", mixed-pair (attended-span) dream rows so far {model.__dict__.get('_nmixd',0)}" if float(getattr(cfg,'inf_mix_dream',0.0))>0 else "")+(f", REM analogy rows so far {model.__dict__.get('_nana',0)}" if float(getattr(cfg,'inf_rem_ana_dream',0.0))>0 else "")+(f", LLM-JEPA term x{float(getattr(cfg,'inf_cons_jepa',0.0)):g} on {len(JP9_)} premise pairs: 1-cos {JL9_[0]:.3f} -> {np.mean(JL9_[-5:]):.3f}" if JL9_ else "")+(f", old-domain fact rows as targets so far {model.__dict__.get('_noldf',0)}" if float(getattr(cfg,'inf_cons_anchor_facts',0.0))>0 else "")+(f", varied restatements so far {model.__dict__.get('_nvary',0)}" if int(getattr(cfg,'inf_cons_vary',0)) else "")+f") + {ka_} anchor rows/step | "
                   f"loss {ls_[0]:.3f} -> {ls_[-1]:.3f} | visited {bB0_:.4f} -> {b1_:.4f} ({dB_:+.4f}), old domains {oB0_:.4f} -> {o1_:.4f} ({dO_:+.4f})"+(f" | ROLLED BACK (brake {bk_})" if rb_ else " | KEPT")+f" | kept so far {A_[0]}/{A_[1]}"+pt9_
                   +(f" | WORDINGS (inf_conc_wordings) rows so far {model.__dict__.get('_nword',0)}" if W9on_ else "")
-                  +(f" | FACT ROWS ({str(getattr(cfg,'inf_fact_forms_mode','varied'))} forms, p {FF9p_:g}) so far {model.__dict__.get('_nff',0)} from {len(FF9_)} recorded facts" if FF9p_>0 else "")
                   +(f" | COMPETITOR CONTRAST x{CT9w_:g} ({CT9k_} negatives per row): answer byte beats the competitor's at the divergence byte, first steps {np.mean([v_ for s_,v_ in CTL9_ if s_<=min(x_ for x_,_ in CTL9_)+9]) if CTL9_ else float('nan'):.2f}, last 10 steps {np.mean([v_ for s_,v_ in CTL9_ if s_>=max(x_ for x_,_ in CTL9_)-9]) if CTL9_ else float('nan'):.2f}" if CT9w_>0 else "")
                   +(f" | INFORMATION WEIGHTS (cap {IW9c_:g}): first answer byte {np.nanmean([a_ for a_,_ in IWL9_]):.2f}, later bytes {np.nanmean([b_ for _,b_ in IWL9_]):.2f} (mean weight)" if IW9c_>0 and IWL9_ else "")
                   +(f" | PAIR DREAMS so far {model.__dict__.get('_nmixd',0)}, of which in another slot than the row they replace {model.__dict__.get('_nmixf',0)}"+(" -> moved to their own slot" if int(getattr(cfg,'inf_mix_dream_own',0)) else " (trained there)") if model.__dict__.get('_nmixd',0) else ""),flush=True)
@@ -626,6 +647,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
 def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,kc_,ka_,filler,fwd,rs_,dev_,b0_,o0_,nb_):
     """cg20h: write the verified conclusions into the fast store (delta rule on the residual), with do-no-harm anchor writes"""
     _infm_init(model,cfg); was_=model.training; model.eval(); beta_=float(getattr(cfg,'inf_mem_beta',0.5)); fa_=float(getattr(cfg,'inf_mem_nofill',0.5))
+    _MW['on']=bool(torch.cuda.is_available() and int(getattr(cfg,'inf_sleep_phases',1))); _MW['m']={}; _mw_mark('entry')
     def feats(X_,d_):
         sh_=_HCAP['on']; _HCAP['on']=True; sv_=_INFM['on']; _INFM['on']=False
         try: lg_=fwd(X_,d_); return lg_,_HCAP['h'].float()
@@ -643,7 +665,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     for c_ in [c0_ for c0_ in list(allc_)+FX_ if not c0_.get('freed')]:
         for n_ in ((c_['A'],c_['B']) if c_.get('fact') else ((c_['A'],c_['B'],c_['C']) if float(getattr(cfg,'inf_mem_src',0.0))>0 else (c_['A'],c_['C']))):
             if n_.encode('latin-1') not in PN_: _INFM['names'].setdefault(n_.encode('latin-1'),int(_zl.crc32(n_.encode('latin-1'))))
-    ainfo_=_inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_)
+    _mw_mark('centre and names'); ainfo_=_inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_); _mw_mark('grounding audit')
     gm_=int(getattr(cfg,'inf_gist',0))
     if gm_:                                                                     # GIST FIRST: what the trunk (the cortex, store OFF) already predicts needs no hippocampal
         tau_=float(getattr(cfg,'inf_gist_tau',1.0)); pool0_=[c_ for c_ in allc_ if not c_.get('freed')]+[f_ for f_ in S_.get('facts',[]) if not f_.get('freed')]
@@ -722,7 +744,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
                 ok_=_inf_score1(model,cfg,f"So {c_['A']} is connected to ",cs_,int(S_slot(c_['d'])),True,dec_=True)==0; ck_.append(ok_)
                 if not ok_: c_['n']=0; fail_+=1
         ainfo_+=f" | MAINTENANCE: {fail_} of {len(ck_)} stored conclusions no longer recalled (store recall {np.mean(ck_) if ck_ else float('nan'):.2f}) -> rewritten first"
-    rc_=[];ra_=[]; wn_=0
+    _mw_mark('gist, fade, release, capacity, maintenance'); rc_=[];ra_=[]; wn_=0
     rn_=[i_ for i_,(w0_,_) in enumerate(ring_) if any(n_ in _INFM['names'] for n_ in _INF_NAME.findall(w0_))] if float(getattr(cfg,'inf_mem_anchor_named',0.0))>0 else []
     ad9_=int(getattr(cfg,'inf_sleep_adapt',0)) and ord_=='nrem_rem'; Kx9_=int(getattr(cfg,'inf_sleep_cycles_max',4)); NS9_=int(cfg.inf_steps)
     if ad9_: REMk_=0                                                            # cg26n ADAPTIVE SLEEP: cycles and durations from the write fit and the REM yields
@@ -801,16 +823,16 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             if conv9_ and L9_>=max(4,NS9_//10):
                 cy9_['len'].append(L9_); cy9_['c0']=st+1; cy9_['fit']=[]
                 if not cy9_['stop']:
-                    o9_=_inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),f"NREM -> REM, adaptive cycle {len(cy9_['acc'])+1}"); a9_=len(o9_ or []); A9_=cy9_['acc']; A9_.append(a9_)
+                    _mw_mark('store writes'); o9_=_inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),f"NREM -> REM, adaptive cycle {len(cy9_['acc'])+1}"); _mw_mark('REM'); a9_=len(o9_ or []); A9_=cy9_['acc']; A9_.append(a9_)
                     if a9_==0: cy9_['stop']='closure (a cycle accepted nothing new)'
                     elif len(A9_)>=2 and A9_[-2]>0 and a9_*a9_/A9_[-2]<1.0: cy9_['stop']=f'yield falling: next cycle predicted {a9_*a9_/A9_[-2]:.1f} < 1 new conclusion'
                     elif len(A9_)>=Kx9_: cy9_['stop']=f'cycle cap {Kx9_}'
                 else: cy9_['end']='writes converged after the last REM'; break
         if REMk_ and remd_<REMk_ and (st+1)%max(1,int(cfg.inf_steps)//(REMk_+1))==0:   # FIX (review): was //REMk_, so one cycle fired at the LAST step   # NREM chunk done -> a REM episode (cycles: its links are written by the next chunk)
-            remd_+=1; _inf_rem(model,cfg,S_,S_slot,max(1,int(getattr(cfg,'inf_rem_n',48))//REMk_),f"NREM -> REM, cycle {remd_}/{REMk_}")
+            remd_+=1; _mw_mark('store writes'); _inf_rem(model,cfg,S_,S_slot,max(1,int(getattr(cfg,'inf_rem_n',48))//REMk_),f"NREM -> REM, cycle {remd_}/{REMk_}"); _mw_mark('REM')
     if ad9_: print(f"  [inference SLEEP CYCLES | ADAPTIVE] {len(cy9_['acc'])} REM cycles, accepted per cycle {cy9_['acc']} | NREM chunks (write steps) {cy9_['len']} + {st+1-cy9_['c0']} | "
                    f"{st+1} write steps in all (fixed schedule {NS9_}) | stopped: {cy9_['stop'] or 'step cap'}"+(f"; {cy9_['end']}" if cy9_['end'] else ''),flush=True)
-    nh_=int(getattr(cfg,'inf_prune_harm',0))
+    _mw_mark('store writes'); nh_=int(getattr(cfg,'inf_prune_harm',0))
     if nh_>0 and rn_:                                                           # HARM-BASED PRUNING: each stored name's measured effect on recent REAL text
         H_=S_.setdefault('harm',{}); inv_={v_:k_ for k_,v_ in _INFM['names'].items()}; acc_={}
         pick_=[ring_[rn_[i_]] for i_ in rs_.choice(len(rn_),min(len(rn_),nh_),replace=False)]
@@ -860,11 +882,14 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     if int(getattr(cfg,'inf_rem_shadow',0)) and ord_=='nrem':                  # SHADOW REM: lookup recombination after the writes, counted only
         try: _inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),'SHADOW after NREM writes (counted, not written; "already known" = found by discovery)',shadow_=True)
         except Exception as e_: _fail('inference.sleep:758'); print(f"  [inference REM recombination] skipped: {e_!r}"[:300],flush=True)
-    _inf_sync(cfg,'store writes'); xinfo_=_inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,filler,fwd,rs_,dev_,nb_,fa_)
-    xinfo_+=_inf_free(model,cfg,S_,allc_,S_slot,Lr_,filler,fwd,feats,rs_,dev_,beta_)
-    xinfo_+=_inf_prune(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_)
+    _mw_mark('harm pruning, shadow REM'); _inf_sync(cfg,'store writes'); xinfo_=_inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,filler,fwd,rs_,dev_,nb_,fa_); _mw_mark('transfer (trunk replay)')
+    xinfo_+=_inf_free(model,cfg,S_,allc_,S_slot,Lr_,filler,fwd,feats,rs_,dev_,beta_); _mw_mark('freeing')
+    xinfo_+=_inf_prune(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_); _mw_mark('pruning')
     model.train(was_); _inf_sync(cfg,'transfer / freeing / pruning')
     b1_=bpc(model,vals[t],ts,n=nb_); _inf_sync(cfg,'held-out BPC with the store'); o1_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
+    _mw_mark('held-out BPC')
+    if _MW['m']: print("  [STORE WRITES | GPU] peak allocated in each stage of the store-write phase (GB): "+" | ".join(f"{k_} {v_/2**30:.1f}" for k_,v_ in _MW['m'].items()),flush=True)
+    _MW['on']=False
     print(f"  [inference sleep | FAST STORE] keyed positions written {_INFM.get('wpos',0)} | {int(cfg.inf_steps)} write steps ({kc_} conclusion rows + {ka_} anchor rows) on {len(allc_)} conclusions | "
           f"keyed conclusion bytes after writing {rc_[0] if rc_ else float('nan'):.3f} (first step), {np.mean(rc_[-5:]) if rc_ else float('nan'):.3f} (last steps) bits | anchor KL(store||model) {np.mean(ra_[-5:]) if ra_ else float('nan'):.4f} | "
           f"|M| {float(_INFM['M'].norm()):.1f}{ainfo_} | trunk weight sum {float(sum(p0_.detach().double().abs().sum() for p0_ in model.parameters())):.6e}{' | gates '+str([round(float(g0_),2) for g0_ in _INFM['gates']]) if _INFM['key']=='slowgate' else ''}{xinfo_} | held-out BPC (store on) visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}"

@@ -47,42 +47,6 @@ def _sfa_for_sleep(model, cfg, S_):
     return L['sfa']
 
 
-def latent_prefilter(model, cfg, S_, P_, T_):
-    """LATENT FIRST PASS (inf_latent_prefilter q in (0, 1), a model change: it decides which proposals the byte judge sees). Proposals (not
-    random pairs, not known-linked controls) are ranked by the SFA cosine of their two sentences; the lowest fraction q is not byte-judged
-    (never accepted this sleep). AUDIT: a random share (inf_latent_prefilter_audit, default 0.2) of the skipped pairs is byte-judged anyway
-    and never accepted, to estimate how many accepts the first pass costs. Returns (pairs to judge, audit pairs, info)."""
-    q = float(getattr(cfg, 'inf_latent_prefilter', 0.0)); au = float(getattr(cfg, 'inf_latent_prefilter_audit', 0.2))
-    prp = [j for j, p in enumerate(P_) if p[2] not in ('random', 'control+') and p[0] >= 0 and p[1] >= 0]
-    if q <= 0 or len(prp) < 20: return P_, [], None
-    t0 = time.time()
-    with torch.random.fork_rng(devices=[torch.cuda.current_device()] if torch.cuda.is_available() else []):
-        st0 = np.random.get_state()
-        try:
-            from platypus.inference.selcmp import _codes
-            sf = _sfa_for_sleep(model, cfg, S_)
-            if sf is None: return P_, [], None
-            mu, P, _ = sf; tx = sorted({P_[j][0] for j in prp} | {P_[j][1] for j in prp}); pos = {t: k for k, t in enumerate(tx)}
-            Z = F.normalize((_codes(model, [T_(t) for t in tx]).cpu() - mu) @ P, dim=-1)
-            sim = np.array([float((Z[pos[P_[j][0]]] * Z[pos[P_[j][1]]]).sum()) for j in prp])
-        finally: np.random.set_state(st0)
-    cut = float(np.quantile(sim, q)); skip = {prp[k] for k in range(len(prp)) if sim[k] < cut}
-    rs = np.random.RandomState(int(cfg.seed) + 6161 + int(model.__dict__.get('_visit', 0)))
-    sk = sorted(skip); aud = [P_[j] for j in sk if rs.rand() < au]
-    keep = [p for j, p in enumerate(P_) if j not in skip]
-    return keep, [(a, b, 'audit') for a, b, _ in aud], dict(n=len(prp), skipped=len(skip), cut=cut, secs=time.time() - t0)
-
-
-def latent_prefilter_report(model, info, G_audit, thr_, n_acc, byte_secs, n_judged):
-    """after the byte judge: how many audited skipped pairs it would have accepted (an estimate of the accepts the first pass cost)"""
-    vis = int(model.__dict__.get('_visit', 0)); na = len(G_audit); wa = sum(1 for g in G_audit if g[3] >= thr_)
-    est = (wa / na * info['skipped']) if na else float('nan'); per = byte_secs / max(1, n_judged)
-    model.__dict__.setdefault('_lpf_log', []).append((info['n'], info['skipped'], na, wa, n_acc, est))
-    print(f"  [LATENT FIRST PASS | visit {vis + 1}] {info['skipped']} of {info['n']} proposals not byte-judged (SFA cosine below {info['cut']:+.2f}) | "
-          f"AUDIT: {wa} of {na} audited skipped pairs would have been accepted -> about {est:.1f} accepts lost this sleep against {n_acc} kept | "
-          f"time: first pass {info['secs']:.1f} s, byte judging saved about {(info['skipped'] - na) * per:.0f} s ({per * 1000:.0f} ms per pair)", flush=True)
-
-
 def _latent_judge(model, cfg, S_, G_, T_, thr_, byte_secs):
     from platypus.inference.selcmp import _codes
     try:

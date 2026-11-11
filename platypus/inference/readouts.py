@@ -148,22 +148,38 @@ def _gpu_mem_line(tag):
         print(f"  [GPU MEMORY GAP | {tag}] driver used {used_:.1f} of {to_/2**30:.1f} GiB | PyTorch reserved {rv_:.1f} (allocated {al_:.1f}, peak reserved {pk_:.1f}, "
               f"{nseg_} segments) | OUTSIDE PyTorch {used_-rv_:.1f} GiB | processes: {procs_} | this pid {__import__('os').getpid()}",flush=True)
     except Exception as e_: _fail('inference.readouts:gap'); print(f"  [GPU MEMORY GAP | {tag}] unavailable ({type(e_).__name__})",flush=True)
+def _graphs_held():
+    try:
+        from platypus.conduit import _CDG, _CG5
+        return f"{len(_CDG['g'])} sets ({sum(len(G_['t']) for G_ in _CDG['g'].values())} positions), {len(_CG5['g'])} slot graphs, capture {'off' if _CDG.get('off') else 'on'}"
+    except Exception as e_: return f"? ({type(e_).__name__})"
+def _gpu_mem_mark(tag):
+    """10 Nov: one line between end-of-run readouts, so the readout that holds memory can be named"""
+    if not torch.cuda.is_available(): return
+    import gc as _gc9; _gc9.collect(); torch.cuda.empty_cache()
+    print(f"  [GPU MEMORY MARK | {tag}] allocated {torch.cuda.memory_allocated()/2**30:.1f} GiB, reserved {torch.cuda.memory_reserved()/2**30:.1f} GiB, "
+          f"peak since the last mark {torch.cuda.max_memory_allocated()/2**30:.1f} GiB | {_graphs_held()}",flush=True)
+    torch.cuda.reset_peak_memory_stats()
 def _gpu_mem_report(tag):
     """cg26q GPU MEMORY: what is still allocated before the heavy end-of-run readouts (two of them ran out of memory on the GPU with about 80 GiB
     held), grouped by tensor shape; tensors under 64 MiB are left out"""
     if not torch.cuda.is_available(): return
     try:
         import gc as _gc9; _gc9.collect(); torch.cuda.empty_cache()
-        al_=torch.cuda.memory_allocated()/2**30; rv_=torch.cuda.memory_reserved()/2**30; big_={}
-        for o_ in _gc9.get_objects():
-            try:
+        al_=torch.cuda.memory_allocated()/2**30; rv_=torch.cuda.memory_reserved()/2**30; big_={}; tot_=[0,0]; seen9_=set()
+        for o_ in _gc9.get_objects():                                           # 10 Nov: every CUDA tensor, grouped by shape (small ones too:
+            try:                                                                  #   ~73 of 80 GiB was in groups the old 64 MiB floor never listed)
                 if torch.is_tensor(o_) and o_.is_cuda:
-                    n_=o_.numel()*o_.element_size()
-                    if n_>=2**26: k_=(tuple(o_.shape),str(o_.dtype).replace('torch.','')); v_=big_.setdefault(k_,[0,0]); v_[0]+=1; v_[1]+=n_
+                    sp_=o_.untyped_storage().data_ptr()
+                    if sp_ in seen9_: continue                                    # views share storage: count each storage once
+                    seen9_.add(sp_); n_=o_.untyped_storage().nbytes(); tot_[0]+=n_; tot_[1]+=1
+                    k_=(tuple(o_.shape),str(o_.dtype).replace('torch.','')); v_=big_.setdefault(k_,[0,0]); v_[0]+=1; v_[1]+=n_
             except Exception: pass
         top_=sorted(big_.items(),key=lambda kv_:-kv_[1][1])[:10]
         _gpu_mem_line(tag)
-        print(f"  [GPU MEMORY | {tag}] allocated {al_:.1f} GiB, reserved {rv_:.1f} GiB | largest live tensors (count x shape dtype: GiB): "
+        print(f"  [GPU MEMORY | {tag}] allocated {al_:.1f} GiB, reserved {rv_:.1f} GiB | VISIBLE to Python: {tot_[0]/2**30:.1f} GiB in {tot_[1]} CUDA tensors "
+              f"(the rest is held outside Python objects: graph pools, autograd buffers, C++) | generation graphs held: {_graphs_held()} | "
+              f"largest groups by total (count x shape dtype: GiB): "
               +" | ".join(f"{v_[0]} x {list(k_[0])} {k_[1]}: {v_[1]/2**30:.2f}" for k_,v_ in top_),flush=True)
     except Exception as e_: _fail('inference.readouts:151'); print(f"  [GPU MEMORY | {tag}] unavailable ({type(e_).__name__})",flush=True)
 def _inf_cls_probe(model,cfg):

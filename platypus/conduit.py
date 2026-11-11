@@ -11,13 +11,12 @@ from platypus.protection import (
     _PJ, _STF,
 )
 from platypus.private import (
-    _BUFDET, _HCAP, _NGPD, _XDG, priv,
+    _BUFDET,
+    _NGPD,
+    _XDG,
 )
 from platypus.layers import (
     _CARRY, _SlotF,
-)
-from platypus.capacity import (
-    _lab,
 )
 
 
@@ -27,33 +26,6 @@ def set_seed(seed):
 
 def _carry_save(): return {k_:_CARRY[k_] for k_ in ('on','nr','st','new','rows')}
 def _carry_load(sv): _CARRY.update(sv)
-@torch.no_grad()
-def mk_refresh(model,cfg,x,dom):
-    """MEMORY-KEYED DREAMS: episodic snapshots of mk_rows real windows -> dreams generated from them -> teacher targets (with memory)."""
-    was=model.training; model.eval(); fs=model.feat_scale.clone(); sv=_carry_save(); xr=x[:int(cfg.mk_rows)]; n=xr.shape[0]
-    try:
-        _CARRY.update(on=True,nr=n,st={},new={},rows=None); model.features(xr); snap=dict(_CARRY['new'])        # memory at the end of each window
-        if not hasattr(model,'_mk_gen'):
-            g_=torch.Generator(device=x.device); g_.manual_seed(cfg.seed+23); object.__setattr__(model,'_mk_gen',g_)
-        xs=torch.full((n,1),10,dtype=torch.long,device=x.device); T=int(cfg.seq_len)
-        for _ in range(T-1):                                                   # generation STARTS FROM the snapshot memory
-            if cfg.mk_gen=='mem': _CARRY.update(on=True,nr=n,st=snap,new={},rows=None)
-            else: _CARRY.update(on=False,st={},new={})
-            lg=model(xs,dom)[:,-1].float()/cfg.dream_temp; xs=torch.cat([xs,torch.multinomial(F.softmax(lg,-1),1,generator=model._mk_gen)],1)
-        if cfg.mk_teacher=='mem': _CARRY.update(on=True,nr=n,st=snap,new={},rows=None)
-        else: _CARRY.update(on=False,st={},new={})
-        tg=F.log_softmax(model(xs,dom).float(),-1)
-    finally:
-        _carry_load(sv); model.feat_scale.copy_(fs); model.train(was)
-    pool=model.__dict__.setdefault('_mk_pool',[]); pool.extend(zip(list(xs),list(tg))); del pool[:-int(cfg.mk_pool)]
-def mk_loss(model,cfg,dom):
-    pool=model.__dict__.get('_mk_pool') or []
-    if not pool: return 0.0
-    if not hasattr(model,'_mk_rng'): object.__setattr__(model,'_mk_rng',np.random.RandomState(cfg.seed+29))
-    ix=model._mk_rng.randint(len(pool),size=int(cfg.mk_dream)); xs=torch.stack([pool[i][0] for i in ix]); tg=torch.stack([pool[i][1] for i in ix])
-    lp=F.log_softmax(model(xs,dom).float(),-1)                                 # student: NO memory
-    kl=(tg.exp()*(tg-lp)).sum(-1).mean(); st=model.__dict__.setdefault('_mk_stat',[0.0,0]); st[0]+=float(kl.detach()); st[1]+=1
-    return kl
 def _uh_save(model): return [(b.__dict__.get('_uh'),b.__dict__.get('_um')) for b in model.blocks]
 def _uh_load(model,sv):
     for b,(u_,m_) in zip(model.blocks,sv):
@@ -207,7 +179,7 @@ def _cbuf_take(model,cfg,dom,n0,dev):
     if _CBUF['ldom']!=dom:
         _CBUF['v']+=1; _CBUF['ldom']=dom; _CBUF['d'][dom]={'x':[],'t':[],'m':[],'visit':_CBUF['v']}
         for d_ in [d_ for d_,e_ in _CBUF['d'].items() if e_['visit']<_CBUF['v']-int(cfg.cd_buf_visits)]: del _CBUF['d'][d_]
-    if float(cfg.cd_buf)<=0: return []
+    return []
     pool_=[(d_,i_) for d_,e_ in _CBUF['d'].items() if d_!=dom for i_ in range(len(e_['x']))]
     k_=min(int(round(float(cfg.cd_buf)*n0)),len(pool_),n0-1)
     if k_<=0: return []
@@ -284,7 +256,6 @@ class _CdgFake:
             if isinstance(s.new[k_],tuple):
                 for a_,b_ in zip(s.new[k_],new_[k_]): a_.copy_(b_)
             else: s.new[k_].copy_(new_[k_])
-def _cdg_leaves(st): return [t_ for k_ in sorted(st) for t_ in (st[k_] if isinstance(st[k_],tuple) else (st[k_],))]
 def _cdg_sig(st,m): return tuple((k_,tuple((tuple(t_.shape[1:]),t_.shape[0]//m,str(t_.dtype)) for t_ in (st[k_] if isinstance(st[k_],tuple) else (st[k_],)))) for k_ in sorted(st))
 def _cdg_fill(dst,src,m):
     """copy src (m rows, or already padded) into the static buffer dst (mb rows); extra rows repeat row 0"""
@@ -430,6 +401,14 @@ def _cdg_msg():
             f" | self-checks {_CDG['n_chk']}: bit-identical {_CDG['n_bit']}, max logit diff {_CDG['maxd']:.1e}, same top byte >= {_CDG['minag']:.4f}"+(f" | {torch.cuda.mem_get_info()[0]/2**30:.1f} GB free, peak allocated {torch.cuda.max_memory_allocated()/2**30:.1f} GB" if torch.cuda.is_available() else '')+(f" | sets skipped for memory {_CDG.get('n_skip',0)}" if _CDG.get('n_skip') else '')+(f" | OFF: {_CDG['off'][:120]}" if _CDG['off'] else ''))
 # ---------------- v9.8 cg5: SLOT MEMORY GENERATION (cd_slot), with CUDA graphs bound to one persistent buffer ----------------
 _CG5={'key':None,'cap':0,'B':None,'Y':None,'LG':None,'g':{},'pool':None,'nchk':0,'chk_calls':0}
+def release_gen_graphs(why='end of training'):
+    """10 Nov: free every recorded generation graph, its static buffers and memory pools, and switch graph capture off (generation runs eager
+    from here). Called when training ends: the end-of-run readouts need memory more than graph speed (seed 3 ran out with ~80 GiB allocated)"""
+    n1_=len(_CDG['g']); n2_=len(_CG5['g'])
+    _CDG['g'].clear(); _CDG['pool']=None; _CDG['off']=why
+    _CG5['g'].clear(); _CG5['B']=None; _CG5['Y']=None; _CG5['LG']=None; _CG5['pool']=None; _CG5['key']=None; _CG5['cap']=0
+    return n1_,n2_
+
 def _slot_ok(st0,m):
     """the starting state is a set of factored memories (U, K) for m rows (no other carried statistics)"""
     why=None
@@ -592,72 +571,6 @@ def _cd_gen_old(model,cfg,st0,m,L,dom,M,temp,g_,forced=None,flen=None,ban=None,h
         Y=torch.cat([Y,nx_],1)
     return Y[:,1:], torch.stack(lps,1)
 @torch.no_grad()
-def _prot_minv(model,cfg,dev):
-    """(A_old + lam I)^-1 for the head input: uncentred covariance of the old domains' head inputs on their own dream-bank rows (K-FAC A factor)."""
-    vi_=model.__dict__.get('_visit'); C_=model.__dict__.get('_protM')
-    if C_ is not None and C_[0]==vi_: return C_[1]
-    BK=model.__dict__.get('_bank',{}); ol=[d for d in (getattr(model,'_olds',None) or []) if d in BK and d!=model.__dict__.get('_self_slot')]
-    if not ol: model.__dict__['_protM']=(vi_,None); return None
-    sv_=_carry_save(); suh_=_uh_save(model); was_=model.training; model.eval(); fs_=model.feat_scale.clone(); A_=None; N_=0
-    _CARRY.update(on=False,st={},new={})
-    try:
-        for d in ol:
-            X_=BK[d][:int(cfg.cd_prot_rows),:int(cfg.seq_len)].long().to(dev)
-            _HCAP['on']=True; _HCAP['h']=None
-            try: model(X_,d)
-            finally: _HCAP['on']=False
-            z_=_HCAP['h'].float().reshape(-1,_HCAP['h'].shape[-1]); _HCAP['h']=None
-            A_=z_.t()@z_ if A_ is None else A_+z_.t()@z_; N_+=z_.shape[0]
-    finally: _carry_load(sv_); _uh_load(model,suh_); model.feat_scale.copy_(fs_); model.train(was_)
-    A_=A_/max(1,N_); lam_=float(cfg.cd_prot_lam)*float(torch.diagonal(A_).mean())
-    M_=torch.linalg.inv(A_+lam_*torch.eye(A_.shape[0],device=A_.device))
-    model.__dict__['_protM']=(vi_,M_); return M_
-@torch.no_grad()
-def _head_dz(model,d,z,lq):
-    """dL/dz of KL(q||p) through domain d's (soft-capped) head: ((p - q) * cap') @ W.  z (B,T,D), lq target log-probs (B,T,256)."""
-    hd_=model.heads[d]; u_=F.linear(z.float(),hd_.weight.float(),hd_.bias.float())
-    if hd_.cap>0: t_=torch.tanh(u_/hd_.cap); lg_=hd_.cap*t_; dc_=1-t_*t_
-    else: lg_=u_; dc_=torch.ones_like(u_)
-    g_=(F.softmax(lg_,-1)-lq.float().exp())*dc_
-    return g_@hd_.weight.float()
-@torch.no_grad()
-def _sig_update(model,d,z,lp,lq):
-    dz_=_head_dz(model,d,z,lq)
-    u_=z.float().mean((0,1)); v_=dz_.mean((0,1)); S_=model.__dict__.get('_cur_sig')
-    model.__dict__['_cur_sig']=(u_,v_) if S_ is None else (0.8*S_[0]+0.2*u_,0.8*S_[1]+0.2*v_)
-@torch.no_grad()
-def _sim_rows(model,cfg,dm,ri,pick,BK,TV,r_):
-    """SWIL row choice: for each dream slot (domain d), dream_sim_k candidate rows of d's bank, scored by the rank-1 signature
-    interaction with the current learning; the best candidate replaces the random row (dream_sim_floor of slots stay random)."""
-    S_=model.__dict__.get('_cur_sig'); k_=int(cfg.dream_sim_k)
-    if S_ is None or k_<2 or not TV: return ri
-    uc_,vc_=S_; dev=model.embed.weight.device; T_=min(int(cfg.seq_len),BK[dm[0]].shape[1]); kb_=int(cfg.bank_targets)
-    slots=[j for j in range(len(dm)) if r_.rand()>=float(cfg.dream_sim_floor) and dm[j] in TV]
-    if not slots: return ri
-    sv_=_carry_save(); suh_=_uh_save(model); was_=model.training; model.eval(); fs_=model.feat_scale.clone(); _CARRY.update(on=False,st={},new={})
-    out=list(ri); SC_=model.__dict__.setdefault('_simstat',[0,0.0,0.0,0.0])
-    try:
-        for d in sorted({dm[j] for j in slots}):
-            js_=[j for j in slots if dm[j]==d]; cand_=[[ri[j]]+[pick(d) for _ in range(k_-1)] for j in js_]; flat_=[c for cc in cand_ for c in cc]
-            X_=torch.stack([BK[d][i][:T_] for i in flat_]).long().to(dev)
-            V_=torch.stack([TV[d][0][i][:T_] for i in flat_]).to(dev).float(); I_=torch.stack([TV[d][1][i][:T_] for i in flat_]).to(dev).long()
-            rest_=(1-V_.exp().sum(-1,keepdim=True)).clamp(min=1e-8)/(256-kb_); TG_=rest_.log().expand(X_.shape[0],X_.shape[1],256).clone(); TG_.scatter_(-1,I_,V_)
-            _HCAP['on']=True; _HCAP['h']=None
-            try: model(X_,d)                                                     # (bank targets are stored per position, aligned with the logits)
-            finally: _HCAP['on']=False
-            z_=_HCAP['h']; _HCAP['h']=None
-            dz_=_head_dz(model,d,z_,TG_)
-            u_=z_.float().mean(1); v_=dz_.mean(1)
-            a_=(v_@vc_)*(u_@uc_)/(vc_.norm()*uc_.norm()).clamp_min(1e-12)        # ~ <G_row, G_cur>: < 0 = the current step HARMS this row
-            sc_=(-a_) if cfg.dream_sim=='harm' else a_.abs()
-            sc_=sc_.view(len(js_),k_)
-            best_=sc_.argmax(1).tolist()
-            for jj,(j,b_) in enumerate(zip(js_,best_)): out[j]=cand_[jj][b_]
-            SC_[0]+=len(js_); SC_[1]+=float((a_<0).float().mean())*len(js_); SC_[2]+=float(sc_.max(1).values.mean()-sc_.mean())*len(js_)
-            SC_[3]+=sum(1 for b_ in best_ if b_!=0)
-    finally: _carry_load(sv_); _uh_load(model,suh_); model.feat_scale.copy_(fs_); model.train(was_)
-    return out
-@torch.no_grad()
 def _store_score(tq,lpy,vm,C,L):
     """per window: the mean over its pieces of the POSITIVE part of each piece's reducible signal (log q(y) - log p(y) at the verified bytes)"""
     T1=tq.shape[1]; pg=((torch.arange(T1,device=tq.device)+1)//max(1,L)).clamp(max=C-1)
@@ -707,7 +620,7 @@ def lora_merge(model,cfg,olds,cur):
         X=torch.stack([BK[d][i][:T] for i in idx]).long().to(dev); Vv=torch.stack([TV[d][0][i][:T] for i in idx]).to(dev).float(); Ii=torch.stack([TV[d][1][i][:T] for i in idx]).to(dev).long()
         rest=(1-Vv.exp().sum(-1,keepdim=True)).clamp(min=1e-8)/(256-kb); G=rest.log().expand(X.shape[0],X.shape[1],256).clone(); G.scatter_(-1,Ii,Vv); return X,G
     def kl_(d,X,G): lp=F.log_softmax(model(X,d).float(),-1); return (G.exp()*(G-lp)).sum(-1).mean()
-    SBk_=model.__dict__.get('_sbuf') if cfg.lm_store_check else None
+    SBk_=(None)
     STW=[e_ for e_ in (SBk_['e'] if SBk_ else []) if e_['dom'] in ol][:32]
     def store_ce():                                                        # real-text check: the student's loss on the stored VERIFIED bytes of old domains
         if not STW: return None
@@ -772,17 +685,3 @@ def lora_merge(model,cfg,olds,cur):
           +(f"ACCEPTED scale {acc:g}: merged KL {np.mean(list(last_[1].values())):.4f}, visited-domain drift {last_[2] if not isinstance(last_[2],tuple) else last_[2][0]:.4f}"+(f", stored real windows {last_[2][1]:+.4f} nats" if isinstance(last_[2],tuple) else "") if acc is not None else
             "REJECTED at every scale ("+"; ".join(f"x{r_[0]:g}: KL {np.mean(list(r_[1].values())):.4f}, worst x{max(r_[1][d]/max(1e-9,base[d]) for d in ol):.2f}, drift {r_[2] if not isinstance(r_[2],tuple) else r_[2][0]:.4f}"+(f", stored real {r_[2][1]:+.4f}" if isinstance(r_[2],tuple) else "") for r_ in res)+")")
           +f" | {time.time()-t0:.0f}s")
-@torch.no_grad()
-def sem_rescore(model,cfg,d):
-    """fresh targets for domain d's semantic rows: the current model's top-k log-probs on the stored real bytes (no trace), as a dream bank's"""
-    SM_=model.__dict__.get('_sem',{}).get(int(d))
-    if not SM_ or not SM_['x']: return
-    k_=int(cfg.bank_targets); was=model.training; model.eval(); fs=model.feat_scale.clone(); sv_=model.__dict__.get('_s0_dom'); model.__dict__['_s0_dom']=int(d)
-    svc_=_carry_save(); _CARRY.update(on=False,st={},new={}); dev=model.embed.weight.device; n_=len(SM_['x'])
-    try:
-        for c0 in range(0,n_,32):
-            Xc=torch.stack(SM_['x'][c0:c0+32]).long().to(dev)
-            lp=F.log_softmax(model.heads[d](priv(model,Xc,model.features(Xc),d)).float()/cfg.shunt_T,-1); v_,i_=lp.topk(k_,-1)
-            for j in range(Xc.shape[0]): SM_['v'][c0+j]=v_[j].to(torch.float16).cpu(); SM_['i'][c0+j]=i_[j].to(torch.uint8).cpu()
-    finally: _carry_load(svc_); model.__dict__['_s0_dom']=sv_; model.feat_scale.copy_(fs); model.train(was)
-    print(f"  [semantic rows] {_lab(cfg,d)}: {n_} rows re-scored by the current model (fresh targets)")

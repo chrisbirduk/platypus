@@ -15,8 +15,23 @@ from platypus.gating import (
     _RAMP,
 )
 from platypus.protection import (
-    _KF, _STF, _kl_topk, aff_weights, guard_sense, head_center_, kf_build, kf_live_warmup, kf_main_on, kf_store, muon_apply, muon_prep, noise_diag,
-    noise_report, proj_post, stiff_post, varpro_old_refit, varpro_refit,
+    _KF,
+    _STF,
+    _kl_topk,
+    aff_weights,
+    head_center_,
+    kf_build,
+    kf_live_warmup,
+    kf_main_on,
+    kf_store,
+    muon_apply,
+    muon_prep,
+    noise_diag,
+    noise_report,
+    proj_post,
+    stiff_post,
+    varpro_old_refit,
+    varpro_refit,
 )
 from platypus.private import (
     _SLP, _XDG, priv,
@@ -25,7 +40,10 @@ from platypus.slots import (
     _ema_params, _rbg_add,
 )
 from platypus.layers import (
-    _BPTT, _CARRY, _carry_off, _carry_on, _pair_on,
+    _BPTT,
+    _CARRY,
+    _carry_off,
+    _carry_on,
 )
 from platypus.capacity import (
     _lab, _pmap, recruit,
@@ -55,6 +73,13 @@ from platypus.heads import (
 
 
 _NOV={'m':None}
+
+def _gate_dream(model, cfg, step, dk):
+    """is this step a dream step: every dk-th step, or (inf_gate_theta > 0, 11 Nov) the theta gate's consolidation phases"""
+    if float(getattr(cfg, 'inf_gate_theta', 0.0)) <= 0: return step % max(1, int(dk)) == 0
+    from platypus.inference.distill import gate_dream
+    return gate_dream(model, cfg, step, dk)
+
 
 def borrow_align(model, cfg, olds, dom_id, x, y, n_rows=8):
     """BORROW ONLY IF IT HELPS: per old domain d, cos(grad of the borrowing KL on d's queued dreams, grad of the current domain's loss on the
@@ -100,49 +125,6 @@ def dctl_rate(model,cfg,step,olds):
     S['acc']+=r
     if S['acc']>=1.0 or S['ns']==1: S['acc']=max(0.0,S['acc']-1.0); S['nd']+=1; return 1
     return step+2
-def guard_step(model,cfg,olds,dom_id,step):
-    """EARLY DRIFT GUARD: sense (held-out bank KL) early in the visit, flag fast-rising old domains, set their row boost / Kalman weight."""
-    Lv=int(cfg.steps_per_task); ev_=max(1,int(round(cfg.guard_every*Lv))); span_=int(round(cfg.guard_span*Lv)); dur_=max(1,int(round(cfg.guard_dur*Lv)))
-    G=model.__dict__.setdefault('_guard',{})
-    if step==0: G.clear(); G.update(base={},until={},kfw={},log=[],n=0,last={},atr={},na={})
-    atr_=cfg.guard_mode=='atr'
-    if step<=span_ and step%ev_==0:
-        kl_=guard_sense(model,cfg,olds); G['n']+=1
-        if step==0: G['base']=dict(kl_); G['last']=dict(kl_)
-        else:
-            for d,v in kl_.items():
-                b_=G['base'].get(d,v)
-                if atr_:                                                                    # AVERAGE TRUE RANGE of the held-out KL
-                    tr_=abs(v-G['last'].get(d,v)); G['last'][d]=v; n_=G['na'].get(d,0)+1; G['na'][d]=n_
-                    a_=2.0/(int(cfg.guard_atr_n)+1); E_=G.setdefault('ema',{}); e0_=E_.get(d,b_)
-                    hit_=n_>=3 and v>e0_+cfg.guard_atr_k*G['atr'].get(d,tr_) and (v-b_)>0.5*cfg.guard_min   # breakout against the channel so far
-                    G['atr'][d]=tr_ if n_==1 else (1-a_)*G['atr'][d]+a_*tr_; E_[d]=(1-a_)*e0_+a_*v
-                else: hit_=v>max(cfg.guard_ratio*b_,b_+cfg.guard_min)
-                if hit_:
-                    if G['until'].get(d,-1)<=step: G['log'].append((step,d,round(v,4),round(b_,4)))
-                    G['until'][d]=step+dur_
-    act={d for d,u in G['until'].items() if u>step}
-    bst_={d:float(cfg.guard_boost) for d in act} if (act and cfg.guard_boost!=1.0) else {}
-    if atr_ and cfg.guard_atr_share and len(G['atr'])==len(olds) and len(olds)>1:              # shares follow volatility
-        m_=float(np.mean(list(G['atr'].values())))
-        if m_>0: bst_={d:max(bst_.get(d,1.0),float(np.clip(G['atr'][d]/m_,0.5,cfg.guard_boost))) for d in olds}
-    model.__dict__['_guard_boost']=bst_ or None
-    if atr_ and cfg.guard_atr_rows and G.get('atr'):                                          # ATR-CONTROLLED DREAM ROWS
-        A_=float(np.mean(list(G['atr'].values()))); GA_=model.__dict__.setdefault('_atr_glob',[0.0,0])
-        if step<=span_ and step%ev_==0 and G['na'] and min(G['na'].values())>=2: GA_[0]+=A_; GA_[1]+=1
-        if GA_[1]>=3 and GA_[0]>0:
-            R0_=int(cfg.dream_batch); R_=int(np.clip(round(R0_*A_/(GA_[0]/GA_[1])),max(1,round(R0_*cfg.guard_rows_min)),max(1,round(R0_*cfg.guard_rows_max))))
-            model.__dict__['_sldb']=R0_; cfg.dream_batch=R_
-            st_=G.setdefault('rows',[0,0]); st_[0]+=R_; st_[1]+=1
-    if cfg.guard_kf!=1.0 and cfg.pmuon:
-        new={d:float(cfg.guard_kf) for d in act}
-        if new!=G['kfw']:
-            G['kfw']=new; model.__dict__['_kf_wt']=new or None; kf_build(model,cfg,dom_id,quiet=True)
-    if not G.get('rep') and (step==int(cfg.steps_per_task)-1 or step>span_+dur_):
-        G['rep']=True
-        print(f"    [drift guard] {G['n']} checks, {len(G['log'])} flags: "+(' '.join(f"s{s_} {_lab(cfg,d)} {v:.3f}>{b:.3f}" for s_,d,v,b in G['log']) or 'none')
-              +(" | ATR "+' '.join(f"{_lab(cfg,d)} {a:.4f}" for d,a in sorted(G['atr'].items())) if G.get('atr') else "")
-              +(f" | ATR rows: mean {G['rows'][0]/max(1,G['rows'][1]):.1f} per step so far" if G.get('rows') else ""))
 def _dstep_obj(model,cfg,dom_id,olds,seed):
     """DIRECT STEP held-out objective J: CE of the new domain's head on held-out text rows + KL(stored top-k targets || old heads) on
     held-out bank rows (rows < dstep_hold of each old domain's bank, never drawn for training), prompt positions excluded."""
@@ -181,13 +163,6 @@ def _dstep_grad(model,cfg,dom_id,olds,seed,P_):
     return [torch.zeros_like(p_) if g_ is None else g_ for p_,g_ in zip(P_,gs)], J.detach()
 
 @torch.no_grad()
-def _srep_note(model,h):
-    """cg15 stream_rep: this step's representation jump (before the running mean takes the batch in), read by _StreamGet."""
-    with torch.no_grad():
-        m=h.detach().float().mean((0,1)); e=model.__dict__.get('_srep')
-        if e is None: model.__dict__['_srep']=m.clone(); return
-        model.__dict__['_rj']=float(1.0-F.cosine_similarity(m,e,dim=0)); model.__dict__['_srep']=0.9*e+0.1*m
-@torch.no_grad()
 def _cdet_step(model,cfg,x,y,h,dom_id,step):
     """CHANGE-DETECTION LOG (no training effect): representation jump 1 - cos(batch-mean top-block output, running mean) and loss jump
     (real-text CE before the head refit minus its running mean), kept on the device; reported at the visit end."""
@@ -224,17 +199,12 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
     _RAMP['s']=1.0   # weak base impedance early
     imp_base=None
     _L=cfg.steps_per_task; _ce_hist=[]                       # this visit's length (VISIT LENGTH BY PROGRESS may change it at visit_decide)
-    if cfg.stream: _L=int(cfg.steps_per_task*cfg.stream_cap)                # NO VISIT BOUNDARIES: visits end by detection
     _lr_replan=None
     _nov_j=None
     model.__dict__['_dctl_vtok']=model.__dict__.get('_dctl_vtok',0)+1            # visit token (drift-budget controller bookkeeping)
-    if cfg.ctx_carry and int(cfg.ctx_bptt)>1:                                       # WRITE-PATH TRAINING: segments per row this visit (curriculum)
-        nv_=model.__dict__['_dctl_vtok']; f_=int(cfg.ctx_bptt_from)
-        _BPTT['K']=1 if nv_<=f_ else min(int(cfg.ctx_bptt),2**(nv_-f_))
-        print(f"    [write path] visit {nv_}: {_BPTT['K']} segment(s) per training row ({max(1,cfg.batch_size//_BPTT['K'])} rows of {_BPTT['K']*cfg.seq_len} bytes)")
-    else: _BPTT['K']=1
+    _BPTT['K']=1
     _prof_=None
-    _nsl_=int(round(float(cfg.sleep_phase)*cfg.steps_per_task)) if (float(cfg.sleep_phase)>0 and not cfg.stream and float(model.__dict__.get('_real_w',1.0))==0.0) else 0
+    _nsl_=(0)
     if _nsl_>0: _L=cfg.steps_per_task+_nsl_
     _SLP['n']=[0,0]; model.__dict__['_ctrl_bytes']=False
     for step in range(max(_L if (cfg.stream or _nsl_>0) else cfg.steps_per_task,0)):
@@ -279,7 +249,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         if step==0:
             _XDG['cur']=dom_id
             model.__dict__['_dmom']={}
-            P_=_ema_params(model); model.__dict__['_ema']=(P_,[p_.detach().clone() for p_ in P_],1.0-1.0/max(2.0,cfg.ema_tail*(cfg.steps_per_task if cfg.stream else _L)))
+            P_=_ema_params(model); model.__dict__['_ema']=(P_,[p_.detach().clone() for p_ in P_],1.0-1.0/max(2.0,cfg.ema_tail*((_L))))
             model.__dict__['_selh']=[]; model.__dict__['_selk']=0
             model.__dict__.pop('_gcache',None); model.__dict__['_vstart']=None; model.__dict__.pop('_lwfG',None)   # fresh per visit
             object.__setattr__(model,'_live_dom',dom_id)
@@ -287,7 +257,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         if step==0:                                     # PERFORMANCE: frozen teachers + stacked old heads for this visit
             object.__setattr__(model,'_teach',None); object.__setattr__(model,'_hstk',None); model.__dict__.pop('_klacc',None)
             if n_old>0 and not cfg.topic_mode and cfg.shunt and (cfg.fast_teacher or cfg.fast_dreams):
-                if cfg.grow_blocks_at or (cfg.block_extra and cfg.block_extra_mode=='fresh') or getattr(model,'_spec',None) or cfg.dream_filter:
+                if (cfg.block_extra and cfg.block_extra_mode == 'fresh') or (getattr(model, '_spec', None)):
                     print("    [fast] frozen teachers off for this config (growing / fresh units / specific shunts / dream filter)")
                 else: build_teachers(model, cfg)
             if n_old>0 and not cfg.topic_mode and cfg.fast_kl: stack_heads(model, olds)
@@ -324,21 +294,9 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             if _ds_on: xh_,yh_=get(); model.__dict__['_dsH']=(xh_,yh_); model.__dict__['_dsS']=[]; model.__dict__['_dsM']=[]; model.__dict__['_dsJ']=[]
         x,y=get()
         if cfg.inf_on and (float(model.__dict__.get('_real_w',1.0))>0 or int(getattr(cfg,'cd_store_text',0))): inf_store_add(model,cfg,x,int(model.__dict__.get('_cur_dom',dom_id)))   # cg20 store (cg26z cd_store_text: the store - the hippocampus - also reads the text in closed-loop passes; the trunk still learns only from verified replays)
-        if cfg.nrem_real and float(model.__dict__.get('_real_w',1.0))>0:            # nrem_real DIAGNOSTIC: keep random pass-1 rows per domain
-            with torch.no_grad():
-                P1_=model.__dict__.setdefault('_p1win',{}); td1_=int(model.__dict__.get('_cur_dom',dom_id)); E1_=P1_.setdefault(td1_,{'r':[],'seen':0})
-                rs1_=model.__dict__.setdefault('_p1_rs',np.random.RandomState(int(cfg.seed)+515))
-                for r_ in range(x.shape[0]):
-                    E1_['seen']+=1; j1_=len(E1_['r']) if len(E1_['r'])<int(cfg.nrem_real_cap) else rs1_.randint(E1_['seen'])
-                    if j1_<int(cfg.nrem_real_cap):
-                        rw_=torch.cat([x[r_],y[r_,-1:]]).detach().clone()
-                        if j1_<len(E1_['r']): E1_['r'][j1_]=rw_
-                        else: E1_['r'].append(rw_)
         if step==0 or (cfg.ctx_carry and getattr(get,'fresh',False)): _CARRY['st']={}          # CONTINUOUS CONTEXT: empty memory at a visit start / lane restart
         if cfg.slot_mem and step==0: _CARRY['slot']=dom_id; _CARRY['sm']=model.__dict__.setdefault('_smem',{})   # SLOT MEMORY of this visit's slot
         model.__dict__.pop('_pairA',None)
-        if cfg.stream and model.__dict__.pop('_vend',False): _L=step+1                    # NO VISIT BOUNDARIES: the detector ended this visit (this is its last step)
-        if cfg.guard and n_old>0: guard_step(model,cfg,olds,dom_id,step)                   # EARLY DRIFT GUARD
         if step==0: model.__dict__.pop('_film_aff',None)
         if step==0 and n_old>0 and (cfg.borrow_aff>0 or (cfg.film_k>0 and cfg.film_aff and model.__dict__.get('_first_visit',True))):
             w_,b_=aff_weights(model,cfg,x,y,olds,cfg.film_tau)
@@ -348,68 +306,8 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     C_=model.film_codes; C_[dom_id]=sum(wf_[d_]/len(olds)*C_[d_] for d_ in olds)+0.02*torch.randn_like(C_[dom_id])
             print("    [affinity] old heads' bits on the first batch: "+" ".join(f"{_lab(cfg,d_)} {b_[d_]:.2f}" for d_ in olds)
                   +" | weights: "+" ".join(f"{_lab(cfg,d_)} {w_[d_]:.2f}" for d_ in olds))
-        if step==0 and n_old>0 and cfg.pu_k_base>0 and cfg.pu_k>cfg.pu_k_base and model.__dict__.get('_first_visit',True):   # SURPRISE-TRIGGERED GROWTH
-            bg_=aff_weights(model,cfg,x,y,olds,1.0)[1]; mb_=min(bg_.values()); hg_=model.__dict__.setdefault('_grow_hist',[])
-            med_=float(np.median(hg_)) if hg_ else None; grow_=med_ is not None and mb_>cfg.pu_grow_rel*med_
-            if grow_:
-                for b_ in model.blocks:
-                    if getattr(b_,'pu_mask',None) is not None: b_.pu_mask[dom_id]=1.0
-            hg_.append(mb_)
-            print(f"    [growth] {_lab(cfg,dom_id)}: best old head {mb_:.2f} bits on the first batch (median of earlier new domains "
-                  +(f"{med_:.2f}" if med_ is not None else "-")+f") -> {'ALL '+str(cfg.pu_k) if grow_ else str(cfg.pu_k_base)} private units per block")
         if step==0 and cfg.film_k>0: model.__dict__['_film_frozen']=model.film_codes.detach().clone()
         xf_,yf_=x,y                                                                         # full real batch (counts see every row)
-        if cfg.sleep_keep>0 and not (cfg.sleep_revisit and model.__dict__.get('_first_visit',True)):   # WAKE / SLEEP: queue the unexplained rows, train them merged
-            SQ_=model.__dict__.setdefault('_slq',[])
-            if step==0: SQ_.clear(); model.__dict__['_slst']=[0,0,0]                    # training steps, rows trained, rows left to the fast parts
-            else:
-                B_=x.shape[0]; k_=max(1,int(round(B_*cfg.sleep_keep)))
-                if k_<B_:
-                    hs0_=None
-                    if cfg.sleep_random:
-                        rs_=model.__dict__.setdefault('_slrng',np.random.RandomState(cfg.seed+505))
-                        ixk_=torch.as_tensor(np.sort(rs_.choice(B_,k_,replace=False)),device=x.device)
-                    else:
-                        with torch.no_grad():
-                            was_=model.training; model.eval(); fs_=model.feat_scale.clone()
-                            hs0_=model.features(x)
-                            zs_=model.heads[dom_id](priv(model,x,hs0_,dom_id))
-                            lr_row=F.cross_entropy(zs_.reshape(-1,256).float(),y.reshape(-1),reduction='none').view(B_,-1).mean(1)
-                            if cfg.sleep_score=='mem':                          # MEMORY GAIN on the second half (context vs none)
-                                Th_=x.shape[1]//2; x2_=x[:,Th_:]; h2_=model.features(x2_)
-                                z2_=model.heads[dom_id](priv(model,x2_,h2_,dom_id))
-                                c0_=F.cross_entropy(z2_.reshape(-1,256).float(),y[:,Th_:].reshape(-1),reduction='none').view(B_,-1).mean(1)
-                                c1_=F.cross_entropy(zs_[:,Th_:].reshape(-1,256).float(),y[:,Th_:].reshape(-1),reduction='none').view(B_,-1).mean(1)
-                                lr_row=c0_-c1_
-                            model.feat_scale.copy_(fs_); model.train(was_)
-                        ixk_=torch.sort(torch.topk(lr_row,k_).indices).values
-                    msk_=torch.ones(B_,dtype=torch.bool,device=x.device); msk_[ixk_]=False
-                    if cfg.sleep_wake and (cfg.ngp or cfg.fcp_tables):                  # rows left to the fast parts: private rows learn now
-                        xw_,yw_=x[msk_],y[msk_]
-                        if hs0_ is None:
-                            with torch.no_grad():
-                                was_=model.training; model.eval(); fs_=model.feat_scale.clone()
-                                hw_=model.features(xw_); model.feat_scale.copy_(fs_); model.train(was_)
-                        else: hw_=hs0_[msk_]
-                        opt.zero_grad()
-                        with torch.enable_grad():
-                            lk_=F.cross_entropy(model.heads[dom_id].detached(priv(model,xw_,hw_.detach(),dom_id)).reshape(-1,256),yw_.reshape(-1)); lk_.backward()
-                        ngp_step(model,cfg,opt.param_groups[0]['lr'])
-                    model._slst[2]+=int(msk_.sum())
-                    x,y=x[ixk_],y[ixk_]
-                SQ_.append((x,y))
-                nq_=sum(a_.shape[0] for a_,_ in SQ_); need_=int(cfg.sleep_merge*cfg.batch_size)
-                if nq_<need_ and step<_L-1: continue                                    # still awake: no trunk step
-                xs_=torch.cat([a_ for a_,_ in SQ_]); ys_=torch.cat([b_ for _,b_ in SQ_]); SQ_.clear()
-                if step<_L-1 and xs_.shape[0]>need_: SQ_.append((xs_[need_:],ys_[need_:])); xs_,ys_=xs_[:need_],ys_[:need_]
-                x,y=xs_,ys_; G_=x.shape[0]/cfg.batch_size
-                mu_=cfg.sleep_lr if cfg.sleep_lr>0 else math.sqrt(G_)
-                if abs(mu_-1.0)>1e-9: model.__dict__['_slmul']=mu_
-                if cfg.sleep_dream and abs(G_-1.0)>1e-9:
-                    model.__dict__['_sldb']=cfg.dream_batch; cfg.dream_batch=max(1,int(round(cfg.dream_batch*G_)))
-                model._slst[0]+=1; model._slst[1]+=x.shape[0]
-            if step==_L-1: print(f"    [sleep] {model._slst[0]} trunk steps on {model._slst[1]} rows (merged {cfg.sleep_merge} x {cfg.batch_size}); "
-                                 f"{model._slst[2]} rows left to the fast parts")
         if cfg.pmuon and step==0:
             model.__dict__['_kf_dacc']={}
             if float(cfg.kf_dream)>=1.0 and getattr(cfg,'kf_drop_a',True) and n_old>0:   # v9.8 (g3): live factors from the first step
@@ -423,11 +321,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 model.__dict__['_kf_drb']=model.__dict__.get('_kf_drb',0)+1
         _kfm_=bool(cfg.pmuon and cfg.kf_source=='main' and step%cfg.kf_every==cfg.kf_every//2)
         if cfg.noise_diag>0 and n_old>0 and step%cfg.noise_diag==cfg.noise_diag//2: noise_diag(model,cfg,x,y,dom_id,olds)
-        if cfg.head_select_eval or cfg.fwt_zeroshot or cfg.block_attr or cfg.block_auto: head_stats_update(model, x, dom_id, step, cfg)
+        if cfg.head_select_eval: head_stats_update(model, x, dom_id, step, cfg)
         _rbg_add(model,cfg,x,dom_id)                                         # byte-pair profile of the slot being trained (routing evidence, drift-free)
         lv=model.__dict__.setdefault('_live',[]); lv.append((x,y)); del lv[:-cfg.buffer_batches]   # transient, current domain only
         model._cov_on=(step%cfg.cov_every==0) and not (cfg.cov_skip and not (cfg.orth_gate or cfg.pg_mode or cfg.og_common_always or cfg.polar_diag))
-        if cfg.topic_diag: model._topics.update(x, dom_id)
         rb=model.__dict__.setdefault('_recent',[]); rb.append((x,y)); del rb[:-cfg.shunt_batches]
         orth=getattr(model,'_orth',None)
         model._keep_h=bool(cfg.head_select_eval or cfg.fwt_zeroshot)
@@ -482,7 +379,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     roles=list(grp)
                     lwf_on=(step%max(1,cfg.lwf_every)==0) and cfg.shunt_old_weight>0   # B2: every lwf_every steps; weight 0: never (no teacher pass)
                     hh=dict(zip(roles,FT.features_multi(x,roles))) if lwf_on else {}
-                    if not lwf_on or cfg.lwf_metric: tgt=None                   # B1: no per-head targets (Fisher metric instead)
+                    if not lwf_on: tgt=None                   # B1: no per-head targets (Fisher metric instead)
                     elif getattr(model,'_hstk',None) is not None:               # FUSED: all old heads in one matmul per teacher
                         tgt=torch.empty(n_old,*x.shape,cfg.vocab,device=x.device)
                         for r_,ix in grp.items(): tgt[ix]=heads_logp(model,hh[r_],ix,cfg.shunt_T)
@@ -531,7 +428,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             if step==0 and (cfg.sleep_eps>0 or cfg.sleep_rel>0): model.__dict__['_dream_k']=1; _dk0_=1   #   (they used to ride along in the
             if (cfg.merge_dream_fwd and cfg.dream_stream and getattr(model,'_dsq',None) and not cfg.share_blocks and cfg.strand_anchor<=0    #   merged pass
                     and step%max(1,cfg.dream_every)==0 and not cfg.dream_reuse and not cfg.proj_nodream          #   and its backward with no loss)
-                    and (_dk0_ is None or step%_dk0_==0)):
+                    and (_dk0_ is None or _gate_dream(model,cfg,step,_dk0_))):
                 sbp_=stream_batch(model,cfg,olds)                                     # A6: real + dream rows in ONE forward pass
                 if sbp_ is not None and sbp_[0].shape[1]==x.shape[1]:
                     ns_p=sbp_[3]['n'] if sbp_[3] is not None else 0
@@ -542,7 +439,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     if _kfm_ or kfd_:
                         kf_main_on(model,cfg,x.shape[0]); _KF['dream']=kfd_; _KF['real_off']=not _kfm_; _KF['dacc']=model.__dict__.setdefault('_kf_dacc',{})
                     _carry_on(cfg,x.shape[0])
-                    if cfg.dream_pair>0: _pair_on(model,cfg,x.shape[0])                         # PAIRED-DREAM EPISODES
+                    _cs_=float(getattr(cfg,'inf_carry',0.0))>0 and float(model.__dict__.get('_real_w',1.0))>0   # 10 Nov CARRY THE SUBJECT: also in the combined
+                    if _cs_:                                                                    #   real + dream forward (most steps once dreams exist); the
+                        from platypus.inference.carry import carry_arm                          #   loss reads only the real rows (the first x.shape[0])
+                        carry_arm(model,cfg)
                     try: Hall=model.features(torch.cat([x,sbp_[0]]),route=rtp_,nstat=x.shape[0])
                     finally: _carry_off(cfg)
                     _KF['on']=False; _KF['dream']=False; _KF['real_off']=False
@@ -554,6 +454,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 if _kfm_: kf_main_on(model,cfg,x.shape[0])
                 _carry_on(cfg,x.shape[0])
                 _nr_=bool(cfg.cd_skip_real and cfg.cd_w>0 and float(model.__dict__.get('_real_w',1.0))==0.0 and not _kfm_)
+                _cs_=float(getattr(cfg,'inf_carry',0.0))>0 and float(model.__dict__.get('_real_w',1.0))>0 and not _nr_   # 10 Nov CARRY THE SUBJECT (inference.carry)
+                if _cs_:
+                    from platypus.inference.carry import carry_arm
+                    carry_arm(model,cfg)
                 try:
                     with _rf('real_forward'):
                         if _nr_:
@@ -561,18 +465,17 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                         else: h_=model.features(x)
                 finally: _carry_off(cfg)
                 model.__dict__['_s0_dom']=None; _KF['on']=False
-            if model.__dict__.get('_slow') is not None:                                     # north-star rung 1: SLOW HEAD learns online from this step's real rows (stop-gradient)
-                from platypus.inference.slowhead import slow_update
-                slow_update(model,cfg,x,h_.detach(),dom_id)
-            if cfg.stream:                                                                  # change detection: this batch's loss BEFORE the head refit
-                with torch.no_grad(): model.__dict__['_rl']=F.cross_entropy(model.heads[dom_id](priv(model,x,h_.detach(),dom_id)).float().reshape(-1,256),y.reshape(-1))
-                if cfg.stream_rep: _srep_note(model,h_)
             if cfg.cdet_log: _cdet_step(model,cfg,x,y,h_,dom_id,step)                       # v9.8 cg8 change-detection log (no training effect)
             if cfg.vp_nreal or float(model.__dict__.get('_real_w',1.0))>0: varpro_refit(model,cfg,opt,x,y,h_,dom_id)   # (vp_nreal False: no label leak)
             zc_=model.heads[dom_id](priv(model,x,h_,dom_id))
             loss=F.cross_entropy(zc_.reshape(-1,256),y.reshape(-1))
             _rw_=float(model.__dict__.get('_real_w',1.0))
             if _rw_!=1.0: loss=loss*_rw_                                                     # REAL-TEXT LOSS WEIGHT (real_w_pass)
+            if float(getattr(cfg,'inf_carry',0.0))>0:
+                from platypus.inference.carry import carry_loss,carry_disarm
+                if locals().get('_cs_'): loss=loss+float(cfg.inf_carry)*carry_loss(model,cfg,x)
+                carry_disarm()
+            _dw_=float(getattr(cfg,'inf_distill_wake',0.0))>0 and _rw_>0         # 10 Nov INTERLEAVED DISTILLATION: its rows run AFTER this step's backward (below)
             klm=0.0
             fk_=bool(cfg.fast_kl and getattr(model,'_hstk',None) is not None and cfg.shunt_kl_mode=='fixed')
             skip_lwf_=False
@@ -625,7 +528,8 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 _dk_=int(model.__dict__.get('_dream_k',max(1,cfg.dream_every)))
                 if step==0 and (cfg.sleep_eps>0 or cfg.sleep_rel>0): model.__dict__['_dream_k']=1; _dk_=1
                 if model.__dict__.get('_sleep_phase')=='rem': _dk_=1
-            if cfg.dream_stream and getattr(model,'_dsq',None) and step%_dk_==0 and not cfg.proj_nodream:   # CONTINUOUS STREAMS (every dream_every steps)
+            _dws_=bool(cfg.dream_stream and getattr(model,'_dsq',None) and _gate_dream(model,cfg,step,_dk_) and not cfg.proj_nodream)   # (11 Nov: read by inf_distill_wake_ondream)
+            if _dws_:   # CONTINUOUS STREAMS (every dream_every steps; 11 Nov: or the theta gate's consolidation phases, inference.distill.gate_dream) (every dream_every steps)
                 sb_=pre_[0] if pre_ is not None else stream_batch(model,cfg,olds)
                 if sb_ is not None:
                     xd,tgt_d,dm_,ex_=sb_
@@ -735,7 +639,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     wdr=(cfg.dream_weight*model.__dict__.get('_dwp',1.0))*(1.0-cfg.dream_decay*step/_L)*eb_*(_dk_)
                     model.__dict__['_dk_last']=_dk_
                     model.__dict__['_dstep_k']=int(_dk_)            # this step carries dreams standing for k steps
-                    loss=loss+wdr*kdr*(cfg.shunt_T**2)
+                    loss=loss+wdr*kdr*(cfg.shunt_T**2); _dwk_=kdr.detach()   # (11 Nov: the dream KL of this step, read by inf_gate_beta)
                     for d,a,b in spans:
                         kd_=kr_[a:b].mean(); ds=model.__dict__.setdefault('_dreamstat',{}).setdefault(d,[0.0,0,0.0,0.0,0])
                         ds[0]+=kd_; ds[1]+=1; ds[2]+=wdr; ds[3]+=kd_; ds[4]+=(kd_>1.0).float()
@@ -794,12 +698,6 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             try: loss=F.cross_entropy(model(x,dom_id).reshape(-1,256),y.reshape(-1))
             finally: _carry_off(cfg)
             _KF['on']=False
-            if cfg.stream: model.__dict__['_rl']=loss.detach()                  # change detection (first domain: no head refit before the loss)
-            if cfg.stream and cfg.stream_rep:                                  # cg15: the first domain's representation (one no-grad trunk pass)
-                model.__dict__['_s0_dom']=dom_id
-                try:
-                    with torch.no_grad(): _srep_note(model,model.features(x))
-                finally: model.__dict__['_s0_dom']=None
         if cfg.recon_w>0 and float(model.__dict__.get('_real_w',1.0))>0:             # REPLAY TRAINING (only with real-text gradient on)
             loss=loss+cfg.recon_w*(recon_loss_mark(model,cfg,x,dom_id) if cfg.recon_mark else recon_loss(model,cfg,x,y,dom_id))
             if step==_L-1 and model.__dict__.get('_rc_stat'):
@@ -834,8 +732,6 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                           f" | by domain "+" ".join(f"{_lab(cfg,d_)}:{c_}" for d_,c_ in sorted(bd_.items()))
                           +(f" || sleep: NREM {_SLP['n'][0]} steps ({S_.get('nrem',0)} re-replays, {S_.get('nrem_ret',0)} retired), REM {_SLP['n'][1]} steps (dreams only)" if sum(_SLP['n']) else ""))
                     SMs_=model.__dict__.pop('_semstat',None); SMb_=model.__dict__.get('_sem',{})
-                    if float(cfg.sem_share)>0: print(f"    [semantic rows] written this visit {S_.get('sem',0)} | per domain "+" ".join(f"{_lab(cfg,d_)}:{len(v_['x'])}" for d_,v_ in sorted(SMb_.items()))
-                                                     +(f" | dream rows that were semantic {SMs_[0]}/{SMs_[1]}" if SMs_ else " | none used yet"))
                     SBp_['st']={}
                 LBp_=model.__dict__.get('_lbuf')
                 if LBp_ and LBp_.get('st') and LBp_['st'][0]>0:
@@ -875,7 +771,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                           +" | ".join(f"{_KLC_CLS[k_]} {KCp_[k_][0]/tP_:.2f} / {KCp_[k_][1]/tK_:.2f} / {KCp_[k_][2]/tE_:.2f}" for k_ in range(5) if k_ in KCp_)
                           +(f" | the top 10% of positions carry {np.mean(KCp_['top']):.2f} of the KL" if KCp_.get('top') else "")+f" | {KCp_['calls']} conduit calls, every {int(cfg.cd_klclass)}th sampled",flush=True)
                 EVp_=model.__dict__.pop('_evid',None)
-                if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{', all positions' if cfg.cd_evid_all else ''})"+(' - INACTIVE: with cd_bytes_all the conduit trains next-byte targets on the verified bytes, the blend is not used' if (getattr(cfg,'cd_bytes_all',False) and float(getattr(cfg,'cd_bytes_w',1.0))>=1.0) else ''))   # FIX (review): readout said it trains
+                if EVp_ is not None: print(f"    [evidence targets] teacher's top byte differed from the verified replayed byte at {float(EVp_[0])/max(1.0,float(EVp_[1])):.4f} of teaching positions (blend w {cfg.cd_evid_w}{('')})"+(' - INACTIVE: with cd_bytes_all the conduit trains next-byte targets on the verified bytes, the blend is not used' if (getattr(cfg,'cd_bytes_all',False) and float(getattr(cfg,'cd_bytes_w',1.0))>=1.0) else ''))   # FIX (review): readout said it trains
                 if st_: k_=max(1,st_[1]); print(f"    [conduit replay] KL {st_[0]/k_:.4f} | exact segments {st_[2]/k_:.2f} | tries/segment {st_[3]/k_:.2f} | true byte fidelity {st_[4]/k_:.2f} (diagnostic) | exactness test agrees with truth {st_[6]/k_:.3f} | eps {st_[5]/k_:.1e} over {st_[1]} steps"
                                +(f" | replay training on exact replays {st_[7]/max(1,st_[8])/LOG2:.4f} BPC ({int(st_[8])} steps)" if len(st_)>8 and st_[8] else "")+_rs_msg())
                 MHp_=_MH
@@ -901,21 +797,16 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                           +(f" | Gram/key disagreements {int(_fsum(_V97['dis']))}" if _V97['dis'] else "")+f" | key tolerance {float(model.__dict__.get('_cd_ktol',cfg.cd_keytol)):.3f}"
                           +(f" | floor weight mean {np.mean(_V97['fw']):.2f}, skipped calls {_V97['skip']} of {_V97['calls']} (running verified share {float(fz2_['vps']) if fz2_.get('vps') is not None else float('nan'):.2f})" if float(cfg.cd_floor_hi)>float(cfg.cd_floor_lo) else ""))
                     for k3_ in _V97: _V97[k3_]=[] if isinstance(_V97[k3_],list) else 0
-                if float(cfg.cd_buf)>0 and _CBUF['calls']:
-                    print(f"    [v9.7 buffer] {_CBUF['mix']/_CBUF['calls']:.1f} buffered windows per conduit step | from: "+(" ".join(f"{d_}:{c_}" for d_,c_ in sorted(_CBUF['src'].items())) or "-")
-                          +" | buffer now: "+" ".join(f"{d_}:{len(e_['x'])}" for d_,e_ in sorted(_CBUF['d'].items())))
-                    _CBUF.update(mix=0,calls=0,src={})
                 for k2_ in list(FOKS): FOKS[k2_]=[]
-        if cfg.mk_dream>0 and (cfg.mk_always or float(model.__dict__.get('_real_w',1.0))==0.0):   # MEMORY-KEYED DREAMS
-            if step%max(1,int(cfg.mk_every))==0: mk_refresh(model,cfg,x,dom_id)
-            loss=loss+cfg.mk_w*mk_loss(model,cfg,dom_id)
-            if step==_L-1 and model.__dict__.get('_mk_stat'):
-                st_=model.__dict__.pop('_mk_stat'); print(f"    [memory-keyed dreams] mean KL(teacher || student) {st_[0]/max(1,st_[1]):.4f} over {st_[1]} steps, pool {len(model.__dict__.get('_mk_pool',[]))}")
-            if step==_L-1: model.__dict__['_mk_pool']=[]
         if hasattr(model,'_klw_opt'): model._klw_opt.zero_grad()
         _dt=locals().get('_dterm',0.0)
         _pt=locals().get('_pterm',None); _pterm=None; _pg=None
         with _rf('backward'): loss.backward()
+        if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
+            from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the
+            distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1),dkl=((locals().get('_dwk_') if locals().get('_dwk_') is not None else locals().get('kraw_t')) if (locals().get('_dws_') and float(getattr(cfg,'inf_gate_beta',0.0))>0) else None))                                             #   real forward and its backward changed a tensor in place: autograd error); the
+                                                                                     #   gradients add up before the optimiser step and its whitening (11 Nov: options
+                                                                                     #   inf_distill_wake_params / inf_distill_wake_proj, see distill_wake_step)
         if _pg is not None:
             with torch.no_grad():
                 R_=model.__dict__.setdefault('_decR',{}); dl_=[]
@@ -938,8 +829,6 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         _dh_ids=set()
         _dsk_=model.__dict__.pop('_dstep_k',None)                                       # dream step (the k steps it stands for) or None
         _cth_=1.0
-        if _dsk_ is not None and cfg.dream_clip_pass:                                   # cg14b: DREAM-STEP CLIP THRESHOLD per pass (GPU: dream steps sat at
-            _cth_=float(cfg.dream_clip_pass[min(int(model.__dict__.get('_pass_i',0)),len(cfg.dream_clip_pass)-1)])   #   norm 1.7-6.2, clipped 100%)
         with _rf('grad_clip'): _gn_=torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad and id(p) not in _dh_ids],_cth_)
         if n_old>0:                                                                     # CLIP STATISTICS, dream vs other steps (on device: no sync)
             cs_=model.__dict__.setdefault('_clipst',{}); e_=cs_.setdefault('d' if _dsk_ is not None else 'r',[0.0,0.0,0])
@@ -995,7 +884,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         if cfg.noise_diag>0 and step==_L-1 and n_old>0: noise_report(model,cfg,dom_id)
         if step==_L-1 and n_old>0 and model.__dict__.get('_clipst'):
             cs_=model.__dict__.pop('_clipst'); f_=lambda k_: (lambda e_: f"{float(e_[0])/max(1,e_[2]):.3f} mean norm, clipped {float(e_[1])/max(1,e_[2]):.0%} of {e_[2]}" if e_ else "none")(cs_.get(k_))
-            print(f"    [grad clip] dream steps: {f_('d')} | other steps: {f_('r')} (threshold 1.0"+(f", dream steps {float(cfg.dream_clip_pass[min(int(model.__dict__.get('_pass_i',0)),len(cfg.dream_clip_pass)-1)]):.1f}" if cfg.dream_clip_pass else '')+")")
+            print(f"    [grad clip] dream steps: {f_('d')} | other steps: {f_('r')} (threshold 1.0"+((''))+")")
         if cfg.kf_dream>0 and step==_L-1 and n_old>0:
             bt_=model.__dict__.pop('_kfbt',[0.0,0]); dc_=model.__dict__.get('_kf_dacc',{}); print(f"    [live keys] {bt_[1]} whitening builds took {bt_[0]:.1f}s ({'eigh'}) | rebuilt {model.__dict__.pop('_kf_drb',0)} times from the dream rows' current input factors ({len(dc_)} weights, {max([e_['n'] for e_ in dc_.values()] or [0])} dream positions each, mix {cfg.kf_dream})")
         if tl_snap_:
@@ -1245,8 +1134,6 @@ _LATE = {
     'bpc': 'platypus.inference.store',
     'cd_loss': 'platypus.losses',
     'inf_store_add': 'platypus.inference.sentences',
-    'mk_loss': 'platypus.conduit',
-    'mk_refresh': 'platypus.conduit',
     'ngp_step': 'platypus.inference.need',
     'recon_loss': 'platypus.conduit',
     'recon_loss_mark': 'platypus.conduit',

@@ -132,15 +132,18 @@ def _inf_eval1(model,cfg,S_,tag):
         for st_ in range(T_):
             rows_=[(i_,g_,sc_) for i_,bm_ in enumerate(live_) for g_,sc_ in bm_]
             if not rows_: break
-            R_=[P_[i_]+g_ for i_,g_,_ in rows_]; L_=max(len(r_) for r_ in R_); X_=torch.zeros(len(R_),L_,dtype=torch.long,device=dev_)
-            for j_,r_ in enumerate(R_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
-            ix_=torch.tensor([len(r_)-1 for r_ in R_],device=dev_); lp9_=None
-            for sl9_ in sls_:
-                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
-                try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(R_),device=dev_),ix_],-1)
-                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
-                lp9_=l_ if lp9_ is None else torch.logaddexp(lp9_,l_)
-            lp9_=(lp9_-math.log(len(sls_))).cpu()
+            R_=[P_[i_]+g_ for i_,g_,_ in rows_]; L_=max(len(r_) for r_ in R_); lp9_=None; ck_=max(1,int(getattr(cfg,'inf_eval_chunk',0)) or len(R_))
+            for a0_ in range(0,len(R_),ck_):                                    # 11 Nov: rows in chunks (inf_eval_chunk; GPU: 134 probes x 26 first-step beams of long
+                RR_=R_[a0_:a0_+ck_]; X_=torch.zeros(len(RR_),L_,dtype=torch.long,device=dev_)   #   prompts in one pass were the 70 GB sleep peak)
+                for j_,r_ in enumerate(RR_): X_[j_,:len(r_)]=torch.tensor(r_,device=dev_)
+                ix_=torch.tensor([len(r_)-1 for r_ in RR_],device=dev_); lc_=None
+                for sl9_ in sls_:
+                    sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                    try: l_=F.log_softmax(model(X_,sl9_).float()[torch.arange(len(RR_),device=dev_),ix_],-1)
+                    finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                    lc_=l_ if lc_ is None else torch.logaddexp(lc_,l_)
+                lc_=lc_.cpu(); lp9_=lc_ if lp9_ is None else torch.cat([lp9_,lc_])
+            lp9_=lp9_-math.log(len(sls_))
             cand_=[[] for _ in P_]; Bw_=max(B_,int(getattr(cfg,'inf_eval_beam_first',0))) if st_==0 else B_   # FIRST-STEP WIDTH (inf_eval_beam_first): 26+ keeps every first letter
             for j_,(i_,g_,sc_) in enumerate(rows_):
                 if g_: fin_[i_].append((bytes(g_).decode('latin-1'),sc_+float(torch.logsumexp(lp9_[j_][NL_],0))))   # the name ends: any non-letter next
@@ -216,15 +219,20 @@ def _inf_eval1(model,cfg,S_,tag):
         if _INF.get('corr'): p_=_cue_fix(cfg,p_)
         isl_=lambda b_: 65<=b_<=90 or 97<=b_<=122; NL_=torch.tensor([b_ for b_ in range(256) if not isl_(b_)],device=dev_)
         seqs=[(p_+c_).encode('latin-1')[-(int(cfg.seq_len)-1):] for c_ in names_]; L_=max(len(s_) for s_ in seqs)+1
-        X_=torch.zeros(len(seqs),L_,dtype=torch.long,device=dev_)
-        for j_,s_ in enumerate(seqs): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
         n0_=[len(s_)-len(c_.encode('latin-1')) for s_,c_ in zip(seqs,names_)]
         sls_=[slot] if slot>=0 else (sorted(set(int(v_) for v_ in model.__dict__.get('_t2s',{}).values())) or [0]); tot_=None
+        ck_=max(1,int(getattr(cfg,'inf_eval_chunk',0)) or len(seqs))            # 11 Nov: candidates in chunks (inf_eval_chunk)
         for sl9_ in sls_:
-            sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
-            try: lp_=F.log_softmax(model(X_,sl9_).float(),-1)
-            finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
-            s9_=np.array([float(lp_[j_,n0_[j_]-1:len(seqs[j_])-1].gather(-1,X_[j_,n0_[j_]:len(seqs[j_]),None]).sum())+float(torch.logsumexp(lp_[j_,len(seqs[j_])-1,NL_],0)) for j_ in range(len(seqs))])
+            s9_=[]
+            for a0_ in range(0,len(seqs),ck_):
+                SS_=seqs[a0_:a0_+ck_]; X_=torch.zeros(len(SS_),L_,dtype=torch.long,device=dev_)
+                for j_,s_ in enumerate(SS_): X_[j_,:len(s_)]=torch.tensor(list(s_),device=dev_)
+                sv4_=_carry_save(); _CARRY.update(on=False,st={},new={}); sc_=_XDG['cur']; _XDG['cur']=sl9_; sv6_=_INFM['on']; _INFM['on']=bool(_INF.get('corr',False))
+                try: lp_=F.log_softmax(model(X_,sl9_).float(),-1)
+                finally: _carry_load(sv4_); _XDG['cur']=sc_; _INFM['on']=sv6_
+                s9_+=[float(lp_[j_,n0_[a0_+j_]-1:len(SS_[j_])-1].gather(-1,X_[j_,n0_[a0_+j_]:len(SS_[j_]),None]).sum())+float(torch.logsumexp(lp_[j_,len(SS_[j_])-1,NL_],0)) for j_ in range(len(SS_))]
+                del lp_
+            s9_=np.array(s9_)
             tot_=s9_ if tot_ is None else np.logaddexp(tot_,s9_)
         tot_=tot_-math.log(len(sls_))
         return tot_/np.array([len(c_.encode('latin-1'))+1 for c_ in names_]) if mode_=='byte' else tot_

@@ -330,9 +330,6 @@ def _kf_apply(P,u):
 def muon_prep(model,cfg):
     """Before opt.step(): Muon directions for the blocks' 2-D weights; their grads are cleared so Adam skips them."""
     out=[]; pend_=[]
-    if cfg.muon_precise and '_mp_priv' not in model.__dict__:               # private / per-domain matrices keep Muon (PX_PS: Muon private)
-        model.__dict__['_mp_priv']={id(p_) for b in model.blocks for n_,p_ in b.named_parameters() if n_.startswith(('pu_','film_'))}
-        print(f"  [precise shared] shared block matrices step along the whitened momentum (Muon-sized); {len(model.__dict__['_mp_priv'])} private / FiLM matrices keep Muon", flush=True)
     for p_ in [p for b in model.blocks for p in b.parameters() if p.ndim==2 and p.requires_grad]:
         if p_.grad is None: continue
         g_=p_.grad.float(); st_=model.__dict__.setdefault('_muB',{})
@@ -355,16 +352,6 @@ def muon_prep(model,cfg):
             o_=_ns5(torch.cat([zl_,R_*math.sqrt(max(s_,1e-30)/lam_)],0))[:zl_.shape[0]]
             o_=(PG_@o_) if PG_.dim()==2 else PG_[:,None]*o_
             o_=o_*(zl_.abs().sum(1,keepdim=True)>0)*(zl_.abs().sum(0,keepdim=True)>0)        # zero rows / columns stay zero (private units)
-            out.append((p_,o_*(0.2*math.sqrt(max(p_.shape))))); p_.grad=None; continue
-        if cfg.muon_precise and id(p_) not in model.__dict__.get('_mp_priv',set()):   # cg11 PRECISE SHARED: whitened momentum, Muon-sized
-            o_=z_*(math.sqrt(min(z_.shape))/z_.norm().clamp_min(1e-12))        #   (tensor norm: no host sync)
-            if cfg.muon_precise_cap>0:                                         # cg11b CAP: largest singular value <= cap x Muon's (power iteration,
-                PV_=model.__dict__.setdefault('_mpV',{}); v_=PV_.get(id(p_))   #   warm-started per matrix; no host sync). cg11: Frobenius-only sizing
-                if v_ is None or v_.shape[0]!=o_.shape[1]: v_=torch.randn(o_.shape[1],device=o_.device,dtype=o_.dtype)   #   let the top directions
-                for _ in range(int(cfg.muon_precise_pit)): v_=o_.t()@(o_@v_); v_=v_/v_.norm().clamp_min(1e-30)          #   grow with width (GPU:
-                PV_[id(p_)]=v_; sg_=(o_@v_).norm()                             #   learning far worse than Muon from the first domain)
-                o_=o_*torch.clamp(float(cfg.muon_precise_cap)/sg_.clamp_min(1e-12),max=1.0)
-            if P_ is not None: o_=_kf_apply(P_,o_)
             out.append((p_,o_*(0.2*math.sqrt(max(p_.shape))))); p_.grad=None; continue
         pend_.append((p_,z_,P_)); p_.grad=None; continue
         if P_ is not None: o_=_kf_apply(P_,o_)                                       # Fisher-whitened Muon step
@@ -497,37 +484,6 @@ def varpro_refit(model,cfg,opt,x,y,h,d):
                 C_=CG_[d]; dW_=-torch.linalg.solve_ex(C_+torch.diagonal(C_).mean()*cfg.varpro_lam*torch.eye(C_.shape[0],device=C_.device),Ha_.t()@P_/n_)[0].t()*cfg.varpro_lr
             else: dW_=-(Ai_@(Ha_.t()@P_)/n_).t()*cfg.varpro_lr                                               # (256, D+1)
             hd_.weight.add_(dW_[:,:-1].to(hd_.weight.dtype)); hd_.bias.add_(dW_[:,-1].to(hd_.bias.dtype))
-@torch.no_grad()
-def smem_reencode(model,cfg,cur):
-    """SLOT MEMORY RE-ENCODING: every other slot's memory rebuilt with the current weights from slot_mem_reenc of its bank dreams (first halves)."""
-    SM=model.__dict__.get('_smem',{}); BK=model.__dict__.get('_bank',{}); R=int(cfg.slot_mem_reenc); Tq_=min(cfg.dream_len,cfg.seq_len)
-    dev=model.embed.weight.device; n_=0
-    for d in list(SM):
-        if d==cur or d not in BK: continue
-        X=BK[d][:R,:Tq_].long().to(dev); was=model.training; fs=model.feat_scale.clone(); s0_=model.__dict__.get('_s0_dom')
-        sv_={k_:_CARRY[k_] for k_ in ('on','nr','st','new','rows')}
-        try:
-            model.eval(); _CARRY.update(on=True,nr=X.shape[0],st={},new={},rows=None); model.__dict__['_s0_dom']=d
-            model.features(X); new_=dict(_CARRY['new'])
-        finally:
-            model.train(was); model.feat_scale.copy_(fs); model.__dict__['_s0_dom']=s0_; _CARRY.update(sv_)
-        for k_,v_ in new_.items():
-            if isinstance(k_,tuple): continue
-            SM[d][k_]=v_.reshape(X.shape[0],v_.shape[0]//X.shape[0],*v_.shape[1:]).mean(0)
-        n_+=1
-    if n_: print(f"  [slot memory] re-encoded {n_} other slots' memories with the current weights ({R} dreams each)")
-@torch.no_grad()
-def guard_sense(model,cfg,olds):
-    """EARLY DRIFT GUARD sensor: KL(stored targets || current) per old domain on its first guard_rows bank rows (held out: never trained)."""
-    BK=model.__dict__.get('_bank',{}); TV=model.__dict__.get('_bank_tv',{}); dev=model.embed.weight.device; H=min(int(cfg.guard_rows),int(cfg.bank_hold)); out={}
-    for d in olds:
-        if d not in BK or d not in TV or H<1: continue
-        Xs=BK[d][:H].long().to(dev); V,I=TV[d]; Vs=V[:H].to(dev).float(); Is=I[:H].to(dev).long()
-        sv_=model.__dict__.get('_s0_dom'); model.__dict__['_s0_dom']=d
-        try: lq=_probe_lq(model,cfg,Xs,d)
-        finally: model.__dict__['_s0_dom']=sv_
-        out[d]=float(_probe_kl(lq,Vs,Is,min(cfg.dream_stream_prompt,Xs.shape[1]//2),Vs.shape[-1]).mean())
-    return out
 def noise_diag(model,cfg,x,y,d,olds):
     """GRADIENT NOISE SCALES of the two parts of the step (McCandlish et al. 2018), on the trunk: two independent half batches of each part
     give per-row noise tr(Sigma) = b |g1-g2|^2 / 2 and signal |G|^2 = |g1+g2|^2/4 - tr(Sigma)/(2b); B_noise = tr(Sigma)/|G|^2 is the batch

@@ -275,16 +275,6 @@ def strand_generate(model, cfg, olds, n_rows, C):
     order=r_.permutation(len(out)); return [out[i] for i in order]
 
 _RR_KINDS=('live','rekey','ngram')
-def rr_keys(model, kind, x=None, h=None):
-    RR=model._rr
-    if kind=='ngram':
-        B,T=x.shape; xs=x.long()+1; zs=[]
-        for n in range(1,5):
-            hh=torch.zeros(B,T,dtype=torch.long,device=x.device)
-            for i in range(n): sh=F.pad(xs,(i,0))[:,:T]; hh=(hh*1000003+sh+97*n)%2147483629
-            zs.append(RR['T'][n-1][hh%16384])
-        z=torch.cat(zs,-1); return torch.cat([torch.ones_like(z[...,:1]),F.relu(z@RR['Rn']+RR['bn'])],-1)
-    h=h.float(); return torch.cat([h,torch.ones_like(h[...,:1]),F.relu(h@RR['Rl']+RR['bl'])],-1)
 
 _SM_LET=b'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; _SM_DIG=b'0123456789'
 
@@ -295,8 +285,8 @@ def bank_refresh(model, cfg, d):
     if not hasattr(model,'_dream_gen'):
         g_=torch.Generator(device=model.embed.weight.device); g_.manual_seed(cfg.seed+11); object.__setattr__(model,'_dream_gen',g_)
     _t0bank=time.time(); _SAMP['gstat']={'calls':0,'ok':0,'bytes':0,'why':None,'diff':0.0}
-    T=min(cfg.dream_len,cfg.seq_len)*(2 if cfg.dream_pair>0 else 1); rows=[]; NP=cfg.dream_bank*(1)   # paired: 2 x length
-    NA_=int(float(cfg.bank_anchor)*NP) if float(cfg.bank_anchor)>0 else 0; AN_=model.__dict__.setdefault('_banc',{})
+    T=min(cfg.dream_len,cfg.seq_len)*((1)); rows=[]; NP=cfg.dream_bank*(1)   # paired: 2 x length
+    NA_=(0); AN_=model.__dict__.setdefault('_banc',{})
     if NA_>0 and d in AN_ and AN_[d].shape[1]==T: rows.append(AN_[d].to(model.embed.weight.device).long()); NP=NP-AN_[d].shape[0]   # cg16 anchor kept
     model.__dict__['_s0_dom']=d
     TP_=model.__dict__.setdefault('_dtemp',{})
@@ -407,7 +397,6 @@ def bank_dream_batch(model, cfg, olds):
         if sg.sum()>0: w=cfg.share_floor/len(ol)+(1-cfg.share_floor)*sg/sg.sum()
     D_=model.__dict__.get('_dctl')
     ss_=model.__dict__.get('_self_slot')                                 # cg15b SELF-PROTECTION: the revisited slot's own share x self_prot_w
-    if ss_ is not None and ss_ in ol and cfg.self_prot_w>0: w=w.copy(); w[ol.index(ss_)]*=float(cfg.self_prot_w)
     gb_=model.__dict__.get('_guard_boost')                               # EARLY DRIFT GUARD: flagged domains get more of the rows
     if gb_: w=w*np.array([float(gb_.get(d,1.0)) for d in ol])
     r_=model.__dict__.get('_dsr')
@@ -426,8 +415,7 @@ def bank_dream_batch(model, cfg, olds):
                 p_=np.where(ok_,p_,p_[ok_].mean()); p_=np.maximum(p_,1e-6); return lo_+int(r_.choice(n_-lo_,p=p_/p_.sum()))
         return r_.randint(lo_,n_)
     ri=[_pick(d) for d in dm]
-    if cfg.dream_sim: ri=_sim_rows(model,cfg,dm,ri,_pick,BK,TV,r_)              # SWIL: similarity-weighted rows within each domain
-    SEM_=model.__dict__.get('_sem',{}) if float(cfg.sem_share)>0 else {}
+    SEM_=({})
     sj_={}                                                                      # SEMANTIC ROWS: slot j -> semantic row index (its domain's bank)
     for j,d in enumerate(dm):
         if d in SEM_ and SEM_[d]['x'] and SEM_[d]['x'][0].shape[0]==BK[d].shape[1] and r_.rand()<float(cfg.sem_share): sj_[j]=r_.randint(len(SEM_[d]['x']))
@@ -438,11 +426,7 @@ def bank_dream_batch(model, cfg, olds):
     if X.shape[1]>=2*Tq_ and TV and all(d in TV for d in dm) and not cfg.dream_pair_full:   # PAIRED-DREAM EPISODES: 2 x length rows; B halves for the paired share
         pr_=model.__dict__.get('_dpr')
         if pr_ is None: pr_=np.random.RandomState(cfg.seed+57); model.__dict__['_dpr']=pr_
-        if cfg.dream_pair_both and len(dm)>=2:                              # both halves of dream_batch/2 pairs (same row budget)
-            h_=len(dm)//2; dm=list(dm[:h_])*2; ri=list(ri[:h_])*2
-            X=torch.stack([BK[d][i] for d,i in zip(dm,ri)]).long().to(model.embed.weight.device)
-            pj_=list(range(h_,2*h_))
-        else: pj_=[j for j in range(len(dm)) if cfg.dream_pair>0 and pr_.rand()<cfg.dream_pair]
+        pj_=[j for j in range(len(dm)) if cfg.dream_pair>0 and pr_.rand()<cfg.dream_pair]
         of_=[Tq_ if j in pj_ else 0 for j in range(len(dm))]
         model.__dict__['_pairA']=(pj_,X[pj_,:Tq_].contiguous(),[dm[j] for j in pj_]) if pj_ else None
         X=torch.stack([X[j,o:o+Tq_] for j,o in enumerate(of_)])
@@ -575,6 +559,5 @@ def dream_refresh(model, cfg, dom_id, d, n):
 # names this module uses at run time from modules that load after it; platypus/__init__.py links them once every module is loaded
 _LATE = {
     '_hist_push': 'platypus.ngrams',
-    '_sim_rows': 'platypus.conduit',
     'run': 'platypus.runner',
 }
