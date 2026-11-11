@@ -226,6 +226,39 @@ recall: recall per unit of BPC about 11 vs 5. Most of the damage, and most of th
 (embeddings, shared n-gram tables). The anchor projection conflicts on 57-70% of steps but removes only about 1% of the question
 gradient (4.5% at most): one averaged anchor direction cannot protect drift spread over many directions.
 
+### Protection on top of mlp_out-only writes (11 November 2026, 09:10, local short runs)
+
+Same settings (seed 0, carry 0.1, weight 0.25, mlp_out only). Replay-only repeat of the reference: -0.156 / 2.976 (no distillation
+earlier: -0.168 / 2.981), so differences of about 0.01 are run-to-run noise.
+
+| Add-on | Taught facts after visits 7-10 | Control | Forgetting | Final BPC |
+|---|---|---|---|---|
+| none (DWM) | 0.08, 0.15, 0.16, 0.11 | 0.00 | -0.140 | 2.991 |
+| **spaced rehearsal** (DWSP, `inf_distill_wake_spaced`) | 0.08, 0.15, **0.21, 0.19** | 0.00 | -0.141 | **2.991** |
+| self-KL for known facts (DWK) | 0.08, 0.15, 0.11, 0.11 | 0.00 | -0.141 | 2.989 |
+| questions on dream steps only (DWO) | 0.08, 0.05, 0.00 | 0.00 | -0.158 | 2.981 |
+
+Spaced rehearsal: about 70% more recall at the end at the same cost (the trunk answers 3-4 of 12-19 taught facts in a taught wording;
+intervals spread to 16). Dream steps only: free but starved (5 question steps per visit in short runs). Self-KL: no gain.
+
+### Gaussian drift readout (11 November 2026, local short runs)
+
+`inf_gauss_drift`: W2^2 (Bures) between this sleep's and the last sleep's Gaussian of each layer's residual stream on fixed stored
+sentences of old domains, relative to the spread. Output layer, per sleep (mean-shift part in brackets):
+
+| Visit | Replay only (GR) | mlp_out writes (DWO / DWSP) | All-parameter writes (GA) | No replay (GN) |
+|---|---|---|---|---|
+| 6 | 0.0254 | 0.0249 / 0.0251 | 0.0267 | 0.0260 |
+| 7 | 0.0258 (0.012) | 0.0254 / 0.0253 | 0.0288 (0.015) | 0.0294 |
+| 8 | 0.0239 (0.012) | 0.0232 / 0.0231 | 0.0265 (0.015) | 0.0277 |
+| 9 | 0.0194 | 0.0194 / 0.0184 | 0.0200 | 0.0226 |
+| 10 | 0.1925 | 0.1740 / - | 0.1428 | 0.1765 |
+
+Runs are identical through visit 5 (no writes; replay barely acts in 24-step short visits). From visit 6-9 the two things that raise
+forgetting raise drift: no replay +14-16% (forgetting -0.026 / 3.081 vs -0.156 / 2.976 at the end), all-parameter writes +3-12%, mostly
+the mean; mlp_out writes stay at the replay-only level. Visit 10 jumps about tenfold in every run and does not follow the pattern
+(another cause dominates). Suggestive at this scale; the full-run pair with and without replay is the proper test.
+
 ## Width and replay (11 November 2026, local full runs, seed 0)
 
 Forgetting at each revisit (BPC before retraining minus after the previous visit; visits 6-9):
