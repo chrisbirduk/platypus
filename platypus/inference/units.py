@@ -346,3 +346,64 @@ def _units_update(model,cfg,X,S_):
             elif thr_ is not None and c_>=thr_ and w0_ not in L_ and w0_ not in S_.get('lexdem',()): L_.add(w0_); nf_+=1
     del rv_[:-int(getattr(cfg,'inf_units_win',3000))]
     S_['unf']=S_.get('unf',0)+nf_
+
+
+# ---- 11 Nov FAST SEQUENCE CHANNEL READER (inf_reader_chunk; tools/chunk_reader.py offline: 325 of 4,726 Re-DocRED gold relations against
+#      36 for the two-rarest-words reader). FRAMES are the short COMMON word sequences, FILLERS what varies between them, all from counts kept
+#      online as the text is read (no labels, no word lists): a word type is frame material if it is among the K most frequent types or is
+#      rarely capitalised when it is not first in a sentence (a statistic of the text); filler runs between frames, joined across one
+#      lower-case word when the three words are a strong collocation ('Gulf of Mexico'); a record per pair of fillers up to 3 apart, the
+#      frame between them (punctuation included: 'Stockholm , Sweden'). Records go to a SEPARATE evidence record S_['relc'] - the audit,
+#      REM and the name memory keep reading S_['rel'].
+_CHK_TOK = _re_inf.compile(rb"[A-Za-z0-9][A-Za-z0-9'\-]*|[,;:()\"]")
+def _chk_state(S_):
+    return S_.setdefault('chk', {'uni': {}, 'cap': {}, 'mid': {}, 'big': {}, 'tri': {}, 'frame': set(), 'nwin': 0, 'ntok': 0})
+def _chk_prune(d_, cap_):
+    if len(d_) > cap_:
+        for k_ in [k_ for k_, v_ in d_.items() if v_ <= 1][:len(d_) - int(0.75 * cap_)]: del d_[k_]
+def _chk_count(cfg, S_, w_):
+    """the fast channel's counts over one window of real text (words, mid-sentence capitals, filler-connector-filler collocations)"""
+    C_ = _chk_state(S_); U_, CP_, MD_, BG_, TR_ = C_['uni'], C_['cap'], C_['mid'], C_['big'], C_['tri']
+    for s_ in _INF_SENT.split(w_):
+        t_ = _CHK_TOK.findall(s_)
+        for i_, x_ in enumerate(t_):
+            lx_ = x_.lower(); U_[lx_] = U_.get(lx_, 0) + 1; C_['ntok'] += 1
+            if i_ > 0 and x_[:1].isalpha():
+                MD_[lx_] = MD_.get(lx_, 0) + 1
+                if x_[:1].isupper(): CP_[lx_] = CP_.get(lx_, 0) + 1
+            if i_ + 2 < len(t_) and x_[:1].isupper() and t_[i_ + 1][:1].islower() and t_[i_ + 2][:1].isupper():
+                k3_ = (lx_, t_[i_ + 1].lower(), t_[i_ + 2].lower()); TR_[k3_] = TR_.get(k3_, 0) + 1
+                k2_ = k3_[:2]; BG_[k2_] = BG_.get(k2_, 0) + 1
+    C_['nwin'] += 1
+    if C_['nwin'] % 512 == 1:                                                   # (bounded memory; the frame list refreshed every 512 windows)
+        cp_ = int(getattr(cfg, 'inf_reader_chunk_cap', 1000000)); _chk_prune(U_, cp_); _chk_prune(BG_, cp_); _chk_prune(TR_, cp_)
+        _chk_prune(MD_, cp_); [CP_.pop(k_) for k_ in [k_ for k_ in CP_ if k_ not in MD_]]
+        C_['frame'] = set(k_ for k_, _ in sorted(U_.items(), key=lambda kv_: -kv_[1])[:int(getattr(cfg, 'inf_reader_chunk_k', 300))])
+def _chk_records(cfg, S_, s_):
+    """(filler, frame, filler) records of one stored sentence"""
+    C_ = _chk_state(S_); t_ = _CHK_TOK.findall(s_)
+    if len(t_) < 3: return []
+    FR_, U_, CP_, MD_, BG_, TR_ = C_['frame'], C_['uni'], C_['cap'], C_['mid'], C_['big'], C_['tri']; N_ = max(1, C_['ntok'])
+    def frame_w(x_):
+        if not x_[:1].isalnum(): return True
+        lx_ = x_.lower()
+        if lx_ in FR_: return True
+        if x_[:1].isdigit(): return False
+        m_ = MD_.get(lx_, 0)
+        return (CP_.get(lx_, 0) / m_ < 0.5) if m_ else not x_[:1].isupper()
+    fr_ = [frame_w(x_) for x_ in t_]
+    for i_ in range(1, len(t_) - 1):                                            # COHESION: 'Gulf of Mexico' is one filler
+        if fr_[i_] and not fr_[i_ - 1] and not fr_[i_ + 1] and t_[i_][:1].islower():
+            k3_ = (t_[i_ - 1].lower(), t_[i_].lower(), t_[i_ + 1].lower()); c3_ = TR_.get(k3_, 0)
+            if c3_ >= 3 and c3_ * N_ / max(1, BG_.get(k3_[:2], 1)) / max(1, U_.get(k3_[2], 1)) > 50: fr_[i_] = False
+    runs_ = []; i_ = 0
+    while i_ < len(t_):
+        if fr_[i_]: i_ += 1; continue
+        j_ = i_
+        while j_ + 1 < len(t_) and not fr_[j_ + 1] and j_ - i_ < 5: j_ += 1
+        runs_.append((i_, j_ + 1)); i_ = j_ + 1
+    out_ = []; sk_ = int(getattr(cfg, 'inf_reader_chunk_skip', 3)); mg_ = int(getattr(cfg, 'inf_reader_chunk_gap', 12))
+    for k_ in range(1, sk_ + 1):
+        for (a0_, a1_), (b0_, b1_) in zip(runs_, runs_[k_:]):
+            if 1 <= b0_ - a1_ <= mg_: out_.append((b' '.join(t_[a0_:a1_]), b' '.join(t_[a1_:b0_]), b' '.join(t_[b0_:b1_])))
+    return out_

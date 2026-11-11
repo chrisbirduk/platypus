@@ -10,6 +10,7 @@ from platypus.inference.store import (
 )
 from platypus.inference.units import (
     _INF_NAME, _INF_SENT, _INF_TRIP, _RDR, _UNITS, _UWORD, _UnitName, _UnitTrip, _rdr_records, _units_on, _units_update,
+    _chk_count, _chk_records,
 )
 
 def _inf_store(model):
@@ -33,9 +34,10 @@ def inf_store_add(model,cfg,X,dom,mask=None):
     Xc_=X.detach().to('cpu',torch.uint8).numpy()
     if mask is not None:
         Mc_=(mask.detach()>0).to('cpu').numpy(); Xc_=Xc_.copy(); Xc_[:,1:][~Mc_]=0                # unverified bytes blanked
-    cap_=int(cfg.inf_store_cap)
+    cap_=int(cfg.inf_store_cap); chk_=int(getattr(cfg,'inf_reader_chunk',0))
     for r_ in range(Xc_.shape[0]):
         w_=bytes(Xc_[r_]); S_['nwin']+=1
+        if chk_ and mask is None: _chk_count(cfg,S_,w_)                       # 11 Nov FAST SEQUENCE CHANNEL: counts over the real text read
         S_['ring'].append((w_,int(dom))); del S_['ring'][:-512]                    # recent windows (real / verified-only bytes): filler + anchors
         if int(getattr(cfg,'inf_sofl',0)):                                       # SLEEP-ONLY FEATURE LEARNING: the visit's windows, buffered (reservoir) for the sleep
             sb_=S_.setdefault('sbuf',[]); S_['sbn']=S_.get('sbn',0)+1; cb_=int(getattr(cfg,'inf_sofl_buf',256))
@@ -75,6 +77,11 @@ def inf_store_add(model,cfg,X,dom,mask=None):
                 m3_=_INF_TRIP.search(s_)
                 if m3_: S_.setdefault('rel',{}).setdefault((m3_.group(1),m3_.group(2)),{}).setdefault(m3_.group(3),[]).append(i_)
             for n_ in set(ns_): S_['idx'].setdefault(n_,[]).append(i_)
+            if chk_:                                                            # its (filler, frame, filler) records: a SEPARATE evidence record
+                RC_=S_.setdefault('relc',{})
+                for a9_,r9_,b9_ in _chk_records(cfg,S_,s_): RC_.setdefault((a9_,r9_),{}).setdefault(b9_,[]).append(i_)
+                if len(RC_)>int(getattr(cfg,'inf_reader_chunk_cap',1000000)):  #   (bounded: the oldest keys read once go first)
+                    for k9_ in [k9_ for k9_,o9_ in RC_.items() if sum(len(v9_) for v9_ in o9_.values())<=1][:len(RC_)//4]: del RC_[k9_]
 def _inf_store_evict(cfg,S_,model):
     """ROLLING SENTENCE STORE: when full, the oldest 10% of sentences from earlier visits that no live fact record, conclusion or re-entered
     conclusion depends on are emptied (their index entries removed). Evidence that was never used makes room for new evidence."""

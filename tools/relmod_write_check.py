@@ -24,10 +24,10 @@ T0 = [e for e in ents if not ctl(e)]; H0 = [e for e in ents if ctl(e)]
 calls = []
 distill._dt_recall = lambda m, s, L: (calls.append(len(L)), {'facts': (float('nan'), len(L)), 'conclusions': (float('nan'), 0)})[1]
 distill._dw_relmod(model, cfg, T0, H0, 1)                                     # sleep at visit index 1
-e1, h1 = distill._dw_relmod_write(model, cfg, lambda d: 0, list(T0), list(H0), ctl, 1)
+e1, h1 = distill._dw_relmod_write(model, cfg, {}, lambda d: 0, list(T0), list(H0), ctl, 1)
 WR = model.__dict__['_rm_written']; add_t = len(e1) - len(T0); add_h = len(h1) - len(H0)
 print(f"CHECK sleep 1: written {len(WR)}, joined the pool {add_t} taught + {add_h} held back; recall calls {calls}")
 distill._dw_relmod(model, cfg, T0, H0, 2)                                     # sleep 2: written facts are hops, not evidence; no re-writes
-e2, h2 = distill._dw_relmod_write(model, cfg, lambda d: 0, list(T0), list(H0), ctl, 2)
+e2, h2 = distill._dw_relmod_write(model, cfg, {}, lambda d: 0, list(T0), list(H0), ctl, 2)
 print(f"CHECK sleep 2: written {len(model.__dict__['_rm_written'])} (no duplicates expected), recall calls {calls[-4:]} (written at sleep 1 now counted)")
 assert add_t + add_h == len(WR) and add_h > 0 and add_t > 0

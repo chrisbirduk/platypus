@@ -1082,7 +1082,7 @@ def _dw_relmod(model, cfg, ents, held, vis):
         _fail('inference.distill:relmod'); print(f"  [RELATIONAL MODULE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
-def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
+def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     """STEP 4 OF THE RULE TEST (11 Nov; inf_distill_relmod_write 1, with inf_distill_relmod; ONE MODEL CHANGE): the relational module's
     WRITTEN facts (a rule found against the null, verified on 0.9+ of its observed composite facts with a Wilson bound, applied through
     STORED premises only - tools/relmod_hard.py: 746 + 92 writes, all right) join the question pool as facts, taught to the trunk by the
@@ -1091,6 +1091,7 @@ def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
     one. READOUT: how many written, their precision against the rule world's truth, and RECALL FROM THE TRUNK (test wording, store and
     memory off) of facts written at an earlier sleep - taught vs held back, all and the composites that were NEVER PLANTED anywhere."""
     from platypus.inference.probes import inf_rule_world
+    from platypus.inference.namemem import _nm_layer
     WR = model.__dict__.get('_rm_written') or {}
     if not WR:
         print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
@@ -1110,12 +1111,26 @@ def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
     prec = sum(1 for k, t in kn if k[2] == t) / len(kn) if kn else float('nan')
     old = lambda L: [e for e in L if e['rm'] < vis]; nv = lambda L: [e for e in L if (e['A'], e['r']) in never]
     f = lambda x: f"{x['facts'][0]:.2f} ({x['facts'][1]})"
-    rT = _dt_recall(model, S_slot, old(T_)); rH = _dt_recall(model, S_slot, old(H_))
-    rTn = _dt_recall(model, S_slot, nv(old(T_))); rHn = _dt_recall(model, S_slot, nv(old(H_)))
+    cAC = {(c.get('A'), c.get('C')) for c in S_.get('conc', []) if c.get('A') is not None}   # GPU sleep 4: the held-back control answered too - the
+    gen = lambda L: [e for e in L if (e['A'], e['ans']) in cAC]; nog = lambda L: [e for e in L if (e['A'], e['ans']) not in cAC]   # sleep layer's own
+    def ask():                                                                 #   generic conclusions ('A is connected to C') are taught by edits
+        return [_dt_recall(model, S_slot, L) for L in (old(T_), old(H_), nv(old(T_)), nv(old(H_)), nog(old(T_)), nog(old(H_)))]
+    rT, rH, rTn, rHn, rTg, rHg = ask(); sub = None
+    E = model.__dict__.get('_cf_E'); mo = _nm_layer(model, cfg) if E is not None else None
+    if E is not None and mo is not None and tuple(E.shape) == tuple(mo.weight.shape):
+        W0 = mo.weight.detach().clone()
+        try:
+            with torch.no_grad(): mo.weight.copy_((W0.float() - E.float().to(W0.device)).to(W0.dtype))
+            sub = ask()
+        finally:
+            with torch.no_grad(): mo.weight.copy_(W0)
     print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] {len(WR)} facts written so far ({sum(1 for w in WR.values() if w['vis'] == vis)} this sleep; rule-world truth known for {len(kn)}, "
           f"precision {prec:.2f}; {sum(1 for k in WR if (k[1], k[0]) in never)} of them composites NEVER PLANTED; {rep} since recorded by the reader) -> question pool: "
-          f"{len(T_)} taught, {len(H_)} held back (control) || FROM THE TRUNK, test wording, written at an earlier sleep: TAUGHT {f(rT)} vs HELD BACK {f(rH)} | "
-          f"NEVER PLANTED composites: TAUGHT {f(rTn)} vs HELD BACK {f(rHn)}", flush=True)
+          f"{len(T_)} taught, {len(H_)} held back (control); {len(gen(old(T_)))} / {len(gen(old(H_)))} of the earlier ones also concluded by the sleep layer as 'A is connected to C' || "
+          f"FROM THE TRUNK, test wording, written at an earlier sleep, closed-form edits IN PLACE: TAUGHT {f(rT)} vs HELD BACK {f(rH)} | NEVER PLANTED: TAUGHT {f(rTn)} vs HELD BACK {f(rHn)} | "
+          f"NOT ALSO A SLEEP CONCLUSION: TAUGHT {f(rTg)} vs HELD BACK {f(rHg)}"
+          + (f" || edits SUBTRACTED: TAUGHT {f(sub[0])} vs HELD BACK {f(sub[1])} | NEVER PLANTED: TAUGHT {f(sub[2])} vs HELD BACK {f(sub[3])} | NOT ALSO A SLEEP CONCLUSION: "
+             f"TAUGHT {f(sub[4])} vs HELD BACK {f(sub[5])}" if sub else " || no closed-form edits"), flush=True)
     return ents + T_, held + H_
 
 
@@ -1162,7 +1177,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)                       #  opalg diverged
             if int(getattr(cfg, 'inf_distill_relmod', 0)): _dw_relmod(model, cfg, ents, held, vis)                         #  after sleep 1)
         if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_distill_relmod_write', 0)):
-            try: ents, held = _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis)
+            try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:
                 _fail('inference.distill:relmod_write'); print(f"  [RELATIONAL MODULE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
