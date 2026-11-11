@@ -721,6 +721,8 @@ ORDER = (
     ('inference.distill', 'distill_wake_loss'),
     ('inference.distill', '_dw_anchor_loss'),
     ('inference.distill', 'distill_wake_step'),
+    ('inference.distill', '_dw_hint_pool'),
+    ('inference.distill', 'distill_wake_hint_loss'),
     ('inference.gaussdrift', '_bures'),
     ('inference.gaussdrift', '_erank'),
     ('inference.gaussdrift', 'gauss_drift'),

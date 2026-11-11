@@ -291,8 +291,19 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         cache = None
         if float(getattr(cfg, 'inf_distill_wake_akl', 0.0)) > 0 or int(getattr(cfg, 'inf_distill_repair', 0)):
             cache = _dw_cache(model, cfg, S_, S_slot, set([int(s) for s in oslots] + ([int(vslot)] if vslot is not None else [])), vis)
+        hpool = {}
+        if int(getattr(cfg, 'inf_distill_wake_hint', 0)):
+            H = (D or {}).get('hst')
+            if H and H['steps']:
+                print(f"  [DISTILLATION, HINTED | visit {vis + 1}] last visit: {H['steps']} steps, positions where the name memory changes the prediction "
+                      f"{H['sel'] / max(1, H['pos']):.4f} of {H['pos']:.0f} (the update's support), KL there {np.mean(H['kl'][:20]) if H['kl'] else float('nan'):.4f} (first 20) -> "
+                      f"{np.mean(H['kl'][-20:]) if H['kl'] else float('nan'):.4f} (last 20)", flush=True)
+            hpool, hents = _dw_hint_pool(model, cfg, S_, S_slot, ents, held, vis)
+            probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
+            print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
+                  f"(sentences naming a control subject left out)", flush=True)
         model.__dict__['_dtw'] = dict(bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
-                                      anc=anc, cache=cache, st=dict(proj=0, conf=0, cut=[]))
+                                      anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
 
@@ -351,7 +362,7 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1):
     try:
         g0 = None
         if proj: g0 = [p.grad for p in P]; [setattr(p, 'grad', None) for p in P]
-        dl_ = distill_wake_loss(model, cfg)
+        dl_ = distill_wake_hint_loss(model, cfg) if int(getattr(cfg, 'inf_distill_wake_hint', 0)) else distill_wake_loss(model, cfg)
         if not torch.is_tensor(dl_):
             if g0 is not None: [setattr(p, 'grad', g) for p, g in zip(P, g0)]
             return
@@ -382,3 +393,58 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1):
                 p.grad = q if g is None else (g if q is None else g + q)
     finally:
         for p in frz: p.requires_grad_(True)
+
+
+# ---------------------------------------------------------------- HINTED SELF-DISTILLATION (inf_distill_wake_hint, 11 Nov)
+# After Uemura and Suzuki (arXiv 2610.05200): self-distillation with a hint updates sparsely (learning without overwriting) where
+# supervised fine-tuning on correct outputs updates densely (overwriting). Here the HINT is the name memory: on stored real sentences that
+# name taught subjects, TEACHER = the trunk with the name memory on (no gradient), STUDENT = the trunk alone; loss = KL(teacher || student)
+# averaged over the positions where the memory changes the prediction (KL above 1e-4; elsewhere teacher = student, no gradient). No
+# templated wordings, no one-hot targets. CONTROL: sentences naming any subject of a never-taught (control) fact are left out of the pool,
+# so the memory cannot teach the control facts; the taught probe is drawn from facts whose subject is in the pool.
+def _dw_hint_pool(model, cfg, S_, S_slot, ents, held, vis):
+    import re
+    csub = set(e['A'] for e in held); tents = [e for e in ents if e['A'] not in csub]
+    if not tents: return {}, []
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    rt = re.compile('|'.join(re.escape(n) for n in sorted(set(e['A'] for e in tents), key=len, reverse=True)))
+    rc = re.compile('|'.join(re.escape(n) for n in sorted(csub, key=len, reverse=True))) if csub else None
+    pool = {}; hit = set(); ra = np.random.RandomState(int(cfg.seed) + 9898 + vis)
+    for i in ra.permutation(len(real)):
+        x = real[int(i)]; s = bytes(x['s']).decode('latin-1')
+        if rc is not None and rc.search(s): continue
+        ms = rt.findall(s)
+        if not ms: continue
+        sl = int(S_slot(x['d']))
+        if len(pool.setdefault(sl, [])) < 256: pool[sl].append(bytes(x['s'])); hit.update(ms)
+    return pool, [e for e in tents if e['A'] in hit]
+
+
+def distill_wake_hint_loss(model, cfg):
+    D = model.__dict__.get('_dtw')
+    if not D or not D.get('hpool'): return 0.0
+    from platypus.inference.namemem import _NM
+    if not _NM.get('ready'): return 0.0
+    try:
+        from platypus.inference.closed_form import _ws_batch, _ws_run
+        rs = D['rs']; sls = list(D['hpool']); sl = sls[rs.randint(len(sls))]; pool = D['hpool'][sl]
+        X, M = _ws_batch(model, [pool[int(i)] for i in rs.choice(len(pool), min(int(getattr(cfg, 'inf_distill_wake_rows', 4)), len(pool)), replace=False)])
+        was = _NM['force']
+        try:
+            _NM['force'] = True
+            with torch.no_grad(): lt = F.log_softmax(_ws_run(model, X, sl).float(), -1)
+            _NM['force'] = False
+            ls = F.log_softmax(_ws_run(model, X, sl, grad_=True).float(), -1)
+        finally: _NM['force'] = was
+        T = ls.shape[1]; m = M[:, 1:T + 1].float()
+        kl = (lt.exp() * (lt - ls)).sum(-1) * m
+        sel = (kl.detach() > 1e-4).float(); ns = float(sel.sum())
+        H = D.setdefault('hst', dict(steps=0, pos=0.0, sel=0.0, kl=[]))
+        H['steps'] += 1; H['pos'] += float(m.sum()); H['sel'] += ns
+        if ns < 1: return 0.0
+        loss = (kl * sel).sum() / ns; H['kl'].append(float(loss.detach())); D['n'] += 1
+        return loss
+    except Exception as e:
+        _fail('inference.distill:hint')
+        if not D.get('err'): D['err'] = 1; print(f"  [DISTILLATION, HINTED] a step failed ({type(e).__name__}: {e})"[:300], flush=True)
+        return 0.0
