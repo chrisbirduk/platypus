@@ -464,6 +464,27 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### A fast sequence channel as the reader (tools/chunk_reader.py, 11 November, local)
+
+Frames are the short COMMON word sequences, fillers what varies between them - counted on local Wikipedia plus the benchmark text
+(68,123 sentences, 1.86 M tokens), no labels, no word lists. Frame material: the K most frequent word types and punctuation, and (variant
+B) words that are rarely capitalised when not first in a sentence (a statistic of the text); filler runs between them, joined across one
+frame word when the three words are a strong collocation ('Gulf of Mexico'); a record per pair of fillers with the frame between them
+(punctuation included: 'Stockholm , Sweden'). Scored against the Re-DocRED gold relations like the current reader:
+
+| reader | records | gold pairs covered (of 4,726) | precision on benchmark-entity records |
+|---|---|---|---|
+| current (two rarest words of a clause) | 1,252 | 36 (0.8%) | 0.23 |
+| A: frequent words are frame material, K 1000 | 8,763 | 195 (4.1%) | 0.27 |
+| B: + rarely capitalised words, K 300, adjacent fillers | 4,345 | 194 (4.1%) | 0.28 |
+| C: Harris slot entropy instead (best threshold) | 11,558 | 150 (3.2%) | 0.25 |
+| **B, fillers up to 3 apart, frames up to 12 tokens** | 8,613 | **325 (6.9%)** | 0.26 |
+
+Ceiling with both entities named in one sentence: 555 (11.7%) - the best variant reaches 59% of it, 9x the current reader. Multi-word
+names are read whole ('Fredrik Laurentz Ekman', 'Margaret Thatcher' - 'and her husband' - 'Denis Thatcher'); the commonest frames of
+gold records are punctuation (',' and '(' - appositions, 'Stockholm , Sweden'), 'in', 'was born in'. Precision stays near 0.26 (the
+gold annotation is incomplete, so this is a floor). Still missing: pronouns and cross-sentence reading (88% of the gold pairs).
+
 ### Relational module on the GPU (cg27a_relmod, seed 4, first version: nearest-only candidates, whole-matrix distance, no guards)
 
 On the facts the store's reader recorded (every relation, none marked composable): sleep 1 (70 facts, 10 relations) no rule - too
