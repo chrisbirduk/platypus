@@ -893,7 +893,7 @@ def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xs
     subject and the middle name are excluded at each snap ('except self': a matrix cannot express it, the snap can); ORTHO - one-to-one
     relations kept near-orthogonal (_rm_fit). Always: snap to the nearest name at EVERY hop (resets the residual instead of compounding
     it); one-to-many facts are sets (a proposal is right if it is one of the true objects); a rule must beat 3 shuffled-fact nulls by
-    0.05 AND predict >= 0.5 of 3+ of its composite facts by the chain (the functional check). GUARDS (from the hard rule world): the
+    0.05 AND predict >= 0.5 of 3+ of its composite facts by the chain, with a Wilson 95% lower bound >= 0.5 (the functional check). GUARDS (from the hard rule world): the
     check counts only chains whose snapped middle is a known subject of r2 (no snapping through a missing hop), and at least half of the
     checked subjects must have an OBSERVED chain ending on someone other than themselves (with 'except self', r o r-inverse would
     otherwise become 'the most similar person', and grandchild o grandchild 'the nearest root'; a distance-to-identity test removed the
@@ -983,7 +983,8 @@ def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xs
                         if min(nk) - d[k] <= 0.05: continue
                         out['cand'] += 1
                         fc, fn = fcheck(i, j, k)
-                        if fn >= 3 and fc >= 0.5:
+                        n_, p_ = fn, fc; lb_ = (p_ + 1.92 / n_ - 1.96 * np.sqrt(p_ * (1 - p_) / n_ + 0.96 / n_ ** 2)) / (1 + 3.84 / n_) if n_ else 0.0
+                        if fn >= 3 and fc >= 0.5 and lb_ >= 0.5:                 # WILSON 95% lower bound >= 0.5 (GPU sleep 3: a FALSE rule passed on 2 of 4)
                             out['rules'].append((rels[i], rels[j], rels[k], float(d[k]), float(np.mean(nk)), float((np.mean(nk) - d[k]) / (np.std(nk) + 1e-6)), fc, fn))
         rk = {(a, b, c) for a, b, c, *_ in out['rules']}
         rej = [x for x in sorted(near, reverse=True) if (rels[x[1]], rels[x[2]], rels[x[3]]) not in rk]
@@ -1055,7 +1056,7 @@ def _dw_relmod(model, cfg, ents, held, vis):
         print(f"  [RELATIONAL MODULE | visit {vis + 1}] {R['N']} names, {len(rels)} relations, {R['nfacts']} facts read by the store's reader"
               + (f" (paraphrases merged: {'; '.join(f'{a} = {b}' for a, b in R['merged'][:4])})" if R['merged'] else "")
               + f"; codes 64-d, {steps} steps, one-hop on its facts {R['one']:.2f} || RULES ({R['npairs']} ordered pairs; {R['cand']} beat 3 shuffled-fact nulls on the "
-              f"subjects' codes [{R['cand_alt']} over the whole matrix], kept if the chain also predicts >= 0.5 of 3+ recorded composite facts): {len(R['rules'])} found, {nf} FALSE"
+              f"subjects' codes [{R['cand_alt']} over the whole matrix], kept if the chain also predicts >= 0.5 of 3+ recorded composite facts, Wilson 95% lower bound >= 0.5): {len(R['rules'])} found, {nf} FALSE"
               + (f" | true rules NOT found: {'; '.join(f'{a} o {b} -> {c}' for a, b, c in miss)}" if miss else "") + " | "
               + (" | ".join(f_rule(t) for t in R['rules']) if R['rules'] else "none")
               + (f" | nearest rejected '{nr[0]}' o '{nr[1]}' -> '{nr[2]}' margin {nr[3]:+.2f}" if nr else "")
