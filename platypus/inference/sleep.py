@@ -57,6 +57,13 @@ from platypus.inference.jindex import (
 )
 
 _PHASE_T={}; _PHASE_M={}; _PHASE_PK=[0]; _PHASE_FREE=[0]
+_MW={'on':False,'pk':0,'m':{}}
+def _mw_mark(tag_):
+    """11 Nov: GPU peak of each stage inside the store-write phase (readout): the peak since the last mark, then reset"""
+    if not _MW['on']: return
+    try:
+        p_=torch.cuda.max_memory_allocated(); _MW['m'][tag_]=max(_MW['m'].get(tag_,0),p_); _MW['pk']=max(_MW['pk'],p_); torch.cuda.reset_peak_memory_stats()
+    except Exception: pass
 def _phase_wrap(on_):
     """SLEEP PHASE TIMING (9 Nov, readout only): while a sleep runs, every function this module calls by its global name is timed
     (inclusive, outermost call only, so nothing is counted twice). Returns the names wrapped and their originals, to restore"""
@@ -76,7 +83,7 @@ def _phase_wrap(on_):
                 depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
                 if cu_:
                     try:
-                        m1_=torch.cuda.max_memory_allocated(); _PHASE_PK[0]=max(_PHASE_PK[0],m1_)
+                        m1_=max(torch.cuda.max_memory_allocated(),_MW['pk']); _MW['pk']=0; _PHASE_PK[0]=max(_PHASE_PK[0],m1_)
                         o_=_PHASE_M.get(nm_,(0.0,0.0)); _PHASE_M[nm_]=(max(o_[0],(m1_-b_)/2**30),max(o_[1],m1_/2**30))   # (above its entry level, own peak)
                         if _PHASE_FREE[0]: torch.cuda.empty_cache()             # 11 Nov: cached blocks released after each phase (inf_sleep_phase_free)
                     except Exception: pass
@@ -640,6 +647,7 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
 def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,kc_,ka_,filler,fwd,rs_,dev_,b0_,o0_,nb_):
     """cg20h: write the verified conclusions into the fast store (delta rule on the residual), with do-no-harm anchor writes"""
     _infm_init(model,cfg); was_=model.training; model.eval(); beta_=float(getattr(cfg,'inf_mem_beta',0.5)); fa_=float(getattr(cfg,'inf_mem_nofill',0.5))
+    _MW['on']=bool(torch.cuda.is_available() and int(getattr(cfg,'inf_sleep_phases',1))); _MW['m']={}; _mw_mark('entry')
     def feats(X_,d_):
         sh_=_HCAP['on']; _HCAP['on']=True; sv_=_INFM['on']; _INFM['on']=False
         try: lg_=fwd(X_,d_); return lg_,_HCAP['h'].float()
@@ -657,7 +665,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     for c_ in [c0_ for c0_ in list(allc_)+FX_ if not c0_.get('freed')]:
         for n_ in ((c_['A'],c_['B']) if c_.get('fact') else ((c_['A'],c_['B'],c_['C']) if float(getattr(cfg,'inf_mem_src',0.0))>0 else (c_['A'],c_['C']))):
             if n_.encode('latin-1') not in PN_: _INFM['names'].setdefault(n_.encode('latin-1'),int(_zl.crc32(n_.encode('latin-1'))))
-    ainfo_=_inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_)
+    _mw_mark('centre and names'); ainfo_=_inf_audit(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_); _mw_mark('grounding audit')
     gm_=int(getattr(cfg,'inf_gist',0))
     if gm_:                                                                     # GIST FIRST: what the trunk (the cortex, store OFF) already predicts needs no hippocampal
         tau_=float(getattr(cfg,'inf_gist_tau',1.0)); pool0_=[c_ for c_ in allc_ if not c_.get('freed')]+[f_ for f_ in S_.get('facts',[]) if not f_.get('freed')]
@@ -736,7 +744,7 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
                 ok_=_inf_score1(model,cfg,f"So {c_['A']} is connected to ",cs_,int(S_slot(c_['d'])),True,dec_=True)==0; ck_.append(ok_)
                 if not ok_: c_['n']=0; fail_+=1
         ainfo_+=f" | MAINTENANCE: {fail_} of {len(ck_)} stored conclusions no longer recalled (store recall {np.mean(ck_) if ck_ else float('nan'):.2f}) -> rewritten first"
-    rc_=[];ra_=[]; wn_=0
+    _mw_mark('gist, fade, release, capacity, maintenance'); rc_=[];ra_=[]; wn_=0
     rn_=[i_ for i_,(w0_,_) in enumerate(ring_) if any(n_ in _INFM['names'] for n_ in _INF_NAME.findall(w0_))] if float(getattr(cfg,'inf_mem_anchor_named',0.0))>0 else []
     ad9_=int(getattr(cfg,'inf_sleep_adapt',0)) and ord_=='nrem_rem'; Kx9_=int(getattr(cfg,'inf_sleep_cycles_max',4)); NS9_=int(cfg.inf_steps)
     if ad9_: REMk_=0                                                            # cg26n ADAPTIVE SLEEP: cycles and durations from the write fit and the REM yields
@@ -815,16 +823,16 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
             if conv9_ and L9_>=max(4,NS9_//10):
                 cy9_['len'].append(L9_); cy9_['c0']=st+1; cy9_['fit']=[]
                 if not cy9_['stop']:
-                    o9_=_inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),f"NREM -> REM, adaptive cycle {len(cy9_['acc'])+1}"); a9_=len(o9_ or []); A9_=cy9_['acc']; A9_.append(a9_)
+                    _mw_mark('store writes'); o9_=_inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),f"NREM -> REM, adaptive cycle {len(cy9_['acc'])+1}"); _mw_mark('REM'); a9_=len(o9_ or []); A9_=cy9_['acc']; A9_.append(a9_)
                     if a9_==0: cy9_['stop']='closure (a cycle accepted nothing new)'
                     elif len(A9_)>=2 and A9_[-2]>0 and a9_*a9_/A9_[-2]<1.0: cy9_['stop']=f'yield falling: next cycle predicted {a9_*a9_/A9_[-2]:.1f} < 1 new conclusion'
                     elif len(A9_)>=Kx9_: cy9_['stop']=f'cycle cap {Kx9_}'
                 else: cy9_['end']='writes converged after the last REM'; break
         if REMk_ and remd_<REMk_ and (st+1)%max(1,int(cfg.inf_steps)//(REMk_+1))==0:   # FIX (review): was //REMk_, so one cycle fired at the LAST step   # NREM chunk done -> a REM episode (cycles: its links are written by the next chunk)
-            remd_+=1; _inf_rem(model,cfg,S_,S_slot,max(1,int(getattr(cfg,'inf_rem_n',48))//REMk_),f"NREM -> REM, cycle {remd_}/{REMk_}")
+            remd_+=1; _mw_mark('store writes'); _inf_rem(model,cfg,S_,S_slot,max(1,int(getattr(cfg,'inf_rem_n',48))//REMk_),f"NREM -> REM, cycle {remd_}/{REMk_}"); _mw_mark('REM')
     if ad9_: print(f"  [inference SLEEP CYCLES | ADAPTIVE] {len(cy9_['acc'])} REM cycles, accepted per cycle {cy9_['acc']} | NREM chunks (write steps) {cy9_['len']} + {st+1-cy9_['c0']} | "
                    f"{st+1} write steps in all (fixed schedule {NS9_}) | stopped: {cy9_['stop'] or 'step cap'}"+(f"; {cy9_['end']}" if cy9_['end'] else ''),flush=True)
-    nh_=int(getattr(cfg,'inf_prune_harm',0))
+    _mw_mark('store writes'); nh_=int(getattr(cfg,'inf_prune_harm',0))
     if nh_>0 and rn_:                                                           # HARM-BASED PRUNING: each stored name's measured effect on recent REAL text
         H_=S_.setdefault('harm',{}); inv_={v_:k_ for k_,v_ in _INFM['names'].items()}; acc_={}
         pick_=[ring_[rn_[i_]] for i_ in rs_.choice(len(rn_),min(len(rn_),nh_),replace=False)]
@@ -874,11 +882,14 @@ def _inf_mem_write(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,kept_,Lr_,R_,
     if int(getattr(cfg,'inf_rem_shadow',0)) and ord_=='nrem':                  # SHADOW REM: lookup recombination after the writes, counted only
         try: _inf_rem(model,cfg,S_,S_slot,int(getattr(cfg,'inf_rem_n',48)),'SHADOW after NREM writes (counted, not written; "already known" = found by discovery)',shadow_=True)
         except Exception as e_: _fail('inference.sleep:758'); print(f"  [inference REM recombination] skipped: {e_!r}"[:300],flush=True)
-    _inf_sync(cfg,'store writes'); xinfo_=_inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,filler,fwd,rs_,dev_,nb_,fa_)
-    xinfo_+=_inf_free(model,cfg,S_,allc_,S_slot,Lr_,filler,fwd,feats,rs_,dev_,beta_)
-    xinfo_+=_inf_prune(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_)
+    _mw_mark('harm pruning, shadow REM'); _inf_sync(cfg,'store writes'); xinfo_=_inf_xfer(model,cfg,t,ts,vals,olds_,S_slot,S_,allc_,ring_,Lr_,kc_,ka_,R_,filler,fwd,rs_,dev_,nb_,fa_); _mw_mark('transfer (trunk replay)')
+    xinfo_+=_inf_free(model,cfg,S_,allc_,S_slot,Lr_,filler,fwd,feats,rs_,dev_,beta_); _mw_mark('freeing')
+    xinfo_+=_inf_prune(model,cfg,S_,allc_,S_slot,Lr_,filler,feats,rs_,dev_,beta_); _mw_mark('pruning')
     model.train(was_); _inf_sync(cfg,'transfer / freeing / pruning')
     b1_=bpc(model,vals[t],ts,n=nb_); _inf_sync(cfg,'held-out BPC with the store'); o1_=float(np.mean([bpc(model,vals[d_],s_,n=nb_) for d_,s_ in olds_])) if olds_ else float('nan')
+    _mw_mark('held-out BPC')
+    if _MW['m']: print("  [STORE WRITES | GPU] peak allocated in each stage of the store-write phase (GB): "+" | ".join(f"{k_} {v_/2**30:.1f}" for k_,v_ in _MW['m'].items()),flush=True)
+    _MW['on']=False
     print(f"  [inference sleep | FAST STORE] keyed positions written {_INFM.get('wpos',0)} | {int(cfg.inf_steps)} write steps ({kc_} conclusion rows + {ka_} anchor rows) on {len(allc_)} conclusions | "
           f"keyed conclusion bytes after writing {rc_[0] if rc_ else float('nan'):.3f} (first step), {np.mean(rc_[-5:]) if rc_ else float('nan'):.3f} (last steps) bits | anchor KL(store||model) {np.mean(ra_[-5:]) if ra_ else float('nan'):.4f} | "
           f"|M| {float(_INFM['M'].norm()):.1f}{ainfo_} | trunk weight sum {float(sum(p0_.detach().double().abs().sum() for p0_ in model.parameters())):.6e}{' | gates '+str([round(float(g0_),2) for g0_ in _INFM['gates']]) if _INFM['key']=='slowgate' else ''}{xinfo_} | held-out BPC (store on) visited {b0_:.3f} -> {b1_:.3f}, old domains {o0_:.3f} -> {o1_:.3f}"
