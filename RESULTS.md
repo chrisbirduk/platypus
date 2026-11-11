@@ -343,6 +343,18 @@ phases and coincides with a 10-dream-step final visit (its allocation per visit 
 separable from where the random phases fell in 24-step visits; a full-run trio with bounded phases is queued. Spindle-style writing
 fails; the beta brake changes nothing measurable.
 
+### Prompt distillation (soft targets from a teacher that reads the source sentence; 11 November 2026, local full runs, mlp_out writes)
+
+| Run | Taught at the end | Forgetting | Final BPC | Teacher vs student, answer bytes right |
+|---|---|---|---|---|
+| none (DWM) | 0.11 | -0.140 | 2.991 | - |
+| soft targets + 0.5 CE (PDC) | 0.07 (n 27) | -0.140 | 2.990 | 0.73 vs 0.73, 0.72 vs 0.72, 0.82 vs 0.84 (visits 8-10) |
+| soft targets only (PD, running) | - | - | - | 0.79 vs 0.79 (693 bytes, visit 6; 77 rows with the sentence, 15 without) |
+
+The teacher is no better than the student: reading the fact's source sentence first does not help the local trunk answer, so the soft
+targets carry nothing the hard answer does not. No harm, no gain. The GPU readout (inf_distill_pd_probe, SOURCE IN CONTEXT) asks the same
+question at the GPU window, for taught and never-taught facts.
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
