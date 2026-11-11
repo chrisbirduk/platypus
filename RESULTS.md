@@ -370,6 +370,15 @@ visits at the revisits (Gutenberg, Wikipedia, ArXiv, PubMed, FreeLaw) -0.136 / -
 -0.010 / +0.009 (means -0.039 / -0.037). **No effect** - every difference inside seed noise; the short-run gain was the dream allocation.
 (Replay-only reference without distillation, FR: -0.005 / 2.415.) Rhythm gating is not carried forward.
 
+### Null-space probe (11 November, local full runs, seed 0; readout only)
+
+Inputs to each block's mlp_out (H = 512) on stored sentences of the old slots, against a question-row gradient on taught facts (sleeps 2-3,
+BR0/BR1): 90 / 99 / 99.9% of the old-domain energy sits in 18-30 / 94-157 / 256-329 of 512 directions, and **0.95 / 0.99 / 1.00 of the
+fact update lies inside them** (an isotropic update would put 0.04-0.05 / 0.22-0.27 / 0.54-0.61 there). The facts are written in the very
+directions the old domains use most - which is why the question rows cost old-domain BPC and why repair replay, pulling those directions
+back, erased the facts. A hard null-space projection (AlphaEdit) would keep 0.05 / 0.01 / 0.00 of the fact update: **not viable at this
+width**; any separation has to come from elsewhere (separate weights for facts, or a key that is not the old text's main directions).
+
 ### Prompt distillation (soft targets from a teacher that reads the source sentence; 11 November 2026, local full runs, mlp_out writes)
 
 | Run | Taught at the end | Forgetting | Final BPC | Teacher vs student, answer bytes right |
