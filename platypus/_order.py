@@ -525,6 +525,7 @@ ORDER = (
     ('inference.jindex', '_jx_pred'),
     ('inference.jindex', '_jx_find'),
     ('inference.jindex', '_jx_readout'),
+    ('inference.jindex', '_jx_rag'),
     ('inference.jindex', '_jx_bytes'),
     ('inference.jindex', '_jx_route'),
     ('inference.jindex', '_jx_sleep'),

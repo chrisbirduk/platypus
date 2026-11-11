@@ -576,6 +576,7 @@ class Config:
     inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
     inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
     inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)
+    inf_jx_rag=1                    # 11 Nov (with inf_jx): RETRIEVAL-AUGMENTED ANSWERS readout / answer mode - one JEPA-ranked stored sentence naming A before the question, cited
     inf_eval_chunk=128              # 11 Nov: >0 = probe evaluation's beam search and name scoring run in chunks of this many rows (0 = one pass; GPU: 128)
     inf_sleep_phase_free=1          # 11 Nov: 1 = release the CUDA cache after each timed sleep phase (with inf_sleep_phases)
     inf_gauss_drift=1               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep
