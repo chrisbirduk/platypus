@@ -464,6 +464,28 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Fast channel: reference by salience, simplified frames, rules on real text (tools/chunk_reader2.py; GPU cg27a_chunk; 11 November)
+
+Offline, against the 4,726 Re-DocRED gold relations: REFERENCE BY SALIENCE (a sentence opening with frame material - 'He was born in',
+'The company was founded by' - gets the document's centre as its subject) raises the gold relations covered from **325 to 444** and the
+gold-pair rate from 0.26 to 0.30 (centre = the document's first filler; the previous sentence's subject: 426). SIMPLIFIED FRAMES (inner
+fillers as a slot, 'was born on [F] in') leave coverage unchanged and raise the records whose frame repeats 5+ times from 0.18 to 0.22.
+RULES ON REAL TEXT (240,991 records from 630 Wikipedia articles + the benchmark; 17,721 facts in the 60 commonest frames): 3,941
+candidates beat the null; 5 rules pass the functional check, all of them the reader's own list / apposition structure - ',' o ',' ->
+', [F] ,' (0.56 of 385), ', [F] ,' o ',' -> ', [F] , [F] ,' (0.62 of 202) ... - true by construction (a record between fillers two
+apart IS the chain of the two adjacent ones); their 6,011 proposals are gold 0.02 on benchmark entities (records themselves: 0.26-0.30)
+and none would be written (every rule predicts < 0.9). The guards hold - nothing false is written - but untyped frames (',' joins
+places, dates, people, list items) cannot carry semantic rules: frames need TYPED slots (filler types by co-clustering) and the slot
+records must not be mined as relations.
+
+GPU, cg27a_chunk (seed 4), the fast channel as a readout: gold relations covered at sleeps 1 / 2 / 3: **54 / 144 / 204** against 4 / 11 / 16
+for the current reader (13x); the relational module on the real-text records: 438-968 candidates beat the null, 0 rules. Local short run
+with the reader on: identical to the run without it (3.008 / -0.139). Step-4 readout at sleep 3 with the new split: taught 0.25 (1 of 4)
+vs held back 0.00 (0 of 2), unchanged with the edits subtracted - but 3 of the 4 taught and both held-back facts were ALSO concluded by
+the sleep layer as 'A is connected to C' (and replayed into the trunk); not also a sleep conclusion: 0.00 (0 of 1). The relwrite run's
+0.75 is not reproduced; consolidation of self-inferred facts is NOT yet shown - the rule world's chains must be held out of the sleep
+layer's own joining for a clean test.
+
 ### Step 4 on the GPU: written conclusions consolidate (cg27a_relwrite, seed 4; interim, sleeps 1-3)
 
 The fixed relational module on the reader's facts: sleep 2 - paraphrases merged (resides close to = lives near, was taught by = trained
