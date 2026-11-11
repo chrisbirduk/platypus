@@ -124,6 +124,11 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         if int(getattr(cfg,'inf_cf_apply',0)): _cf_apply(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26l closed-form consolidation (kept under its brake)
         if float(getattr(cfg,'inf_sup',0))>0: _sup_dreams(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # MERGED-MEMORY DREAMS (inference.supmem, under their own brake)
         if int(getattr(cfg,'inf_jx',0)): _jx_sleep(model,cfg,_inf_store(model))     # cg26s JEPA INDEX (inference.jindex): readouts only, the trunk is not trained
+        if int(getattr(cfg,'inf_gauss_drift',0)):                               # 11 Nov GAUSSIAN DRIFT READOUT (inference.gaussdrift; readout only)
+            try:
+                from platypus.inference.gaussdrift import gauss_drift
+                gauss_drift(model,cfg,_inf_store(model),S_slot,S_slot(t),[s_ for _,s_ in olds_])
+            except Exception as e9_: _fail('inference.sleep:gd'); print(f"  [GAUSSIAN DRIFT] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
         if int(getattr(cfg,'inf_name_mem',0)):                                  # 10 Nov NAME MEMORY (inference.namemem): rebuilt after this sleep's weight changes
             try:
                 from platypus.inference.namemem import nm_sleep
