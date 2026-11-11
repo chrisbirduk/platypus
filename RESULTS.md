@@ -157,6 +157,26 @@ training step, same backward and optimiser as the real text; retention measured 
 facts above the never-taught fifth, in test wordings, from the trunk alone with the closed-form edits removed, at a cost that passes the
 brake - and still there after the next visit's ordinary training.
 
+## Interleaved distillation: first transfer above control (11 November 2026, 00:30, local)
+
+Local short run, seed 0, carry 0.1 + `inf_distill_wake` 0.25 (4 question rows about stored facts in each real-text training step, seven
+self-written wordings, run forward + backward after the real step's backward so the gradients pass through the same optimiser step; a
+fixed fifth of the facts never taught). Recall from the trunk (memory and store off) in the TEST wordings (a new frame, a paraphrased
+relation), measured at each sleep after the visit's ordinary training:
+
+| After visit | Taught facts | Never-taught control |
+|---|---|---|
+| 7 | 0.08 (12) | 0.00 (5) |
+| 8 | **0.38 (13)** | 0.00 (11) |
+| 9 | **0.26 (19)** | 0.00 (11) |
+| 10 | **0.26 (27)** | 0.00 (13) |
+
+Conclusions 0.00 (4). Facts are not touched by the closed-form edits, so this is the trunk. The sleep burst on the same local model gave
+0.00. **Cost (short run, weights only):** forgetting -0.091 / final BPC 3.033 vs -0.168 / 2.981 without (carry + burst: -0.151 / 2.981) -
++0.05 BPC; short runs have 24 steps per visit, so the questions are a large share of training and the cost may be inflated. Full runs at
+weights 0.25 and 0.1 next (recall gained per unit of BPC). Earlier fix: a forward between the real forward and its backward changed a
+tensor in place (autograd error); the question rows now run after the real backward.
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
