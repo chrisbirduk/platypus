@@ -278,7 +278,7 @@ The width-32 runs were stopped by container restarts during visit 9 (an idle con
 
 Three runs on the same seed and schedule: **cg27a_distillm** (question rows, mlp_out weights only, pool = the name memory's material,
 capped at 384; stopped in visit 6), **cg27a_distillcap** (the same with the pool taken from the store up to 2000; stopped after visit 6),
-**cg27a_distillctl** (the control: identical to distillcap, pool and readouts included, but no question rows trained; visits 1-4 here).
+**cg27a_distillctl** (the control: identical to distillcap, pool and readouts included, but no question rows trained; visits 1-5).
 Recall is from the trunk (memory and store off), open-ended (greedy answer exact), in two wordings never taught.
 
 **Facts.** 32-fact sample, taught vs never-taught:
@@ -288,7 +288,7 @@ Recall is from the trunk (memory and store off), open-ended (greedy answer exact
 | 2 | 0.29 (45) vs 0.00 (15) | 0.33 (43) vs 0.00 (15) | 0.00 (45) vs 0.00 (15) |
 | 3 | 0.62 (42) vs 0.02 (41) | 0.46 (39) vs 0.02 (41) | 0.00 (42) vs 0.00 (41) |
 | 4 | 0.64 (39) vs 0.00 (37) | 0.51 (39) vs 0.03 (37) | 0.03 (39) vs 0.00 (37) |
-| 5 | 0.71 (38) vs 0.05 (42) | 0.64 (42) vs 0.07 (42) | - |
+| 5 | 0.71 (38) vs 0.05 (42) | 0.64 (42) vs 0.07 (42) | 0.02 (42) vs 0.00 (42) |
 
 Fact recall from the weights is entirely the question rows' doing (control 0.00-0.03 on the same pool).
 
@@ -305,19 +305,22 @@ grows six-fold past the memory's cap; facts taught early are not lost as new one
 | distillcap, visit 4 | 0.48 -> 0.08 (50) | 0.25 -> 0.00 (8) | 0.17 -> 0.00 (6) |
 | distillcap, visit 5 | 0.69 -> **0.15** (68) | 0.19 -> **0.00** (16) | 0.07 -> 0.00 (14) |
 | control, visit 4 | 0.26 -> 0.00 (50) | 0.00 -> 0.00 (8) | 0.00 -> 0.00 (6) |
+| control, visit 5 | 0.40 -> 0.00 (68) | 0.25 -> 0.00 (16) | 0.21 -> 0.00 (14) |
 
 Conclusions in the weights come from the closed-form edits (both rows fall to ~0 without them in the control); with the question
 rows, taught conclusions keep 0.08-0.15 without the edits against 0.00 never taught - a small distillation effect. No composition from
 taught premises.
 
-**Cost.** Post-train BPC of the visited domain, distillcap vs control: 2.020 / 2.009, 2.083 / 2.078, 2.031 / 2.033, 1.666 / 1.662
-(visits 1-4) - none. Old domains' BPC at each sleep (fast store on), distillcap vs control: 1.999 / 1.976, 2.021 / 2.002, 1.977 /
-1.959 (sleeps 2-4) - **+0.018 to +0.023, not growing**. End-of-run forgetting not measured (both runs stopped).
+**Cost.** Post-train BPC of the visited domain, distillcap vs control: 2.020 / 2.009, 2.083 / 2.078, 2.031 / 2.033, 1.666 / 1.662,
+1.574 / 1.577 (visits 1-5) - none. Old domains' BPC at each sleep (fast store on), distillcap vs control: 1.999 / 1.976, 2.021 / 2.002,
+1.977 / 1.959, 1.898 / 1.878 (sleeps 2-5) - **+0.018 to +0.023, steady**. End-of-run forgetting not measured (both runs stopped).
 
-**Probe recall from the weights** (standard 134 probes, store off), visit 4, distillcap vs control: one-hop 0.37 / 0.15, open one-hop
-0.19 / 0.00, two-hop 0.08 / 0.10, open two-hop 0.04 / 0.02. The one-hop rise is the distillation's; two-hop not separated by visit 4.
-**Replay retention** (two-hop from the weights on the last sleep's replayed sample after a visit): 0.75 / 0.88 / 0.96 at visits 4-6 with
-distillation, 0.67 at visit 4 in the control - conclusion replay sticks without question training; visits 5-6 of the control pending.
+**Probe recall from the weights** (standard 134 probes, store off), distillcap vs control: visit 4 one-hop 0.37 / 0.15, open one-hop
+0.19 / 0.00, two-hop 0.08 / 0.10, open two-hop 0.04 / 0.02; visit 5 one-hop 0.40 / 0.19, open 0.31 / 0.00, two-hop 0.14 / 0.16, open
+two-hop 0.08 / 0.06. The one-hop rise is the distillation's; the two-hop rise over the run (0.03 -> 0.16-0.22) happens without it
+(conclusion replay and the closed-form edits). **Replay retention** (two-hop from the weights on the last sleep's replayed sample after a
+visit): with distillation 0.75 / 0.88 / 0.96 (visits 4-6), control 0.67 / 0.83 (visits 4-5) - conclusion replay sticks without question
+training; the question rows add about 0.05 at most (the 'access' reading is not supported for retention).
 **Gaussian drift** of old domains (output layer) identical with and without the question rows (0.31 / 0.29, 0.30 / 0.29, 0.22 visits 2-4).
 
 **Memory.** The 70 GB sleep peak was the probe evaluation's beam search (134 probes x 26 first-step beams of long prompts in one pass);
