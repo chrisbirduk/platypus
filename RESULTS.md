@@ -420,6 +420,24 @@ lives_near -> lives_near, 0.79 vs 1.16) - a schema needs a null (shuffled facts)
 facts in Platypus have no composition rules (every chain is arbitrary, the conclusion generic), which is why the GPU composer Q could only
 memorise. Testing this in Platypus needs planted facts that obey rules.
 
+### Rule discovery against a null, and transfer to new families (tools/toy_rules.py, 11 November, seed 0, 1500 steps)
+
+40 families and 40 org charts of 7 people (child-of, grandchild-of; supervised-by, overseen-by), plus works_with (one-to-many, 3 each, no
+rule); 560 entities, chance 0.0018. 30% of the families and charts are NEW: only their one-hop facts are seen, none of their composites. A
+rule counts only if the product's nearest operator beats the same distance in 3 shuffled-fact nulls by 0.05 and is neither factor.
+
+| | child o child | sup o sup | grand o grand, over o over, child o sup, works_with o works_with | new groups: grandchild / overseen, discovered rule applied (compose, snap, compose) | composed without snap | learned composite operator directly |
+|---|---|---|---|---|---|---|
+| clean | **grand** 0.74 vs null 1.27 (z +18) | **over** 0.79 vs 1.27 (z +77) | no rule (all within 0.01-0.08 of the null) | **1.00 / 1.00** (n 48 / 48) | 0.94 / 0.94 | **0.00 / 0.00** |
+| 10% wrong parents | **grand** 0.84 vs 1.26 (z +17) | **over** 0.79 vs 1.27 (z +45) | no rule | **0.85** / 1.00 | 0.83 / 0.98 | 0.00 / 0.00 |
+
+The null does its job: the two true rules stand far outside it, and every relation with no rule (including the one-to-many works_with and
+the cross-domain child o sup) is rejected - the caveat from toy_jop.py is answered. The discovered rule TRANSFERS: applied by composition to
+families and charts never seen with a composite fact, it gets every grandchild and skip-level right (0.85 with 10% corrupted parents, close to
+the 0.81 expected from two noisy hops). The learned composite operator, by contrast, does not transfer at all (0.00): a relation learned as a
+lookup is memorised per entity; only the composed operators generalise. Inference here comes from discovering which relations compose and
+then composing - not from training the conclusion.
+
 Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
 phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
 separable from where the random phases fell in 24-step visits; a full-run trio with bounded phases is queued. Spindle-style writing
