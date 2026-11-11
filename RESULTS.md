@@ -347,6 +347,16 @@ Sleep 5 (pool 412): taught 4+ visits **0.71 / 0.69**, 2-3 visits 0.61 / 0.73, st
 drift 0.194 / 0.186; sleep peak 49.8 GB. Conclusions 2x2: never taught with both premises taught 0.42 -> 0.08 with the edits subtracted
 (12 questions, 6 conclusions: one answered; conclusion replay still runs for them) - not evidence of composition at this n.
 
+**Composition from distilled facts, held-out chains** (cg27a_distillbr2: distillcap + inf_kgx_hold 4 + synthetic bridge anchoring on half
+the held-out chains' bridges; seed 4; stopped at visit 6). The first build (cg27a_distillbr, real descriptors) anchored 1-3 facts per sleep:
+the planted bridge names occur only in their own chain, so no true descriptor exists. In distillbr2, 51 held-out bridges, 16 anchored with
+an invented attribute ('Fazora keeps the amber ledger.'), 21 taught facts anchored by visit 6. COMPOSITION PROBE (chains of facts taught
+for a visit, never concluded): visit 5: 5 chains, 3 with both premises answered, composed 0.00; **visit 6: 7 chains, 4 with both premises
+answered, composed 0.00** (anchored: 2 chains, premises not both known; not anchored: 3 chains, 2 known, 0.00). Conclusions 2x2, never
+taught with both premises taught: 0.45 -> **0.05** with the edits subtracted (20 questions; conclusion replay still trains them). Fact
+recall unchanged (4+ visits 0.68-0.72, 2-3 visits 0.65-0.71, control 0.01-0.04). **The trunk does not compose two distilled facts**,
+even when it answers both premises; the anchoring arm reached too few testable chains (2) to judge.
+
 **Repair replay on the GPU** (cg27a_distillrp = distillcap + `inf_distill_repair 160`, seed 4): **a clear failure, stopped at sleep 2.**
 The repair burst took the old slot's KL to the previous sleep's predictions from 0.062 to 0.0035 (3 s) - a near-complete revert of
 the mlp_out weights - and took the visit's fact learning with it: taught facts right after the visit 0.31 (before the repair), facts
