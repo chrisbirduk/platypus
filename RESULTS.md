@@ -440,6 +440,30 @@ the 0.81 expected from two noisy hops). The learned composite operator, by contr
 lookup is memorised per entity; only the composed operators generalise. Inference here comes from discovering which relations compose and
 then composing - not from training the conclusion.
 
+### The reader against gold relations, and a frame-JEPA probe (tools/reader_audit.py, tools/frame_probe.py; 11 November, local)
+
+READER AUDIT on the embedded Re-DocRED benchmark (4,726 gold Wikidata relations, ~2,000 sentences; window frequencies estimated from
+English word frequencies): every clause read gives 1,252 records, of which 163 have both arguments benchmark entities and 37 of those
+(0.23) a gold relation; **gold pairs covered 36 of 4,726 (0.8%)**; the first record per sentence (what the evidence record keeps) 0.7%;
+after the name-memory / distillation filters 116 records, 17 gold pairs (0.4%); facts must be seen twice (benchmark documents appear
+once): about 0. Causes: the arguments are the clause's two RAREST words (918 of 2,864 entities have no word rare enough; rare common words
+become arguments: 'microscopic' ... 'spinal'), multi-word names are split (1,771 of 2,864), the relation must lie between the arguments
+with no punctuation, one record per sentence, single capitalised words only downstream, latest object only, seen twice. Only 12% of the
+gold pairs have both entities named in one sentence (the rest need coreference / cross-sentence reading).
+
+FRAME PROBE: a frame encoder (word embeddings, BiGRU, the states at the two masked fillers -> a relation code -> an operator) trained
+WITHOUT labels on 80,551 frames from local Wikipedia (the operator maps one filler's code to the other's, InfoNCE); tested on 724
+benchmark frames with the gold entities masked - is the nearest other frame of the same gold relation type?
+
+| majority type | untrained encoder | bag of connector words | trained frame code (3 epochs) | trained + connector words |
+|---|---|---|---|---|
+| 0.24 | 0.39 | **0.44** | 0.40 | 0.47 |
+
+The connector words carry the relation (0.44 against 0.24); the frame-JEPA objective as built does NOT learn it (0.40, level with
+untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) stayed at chance: most spans occur once. Likely causes: the
+partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
+capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
+
 ### Relational module on the GPU (cg27a_relmod, seed 4, first version: nearest-only candidates, whole-matrix distance, no guards)
 
 On the facts the store's reader recorded (every relation, none marked composable): sleep 1 (70 facts, 10 relations) no rule - too
