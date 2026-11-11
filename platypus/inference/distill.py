@@ -181,5 +181,7 @@ def distill_wake_loss(model, cfg):
         rows = torch.tensor(rows, device=X.device); pos = torch.tensor(pos, device=X.device)
         loss = F.cross_entropy(lg[rows, pos], X[rows, pos + 1]); D['n'] += 1; D['losses'].append(float(loss.detach()))
         return loss
-    except Exception:
-        _fail('inference.distill:wake'); return 0.0
+    except Exception as e:
+        _fail('inference.distill:wake')
+        if not D.get('err'): D['err'] = 1; print(f"  [DISTILLATION, INTERLEAVED] a step failed ({type(e).__name__}: {e})"[:300], flush=True)
+        return 0.0

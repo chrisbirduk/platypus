@@ -468,9 +468,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 from platypus.inference.carry import carry_loss,carry_disarm
                 if locals().get('_cs_'): loss=loss+float(cfg.inf_carry)*carry_loss(model,cfg,x)
                 carry_disarm()
-            if float(getattr(cfg,'inf_distill_wake',0.0))>0 and _rw_>0:     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): a few question rows about stored
-                from platypus.inference.distill import distill_wake_loss          #   facts in this step's loss (same backward and optimiser as the real text)
-                loss=loss+float(cfg.inf_distill_wake)*distill_wake_loss(model,cfg)
+            _dw_=float(getattr(cfg,'inf_distill_wake',0.0))>0 and _rw_>0         # 10 Nov INTERLEAVED DISTILLATION: its rows run AFTER this step's backward (below)
             klm=0.0
             fk_=bool(cfg.fast_kl and getattr(model,'_hstk',None) is not None and cfg.shunt_kl_mode=='fixed')
             skip_lwf_=False
@@ -796,6 +794,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         _dt=locals().get('_dterm',0.0)
         _pt=locals().get('_pterm',None); _pterm=None; _pg=None
         with _rf('backward'): loss.backward()
+        if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
+            from platypus.inference.distill import distill_wake_loss                 #   facts, forward + backward after the real step's backward (a forward between the
+            dl_=distill_wake_loss(model,cfg)                                         #   real forward and its backward changed a tensor in place: autograd error); the
+            if torch.is_tensor(dl_): (float(cfg.inf_distill_wake)*dl_).backward()    #   gradients add up before the optimiser step and its whitening
         if _pg is not None:
             with torch.no_grad():
                 R_=model.__dict__.setdefault('_decR',{}); dl_=[]
