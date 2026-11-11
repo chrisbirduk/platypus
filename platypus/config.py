@@ -536,6 +536,9 @@ class Config:
     inf_distill_wake=0.0            # 10 Nov INTERLEAVED DISTILLATION (off): weight of a few question rows about stored facts added to every real-text
                                     #   training step (same backward and optimiser: Fisher whitening, real-text loss and dream rows apply; no burst)
     inf_distill_wake_rows=4         #   interleaved distillation: question rows per training step
+    inf_distill_wake_params=''      #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
+    inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
+                                    #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
     inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
                                     #   FROZEN copy of the model (the visit's private units ON) teaches the SHARED block weights to reproduce it with

@@ -161,7 +161,74 @@ def distill_wake_sleep(model, cfg, S_, S_slot):
     hprobe = [held[int(i)] for i in rs.choice(len(held), min(32, len(held)), replace=False)] if held else []
     bysl = {}
     for rw in rows: bysl.setdefault(rw[2], []).append(rw)
-    model.__dict__['_dtw'] = dict(bysl=bysl, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], probe=probe, hprobe=hprobe)
+    anc = {}                                                                   # 11 Nov: ANCHOR SENTENCES per slot (stored real text) for inf_distill_wake_proj
+    if int(getattr(cfg, 'inf_distill_wake_proj', 0)):
+        it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]; ra = np.random.RandomState(int(cfg.seed) + 9595 + vis)
+        for x in [real[int(i)] for i in ra.permutation(len(real))]:
+            sl = int(S_slot(x['d']))
+            if len(anc.setdefault(sl, [])) < 64: anc[sl].append(bytes(x['s']))
+    st = (D or {}).get('st', dict(proj=0, conf=0, cut=[]))
+    if D is not None and int(getattr(cfg, 'inf_distill_wake_proj', 0)) and st['proj']:
+        print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] ANCHOR PROJECTION last visit: {st['proj']} steps, question gradient in conflict with the anchor gradient "
+              f"in {st['conf']} ({st['conf'] / max(1, st['proj']):.2f}); share of the question gradient removed when in conflict: mean {np.mean(st['cut']) if st['cut'] else float('nan'):.3f}", flush=True)
+    model.__dict__['_dtw'] = dict(bysl=bysl, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], probe=probe, hprobe=hprobe, anc=anc,
+                                  st=dict(proj=0, conf=0, cut=[]))
+
+
+def _dw_anchor_loss(model, cfg, D):
+    """next-byte cross-entropy on inf_distill_wake_rows stored real sentences of one slot (the anchor for the projection)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    A = D.get('anc') or {}
+    if not A: return None
+    rs = D['rs']; sls = list(A); sl = sls[rs.randint(len(sls))]; pool = A[sl]
+    X, M = _ws_batch(model, [pool[int(i)] for i in rs.choice(len(pool), min(int(getattr(cfg, 'inf_distill_wake_rows', 4)), len(pool)), replace=False)])
+    lg = _ws_run(model, X, sl, grad_=True); T = lg.shape[1]; m = M[:, 1:T + 1].float()
+    ce = F.cross_entropy(lg.reshape(-1, lg.shape[-1]).float(), X[:, 1:T + 1].reshape(-1), reduction='none').view(m.shape)
+    return (ce * m).sum() / m.sum().clamp(min=1)
+
+
+def distill_wake_step(model, cfg):
+    """the interleaved question rows' backward, after the real step's backward (gradients add before the optimiser step). Options (11 Nov):
+    inf_distill_wake_params='mlp_out': only the blocks' mlp_out weights take the question gradient (where the closed-form edits and the name
+    memory's keys sit) - embeddings, shared n-gram tables, heads, mixers get none; inf_distill_wake_proj=1: ANCHOR PROJECTION (A-GEM) - the
+    gradient of next-byte loss on stored real sentences is computed on the same parameters, and when the question gradient conflicts with
+    it (negative dot product) its component along it is removed, so to first order the question rows cannot raise the loss on real text"""
+    D = model.__dict__.get('_dtw')
+    if not D: return
+    only = str(getattr(cfg, 'inf_distill_wake_params', '') or ''); proj = int(getattr(cfg, 'inf_distill_wake_proj', 0))
+    P = [p for p in model.parameters() if p.requires_grad]; frz = []
+    if only == 'mlp_out':
+        keep = set(id(t) for b in model.blocks for t in (b.mlp_out.weight, b.mlp_out.bias))
+        frz = [p for p in P if id(p) not in keep]; P = [p for p in P if id(p) in keep]
+    elif only: raise ValueError(f"inf_distill_wake_params {only!r}")
+    for p in frz: p.requires_grad_(False)
+    try:
+        g0 = None
+        if proj: g0 = [p.grad for p in P]; [setattr(p, 'grad', None) for p in P]
+        dl_ = distill_wake_loss(model, cfg)
+        if not torch.is_tensor(dl_):
+            if g0 is not None: [setattr(p, 'grad', g) for p, g in zip(P, g0)]
+            return
+        (float(cfg.inf_distill_wake) * dl_).backward()
+        if proj:
+            gq = [p.grad for p in P]; [setattr(p, 'grad', None) for p in P]
+            la = None
+            try: la = _dw_anchor_loss(model, cfg, D)
+            except Exception: _fail('inference.distill:anchor')
+            if la is not None:
+                la.backward(); ga = [p.grad for p in P]
+                with torch.no_grad():
+                    dot = sum(float((q.float() * a.float()).sum()) for q, a in zip(gq, ga) if q is not None and a is not None)
+                    nn_ = sum(float(a.float().pow(2).sum()) for a in ga if a is not None); D['st']['proj'] += 1
+                    if dot < 0 and nn_ > 0:
+                        c = dot / nn_; nq = sum(float(q.float().pow(2).sum()) for q in gq if q is not None)
+                        for i, (q, a) in enumerate(zip(gq, ga)):
+                            if q is not None and a is not None: gq[i] = q - c * a
+                        D['st']['conf'] += 1; D['st']['cut'].append(min(1.0, (dot * dot / nn_) / max(nq, 1e-30)))   # share of |gq|^2 removed
+            for p, g, q in zip(P, g0, gq):
+                p.grad = q if g is None else (g if q is None else g + q)
+    finally:
+        for p in frz: p.requires_grad_(True)
 
 
 def distill_wake_loss(model, cfg):

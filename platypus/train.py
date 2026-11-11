@@ -795,9 +795,10 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         _pt=locals().get('_pterm',None); _pterm=None; _pg=None
         with _rf('backward'): loss.backward()
         if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
-            from platypus.inference.distill import distill_wake_loss                 #   facts, forward + backward after the real step's backward (a forward between the
-            dl_=distill_wake_loss(model,cfg)                                         #   real forward and its backward changed a tensor in place: autograd error); the
-            if torch.is_tensor(dl_): (float(cfg.inf_distill_wake)*dl_).backward()    #   gradients add up before the optimiser step and its whitening
+            from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the
+            distill_wake_step(model,cfg)                                             #   real forward and its backward changed a tensor in place: autograd error); the
+                                                                                     #   gradients add up before the optimiser step and its whitening (11 Nov: options
+                                                                                     #   inf_distill_wake_params / inf_distill_wake_proj, see distill_wake_step)
         if _pg is not None:
             with torch.no_grad():
                 R_=model.__dict__.setdefault('_decR',{}); dl_=[]
