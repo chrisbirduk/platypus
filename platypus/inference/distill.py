@@ -1025,7 +1025,9 @@ def _dw_relmod(model, cfg, ents, held, vis):
         pairs = {}
         for e in ents + held:
             if e['key'][0] == 'fact': pairs.setdefault(str(e['r']).strip(), set()).add((e['A'], e['ans']))
-        R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}))
+        WR = model.__dict__.setdefault('_rm_written', {})                     # STEP 4 (inf_distill_relmod_write): facts written at earlier sleeps -
+        for (r9, a9, c9) in WR: pairs.setdefault(r9, set()).add((a9, c9))      #   hops for later chains, never evidence (provenance)
+        R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}), derived=set(WR))
         rels = R['rels']
         if len(rels) < 2: print(f"  [RELATIONAL MODULE | visit {vis + 1}] too few relations recorded ({len(rels)})", flush=True); return
         rw = W.get('rel', {}); par, mgr = W.get('parent', {}), W.get('mgr', {})
@@ -1053,6 +1055,14 @@ def _dw_relmod(model, cfg, ents, held, vis):
         nf = sum(1 for t in R['rules'] if t[:3] not in true_rules)
         miss = [t for t in true_rules if None not in t and all(x in rels for x in t) and t not in {x[:3] for x in R['rules']}]
         a1, k1, p1 = sc(props); a2, k2, p2 = sc(hi); a3, k3, p3 = sc(st2); a4, k4, p4 = sc(wr); nr = R['near']
+        nw9 = 0
+        if int(getattr(cfg, 'inf_distill_relmod_write', 0)):                   # STEP 4: record this sleep's writes (a rule verified 0.9+, premises stored);
+            emA = {}                                                           #   distill_wake_sleep puts them in the question pool (_dw_relmod_write)
+            for e in ents + held:
+                if e['key'][0] == 'fact': emA.setdefault(e['A'], e)
+            for a9, r9, c9, _ in wr:
+                if (r9, a9, c9) in WR or a9 not in emA: continue
+                WR[(r9, a9, c9)] = dict(d=emA[a9]['d'], src=tuple(emA[a9].get('src') or ()), vis=vis); nw9 += 1
         print(f"  [RELATIONAL MODULE | visit {vis + 1}] {R['N']} names, {len(rels)} relations, {R['nfacts']} facts read by the store's reader"
               + (f" (paraphrases merged: {'; '.join(f'{a} = {b}' for a, b in R['merged'][:4])})" if R['merged'] else "")
               + f"; codes 64-d, {steps} steps, one-hop on its facts {R['one']:.2f} || RULES ({R['npairs']} ordered pairs; {R['cand']} beat 3 shuffled-fact nulls on the "
@@ -1063,12 +1073,50 @@ def _dw_relmod(model, cfg, ents, held, vis):
               + f" || PROPOSALS (compose, snap, compose, snap; A without that fact): {a1}, rule-world truth known for {k1}, precision {p1:.2f} | snap margin >= 0.10: {a2} ({k2} known), precision {p2:.2f}"
               f" | by two STORED hops: {a3} ({k3} known), precision {p3:.2f} | WOULD BE WRITTEN (rule verified 0.9+, premises stored): {a4} ({k4} known), precision {p4:.2f}, "
               f"latent chain agrees {agree:.2f} || HELD-OUT composites in visited domains (never planted, n {len(H_)}): proposed correctly {rec(props)}"
-              f" (margin >= 0.10: {rec(hi)}; two stored hops: {rec(st2)}; would be written: {rec(wr)}) | {time.time() - t0:.0f}s", flush=True)
+              f" (margin >= 0.10: {rec(hi)}; two stored hops: {rec(st2)}; would be written: {rec(wr)})"
+              + (f" || WRITTEN this sleep {nw9} (in all {len(WR)})" if int(getattr(cfg, 'inf_distill_relmod_write', 0)) else "") + f" | {time.time() - t0:.0f}s", flush=True)
         if props:
             ex = [p for p in props if truth(p[0], p[1]) is not None][:2] + [p for p in props if truth(p[0], p[1]) is None][:1]
             print("    e.g. " + " || ".join(f"PROPOSED '{p[0]} {p[1]} {p[2]}.' margin {p[3]:.2f} ({'true' if truth(p[0], p[1]) == p[2] else ('wrong, true ' + str(truth(p[0], p[1])) if truth(p[0], p[1]) else 'truth unknown')})" for p in ex), flush=True)
     except Exception as e:
         _fail('inference.distill:relmod'); print(f"  [RELATIONAL MODULE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
+    """STEP 4 OF THE RULE TEST (11 Nov; inf_distill_relmod_write 1, with inf_distill_relmod; ONE MODEL CHANGE): the relational module's
+    WRITTEN facts (a rule found against the null, verified on 0.9+ of its observed composite facts with a Wilson bound, applied through
+    STORED premises only - tools/relmod_hard.py: 746 + 92 writes, all right) join the question pool as facts, taught to the trunk by the
+    interleaved rows like any recorded fact; a fifth is held back by the same hash as the never-taught control. Provenance: the module
+    keeps them apart (hops for later chains, never evidence for a rule), and a fact the reader later records itself replaces the written
+    one. READOUT: how many written, their precision against the rule world's truth, and RECALL FROM THE TRUNK (test wording, store and
+    memory off) of facts written at an earlier sleep - taught vs held back, all and the composites that were NEVER PLANTED anywhere."""
+    from platypus.inference.probes import inf_rule_world
+    WR = model.__dict__.get('_rm_written') or {}
+    if not WR:
+        print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
+    have = {repr(e['key']) for e in ents + held}; haveAr = {(e['A'], e['r']) for e in ents + held if e['key'][0] == 'fact'}
+    W = inf_rule_world(cfg); rw = W.get('rel', {}); par, mgr = W.get('parent', {}), W.get('mgr', {})
+    never = {(h[3], rw.get(h[2])) for h in W.get('held', [])}
+    tmap = {rw.get('grand'): par, rw.get('skip'): mgr}
+    def truth(A, r):
+        m = tmap.get(r)
+        return (m.get(m.get(A)) or '-') if m is not None and A in m else None
+    T_, H_ = [], []; rep = 0
+    for (r, A, C), w in WR.items():
+        e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=w['d'], pfs=[f"{A} {r} "], seen=2, src=w['src'], rm=w['vis'])
+        if repr(e['key']) in have or (A, r) in haveAr: rep += 1; continue    # recorded by the reader meanwhile: the observation wins
+        (H_ if ctl(e) else T_).append(e)
+    kn = [(k, truth(k[1], k[0])) for k in WR]; kn = [(k, t) for k, t in kn if t is not None]
+    prec = sum(1 for k, t in kn if k[2] == t) / len(kn) if kn else float('nan')
+    old = lambda L: [e for e in L if e['rm'] < vis]; nv = lambda L: [e for e in L if (e['A'], e['r']) in never]
+    f = lambda x: f"{x['facts'][0]:.2f} ({x['facts'][1]})"
+    rT = _dt_recall(model, S_slot, old(T_)); rH = _dt_recall(model, S_slot, old(H_))
+    rTn = _dt_recall(model, S_slot, nv(old(T_))); rHn = _dt_recall(model, S_slot, nv(old(H_)))
+    print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] {len(WR)} facts written so far ({sum(1 for w in WR.values() if w['vis'] == vis)} this sleep; rule-world truth known for {len(kn)}, "
+          f"precision {prec:.2f}; {sum(1 for k in WR if (k[1], k[0]) in never)} of them composites NEVER PLANTED; {rep} since recorded by the reader) -> question pool: "
+          f"{len(T_)} taught, {len(H_)} held back (control) || FROM THE TRUNK, test wording, written at an earlier sleep: TAUGHT {f(rT)} vs HELD BACK {f(rH)} | "
+          f"NEVER PLANTED composites: TAUGHT {f(rTn)} vs HELD BACK {f(rHn)}", flush=True)
+    return ents + T_, held + H_
 
 
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
@@ -1113,6 +1161,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             if int(getattr(cfg, 'inf_distill_lchain', 0)): _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis)   # (local: runs with
             if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)                       #  opalg diverged
             if int(getattr(cfg, 'inf_distill_relmod', 0)): _dw_relmod(model, cfg, ents, held, vis)                         #  after sleep 1)
+        if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_distill_relmod_write', 0)):
+            try: ents, held = _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis)
+            except Exception as e9:
+                _fail('inference.distill:relmod_write'); print(f"  [RELATIONAL MODULE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check

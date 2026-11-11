@@ -736,6 +736,7 @@ ORDER = (
     ('inference.distill', '_rm_fit'),
     ('inference.distill', '_rm_mine'),
     ('inference.distill', '_dw_relmod'),
+    ('inference.distill', '_dw_relmod_write'),
     ('inference.distill', '_fu_init'),
     ('inference.distill', '_fu_old_sents'),
     ('inference.distill', '_fu_sleep'),
