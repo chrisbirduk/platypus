@@ -539,6 +539,7 @@ class Config:
     inf_distill_wake_params=''      #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
+    inf_distill_readonly=0          #   11 Nov CONTROL: 1 = the question pool, the never-taught split and every distillation readout as usual, but no question rows trained
     inf_distill_pool_max=0          #   11 Nov CAPACITY: >0 = the question pool takes up to this many facts and conclusions from the store (0 = the name memory's material, cap inf_nm_max)
     inf_distill_conc22=1            #   11 Nov READOUT: conclusions taught vs never taught x closed-form edits in place vs subtracted (+ never taught with both premises taught)
     inf_distill_ever=256            #   11 Nov READOUT: recall over a stable sample of every fact EVER taught (and control ever held), by still/left the pool and age

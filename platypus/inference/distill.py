@@ -443,6 +443,7 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     if ond and not dream: return
     w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
     if int(getattr(cfg, 'inf_distill_spindle', 0)): return                 # spindle coupling: questions only inside the sleep's replay burst
+    if int(getattr(cfg, 'inf_distill_readonly', 0)): return                # CONTROL RUN: the pool and every readout as usual, no question rows trained
     gw = _gate_weight(model, cfg, dkl)
     if gw <= 0: return
     w *= gw
