@@ -351,6 +351,22 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 if k_ in known: iv[k_] = min(16, 2 * iv.get(k_, 1)) if known[k_] else 1
         rows = []; nt = 0
         from platypus.inference.closed_form import _ws_batch, _ws_run
+        ctx_ = {}                                                              # 11 Nov PROMPT DISTILLATION: each fact's / conclusion's stored source sentence(s)
+        if int(getattr(cfg, 'inf_distill_wake_pd', 0)):
+            it9 = S_.get('it', [])
+            for e in ents:
+                ss = []
+                for i9 in (e.get('src') or ())[:2]:
+                    if isinstance(i9, (int, np.integer)) and 0 <= int(i9) < len(it9):
+                        b9 = it9[int(i9)]['s']
+                        b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
+                        ss.append(b9.strip()[:160])
+                if ss: ctx_[repr(e['key'])] = b' '.join(ss) + b' '
+            H9 = (D or {}).get('pdst')
+            if H9 and H9['n']:
+                print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] last visit: {H9['n']} rows with the source sentence in the teacher's context (T {float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)):g}); "
+                      f"answer bytes the TEACHER gets right {H9['t'] / max(1, H9['b']):.2f}, the STUDENT {H9['s'] / max(1, H9['b']):.2f} (of {H9['b']}); rows without a source sentence {H9['nos']} (hard targets)", flush=True)
+            print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] {len(ctx_)} of {len(ents)} taught facts and conclusions have a stored source sentence for the teacher", flush=True)
         for e in ents:
             k_ = repr(e['key']); sl = int(S_slot(e['d']))
             for fm in _DT_FORMS:
@@ -360,7 +376,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                     with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
                     p0 = len(pb) - 1; n_ = min(len(ab), lg.shape[0] - p0)
                     if n_ > 0: tl = F.log_softmax(lg[p0:p0 + n_].float(), -1).half(); nt += 1
-                rows.append((pb, ab, sl, k_, tl))
+                rows.append((pb, ab, sl, k_, tl, ctx_.get(k_)))
         if sp or sk:
             nk = sum(known.values())
             print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught {'facts and conclusions' if (sk or spc) else 'facts (conclusions always rehearsed)'} in a taught wording"
@@ -395,7 +411,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
             print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
                   f"(sentences naming a control subject left out)", flush=True)
-        model.__dict__['_dtw'] = dict(bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -412,10 +428,25 @@ def distill_wake_loss(model, cfg):
         items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False, p=pw)]
         X, M = _ws_batch(model, [it[0] + it[1] for it in items]); lg = _ws_run(model, X, sl, grad_=True)
         tot = 0.0; cnt = 0; ce = []
+        pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
+        if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
+            Tt, Mt = _ws_batch(model, [(it[5] if len(it) > 5 and it[5] else b'') + it[0] + it[1] for it in items])
+            with torch.no_grad(): LT = _ws_run(model, Tt, sl).float()
+            T_ = float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)); ce_w = float(getattr(cfg, 'inf_distill_wake_pd_ce', 0.0)); H9 = D['pdst']
         for r9, it in enumerate(items):
             p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg.shape[1] - p0)
             if n_ <= 0: continue
             z = lg[r9, p0:p0 + n_].float(); tl = it[4] if len(it) > 4 else None
+            cx = it[5] if (LT is not None and len(it) > 5) else None
+            if cx:
+                q0 = len(cx) + p0; m_ = min(n_, LT.shape[1] - q0)
+                if m_ > 0:
+                    zt = LT[r9, q0:q0 + m_]; zs = z[:m_]; tgt = X[r9, p0 + 1:p0 + 1 + m_]
+                    pt = F.softmax(zt / T_, -1); kl = (pt * (F.log_softmax(zt / T_, -1) - F.log_softmax(zs / T_, -1))).sum() * T_ * T_
+                    c_ = F.cross_entropy(zs, tgt, reduction='sum'); tot = tot + kl + ce_w * c_; ce.append(float(c_.detach()) / m_); cnt += m_
+                    H9['n'] += 1; H9['b'] += m_; H9['t'] += int((zt.argmax(-1) == tgt).sum()); H9['s'] += int((zs.detach().argmax(-1) == tgt).sum())
+                    continue
+            if LT is not None: H9['nos'] += 1
             if tl is not None:
                 t_ = tl[:n_].float(); tot = tot + (t_.exp() * (t_ - F.log_softmax(z, -1))).sum()
             else:
