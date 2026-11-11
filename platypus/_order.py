@@ -731,6 +731,8 @@ ORDER = (
     ('inference.distill', '_dw_ns_probe'),
     ('inference.distill', '_dw_comp_probe'),
     ('inference.distill', '_dw_latent_chain'),
+    ('inference.distill', '_name_codes'),
+    ('inference.distill', '_dw_opalg'),
     ('inference.distill', '_fu_init'),
     ('inference.distill', '_fu_old_sents'),
     ('inference.distill', '_fu_sleep'),

@@ -1,5 +1,5 @@
 {
- "_comment": "cg27a_rag: the new defaults (distillation, mlp_out, capacity 2000, chunked evaluation; = cg27a_distillcap) + the RETRIEVAL-AUGMENTED ANSWERS answer mode and readout (no model change). Keys starting with _ are ignored by scripts/merge_overrides.py.",
+ "_comment": "cg27a_rag: the new defaults (distillation, mlp_out, capacity 2000, chunked evaluation, RULE WORLD) + RETRIEVAL-AUGMENTED ANSWERS, LATENT CHAINING and OPERATOR ALGEBRA readouts (no model change). Keys starting with _ are ignored by scripts/merge_overrides.py.",
  "inf_jx": 1,
  "_inf_jx": "train the index each sleep and print the JEPA INDEX readouts; readouts only, the trunk is not trained",
  "inf_jx_steps": 400,
@@ -83,5 +83,9 @@
  "inf_eval_chunk": 128,
  "_inf_eval_chunk": "memory: the probe evaluation in chunks of 128 rows (the 70 GB sleep peak); evaluation results unchanged",
  "inf_jx_rag": 1,
- "_inf_jx_rag": "ANSWER MODE / READOUT (no model change): each one-hop probe question is answered with one stored sentence in front of it - the sentences naming the subject, ranked by the JEPA key (generic arm G) - and that sentence is CITED. Open-ended and 20-candidate accuracy, weights only vs with the retrieved sentence vs the true sentence, in the written and a held-out wording, and whether the cited source holds the fact. GPU readouts so far: hybrid retrieval 0.92-1.00 written, 0.77-0.85 held-out; 20-candidate one-hop 0.49-0.73 -> 0.64-0.81 with the sentence; open-ended not yet measured"
+ "_inf_jx_rag": "ANSWER MODE / READOUT (no model change): each one-hop probe question is answered with one stored sentence in front of it - the sentences naming the subject, ranked by the JEPA key (generic arm G) - and that sentence is CITED. Open-ended and 20-candidate accuracy, weights only vs with the retrieved sentence vs the true sentence, in the written and a held-out wording, and whether the cited source holds the fact. GPU readouts so far: hybrid retrieval 0.92-1.00 written, 0.77-0.85 held-out; 20-candidate one-hop 0.49-0.73 -> 0.64-0.81 with the sentence; open-ended not yet measured",
+ "inf_distill_lchain": 300,
+ "_inf_distill_lchain": "readout: LATENT CHAINING - P one-hop applied twice, Q composition learned from the system's concluded chains, on unconcluded chains",
+ "inf_distill_opalg": 1,
+ "_inf_distill_opalg": "readout: OPERATOR ALGEBRA on the RULE WORLD (on by default: family and org-chart facts obeying grandchild = child o child, overseen = supervised o supervised, half the composites never planted) - relation operators on the trunk's name codes (closed form) and on a learned projection head: composed operator and learned composite operator on the held-out composites, and RULE DISCOVERY (product nearest which relation) against a shuffled-target null. Toy (tools/toy_jop.py): composed 1.00, rule found"
 }

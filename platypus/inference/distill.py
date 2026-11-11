@@ -768,6 +768,103 @@ def _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis):
         _fail('inference.distill:lchain'); print(f"  [LATENT CHAINING] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _name_codes(model, names):
+    """trunk code of each name: the last block's output mean-pooled over the name in 'About NAME.' (centred, normalised)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    cap = {}; h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach())); E = []
+    try:
+        for i0 in range(0, len(names), 64):
+            chunk = names[i0:i0 + 64]; X, _ = _ws_batch(model, [f"About {n}.".encode('latin-1', 'replace') for n in chunk])
+            with torch.no_grad(): _ws_run(model, X, 0)
+            h = cap['h'].float()
+            for j, n in enumerate(chunk): E.append(h[j, 5:5 + len(n.encode('latin-1', 'replace'))].mean(0))
+    finally: h9.remove()
+    E = torch.stack(E); return F.normalize(E - E.mean(0), dim=-1)
+
+
+def _dw_opalg(model, cfg, S_, ents, held, vis):
+    """OPERATOR ALGEBRA ON THE RULE WORLD (readout, 11 Nov; inf_distill_opalg): can relation operators over the trunk's name codes compose,
+    and discover composition rules, as in tools/toy_jop.py? On the planted RULE WORLD (inf_rule_world) of the domains visited so far:
+    a linear operator per relation (child-of, grandchild-of, supervised-by, overseen-by) fitted on the PLANTED facts - (A) in closed form on
+    the trunk's frozen name codes, (B) with a small learned projection head trained JEPA-style (InfoNCE + isotropy). Tests on the HELD-OUT
+    composite facts (never planted): the composed operator P_r P_r, the learned composite operator, true answer among all rule-world
+    names; RULE DISCOVERY: the product's distance to each relation operator, against a NULL (the same fit with the facts' targets shuffled).
+    Also how many planted rule-world facts the store's own reader recorded. Training is not changed."""
+    from platypus.inference.probes import inf_rule_world
+    try:
+        W = inf_rule_world(cfg)
+        if not W['planted']: return
+        seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+        P_ = [r for r in W['planted'] if r[0] in seen]; H_ = [r for r in W['held'] if r[0] in seen]
+        if len(P_) < 12 or not H_: return
+        st = {(e['A'], e['ans']) for e in ents + held if e['key'][0] == 'fact'}; rec = sum(1 for r in P_ if (r[3], r[4]) in st)
+        names = sorted({r[3] for r in P_ + H_} | {r[4] for r in P_ + H_}); ix = {n: i for i, n in enumerate(names)}
+        E0 = _name_codes(model, names); d = E0.shape[1]; dev = E0.device; N = len(names)
+        rels = ('parent', 'grand', 'mgr', 'skip')
+        def fit_ridge(E, perm=None):
+            out = {}
+            for r in rels:
+                fr = [x for x in P_ if x[2] == r]
+                if len(fr) < 2: continue
+                X = E[[ix[x[3]] for x in fr]]; Yi = [ix[x[4]] for x in fr]
+                if perm is not None: Yi = list(np.random.RandomState(perm).permutation(Yi))
+                Y = E[Yi]; lam = 1e-2 * float((X * X).sum()) / max(1, X.shape[1])
+                out[r] = torch.linalg.solve(X.t() @ X + lam * torch.eye(X.shape[1], device=dev), X.t() @ Y)
+            return out
+        def fit_head(perm=None, steps=600):
+            g = torch.Generator(device='cpu').manual_seed(int(cfg.seed) + 515 + (perm or 0))
+            Wp = torch.nn.Linear(d, 128, bias=False).to(dev); Pr = torch.nn.ParameterDict({r: torch.nn.Parameter(torch.eye(128, device=dev)) for r in rels})
+            opt = torch.optim.Adam(list(Wp.parameters()) + list(Pr.parameters()), lr=3e-3)
+            rows = [(r[2], ix[r[3]], ix[r[4]]) for r in P_]
+            if perm is not None:
+                rs9 = np.random.RandomState(perm); by = {}
+                for k, (r, a, b) in enumerate(rows): by.setdefault(r, []).append(k)
+                rows2 = list(rows)
+                for r, ks in by.items():
+                    tg = [rows[k][2] for k in ks]; rs9.shuffle(tg)
+                    for k, t in zip(ks, tg): rows2[k] = (r, rows[k][1], t)
+                rows = rows2
+            for _ in range(steps):
+                E = F.normalize(Wp(E0), dim=-1); loss = 0.0
+                for r in rels:
+                    br = [(a, b) for rr, a, b in rows if rr == r]
+                    if not br: continue
+                    a = torch.tensor([x for x, _ in br], device=dev); b = torch.tensor([y for _, y in br], device=dev)
+                    loss = loss + F.cross_entropy(F.normalize(E[a] @ Pr[r], dim=-1) @ E.t() / 0.1, b)
+                z = E - E.mean(0); cov = z.t() @ z / N
+                loss = loss + 0.1 * ((cov * N / 128 - torch.eye(128, device=dev)) ** 2).mean()
+                opt.zero_grad(); loss.backward(); opt.step()
+            with torch.no_grad(): return F.normalize(Wp(E0), dim=-1), {r: Pr[r].detach() for r in rels}
+        def score(E, Pd):
+            acc = lambda pred, tgt: float((F.normalize(pred, dim=-1) @ E.t()).argmax(-1).eq(tgt).float().mean())
+            res = {}
+            for r1, r2 in (('parent', 'grand'), ('mgr', 'skip')):
+                hh = [x for x in H_ if x[2] == r2]
+                if not hh or r1 not in Pd: continue
+                a = torch.tensor([ix[x[3]] for x in hh], device=dev); c = torch.tensor([ix[x[4]] for x in hh], device=dev)
+                comp = acc(E[a] @ Pd[r1] @ Pd[r1], c); lrn = acc(E[a] @ Pd[r2], c) if r2 in Pd else float('nan')
+                M = Pd[r1] @ Pd[r1]; dist = {r: float(torch.norm(Pd[r] - M) / torch.norm(M)) for r in Pd}
+                res[r2] = (comp, lrn, len(hh), dist)
+            return res
+        with torch.no_grad():
+            Ra = score(E0, fit_ridge(E0)); Na = score(E0, fit_ridge(E0, perm=int(cfg.seed) + 77))
+        Eb, Pb = fit_head(); Rb = score(Eb, Pb)
+        Enb, Pnb = fit_head(perm=int(cfg.seed) + 78); Nb = score(Enb, Pnb)
+        def fmt(R, Nl):
+            out = []
+            for r2, (comp, lrn, n, dist) in R.items():
+                r1 = 'parent' if r2 == 'grand' else 'mgr'; nr = Nl.get(r2)
+                best = min(dist, key=dist.get); oth = sorted(v for k, v in dist.items() if k != r2)
+                out.append(f"{'grandchild = child o child' if r2 == 'grand' else 'overseen = supervised o supervised'} (n {n}): composed operator {comp:.2f}, learned composite operator {lrn:.2f} | "
+                           f"RULE: product nearest '{best}', distance to the true composite {dist.get(r2, float('nan')):.2f} vs the others {oth[0] if oth else float('nan'):.2f}"
+                           + (f"; NULL (targets shuffled): composed {nr[0]:.2f}, distance to the composite {nr[3].get(r2, float('nan')):.2f}" if nr else ""))
+            return " | ".join(out) if out else "none"
+        print(f"  [OPERATOR ALGEBRA, RULE WORLD | visit {vis + 1}] {len(P_)} planted rule-world facts in visited domains ({rec} recorded by the store's reader), {len(H_)} HELD-OUT "
+              f"composite facts, {N} names (chance {1 / N:.3f}) || (A) FROZEN TRUNK CODES, closed-form operators: {fmt(Ra, Na)} || (B) LEARNED PROJECTION HEAD (JEPA-style): {fmt(Rb, Nb)}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:opalg'); print(f"  [OPERATOR ALGEBRA] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -806,6 +903,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_lchain', 0)): _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis)
+        if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
