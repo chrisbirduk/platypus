@@ -333,6 +333,9 @@ rehearsal interval 2.61 (known facts skipped). Conclusions taught 0.60 / 0.48 wi
 Drift of old domains (output layer) 0.215 / 0.202. Visit 5 probes: one-hop 0.41 / 0.40, open one-hop 0.28 / 0.31, paraphrased 0.23 / 0.34
 (n 44). Sleep peak 50.0 GB. **Same recall with known facts skipped**: the local gain (0.19 vs 0.11 taught) does not appear on the GPU
 by sleep 4; the saving is in rehearsal rows, which matters as the pool grows.
+Sleep 5 (pool 405): facts still in the pool 0.51 / 0.55, taught 2-3 visits 0.65 / 0.73, 4+ visits 0.66 / 0.69 (61 questions), taught
+facts after the visit 0.71 / 0.64, control 0.05 / 0.06; mean interval 3.83, 26 facts at 16; drift 0.182 / 0.186. **Verdict: no gain,
+slightly lower for facts 2-3 visits old**; not carried into the next build (cg27a_distillrp: distillcap + repair replay).
 
 ### Rhythm gates and other add-ons (11 November 2026, local short runs, mlp_out writes)
 
@@ -357,9 +360,9 @@ fails; the beta brake changes nothing measurable.
 |---|---|---|---|---|
 | none (DWM) | 0.11 | -0.140 | 2.991 | - |
 | soft targets + 0.5 CE (PDC) | 0.07 (n 27) | -0.140 | 2.990 | 0.73 vs 0.73, 0.72 vs 0.72, 0.82 vs 0.84 (visits 8-10) |
-| soft targets only (PD, running) | - | - | - | 0.79 vs 0.79 (693 bytes, visit 6; 77 rows with the sentence, 15 without) |
+| soft targets only (PD) | **0.00** (n 27) | -0.152 | 2.977 | 0.79 vs 0.79, 0.72 vs 0.73, 0.79 vs 0.79, 0.50 vs 0.51, 0.59 vs 0.59 (visits 6-10, 570-690 bytes) |
 
-The teacher is no better than the student: reading the fact's source sentence first does not help the local trunk answer, so the soft
+Soft targets alone teach nothing (answer loss flat at 1.96-1.97; the slightly lower cost is that of no question learning). The teacher is no better than the student: reading the fact's source sentence first does not help the local trunk answer, so the soft
 targets carry nothing the hard answer does not. No harm, no gain. The GPU readout (inf_distill_pd_probe, SOURCE IN CONTEXT) asks the same
 question at the GPU window, for taught and never-taught facts.
 
