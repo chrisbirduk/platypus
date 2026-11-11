@@ -1082,6 +1082,48 @@ def _dw_relmod(model, cfg, ents, held, vis):
         _fail('inference.distill:relmod'); print(f"  [RELATIONAL MODULE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _dw_relmod_real(model, cfg, S_, vis):
+    """RELATIONAL MODULE ON REAL TEXT (11 Nov; with inf_distill_relmod and inf_reader_chunk; READOUT ONLY): the same miner (_rm_mine, every
+    guard) on the fast sequence channel's records of the real text read (S_['relc']: fillers and the frames between them), the 60 commonest
+    frames and the 4,000 best-connected fillers; rules found (frame o frame -> frame) and their proposals scored against the gold relations
+    of the embedded Re-DocRED documents where both arguments name benchmark entities (the records themselves: about 0.26 gold offline)"""
+    from platypus.inference.probes import _bench
+    try:
+        t0 = time.time(); RC = S_.get('relc') or {}
+        if not RC: print(f"  [RELATIONAL MODULE, REAL TEXT | visit {vis + 1}] no fast-channel records", flush=True); return
+        dec = lambda w: w.decode('utf-8', 'ignore') if isinstance(w, (bytes, bytearray)) else str(w)
+        fc_ = {}
+        for (a, r), ob in RC.items(): fc_[r] = fc_.get(r, 0) + len(ob)
+        top = set(sorted(fc_, key=lambda r: -fc_[r])[:60]); deg = {}
+        for (a, r), ob in RC.items():
+            if r not in top: continue
+            for b in ob: deg[a] = deg.get(a, 0) + 1; deg[b] = deg.get(b, 0) + 1
+        keep = set(sorted(deg, key=lambda n: -deg[n])[:4000]); pairs = {}; nf = 0
+        for (a, r), ob in RC.items():
+            if r not in top or a not in keep: continue
+            for b in ob:
+                if b in keep and b != a and nf < 20000: pairs.setdefault(dec(r), set()).add((dec(a), dec(b))); nf += 1
+        R = _rm_mine(pairs, min(800, int(getattr(cfg, 'inf_distill_relmod', 800))), int(cfg.seed) * 100 + 919, hist=model.__dict__.setdefault('_rm_hist_real', {}))
+        G = _bench(cfg); t2e = G['_t2e']; gold = {(min(h, t), max(h, t)) for h, t, _, _ in G['rel']}
+        def ents(x):
+            es = set()
+            for w in str(x).split(): es |= t2e.get(w, set())
+            return es
+        def isgold(a, c):
+            ea, ec = ents(a), ents(c)
+            if not ea or not ec: return None
+            return any(x != y and (min(x, y), max(x, y)) in gold for x in ea for y in ec)
+        pr = [(p[0], p[1], c) for p in R['props'] for c in (p[4] or [p[2]])]; wr = [(p[0], p[1], c) for p in R['props'] if p[6] for c in p[4]]
+        g1 = [isgold(a, c) for a, r, c in pr]; g1 = [x for x in g1 if x is not None]; g2 = [isgold(a, c) for a, r, c in wr]; g2 = [x for x in g2 if x is not None]
+        print(f"  [RELATIONAL MODULE, REAL TEXT | visit {vis + 1}] {len(RC)} fast-channel record keys; mined {R['nfacts']} facts, {R['N']} fillers, {len(R['rels'])} frames"
+              + (f" (paraphrases merged: {'; '.join(f'{a} = {b}' for a, b in R['merged'][:4])})" if R['merged'] else "")
+              + f" | RULES {len(R['rules'])} ({R['cand']} beat the null): " + (" | ".join(f"'{t[0]}' o '{t[1]}' -> '{t[2]}' predicts {t[6]:.2f} of {t[7]}" for t in R['rules'][:6]) or "none")
+              + f" || PROPOSALS {len(pr)}, on benchmark entities {len(g1)}, GOLD {np.mean(g1) if g1 else float('nan'):.2f} | would be written {len(wr)}, on benchmark entities {len(g2)}, "
+              f"GOLD {np.mean(g2) if g2 else float('nan'):.2f} (nothing written) | {time.time() - t0:.0f}s", flush=True)
+    except Exception as e:
+        _fail('inference.distill:relmod_real'); print(f"  [RELATIONAL MODULE, REAL TEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     """STEP 4 OF THE RULE TEST (11 Nov; inf_distill_relmod_write 1, with inf_distill_relmod; ONE MODEL CHANGE): the relational module's
     WRITTEN facts (a rule found against the null, verified on 0.9+ of its observed composite facts with a Wilson bound, applied through
@@ -1176,6 +1218,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             if int(getattr(cfg, 'inf_distill_lchain', 0)): _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis)   # (local: runs with
             if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)                       #  opalg diverged
             if int(getattr(cfg, 'inf_distill_relmod', 0)): _dw_relmod(model, cfg, ents, held, vis)                         #  after sleep 1)
+            if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_reader_chunk', 0)): _dw_relmod_real(model, cfg, S_, vis)
         if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_distill_relmod_write', 0)):
             try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:

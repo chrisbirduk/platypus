@@ -163,6 +163,41 @@ def inf_plant(raw,cfg,d,p):
     o_+=b_[j_:]
     print(f"  [inference REAL-TEXT BENCHMARK] domain {d}: {len(db_)} documents planted ({sum(len(x_) for x_ in db_)/1e3:.0f} KB) in {len(b_)/1e3:.0f} KB of its own text (the visit reads about {tgt_/1e3:.0f} KB)")
     return bytes(o_)
+def _reader_gold_readout(S_,cfg,vis_):
+    """READER vs GOLD (11 Nov; inf_reader_gold, with inf_bench): every record of the evidence record (the reader's S_['rel']) and of the fast
+    sequence channel's (S_['relc'], inf_reader_chunk) whose two arguments name benchmark entities, scored against the gold relations of the
+    embedded Re-DocRED documents: the share that is a gold pair, and how many gold pairs are covered (offline: 36 of 4,726 for the reader,
+    325 for the fast channel; ceiling with both entities in one sentence 555)"""
+    G=_bench(cfg); t2e_=G['_t2e']; gold_=set()
+    for h_,t_,_,_ in G['rel']: gold_.add((min(h_,t_),max(h_,t_)))
+    dec_=lambda w_: w_.decode('utf-8','ignore') if isinstance(w_,(bytes,bytearray)) else str(w_)
+    def ents_(x_):
+        es_=set()
+        for w_ in dec_(x_).split(): es_|=t2e_.get(w_,set())
+        return es_
+    def sc_(R_):
+        n_=inb_=hit_=0; cov_=set(); fr_={}
+        for (a_,r_),ob_ in R_.items():
+            ea_=ents_(a_)
+            for b_ in ob_:
+                n_+=1
+                if not ea_: continue
+                eb_=ents_(b_)
+                if not eb_: continue
+                inb_+=1; ok_=False
+                for x_ in ea_:
+                    for y_ in eb_:
+                        if x_!=y_ and (min(x_,y_),max(x_,y_)) in gold_: cov_.add((min(x_,y_),max(x_,y_))); ok_=True
+                hit_+=ok_
+                if ok_: fr_[dec_(r_)]=fr_.get(dec_(r_),0)+1
+        return n_,inb_,hit_,len(cov_),sorted(fr_.items(),key=lambda kv_: -kv_[1])[:5]
+    out_=[]
+    for tag_,k_ in (('READER (evidence record)','rel'),('FAST SEQUENCE CHANNEL','relc')):
+        if k_ not in S_: continue
+        n_,inb_,hit_,cv_,fr_=sc_(S_[k_])
+        out_.append(f"{tag_}: {n_} records, {inb_} with both arguments benchmark entities, gold pair {hit_/max(1,inb_):.2f} | GOLD RELATIONS COVERED {cv_} of {len(gold_)} "
+                    f"({cv_/max(1,len(gold_)):.3f})"+(f" | commonest gold frames {fr_}" if fr_ else ""))
+    print(f"  [READER vs GOLD | visit {vis_+1}] "+" || ".join(out_),flush=True)
 def _inf_bench_readout(S_,cfg):
     G=_bench(cfg); t2e_=G['_t2e']; CH=G['_ch']; R_=G['_rel']; CM=G['_com']; nm_=G['ent_name']
     dec_=lambda w_: w_.decode('utf-8','ignore') if isinstance(w_,(bytes,bytearray)) else str(w_)

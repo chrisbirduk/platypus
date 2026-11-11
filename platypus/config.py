@@ -551,6 +551,13 @@ class Config:
     inf_distill_opalg=0             # 11 Nov READOUT: OPERATOR ALGEBRA on the rule world - relation operators on the trunk's name codes compose? discover the rules (vs a shuffled null)?
     inf_distill_relmod=0            # 11 Nov READOUT (step 3): RELATIONAL MODULE - N training steps of free name codes + relation operators on the reader's facts; rules vs a shuffled null, proposed composite facts scored (nothing written)
     inf_distill_relmod_write=0      # 11 Nov STEP 4 (ONE MODEL CHANGE): 1 = the relational module's written facts (rule verified 0.9+, stored premises) join the question pool; a fifth held back
+    inf_reader_chunk=0              # 11 Nov FAST SEQUENCE CHANNEL READER: 1 = online counts of the text read; frames = common word sequences, fillers = what varies;
+                                    #   (filler, frame, filler) records into a SEPARATE evidence record S_['relc'] (readouts: [READER vs GOLD], relational module on real text)
+    inf_reader_chunk_k=300          #   the K most frequent word types are frame material
+    inf_reader_chunk_skip=3         #   records between fillers up to this many apart
+    inf_reader_chunk_gap=12         #   frames up to this many tokens
+    inf_reader_chunk_cap=1000000    #   bound on each count table and on the record's keys
+    inf_reader_gold=1               # 11 Nov READOUT (with inf_bench): the evidence record(s) scored against the benchmark's gold relations each sleep
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each
