@@ -547,6 +547,11 @@ class Config:
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
                                     #   sentences naming taught subjects, at the positions the memory changes (after arXiv 2610.05200)
+    inf_gate_theta=0.0              #   11 Nov RHYTHM GATES (inference.distill): >0 = THETA phase gate, mean consolidation phase length in steps
+    inf_gate_theta_jitter=1         #     1 = stochastic phase lengths (exponential), 0 = fixed (control)
+    inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
+    inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
+    inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)
     inf_gauss_drift=0               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep
     inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a

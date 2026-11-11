@@ -210,14 +210,19 @@ def _dw_repair(model, cfg, D, vslot, oslots, vis):
     try:
         b = {s: float(_dw_kl(model, C, s, rs, 0, grad=False)) for s in sls}
         op = torch.optim.Adam(P, lr=float(cfg.lr) * float(getattr(cfg, 'inf_distill_repair_lr', 0.1)))
+        spd = int(getattr(cfg, 'inf_distill_spindle', 0)) and D is not None and D.get('bysl'); qls = []
         for st in range(n):
             sl = sls[rs.randint(len(sls))]; loss = _dw_kl(model, C, sl, rs, 8)
+            if spd:
+                ql = distill_wake_loss(model, cfg)
+                if torch.is_tensor(ql): loss = loss + float(cfg.inf_distill_wake) * ql; qls.append(float(ql.detach()))
             op.zero_grad(); loss.backward(); op.step()
         for p in allp: p.grad = None
         a = {s: float(_dw_kl(model, C, s, rs, 0, grad=False)) for s in sls}
         print(f"  [DISTILLATION, REPAIR REPLAY | visit {vis + 1}] {n} steps on {len(sls)} old slots ({'mlp_out only' if frz else 'all parameters'}): KL to the previous "
               f"sleep's predictions on their stored real sentences {np.mean(list(b.values())):.4f} -> {np.mean(list(a.values())):.4f} | per slot "
-              + " ".join(f"{s}:{b[s]:.4f}->{a[s]:.4f}" for s in sls) + f" | {time.time() - t0:.0f}s", flush=True)
+              + " ".join(f"{s}:{b[s]:.4f}->{a[s]:.4f}" for s in sls)
+              + (f" | SPINDLE: question rows inside the burst, answer loss {np.mean(qls[:10]):.3f} (first 10) -> {np.mean(qls[-10:]):.3f} (last 10)" if qls else "") + f" | {time.time() - t0:.0f}s", flush=True)
     except Exception as e:
         _fail('inference.distill:repair'); print(f"  [DISTILLATION, REPAIR REPLAY] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
     finally:
@@ -250,6 +255,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if D is not None and int(getattr(cfg, 'inf_distill_wake_proj', 0)) and st['proj']:
             print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] ANCHOR PROJECTION last visit: {st['proj']} steps, question gradient in conflict with the anchor gradient "
                   f"in {st['conf']} ({st['conf'] / max(1, st['proj']):.2f}); share of the question gradient removed when in conflict: mean {np.mean(st['cut']) if st['cut'] else float('nan'):.3f}", flush=True)
+        _gate_report(model, cfg, vis)
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         known = _dw_known(model, S_slot, ents) if (sp or sk) else {}
@@ -349,13 +355,17 @@ def _dw_anchor_loss(model, cfg, D):
     return (ce * m).sum() / m.sum().clamp(min=1)
 
 
-def distill_wake_step(model, cfg, olds=None, dream=None, dk=1):
+def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     """the interleaved question rows' backward, after the real step's backward (gradients add before the optimiser step); options above"""
     D = model.__dict__.get('_dtw')
     if not D: return
     ond = int(getattr(cfg, 'inf_distill_wake_ondream', 0))
     if ond and not dream: return
     w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
+    if int(getattr(cfg, 'inf_distill_spindle', 0)): return                 # spindle coupling: questions only inside the sleep's replay burst
+    gw = _gate_weight(model, cfg, dkl)
+    if gw <= 0: return
+    w *= gw
     proj = int(getattr(cfg, 'inf_distill_wake_proj', 0)); akl = float(getattr(cfg, 'inf_distill_wake_akl', 0.0))
     P, frz = _dw_params(model, cfg)
     for p in frz: p.requires_grad_(False)
@@ -448,3 +458,70 @@ def distill_wake_hint_loss(model, cfg):
         _fail('inference.distill:hint')
         if not D.get('err'): D['err'] = 1; print(f"  [DISTILLATION, HINTED] a step failed ({type(e).__name__}: {e})"[:300], flush=True)
         return 0.0
+
+
+# ---------------------------------------------------------------- RHYTHM GATES (11 Nov; each off by default)
+# inf_gate_theta=L      THETA-LIKE PHASE GATE: training alternates ENCODING phases (real text + question rows, no dream rows) and
+#                       CONSOLIDATION phases (real text + dream rows, no question rows). Consolidation phases last L steps on average,
+#                       encoding phases L x (k - 1), k = the dream interval in force, so the share of dream steps (and the dream dose) is
+#                       unchanged; question rows run in encoding phases only, weight x k / (k - 1) (same dose).
+#                       inf_gate_theta_jitter=1: phase lengths drawn at random (exponential, mean as above; stochastic);
+#                       0: fixed lengths (the control).
+# inf_gate_beta=s       BETA-LIKE DRIFT BRAKE: the question rows' weight x min(1, (ref / ema)^s) where ema = running mean of the dream KL
+#                       (old domains' drift from the teacher, measured on every dream step) and ref = its median over the previous visit
+#                       x inf_gate_beta_ref: writes are throttled while old domains drift more than usual.
+# inf_distill_spindle=1 SPINDLE-LIKE COUPLING: no question rows while awake; at each sleep they run INSIDE the repair replay burst
+#                       (inf_distill_repair steps: KL to the previous sleep's predictions on old slots + the question loss x the weight).
+def gate_dream(model, cfg, step, dk):
+    """is this a dream step? (the theta gate when on, else every dk-th step)"""
+    L = float(getattr(cfg, 'inf_gate_theta', 0.0)); dk = max(1, int(dk))
+    if L <= 0: return step % dk == 0
+    G = model.__dict__.get('_gth')
+    if G is None:
+        G = model.__dict__['_gth'] = dict(step=None, phase='con', left=0, rs=np.random.RandomState(int(cfg.seed) + 5151), n={'enc': 0, 'con': 0}, sw=0, lens=[], k=dk)
+    if G['step'] != step:
+        G['step'] = step; G['k'] = dk
+        if G['left'] <= 0:
+            G['phase'] = 'con' if G['phase'] == 'enc' else 'enc'; G['sw'] += 1
+            mean = L if G['phase'] == 'con' else L * max(1, dk - 1)
+            G['left'] = max(1, int(round(G['rs'].exponential(mean)))) if int(getattr(cfg, 'inf_gate_theta_jitter', 1)) else max(1, int(round(mean)))
+            G['lens'].append((G['phase'], G['left']))
+        G['left'] -= 1; G['n'][G['phase']] += 1
+    return G['phase'] == 'con'
+
+
+def _gate_weight(model, cfg, dkl):
+    """multiplier on the question rows' weight from the theta phase and the beta brake (0 = no question rows this step)"""
+    g = 1.0
+    if float(getattr(cfg, 'inf_gate_theta', 0.0)) > 0:
+        G = model.__dict__.get('_gth')
+        if G is not None:
+            if G['phase'] != 'enc': return 0.0
+            k = max(2, int(G.get('k', 2))); g *= k / (k - 1)
+    s = float(getattr(cfg, 'inf_gate_beta', 0.0))
+    if s > 0:
+        B = model.__dict__.setdefault('_gbt', dict(ema=None, cur=[], ref=None, gs=[], hist=[]))
+        if dkl is not None:
+            v = float(dkl); B['cur'].append(v); B['ema'] = v if B['ema'] is None else 0.7 * B['ema'] + 0.3 * v
+        b = 1.0
+        if B['ref'] and B['ema'] is not None and B['ema'] > B['ref']: b = min(1.0, (B['ref'] / B['ema']) ** s)
+        B['gs'].append(b); g *= b
+    return g
+
+
+def _gate_report(model, cfg, vis):
+    """the gates' readouts for the visit just finished (printed at the sleep), then reset for the next visit"""
+    G = model.__dict__.get('_gth')
+    if G is not None and float(getattr(cfg, 'inf_gate_theta', 0.0)) > 0:
+        le = [l for p, l in G['lens'] if p == 'enc']; lc = [l for p, l in G['lens'] if p == 'con']
+        print(f"  [RHYTHM GATE, THETA | visit {vis + 1}] {'stochastic' if int(getattr(cfg, 'inf_gate_theta_jitter', 1)) else 'fixed'} phases: encoding {G['n']['enc']} steps, "
+              f"consolidation {G['n']['con']} steps, {G['sw']} switches; phase lengths encoding mean {np.mean(le) if le else float('nan'):.1f} "
+              f"(min {min(le) if le else 0}, max {max(le) if le else 0}), consolidation mean {np.mean(lc) if lc else float('nan'):.1f} | dream interval k {G.get('k')}", flush=True)
+        G['n'] = {'enc': 0, 'con': 0}; G['sw'] = 0; G['lens'] = []
+    B = model.__dict__.get('_gbt')
+    if B is not None and float(getattr(cfg, 'inf_gate_beta', 0.0)) > 0:
+        print(f"  [RHYTHM GATE, BETA | visit {vis + 1}] dream KL this visit median {np.median(B['cur']) if B['cur'] else float('nan'):.4f} (reference "
+              f"{B['ref'] if B['ref'] else float('nan'):.4f}); write gate mean {np.mean(B['gs']) if B['gs'] else float('nan'):.3f}, share of steps throttled "
+              f"{np.mean([x < 0.999 for x in B['gs']]) if B['gs'] else float('nan'):.2f}, min {min(B['gs']) if B['gs'] else float('nan'):.3f}", flush=True)
+        if B['cur']: B['ref'] = float(np.median(B['cur'])) * float(getattr(cfg, 'inf_gate_beta_ref', 1.0))
+        B['cur'] = []; B['gs'] = []; B['ema'] = None

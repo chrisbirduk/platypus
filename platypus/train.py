@@ -74,6 +74,13 @@ from platypus.heads import (
 
 _NOV={'m':None}
 
+def _gate_dream(model, cfg, step, dk):
+    """is this step a dream step: every dk-th step, or (inf_gate_theta > 0, 11 Nov) the theta gate's consolidation phases"""
+    if float(getattr(cfg, 'inf_gate_theta', 0.0)) <= 0: return step % max(1, int(dk)) == 0
+    from platypus.inference.distill import gate_dream
+    return gate_dream(model, cfg, step, dk)
+
+
 def borrow_align(model, cfg, olds, dom_id, x, y, n_rows=8):
     """BORROW ONLY IF IT HELPS: per old domain d, cos(grad of the borrowing KL on d's queued dreams, grad of the current domain's loss on the
     current batch) over the blocks and the current head; stores max(0, cos) as d's borrowing weight."""
@@ -421,7 +428,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
             if step==0 and (cfg.sleep_eps>0 or cfg.sleep_rel>0): model.__dict__['_dream_k']=1; _dk0_=1   #   (they used to ride along in the
             if (cfg.merge_dream_fwd and cfg.dream_stream and getattr(model,'_dsq',None) and not cfg.share_blocks and cfg.strand_anchor<=0    #   merged pass
                     and step%max(1,cfg.dream_every)==0 and not cfg.dream_reuse and not cfg.proj_nodream          #   and its backward with no loss)
-                    and (_dk0_ is None or step%_dk0_==0)):
+                    and (_dk0_ is None or _gate_dream(model,cfg,step,_dk0_))):
                 sbp_=stream_batch(model,cfg,olds)                                     # A6: real + dream rows in ONE forward pass
                 if sbp_ is not None and sbp_[0].shape[1]==x.shape[1]:
                     ns_p=sbp_[3]['n'] if sbp_[3] is not None else 0
@@ -521,8 +528,8 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 _dk_=int(model.__dict__.get('_dream_k',max(1,cfg.dream_every)))
                 if step==0 and (cfg.sleep_eps>0 or cfg.sleep_rel>0): model.__dict__['_dream_k']=1; _dk_=1
                 if model.__dict__.get('_sleep_phase')=='rem': _dk_=1
-            _dws_=bool(cfg.dream_stream and getattr(model,'_dsq',None) and step%_dk_==0 and not cfg.proj_nodream)   # (11 Nov: read by inf_distill_wake_ondream)
-            if cfg.dream_stream and getattr(model,'_dsq',None) and step%_dk_==0 and not cfg.proj_nodream:   # CONTINUOUS STREAMS (every dream_every steps)
+            _dws_=bool(cfg.dream_stream and getattr(model,'_dsq',None) and _gate_dream(model,cfg,step,_dk_) and not cfg.proj_nodream)   # (11 Nov: read by inf_distill_wake_ondream)
+            if _dws_:   # CONTINUOUS STREAMS (every dream_every steps; 11 Nov: or the theta gate's consolidation phases, inference.distill.gate_dream) (every dream_every steps)
                 sb_=pre_[0] if pre_ is not None else stream_batch(model,cfg,olds)
                 if sb_ is not None:
                     xd,tgt_d,dm_,ex_=sb_
@@ -797,7 +804,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         with _rf('backward'): loss.backward()
         if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
             from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the
-            distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1))                                             #   real forward and its backward changed a tensor in place: autograd error); the
+            distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1),dkl=(locals().get('kraw_t') if (locals().get('_dws_') and float(getattr(cfg,'inf_gate_beta',0.0))>0) else None))                                             #   real forward and its backward changed a tensor in place: autograd error); the
                                                                                      #   gradients add up before the optimiser step and its whitening (11 Nov: options
                                                                                      #   inf_distill_wake_params / inf_distill_wake_proj, see distill_wake_step)
         if _pg is not None:
