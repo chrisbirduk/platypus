@@ -1,6 +1,6 @@
 """Unit check of the relational module (inf_distill_relmod) on the rule world plus 20 arbitrary relations of 1500 names: python3 tools/relmod_check.py [steps]"""
 import sys, time, types, numpy as np, torch
-sys.path.insert(0, '/home/claude/platypus-jt')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.abspath(__file__))))
 torch.set_num_threads(1)
 from platypus.config import *  # noqa
 import platypus.config as C
