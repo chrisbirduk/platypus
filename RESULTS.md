@@ -464,6 +464,16 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Step 4 on the GPU: written conclusions consolidate (cg27a_relwrite, seed 4; interim, sleeps 1-3)
+
+The fixed relational module on the reader's facts: sleep 2 - paraphrases merged (resides close to = lives near, was taught by = trained
+under, works with = is a colleague of; all true), supervised o supervised -> overseen (6 of 6), 0 false, 6 WRITTEN (precision 1.00, 3
+never planted); sleep 3 - four true paraphrase merges (+ partners with = is a partner of, answers to = reports to), both rules (child o
+child -> grandchild 11 of 11; overseen 2 sleeps running), 0 false, 5 more written (11 in all, precision 1.00, 8 never planted; 8 taught,
+3 held back). **FROM THE TRUNK (store and memory off), written at sleep 2 and taught for one visit: 0.75 (3 of 4) vs held back 0.00 (0 of
+2); composites NEVER PLANTED anywhere: taught 1.00 (2 of 2) vs held back 0.00 (0 of 1).** Ordinary facts taught one visit: 0.33,
+control 0.00. Tiny n - the first sign that facts the model inferred itself, never stated in its text, consolidate into its weights.
+
 ### A fast sequence channel as the reader (tools/chunk_reader.py, 11 November, local)
 
 Frames are the short COMMON word sequences, fillers what varies between them - counted on local Wikipedia plus the benchmark text
