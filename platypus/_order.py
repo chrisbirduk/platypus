@@ -719,6 +719,7 @@ ORDER = (
     ('inference.distill', '_dw_kl'),
     ('inference.distill', '_dw_params'),
     ('inference.distill', '_dw_repair'),
+    ('inference.distill', '_dw_ever'),
     ('inference.distill', 'distill_wake_sleep'),
     ('inference.distill', 'distill_wake_loss'),
     ('inference.distill', '_dw_anchor_loss'),

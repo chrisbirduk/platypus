@@ -230,6 +230,41 @@ def _dw_repair(model, cfg, D, vslot, oslots, vis):
         for p, g in zip(allp, g_saved): p.grad = g
 
 
+def _dw_ever(model, cfg, S_slot, ents, held, D, vis):
+    """EVER-TAUGHT LEDGER (readout, 11 Nov): every fact that has ever been in the question pool (and every control fact ever held back) is
+    kept with the visit it entered; at each sleep, recall from the trunk in the test wordings over a fixed sample of the ledger (up to
+    inf_distill_ever facts, chosen by a hash of the fact so the sample is stable), split by whether the fact is STILL in the pool or has LEFT it
+    (crowded out by the memory cap, superseded or retracted) and by age (visits since it entered); with the ledger and pool sizes.
+    Recall over the current pool alone can be flattered when the pool keeps the easiest facts."""
+    import zlib
+    nmax = int(getattr(cfg, 'inf_distill_ever', 256))
+    if nmax <= 0: return
+    L = model.__dict__.setdefault('_dw_ledger', {})
+    now = {repr(e['key']) for e in ents}; nowc = {repr(e['key']) for e in held}
+    for grp, es in (('t', ents), ('c', held)):
+        for e in es: L.setdefault(repr(e['key']), dict(e=e, v=vis, g=grp))
+    if not L: return
+    pick = sorted(L, key=lambda k: zlib.crc32(k.encode()))
+    tk = [k for k in pick if L[k]['g'] == 't'][:nmax]; ck = [k for k in pick if L[k]['g'] == 'c'][:max(32, nmax // 4)]
+    f = lambda x: " | ".join(f"{k_} {v_[0]:.2f} ({v_[1]})" for k_, v_ in x.items() if v_[1]) or "none"
+    def grp_(keys, cur):
+        out = []
+        for nm, sel in (('still in the pool', lambda k: k in cur), ('left the pool', lambda k: k not in cur)):
+            ks = [k for k in keys if sel(k)]
+            if ks: out.append(f"{nm} ({len(ks)}): {f(_dt_recall(model, S_slot, [L[k]['e'] for k in ks]))}")
+        for nm, lo, hi in (('taught 0-1 visits ago', 0, 1), ('2-3 visits ago', 2, 3), ('4+ visits ago', 4, 999)):
+            ks = [k for k in keys if lo <= vis - L[k]['v'] <= hi]
+            if ks: out.append(f"{nm} ({len(ks)}): {f(_dt_recall(model, S_slot, [L[k]['e'] for k in ks]))}")
+        return " || ".join(out)
+    try:
+        nt = sum(1 for v in L.values() if v['g'] == 't'); nc = sum(1 for v in L.values() if v['g'] == 'c')
+        print(f"  [DISTILLATION, EVER TAUGHT | visit {vis + 1}] ledger: {nt} facts and conclusions ever taught ({len(now)} in the pool now), {nc} control ever held back "
+              f"({len(nowc)} now) | from the trunk, test wordings, sample of {len(tk)} ever taught: ALL {f(_dt_recall(model, S_slot, [L[k]['e'] for k in tk]))} || "
+              + grp_(tk, now) + f" ||| CONTROL, sample of {len(ck)} ever held back: ALL {f(_dt_recall(model, S_slot, [L[k]['e'] for k in ck]))}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:ever'); print(f"  [DISTILLATION, EVER TAUGHT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -257,6 +292,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                   f"in {st['conf']} ({st['conf'] / max(1, st['proj']):.2f}); share of the question gradient removed when in conflict: mean {np.mean(st['cut']) if st['cut'] else float('nan'):.3f}", flush=True)
         _gate_report(model, cfg, vis)
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
+        _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         known = _dw_known(model, S_slot, ents) if (sp or sk) else {}
         iv = dict((D or {}).get('iv') or {})
