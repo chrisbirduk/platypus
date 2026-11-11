@@ -548,6 +548,7 @@ class Config:
     inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
     inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
     inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_wake_spaced_conc=0  #   11 Nov: 0 = spaced rehearsal spaces FACTS only (conclusions always rehearsed: their taught-wording check passes through the closed-form edits); 1 = conclusions too
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
                                     #   sentences naming taught subjects, at the positions the memory changes (after arXiv 2610.05200)

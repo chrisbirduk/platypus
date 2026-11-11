@@ -340,10 +340,15 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
-        known = _dw_known(model, S_slot, ents) if (sp or sk) else {}
+        spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
+        kn_ents = ents if (sk or spc) else [e for e in ents if e['key'][0] != 'conclusion']   #   runs with the closed-form edits in place, so it would take edit-held
+        known = _dw_known(model, S_slot, kn_ents) if (sp or sk) else {}         #   conclusions for learned and stop the rows that give them recall WITHOUT the edits
         iv = dict((D or {}).get('iv') or {})
         if sp:
-            for k_, ok in known.items(): iv[k_] = min(16, 2 * iv.get(k_, 1)) if ok else 1
+            for e in ents:
+                k_ = repr(e['key'])
+                if e['key'][0] == 'conclusion' and not spc: iv[k_] = 1; continue
+                if k_ in known: iv[k_] = min(16, 2 * iv.get(k_, 1)) if known[k_] else 1
         rows = []; nt = 0
         from platypus.inference.closed_form import _ws_batch, _ws_run
         for e in ents:
@@ -358,7 +363,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 rows.append((pb, ab, sl, k_, tl))
         if sp or sk:
             nk = sum(known.values())
-            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught facts in a taught wording"
+            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught {'facts and conclusions' if (sk or spc) else 'facts (conclusions always rehearsed)'} in a taught wording"
                   + (f" | spaced rehearsal: mean interval {np.mean([iv.get(repr(e['key']), 1) for e in ents]):.2f}, at 16: {sum(1 for e in ents if iv.get(repr(e['key']), 1) >= 16)}" if sp else "")
                   + (f" | held by KL to their own answers: {nt} rows" if sk else ""), flush=True)
         rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
