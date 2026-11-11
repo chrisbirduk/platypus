@@ -723,6 +723,7 @@ ORDER = (
     ('inference.distill', '_dw_ever'),
     ('inference.distill', '_dw_conc22'),
     ('inference.distill', '_dw_pd_probe'),
+    ('inference.distill', '_BRG'),
     ('inference.distill', '_dw_bridge'),
     ('inference.distill', '_dw_ns_probe'),
     ('inference.distill', '_dw_comp_probe'),

@@ -346,6 +346,9 @@ def _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis):
         _fail('inference.distill:pdprobe'); print(f"  [SOURCE IN CONTEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+_BRG = {'held': set(), 'anch': set()}
+
+
 def _dw_bridge(cfg, S_, ents, held, vis):
     """BRIDGE ANCHORING (11 Nov; inf_distill_bridge = N descriptors; after BRACE, NeurIPS 2026): two-hop recall from injected facts fails when
     the bridge entity B is represented differently as the ANSWER of hop 1 (A - B) and as the SUBJECT of hop 2 (B - C); reusing the same
@@ -357,6 +360,28 @@ def _dw_bridge(cfg, S_, ents, held, vis):
     both premises taught, edits subtracted (inf_distill_conc_ctl 1 holds every conclusion back)."""
     import zlib
     n = int(getattr(cfg, 'inf_distill_bridge', 0)); part = {}
+    if int(getattr(cfg, 'inf_distill_bridge_syn', 0)):                        # 11 Nov SYNTHETIC, HALF: the bridges of the HELD-OUT chains (inf_kgx_hold: never
+        from platypus.inference.probes import inf_probes                      #   concluded, stored, replayed or edited); half of them, by a hash of the name,
+        N9 = int(getattr(cfg, 'inf_kgx_hold', 0)); held_b = set()            #   get one fixed INVENTED attribute as descriptor ('B keeps the green ledger.'),
+        if N9 > 0:                                                            #   the other half none: anchored vs unanchored held-out chains in one run
+            for i9, c9 in enumerate(inf_probes(cfg)):
+                if i9 % N9 == N9 - 1:
+                    nm9 = list(c9['names'])
+                    for k9 in range(1, len(nm9) - 1): held_b.add(nm9[k9])
+        adj = ('green', 'silver', 'oak', 'copper', 'amber', 'blue', 'iron', 'linen', 'stone', 'cedar')
+        nou = ('ledger', 'lantern', 'compass', 'satchel', 'kettle', 'harp', 'anchor', 'quill', 'clock', 'ribbon')
+        anch = {B for B in held_b if zlib.crc32(B.encode('latin-1', 'replace')) % 2 == 0}
+        out = {}
+        for B in anch:
+            h9 = zlib.crc32(('d|' + B).encode('latin-1', 'replace'))
+            out[B] = [f"{B} keeps the {adj[h9 % 10]} {nou[(h9 // 10) % 10]}.".encode('latin-1', 'replace')]
+        _BRG['held'] = held_b; _BRG['anch'] = anch
+        fs = [e for e in ents if e['key'][0] == 'fact']
+        h1 = sum(1 for e in fs if e['ans'] in out); h2 = sum(1 for e in fs if e['A'] in out)
+        print(f"  [DISTILLATION, BRIDGE | visit {vis + 1}] SYNTHETIC, HALF: {len(held_b)} bridges of held-out chains (every {N9}th chain never concluded), "
+              f"{len(anch)} anchored with an invented attribute, {len(held_b) - len(anch)} not | taught facts anchored: {h1} with the bridge as answer, {h2} as subject"
+              + (f" | e.g. {sorted(out)[0]}: {out[sorted(out)[0]][0].decode('latin-1')}" if out else ""), flush=True)
+        return out
     for c in S_.get('conc', []):
         if c.get('freed') or c.get('retracted'): continue
         if isinstance(c.get('A'), str) and isinstance(c.get('B'), str) and isinstance(c.get('C'), str): part.setdefault(c['B'], set()).update((c['A'], c['C']))
@@ -573,6 +598,7 @@ def _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis):
     import zlib
     n = int(getattr(cfg, 'inf_distill_comp_probe', 0))
     if not n or not D or not D.get('bysl'): return
+    if _BRG['held']: n = max(n, 256)                                           # held-out chains: ask them all
     try:
         prev = {rw[3] for pool in D['bysl'].values() for rw in pool}
         live = set()
@@ -603,8 +629,12 @@ def _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis):
         rt, rh = run(T), run(H)
         f = lambda r: (f"{r[0]} chains, both premises answered in a test wording {r[1]} | composed (held-out wordings) ALL {r[2]:.2f}, among those with both premises answered "
                        + (f"{r[3]:.2f}" if r[1] else "-")) if r else "none"
+        xtra = ""
+        if _BRG['held']:
+            ta = [p for p in T if p[0]['ans'] in _BRG['anch']]; tu = [p for p in T if p[0]['ans'] in _BRG['held'] and p[0]['ans'] not in _BRG['anch']]
+            xtra = f" || HELD-OUT CHAINS, bridge ANCHORED (invented attribute): {f(run(ta))} | bridge NOT anchored: {f(run(tu))}"
         print(f"  [COMPOSITION PROBE | visit {vis + 1}] 'A is connected to C' for chains A-B, B-C of facts, no conclusion or direct fact for A-C (never edited, replayed or asked) || "
-              f"TAUGHT premises: {f(rt)} || NEVER-TAUGHT premises: {f(rh)}", flush=True)
+              f"TAUGHT premises: {f(rt)} || NEVER-TAUGHT premises: {f(rh)}" + xtra, flush=True)
     except Exception as e:
         _fail('inference.distill:comp'); print(f"  [COMPOSITION PROBE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
