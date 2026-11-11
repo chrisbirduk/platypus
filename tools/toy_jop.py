@@ -14,13 +14,15 @@ Tests (true answer ranked among all entities):
   T4  TIED vs UNTIED      the same with separate source and target embeddings (as attention's keys vs values): the composed operator
                           then has to cross spaces
   T5  PATH TRAINING       T1/T2 when a few two-step paths are trained as well (compositional training, Guu et al. 2015)
-Usage: python3 tools/toy_jop.py [seed]"""
+Usage: python3 tools/toy_jop.py [seed] [steps]"""
 import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 seed = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 1500
+torch.set_num_threads(1)
 torch.manual_seed(seed); rs = np.random.RandomState(seed)
 N_FAM, N_ORG, D = 300, 300, 64
 # family: 5 generations of 60; each person in gen g>0 has one parent in gen g-1
@@ -48,7 +50,8 @@ for r in ('grandparent', 'skip_manager'):                                   # ho
     rs.shuffle(facts[r]); k = len(facts[r]) // 2; held[r] = facts[r][k:]; facts[r] = facts[r][:k]
 
 
-def train(tied=True, paths=0, steps=3000):
+def train(tied=True, paths=0, steps=None):
+    steps = steps or STEPS
     E = torch.nn.Parameter(torch.randn(N, D) * 0.1)
     E2 = E if tied else torch.nn.Parameter(torch.randn(N, D) * 0.1)          # untied: separate target (value) embeddings
     P = torch.nn.ParameterDict({r: torch.nn.Parameter(torch.eye(D) + 0.01 * torch.randn(D, D)) for r in R})
@@ -117,3 +120,4 @@ for tied, paths, tag in ((True, 0, 'TIED (JEPA: one space)'), (False, 0, 'UNTIED
                          (True, 150, 'TIED + 150 trained two-step paths')):
     E, E2, P = train(tied=tied, paths=paths)
     evaluate(E, E2, P, tag)
+    sys.stdout.flush()
