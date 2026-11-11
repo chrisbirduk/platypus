@@ -639,7 +639,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                     wdr=(cfg.dream_weight*model.__dict__.get('_dwp',1.0))*(1.0-cfg.dream_decay*step/_L)*eb_*(_dk_)
                     model.__dict__['_dk_last']=_dk_
                     model.__dict__['_dstep_k']=int(_dk_)            # this step carries dreams standing for k steps
-                    loss=loss+wdr*kdr*(cfg.shunt_T**2)
+                    loss=loss+wdr*kdr*(cfg.shunt_T**2); _dwk_=kdr.detach()   # (11 Nov: the dream KL of this step, read by inf_gate_beta)
                     for d,a,b in spans:
                         kd_=kr_[a:b].mean(); ds=model.__dict__.setdefault('_dreamstat',{}).setdefault(d,[0.0,0,0.0,0.0,0])
                         ds[0]+=kd_; ds[1]+=1; ds[2]+=wdr; ds[3]+=kd_; ds[4]+=(kd_>1.0).float()
@@ -804,7 +804,7 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         with _rf('backward'): loss.backward()
         if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
             from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the
-            distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1),dkl=(locals().get('kraw_t') if (locals().get('_dws_') and float(getattr(cfg,'inf_gate_beta',0.0))>0) else None))                                             #   real forward and its backward changed a tensor in place: autograd error); the
+            distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1),dkl=((locals().get('_dwk_') if locals().get('_dwk_') is not None else locals().get('kraw_t')) if (locals().get('_dws_') and float(getattr(cfg,'inf_gate_beta',0.0))>0) else None))                                             #   real forward and its backward changed a tensor in place: autograd error); the
                                                                                      #   gradients add up before the optimiser step and its whitening (11 Nov: options
                                                                                      #   inf_distill_wake_params / inf_distill_wake_proj, see distill_wake_step)
         if _pg is not None:
