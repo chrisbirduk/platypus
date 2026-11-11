@@ -141,7 +141,7 @@ def _nm_material(model, cfg, S_, nmax=None):
     for c in reversed(lv):                                                     # newest first
         k = ('conclusion', c['A'], 'is connected to', c['C'])
         if k in seen: continue
-        seen.add(k); out.append(dict(key=k, A=c['A'], r='is connected to', ans=c['C'], d=c['d'], pfs=[w.format(A=c['A']) for w in _CONC_CF[:nw]]))
+        seen.add(k); out.append(dict(key=k, A=c['A'], r='is connected to', ans=c['C'], d=c['d'], pfs=[w.format(A=c['A']) for w in _CONC_CF[:nw]], src=tuple(c.get('src', ()) or ())))
         if len(out) >= nmax // 2: break
     fx = []; mins = int(getattr(cfg, 'inf_nm_min_seen', 2))
     for (a, r), objs in S_.get('rel', {}).items():
@@ -152,8 +152,8 @@ def _nm_material(model, cfg, S_, nmax=None):
             o = bytes(o)
             if _nm_isname(o) and ix and ix[-1] < len(it) and (best is None or ix[-1] > best[1]): best = (o, ix[-1], len(set(ix)))
         if best is not None and best[2] >= mins: fx.append((best[2], best[1], a.decode('latin-1'), r, best[0].decode('latin-1'), it[best[1]]['d']))
-    for n9, _, A, r, o, d in sorted(fx, reverse=True)[:max(0, nmax - len(out))]:   # MOST SEEN first, then newest (10 Nov, GPU: the newest
-        out.append(dict(key=('fact', A, r, o), A=A, r=r, ans=o, d=d, pfs=[f"{A} {r} "], seen=n9))   #   were prose co-occurrences seen once)
+    for n9, ix9, A, r, o, d in sorted(fx, reverse=True)[:max(0, nmax - len(out))]:   # MOST SEEN first, then newest (10 Nov, GPU: the newest
+        out.append(dict(key=('fact', A, r, o), A=A, r=r, ans=o, d=d, pfs=[f"{A} {r} "], seen=n9, src=(ix9,)))   #   were prose co-occurrences seen once)
     if nmax == int(getattr(cfg, 'inf_nm_max', 384)): model.__dict__['_nm_cand'] = (len(fx), sum(1 for x in fx if x[0] >= 3))
     return out
 

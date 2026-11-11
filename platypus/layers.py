@@ -50,6 +50,7 @@ def _fla_get():
 _WIN={'W':0}                   # windowed WY solve (mix_window); set by setup_kernel
 _SAMP={'W':0,'bf16':False,'rescore':True}     # windowed recurrent sampler (samp_window, samp_bf16, samp_rescore)
 _ADPT={'on':False,'P':{}}                                                     # LOW-RANK MLP ADAPTER (oracle): x += B (A hn) beside each block's MLP
+_FU={'on':False,'P':{},'tau':0.5,'cap':None,'st':None}                        # FACT UNITS (neurogenesis, inference.distill): x += V relu(g (cos(hn, K) - tau)) beside each block's MLP
 _PMEM={'on':False,'S':{}}                                                     # PERSISTENT MEMORY READ (oracle): out += S_b k~ at every position
 _ORACLE={'on':False,'st':{}}                                                  # ORACLE MEMORY statistics collection
 _BPTT={'K':1}                                                                 # segments per training row (ctx_bptt; set per visit)
@@ -801,6 +802,14 @@ class DeltaBlock(nn.Module):
         o2_=_wl(s,'mlp_out',m)
         if _ADPT['on'] and id(s) in _ADPT['P']:                                 # LOW-RANK ADAPTER beside the MLP (oracle)
             A_a,B_a=_ADPT['P'][id(s)]; o2_=o2_+F.linear(F.linear(hn.float(),A_a),B_a).to(o2_.dtype)
+        if _FU['on'] and id(s) in _FU['P']:                                     # FACT UNITS: new units, keyed on facts' question contexts,
+            fu_=_FU['P'][id(s)]                                                 #   written only by the question rows
+            if _FU['cap'] is not None: _FU['cap'][id(s)]=hn.detach()
+            if fu_['n']>0:
+                xn_=F.normalize(hn.float(),dim=-1); u_=F.relu(fu_['g'][:fu_['n']]*(xn_@fu_['K'][:fu_['n']].t()-_FU['tau']))
+                if _FU['st'] is not None:
+                    st_=_FU['st'].setdefault(id(s),[0.0,0.0,0.0]); st_[0]+=float((u_>0).any(-1).float().sum()); st_[1]+=float(u_.sum()); st_[2]+=float(u_.shape[0]*u_.shape[1])
+                o2_=o2_+(u_@fu_['V'][:fu_['n']]).to(o2_.dtype)
         if cgm_ is not None and o2_.requires_grad: o2_.register_hook(cgm_)
         if gp_ is not None: o2_=_GProj.apply(o2_,*gp_)
         x=x+o2_

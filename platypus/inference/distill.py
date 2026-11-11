@@ -305,6 +305,310 @@ def _dw_conc22(model, cfg, S_, S_slot, ents, held, vis):
         _fail('inference.distill:conc22'); print(f"  [DISTILLATION, CONCLUSIONS 2x2] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis):
+    """SOURCE-IN-CONTEXT PROBE (readout, 11 Nov; inf_distill_pd_probe): does the trunk answer better when the fact's stored source
+    sentence comes before the question? (What prompt distillation needs: a teacher better than the student.) Facts only, up to 64 taught
+    and 64 never-taught (the control fifth - never trained, so with vs without context is pure reading from context), in a TAUGHT wording
+    and a TEST wording (new frame): open-ended greedy answer exact, without -> with the sentence; answer bytes top-1; mean KL(with || without)
+    per answer byte (the signal soft targets would carry)."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    L0 = int(cfg_seq_(model)); rs = np.random.RandomState(int(cfg.seed) + 7777 + vis)
+    def pick(es):
+        es = [e for e in es if e['key'][0] == 'fact' and repr(e['key']) in ctx_]
+        return [es[int(i)] for i in rs.choice(len(es), min(64, len(es)), replace=False)] if es else []
+    def one(es, wf):
+        r = dict(n=0, ex0=0, ex1=0, b=0, b0=0, b1=0, kl=0.0)
+        for e in es:
+            q = wf(e).encode('latin-1', 'replace'); a = (e['ans'] + '.').encode('latin-1', 'replace'); cx = ctx_[repr(e['key'])]
+            room = L0 - len(q) - len(a) - 1
+            if room <= 8: continue
+            cx = cx[-room:]
+            X, _ = _ws_batch(model, [q + a, cx + q + a])
+            with torch.no_grad(): lg = _ws_run(model, X, int(S_slot(e['d']))).float()
+            p0 = len(q) - 1; p1 = len(cx) + p0; n_ = len(a)
+            if p1 + n_ - 1 >= lg.shape[1]: continue
+            z0 = lg[0, p0:p0 + n_]; z1 = lg[1, p1:p1 + n_]; tr = torch.tensor(list(a), device=lg.device)
+            t0 = z0.argmax(-1); t1 = z1.argmax(-1); isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122
+            r['n'] += 1; r['b'] += n_ - 1
+            r['ex0'] += int(bool((t0[:-1] == tr[:-1]).all()) and not isl(int(t0[-1]))); r['ex1'] += int(bool((t1[:-1] == tr[:-1]).all()) and not isl(int(t1[-1])))
+            r['b0'] += int((t0[:-1] == tr[:-1]).sum()); r['b1'] += int((t1[:-1] == tr[:-1]).sum())
+            l1 = F.log_softmax(z1, -1); r['kl'] += float((l1.exp() * (l1 - F.log_softmax(z0, -1))).sum(-1)[:-1].sum())
+        return r
+    fmt = lambda r: (f"exact {r['ex0'] / r['n']:.2f} -> {r['ex1'] / r['n']:.2f}, answer bytes {r['b0'] / max(1, r['b']):.2f} -> {r['b1'] / max(1, r['b']):.2f}, KL {r['kl'] / max(1, r['b']):.3f} (n {r['n']})" if r['n'] else "none")
+    try:
+        tf = lambda e: _DT_FORMS[0].format(A=e['A'], r=e['r']); nf = lambda e: f"It is on record that {e['A']} {e['r']} "
+        T, C = pick(ents), pick(held)
+        print(f"  [SOURCE IN CONTEXT | visit {vis + 1}] the trunk answers WITHOUT -> WITH the fact's stored source sentence before the question (window {L0}) || "
+              f"TAUGHT facts, taught wording: {fmt(one(T, tf))} | test wording: {fmt(one(T, nf))} || NEVER-TAUGHT facts (reading from context alone), "
+              f"taught wording: {fmt(one(C, tf))} | test wording: {fmt(one(C, nf))}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:pdprobe'); print(f"  [SOURCE IN CONTEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _dw_bridge(cfg, S_, ents, held, vis):
+    """BRIDGE ANCHORING (11 Nov; inf_distill_bridge = N descriptors; after BRACE, NeurIPS 2026): two-hop recall from injected facts fails when
+    the bridge entity B is represented differently as the ANSWER of hop 1 (A - B) and as the SUBJECT of hop 2 (B - C); reusing the same
+    descriptors of B in both hops' training text aligned it (composition up to 0.78 at 1.7-14B). For each live conclusion's bridge B: up to N
+    TAUGHT facts about B whose other name is not a chain partner of B (never A or C of any chain through B, so no row holds both hops of a
+    chain), or else stored sentence clips naming B and no partner, fixed per B by a hash; bridges are those of live conclusions AND of
+    every chain of two taught facts (the chains the COMPOSITION PROBE asks); every question row with B as answer gets one after the answer (trained bytes), every row with B as
+    subject gets one before the question. Never a control fact. The test: [DISTILLATION, CONCLUSIONS 2x2] never-taught conclusions with
+    both premises taught, edits subtracted (inf_distill_conc_ctl 1 holds every conclusion back)."""
+    import zlib
+    n = int(getattr(cfg, 'inf_distill_bridge', 0)); part = {}
+    for c in S_.get('conc', []):
+        if c.get('freed') or c.get('retracted'): continue
+        if isinstance(c.get('A'), str) and isinstance(c.get('B'), str) and isinstance(c.get('C'), str): part.setdefault(c['B'], set()).update((c['A'], c['C']))
+    fs = [e for e in ents if e['key'][0] == 'fact']; out = {}; nsent = 0; nlive = len(part)
+    sub = {}
+    for e in fs: sub.setdefault(e['A'], set()).add(e['ans'])
+    for e in fs:                                                               # ALSO every bridge of a chain of TAUGHT facts (A - B, B - C):
+        if e['ans'] in sub:                                                    #   partners are every name that reaches B or that B reaches
+            for C in sub[e['ans']]:
+                if C != e['A']: part.setdefault(e['ans'], set()).update((e['A'], C))
+    real = None; byname = None
+    for B, pt in part.items():
+        cand = sorted({f"{e['A']} {e['r']} {e['ans']}." for e in fs if (e['A'] == B and e['ans'] not in pt) or (e['ans'] == B and e['A'] not in pt)})
+        if not cand:                                                           # FALLBACK: a stored real sentence naming B and no chain partner of B,
+            if byname is None:                                                 #   clipped to 48 bytes around B (the local harness's bridges rarely
+                import re as _re                                               #   have a third taught fact); one pass over the stored sentences,
+                byname = {}; want = set(part)                                  #   indexed by the capitalised words they contain
+                for x in S_.get('it', []):
+                    if x.get('k') != 'real': continue
+                    b9 = x['s']; b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
+                    t = b9.decode('latin-1')
+                    for w in set(_re.findall(r"[A-Z][a-z]+", t)) & want:
+                        if len(byname.setdefault(w, [])) < 64: byname[w].append(t)
+            bb = []
+            for t in byname.get(B, []):
+                i9 = t.find(B)
+                if i9 < 0 or any(q in t for q in pt): continue
+                a9 = max(0, i9 - 12); bb.append(t[a9:a9 + 48].strip())
+            cand = sorted(set(bb)); nsent += 1 if cand else 0
+        if not cand: continue
+        cand.sort(key=lambda t: zlib.crc32((B + '|' + t).encode('latin-1', 'replace')))
+        out[B] = [t.encode('latin-1', 'replace') for t in cand[:n]]
+    h1 = sum(1 for e in fs if e['ans'] in out); h2 = sum(1 for e in fs if e['A'] in out)
+    print(f"  [DISTILLATION, BRIDGE | visit {vis + 1}] {len(part)} bridge names ({nlive} in live conclusions, the rest in chains of taught facts), {len(out)} with a descriptor ({len(out) - nsent} a taught fact about the bridge, "
+          f"{nsent} a stored sentence clip; no chain partner; up to {n} each, mean {np.mean([len(v) for v in out.values()]) if out else 0:.2f}) | taught facts anchored: {h1} with the bridge as answer, "
+          f"{h2} as subject" + (f" | e.g. {list(out)[0]}: {out[list(out)[0]][0].decode('latin-1')}" if out else ""), flush=True)
+    return out
+
+
+def _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis):
+    """NULL-SPACE PROBE (readout, 11 Nov; inf_distill_ns_probe): could the question rows be confined to directions the old domains do not
+    use (AlphaEdit-style null-space projection)? For each block's mlp_out (the weights the question rows write): the covariance of its
+    INPUTS on 32 stored real sentences per OLD slot (not the one just visited); the number of input directions holding 90 / 99 / 99.9% of
+    that energy (of H); and the share of a question-row gradient (up to 64 taught facts, taught wordings) that lies INSIDE those
+    directions - what a hard projection at that cut-off would remove (an isotropic update would lose k / H). Training is not changed."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    sls = [int(s) for s in oslots if int(s) != int(vslot)] if vslot is not None else []
+    fs = [e for e in ents if e['key'][0] == 'fact']
+    if not sls or not fs: return
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    ra = np.random.RandomState(int(cfg.seed) + 9898 + vis); by = {}
+    for i in ra.permutation(len(real)):
+        x = real[int(i)]; sl = int(S_slot(x['d']))
+        if sl in sls and len(by.setdefault(sl, [])) < 32: by[sl].append(bytes(x['s']))
+    blocks = list(model.blocks); C = [None] * len(blocks); hs = []; cur = {}
+    def mk(j):
+        def h(mod, inp, out):
+            x = inp[0].detach().float(); m = cur.get('m')
+            x = x.reshape(-1, x.shape[-1]) if m is None else x[m[:, :x.shape[1]] > 0]
+            c = x.t() @ x; C[j] = c if C[j] is None else C[j] + c
+        return h
+    allp = list(model.parameters()); g_saved = [p.grad for p in allp]; rq = [p.requires_grad for p in allp]
+    try:
+        for j, b in enumerate(blocks): hs.append(b.mlp_out.register_forward_hook(mk(j)))
+        npos = 0
+        for sl, txt in by.items():
+            if len(txt) < 4: continue
+            X, M = _ws_batch(model, txt); cur['m'] = M[:, :-1]; npos += int(M[:, :-1].sum())
+            with torch.no_grad(): _ws_run(model, X, sl)
+        for h in hs: h.remove()
+        hs = []; cur.clear()
+        if npos == 0: return
+        rs = np.random.RandomState(int(cfg.seed) + 9899 + vis); pick = [fs[int(i)] for i in rs.choice(len(fs), min(64, len(fs)), replace=False)]
+        for p in allp: p.grad = None
+        W = [b.mlp_out.weight for b in blocks]
+        for w in W: w.requires_grad_(True)
+        bys = {}
+        for e in pick: bys.setdefault(int(S_slot(e['d'])), []).append(e)
+        for sl, es in bys.items():
+            rows = [(_DT_FORMS[int(rs.randint(len(_DT_FORMS)))].format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace')) for e in es]
+            X, _ = _ws_batch(model, [a + b for a, b in rows]); lg = _ws_run(model, X, sl, grad_=True); loss = 0.0
+            for r9, (a, b) in enumerate(rows):
+                p0 = len(a) - 1; n_ = min(len(b), lg.shape[1] - p0)
+                if n_ > 0: loss = loss + F.cross_entropy(lg[r9, p0:p0 + n_].float(), X[r9, p0 + 1:p0 + 1 + n_], reduction='sum')
+            if torch.is_tensor(loss): loss.backward()
+        res = []
+        for j, w in enumerate(W):
+            if w.grad is None or C[j] is None: continue
+            G = w.grad.detach().float(); ev, V = torch.linalg.eigh(C[j].double()); ev = ev.flip(0).clamp_min(0); V = V.flip(1).float()
+            cs = torch.cumsum(ev, 0) / ev.sum().clamp_min(1e-12); H = int(ev.numel()); gn = float((G * G).sum()) + 1e-30; r = []
+            for q in (0.9, 0.99, 0.999):
+                k = int((cs < q).sum()) + 1; GU = G @ V[:, :k]; r.append((k, float((GU * GU).sum()) / gn))
+            res.append((j, H, r))
+        if not res: return
+        fmt = lambda r: " / ".join(f"{k}" for k, _ in r); fs_ = lambda r: " / ".join(f"{v:.2f}" for _, v in r)
+        mean = [np.mean([x[2][i][1] for x in res]) for i in range(3)]; iso = [np.mean([x[2][i][0] / x[1] for x in res]) for i in range(3)]
+        print(f"  [NULL SPACE PROBE | visit {vis + 1}] mlp_out inputs on old slots {sls} ({npos} byte positions) || per block: input directions holding 90 / 99 / 99.9% "
+              f"of the old-domain energy (of H) -> share of a question-row gradient ({len(pick)} taught facts) INSIDE them: "
+              + " | ".join(f"block {j}: {fmt(r)} of {H} -> {fs_(r)}" for j, H, r in res)
+              + f" || MEAN share inside {mean[0]:.2f} / {mean[1]:.2f} / {mean[2]:.2f} (an isotropic update: {iso[0]:.2f} / {iso[1]:.2f} / {iso[2]:.2f}); "
+              f"a hard projection at that cut-off keeps {1 - mean[0]:.2f} / {1 - mean[1]:.2f} / {1 - mean[2]:.2f} of the fact update", flush=True)
+    except Exception as e:
+        _fail('inference.distill:nsprobe'); print(f"  [NULL SPACE PROBE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+    finally:
+        for h in hs: h.remove()
+        for p, g, q in zip(allp, g_saved, rq): p.grad = g; p.requires_grad_(q)
+
+
+def _fu_init(model, cfg):
+    """FACT UNITS (11 Nov; inf_distill_fu = units added per block at each sleep; neurogenesis): a reserve of inf_distill_fu_max units beside each
+    block's MLP, none active at first. Unit j: u_j = relu(g_j (cos(hn, K_j) - tau)), output V_j (zero at birth: no disruption). K_j is fixed
+    at birth to the mean normalised MLP input at the answer positions of one fact's question (three taught wordings) - the unit fires on
+    that fact's context and, by the cosine threshold, little elsewhere; V and g are trained by the question rows ONLY (the trunk's own
+    weights take no question gradient in this mode). Kept outside model.parameters(): the main optimiser never sees them."""
+    from platypus.layers import _FU
+    if model.__dict__.get('_fu') is not None: return model.__dict__['_fu']
+    dev = model.embed.weight.device; fm = int(getattr(cfg, 'inf_distill_fu_max', 1024)); g0 = float(getattr(cfg, 'inf_distill_fu_g', 4.0))
+    P = {}
+    for b in model.blocks:
+        d = int(b.d_model)
+        P[id(b)] = dict(K=torch.zeros(fm, d, device=dev), g=torch.full((fm,), g0, device=dev), V=torch.zeros(fm, d, device=dev), n=0)
+    _FU['P'] = P; _FU['on'] = True; _FU['tau'] = float(getattr(cfg, 'inf_distill_fu_tau', 0.5))
+    ts = [t for v in P.values() for t in (v['V'], v['g'])]
+    st = dict(P=P, map={}, opt=torch.optim.Adam(ts, lr=float(cfg.lr) * float(getattr(cfg, 'inf_distill_fu_lr', 3.0))), steps=0, ql=[])
+    model.__dict__['_fu'] = st
+    return st
+
+
+def _fu_old_sents(cfg, S_, S_slot, sls, seed, n=32):
+    it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]
+    ra = np.random.RandomState(seed); by = {}
+    for i in ra.permutation(len(real)):
+        x = real[int(i)]; sl = int(S_slot(x['d']))
+        if sl in sls and len(by.setdefault(sl, [])) < n: by[sl].append(bytes(x['s']))
+    return by
+
+
+def _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis):
+    """FACT UNITS at a sleep: report last visit (question steps, answer loss, firing on OLD-DOMAIN text vs on taught questions and the
+    never-taught control's questions), then give each new taught fact (no unit yet; up to inf_distill_fu per block) its own unit"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.layers import _FU
+    st = _fu_init(model, cfg); P = st['P']; blocks = list(model.blocks); fm = int(getattr(cfg, 'inf_distill_fu_max', 1024))
+    def fire(groups):
+        _FU['st'] = {}
+        try:
+            for sl, txt in groups:
+                if not txt: continue
+                X, _ = _ws_batch(model, txt)
+                with torch.no_grad(): _ws_run(model, X, sl)
+            r = [v for v in _FU['st'].values()]
+        finally: _FU['st'] = None
+        if not r: return None
+        a = sum(x[0] for x in r) / max(1.0, sum(x[2] for x in r)); m = sum(x[1] for x in r) / max(1.0, sum(x[2] for x in r))
+        return a, m
+    try:
+        n0 = P[id(blocks[0])]['n']
+        if n0 > 0:
+            sls = [int(s) for s in oslots if vslot is None or int(s) != int(vslot)]
+            old = fire(list(_fu_old_sents(cfg, S_, S_slot, sls, int(cfg.seed) + 7171 + vis).items())) if sls else None
+            vis_ = fire(list(_fu_old_sents(cfg, S_, S_slot, [int(vslot)], int(cfg.seed) + 7172 + vis).items())) if vslot is not None else None
+            tq = [e for e in ents if repr(e['key']) in st['map']][:64]; nf = lambda e: f"It is on record that {e['A']} {e['r']} "
+            byq = lambda es, wf: [(int(S_slot(e['d'])), [(wf(e) + e['ans'] + '.').encode('latin-1', 'replace')]) for e in es]
+            q1 = fire(byq(tq, lambda e: _DT_FORMS[0].format(A=e['A'], r=e['r']))); q2 = fire(byq(tq, nf))
+            hq = fire(byq([e for e in held if e['key'][0] == 'fact'][:64], nf))
+            fmt = lambda r: f"{r[0]:.3f} of positions (mean drive {r[1]:.4f})" if r else "-"
+            ql = st['ql']
+            print(f"  [FACT UNITS | visit {vis + 1}] {n0} units per block (cap {fm}), {len(st['map'])} facts with a unit | last visit: {st['steps']} question steps "
+                  f"(fact units only; the trunk takes no question gradient), answer loss {np.mean(ql[:20]) if ql else float('nan'):.3f} (first 20) -> {np.mean(ql[-20:]) if ql else float('nan'):.3f} (last 20) || "
+                  f"ANY UNIT FIRING: old-domain text {fmt(old)} | the visited domain's text {fmt(vis_)} | taught facts' questions, taught wording {fmt(q1)}, TEST wording {fmt(q2)} | "
+                  f"never-taught facts' questions {fmt(hq)} || |V| mean {float(torch.stack([P[id(b)]['V'][:n0].norm(dim=-1).mean() for b in blocks]).mean()):.3f}", flush=True)
+        st['steps'] = 0; st['ql'] = []
+        new = [e for e in ents if e['key'][0] == 'fact' and repr(e['key']) not in st['map']]
+        k = min(int(getattr(cfg, 'inf_distill_fu', 0)), fm - P[id(blocks[0])]['n'], len(new))
+        if k <= 0: return
+        import zlib
+        new.sort(key=lambda e: zlib.crc32(repr(e['key']).encode()))
+        new = new[:k]; acc = {id(b): [] for b in blocks}
+        for e in new:
+            txt = [(fm_.format(A=e['A'], r=e['r']) + e['ans'] + '.').encode('latin-1', 'replace') for fm_ in _DT_FORMS[:3]]
+            pl = [len(fm_.format(A=e['A'], r=e['r']).encode('latin-1', 'replace')) for fm_ in _DT_FORMS[:3]]
+            X, _ = _ws_batch(model, txt); _FU['cap'] = {}
+            try:
+                with torch.no_grad(): _ws_run(model, X, int(S_slot(e['d'])))
+                cap = dict(_FU['cap'])
+            finally: _FU['cap'] = None
+            na = len(e['ans'])
+            for b in blocks:
+                h = cap.get(id(b))
+                if h is None: continue
+                rows = []
+                for r9, p0 in enumerate(pl):
+                    seg = h[r9, p0 - 1:min(p0 - 1 + na, h.shape[1])].float()
+                    if seg.shape[0]: rows.append(F.normalize(seg, dim=-1).mean(0))
+                acc[id(b)].append(F.normalize(torch.stack(rows).mean(0), dim=-1) if rows else None)
+        for b in blocks:
+            Pb = P[id(b)]; j0 = Pb['n']
+            for i, kv in enumerate(acc[id(b)]):
+                if kv is not None: Pb['K'][j0 + i] = kv
+            Pb['n'] = j0 + len(new)
+        for i, e in enumerate(new): st['map'][repr(e['key'])] = P[id(blocks[0])]['n'] - len(new) + i
+        print(f"  [FACT UNITS | visit {vis + 1}] {len(new)} new units per block for {len(new)} new taught facts (keys from three taught wordings' answer positions); "
+              f"{P[id(blocks[0])]['n']} active of {fm}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:fu'); print(f"  [FACT UNITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis):
+    """COMPOSITION PROBE (readout, 11 Nov; inf_distill_comp_probe = N): two-fact chains built from the TAUGHT facts themselves - A r1 B and
+    B r2 C, both in last visit's question pool (taught for at least one visit), A != C, no live conclusion for A-C or C-A (so never
+    edited, replayed or asked) and no stored fact linking A and C directly - asked 'A is connected to' in the held-out conclusion
+    wordings. Up to N chains; with the trunk's recall of the two premises in the test wordings, and composition among chains whose
+    premises it answers both (the only chains it could compose). The same for chains of never-taught (control) facts."""
+    import zlib
+    n = int(getattr(cfg, 'inf_distill_comp_probe', 0))
+    if not n or not D or not D.get('bysl'): return
+    try:
+        prev = {rw[3] for pool in D['bysl'].values() for rw in pool}
+        live = set()
+        for c in S_.get('conc', []):
+            if not c.get('freed') and not c.get('retracted') and isinstance(c.get('A'), str) and isinstance(c.get('C'), str): live |= {(c['A'], c['C']), (c['C'], c['A'])}
+        allf = [e for e in ents + held if e['key'][0] == 'fact']; direct = {(e['A'], e['ans']) for e in allf} | {(e['ans'], e['A']) for e in allf}
+        def chains(fs):
+            byA = {}
+            for e in fs: byA.setdefault(e['A'], []).append(e)
+            out = []
+            for e1 in fs:
+                for e2 in byA.get(e1['ans'], []):
+                    A, C = e1['A'], e2['ans']
+                    if A == C or (A, C) in live or (A, C) in direct: continue
+                    out.append((e1, e2))
+            out.sort(key=lambda p: zlib.crc32((p[0]['A'] + '|' + p[0]['ans'] + '|' + p[1]['ans']).encode('latin-1', 'replace')))
+            return out[:n]
+        def run(chs):
+            if not chs: return None
+            q = [dict(key=('conclusion', e1['A'], 'is connected to', e2['ans']), A=e1['A'], r='is connected to', ans=e2['ans'], d=e1['d']) for e1, e2 in chs]
+            comp = [_dt_recall(model, S_slot, [x])['conclusions'] for x in q]
+            prem = [(_dt_recall(model, S_slot, [e1])['facts'], _dt_recall(model, S_slot, [e2])['facts']) for e1, e2 in chs]
+            ok = [i for i, (a, b) in enumerate(prem) if a[1] and b[1] and a[0] >= 0.5 and b[0] >= 0.5]
+            c_all = float(np.nanmean([c[0] for c in comp])) if comp else float('nan')
+            c_ok = float(np.nanmean([comp[i][0] for i in ok])) if ok else float('nan')
+            return len(chs), len(ok), c_all, c_ok
+        T = chains([e for e in ents if e['key'][0] == 'fact' and repr(e['key']) in prev]); H = chains([e for e in held if e['key'][0] == 'fact'])
+        rt, rh = run(T), run(H)
+        f = lambda r: (f"{r[0]} chains, both premises answered in a test wording {r[1]} | composed (held-out wordings) ALL {r[2]:.2f}, among those with both premises answered "
+                       + (f"{r[3]:.2f}" if r[1] else "-")) if r else "none"
+        print(f"  [COMPOSITION PROBE | visit {vis + 1}] 'A is connected to C' for chains A-B, B-C of facts, no conclusion or direct fact for A-C (never edited, replayed or asked) || "
+              f"TAUGHT premises: {f(rt)} || NEVER-TAUGHT premises: {f(rh)}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:comp'); print(f"  [COMPOSITION PROBE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -315,7 +619,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     vis = int(model.__dict__.get('_visit', 0)); D = model.__dict__.get('_dtw')
     pmx = int(getattr(cfg, 'inf_distill_pool_max', 0))                         # 11 Nov CAPACITY: the question pool no longer stops at the name memory's cap
     allm = _nm_material(model, cfg, S_, nmax=pmx if pmx > 0 else None)          #   (inf_nm_max): every fact the store holds (seen 2+ times, latest object)
-    ctl = lambda e: zlib.crc32(repr(e['key']).encode()) % 5 == 0               #   and every live conclusion, up to inf_distill_pool_max
+    cct = int(getattr(cfg, 'inf_distill_conc_ctl', 0))                        # 11 Nov: 1 = EVERY conclusion held back (never asked) - a powered composition test
+    ctl = lambda e: (cct and e['key'][0] == 'conclusion') or zlib.crc32(repr(e['key']).encode()) % 5 == 0   #   and every live conclusion, up to inf_distill_pool_max
     ents = [e for e in allm if not ctl(e)]; held = [e for e in allm if ctl(e)]
     if pmx > 0:
         nmm = len(model.__dict__.get('_nm_ents', []) or [])
@@ -339,26 +644,67 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
+        if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
+        if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
+        if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
-        known = _dw_known(model, S_slot, ents) if (sp or sk) else {}
+        spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
+        kn_ents = ents if (sk or spc) else [e for e in ents if e['key'][0] != 'conclusion']   #   runs with the closed-form edits in place, so it would take edit-held
+        known = _dw_known(model, S_slot, kn_ents) if (sp or sk) else {}         #   conclusions for learned and stop the rows that give them recall WITHOUT the edits
         iv = dict((D or {}).get('iv') or {})
         if sp:
-            for k_, ok in known.items(): iv[k_] = min(16, 2 * iv.get(k_, 1)) if ok else 1
+            for e in ents:
+                k_ = repr(e['key'])
+                if e['key'][0] == 'conclusion' and not spc: iv[k_] = 1; continue
+                if k_ in known: iv[k_] = min(16, 2 * iv.get(k_, 1)) if known[k_] else 1
         rows = []; nt = 0
         from platypus.inference.closed_form import _ws_batch, _ws_run
+        ctx_ = {}                                                              # 11 Nov PROMPT DISTILLATION: each fact's / conclusion's stored source sentence(s)
+        pdp = int(getattr(cfg, 'inf_distill_pd_probe', 0))
+        if int(getattr(cfg, 'inf_distill_wake_pd', 0)) or pdp:
+            it9 = S_.get('it', [])
+            for e in ents + (held if pdp else []):
+                ss = []
+                for i9 in (e.get('src') or ())[:2]:
+                    if isinstance(i9, (int, np.integer)) and 0 <= int(i9) < len(it9):
+                        b9 = it9[int(i9)]['s']
+                        b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
+                        ss.append(b9.strip()[:160])
+                if ss: ctx_[repr(e['key'])] = b' '.join(ss) + b' '
+            if pdp: _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis)
+            H9 = (D or {}).get('pdst')
+            if H9 and H9['n']:
+                print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] last visit: {H9['n']} rows with the source sentence in the teacher's context (T {float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)):g}); "
+                      f"answer bytes the TEACHER gets right {H9['t'] / max(1, H9['b']):.2f}, the STUDENT {H9['s'] / max(1, H9['b']):.2f} (of {H9['b']}); rows without a source sentence {H9['nos']} (hard targets)", flush=True)
+            if int(getattr(cfg, 'inf_distill_wake_pd', 0)):
+                print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] {len(ctx_)} of {len(ents)} taught facts and conclusions have a stored source sentence for the teacher", flush=True)
+        brd = {}
+        if int(getattr(cfg, 'inf_distill_bridge', 0)):
+            try: brd = _dw_bridge(cfg, S_, ents, held, vis)
+            except Exception as e9:
+                _fail('inference.distill:bridge'); print(f"  [DISTILLATION, BRIDGE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        from platypus.inference.jepa import cfg_seq_
+        L09 = int(cfg_seq_(model))
         for e in ents:
             k_ = repr(e['key']); sl = int(S_slot(e['d']))
-            for fm in _DT_FORMS:
+            own9 = f"{e['A']} {e['r']} {e['ans']}.".encode('latin-1', 'replace')   #   (never the row's own fact as its descriptor)
+            d1 = [d for d in brd.get(e['ans'], []) if d != own9] if e['key'][0] == 'fact' else None
+            d2 = [d for d in brd.get(e['A'], []) if d != own9] if e['key'][0] == 'fact' else None
+            for j9, fm in enumerate(_DT_FORMS):
                 pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
+                if d2:                                                         #   BRIDGE ANCHORING: the bridge as SUBJECT - its descriptor before the question,
+                    rm9 = L09 - 1 - len(pb) - len(ab) - 1                          #   trimmed from the left to keep the answer in the window
+                    if rm9 >= 8: pb = d2[j9 % len(d2)][-rm9:] + b' ' + pb
+                if d1: ab = ab + b' ' + d1[j9 % len(d1)]                     #   the bridge as ANSWER - the same descriptor pool after it (trained bytes)
                 if sk and known.get(k_):
                     X, _ = _ws_batch(model, [pb + ab])
                     with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
                     p0 = len(pb) - 1; n_ = min(len(ab), lg.shape[0] - p0)
                     if n_ > 0: tl = F.log_softmax(lg[p0:p0 + n_].float(), -1).half(); nt += 1
-                rows.append((pb, ab, sl, k_, tl))
+                rows.append((pb, ab, sl, k_, tl, ctx_.get(k_)))
         if sp or sk:
             nk = sum(known.values())
-            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught facts in a taught wording"
+            print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught {'facts and conclusions' if (sk or spc) else 'facts (conclusions always rehearsed)'} in a taught wording"
                   + (f" | spaced rehearsal: mean interval {np.mean([iv.get(repr(e['key']), 1) for e in ents]):.2f}, at 16: {sum(1 for e in ents if iv.get(repr(e['key']), 1) >= 16)}" if sp else "")
                   + (f" | held by KL to their own answers: {nt} rows" if sk else ""), flush=True)
         rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
@@ -390,7 +736,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
             print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
                   f"(sentences naming a control subject left out)", flush=True)
-        model.__dict__['_dtw'] = dict(bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -407,10 +753,28 @@ def distill_wake_loss(model, cfg):
         items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False, p=pw)]
         X, M = _ws_batch(model, [it[0] + it[1] for it in items]); lg = _ws_run(model, X, sl, grad_=True)
         tot = 0.0; cnt = 0; ce = []
+        pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
+        if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
+            from platypus.inference.jepa import cfg_seq_
+            L0_ = int(cfg_seq_(model))                                           # the context is trimmed from the LEFT to fit the window (the fact sits at the
+            items = [it[:5] + ((it[5][-max(0, L0_ - len(it[0]) - len(it[1]) - 1):] if L0_ - len(it[0]) - len(it[1]) - 1 > 0 else b''),) if len(it) > 5 and it[5] else it for it in items]   #   sentence's end; local windows are 64 bytes)
+            Tt, Mt = _ws_batch(model, [(it[5] if len(it) > 5 and it[5] else b'') + it[0] + it[1] for it in items])
+            with torch.no_grad(): LT = _ws_run(model, Tt, sl).float()
+            T_ = float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)); ce_w = float(getattr(cfg, 'inf_distill_wake_pd_ce', 0.0)); H9 = D['pdst']
         for r9, it in enumerate(items):
             p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg.shape[1] - p0)
             if n_ <= 0: continue
             z = lg[r9, p0:p0 + n_].float(); tl = it[4] if len(it) > 4 else None
+            cx = it[5] if (LT is not None and len(it) > 5) else None
+            if cx:
+                q0 = len(cx) + p0; m_ = min(n_, LT.shape[1] - q0)
+                if m_ > 0:
+                    zt = LT[r9, q0:q0 + m_]; zs = z[:m_]; tgt = X[r9, p0 + 1:p0 + 1 + m_]
+                    pt = F.softmax(zt / T_, -1); kl = (pt * (F.log_softmax(zt / T_, -1) - F.log_softmax(zs / T_, -1))).sum() * T_ * T_
+                    c_ = F.cross_entropy(zs, tgt, reduction='sum'); tot = tot + kl + ce_w * c_; ce.append(float(c_.detach()) / m_); cnt += m_
+                    H9['n'] += 1; H9['b'] += m_; H9['t'] += int((zt.argmax(-1) == tgt).sum()); H9['s'] += int((zs.detach().argmax(-1) == tgt).sum())
+                    continue
+            if LT is not None: H9['nos'] += 1
             if tl is not None:
                 t_ = tl[:n_].float(); tot = tot + (t_.exp() * (t_ - F.log_softmax(z, -1))).sum()
             else:
@@ -449,6 +813,25 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     gw = _gate_weight(model, cfg, dkl)
     if gw <= 0: return
     w *= gw
+    if int(getattr(cfg, 'inf_distill_fu', 0)) and model.__dict__.get('_fu') is not None:   # FACT UNITS: the question rows train the fact units only
+        st = model.__dict__['_fu']; allp = list(model.parameters()); rq = [p.requires_grad for p in allp]
+        ts = [t for v in st['P'].values() for t in (v['V'], v['g'])]
+        try:
+            for p in allp: p.requires_grad_(False)
+            for t in ts: t.requires_grad_(True)
+            dl_ = distill_wake_loss(model, cfg)
+            if torch.is_tensor(dl_) and dl_.requires_grad:
+                gs = torch.autograd.grad(w * dl_, ts, allow_unused=True)
+                for t, g in zip(ts, gs): t.grad = g
+                st['opt'].step(); st['opt'].zero_grad(set_to_none=True); st['steps'] += 1; st['ql'].append(float(dl_.detach()))
+                with torch.no_grad():
+                    for v in st['P'].values(): v['g'].clamp_(min=0.0)
+        except Exception:
+            _fail('inference.distill:fu_step')
+        finally:
+            for t in ts: t.requires_grad_(False); t.grad = None
+            for p, q in zip(allp, rq): p.requires_grad_(q)
+        return
     proj = int(getattr(cfg, 'inf_distill_wake_proj', 0)); akl = float(getattr(cfg, 'inf_distill_wake_akl', 0.0))
     P, frz = _dw_params(model, cfg)
     for p in frz: p.requires_grad_(False)
@@ -567,7 +950,10 @@ def gate_dream(model, cfg, step, dk):
         if G['left'] <= 0:
             G['phase'] = 'con' if G['phase'] == 'enc' else 'enc'; G['sw'] += 1
             mean = L if G['phase'] == 'con' else L * max(1, dk - 1)
-            G['left'] = max(1, int(round(G['rs'].exponential(mean)))) if int(getattr(cfg, 'inf_gate_theta_jitter', 1)) else max(1, int(round(mean)))
+            cap = float(getattr(cfg, 'inf_gate_theta_cap', 0.0))                # 11 Nov: BOUNDED stochastic phases - at most cap x the mean (0 = unbounded)
+            ln = G['rs'].exponential(mean) if int(getattr(cfg, 'inf_gate_theta_jitter', 1)) else mean
+            if cap > 0: ln = min(ln, cap * mean)
+            G['left'] = max(1, int(round(ln)))
             G['lens'].append((G['phase'], G['left']))
         G['left'] -= 1; G['n'][G['phase']] += 1
     return G['phase'] == 'con'

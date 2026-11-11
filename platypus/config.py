@@ -548,11 +548,28 @@ class Config:
     inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
     inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
     inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_comp_probe=0        #   11 Nov READOUT: COMPOSITION PROBE - N chains of taught facts (A-B, B-C) with no conclusion for A-C, asked 'A is connected to'
+    inf_distill_fu=0                #   11 Nov FACT UNITS (neurogenesis): N > 0 = up to N new units per block at each sleep, one per new taught fact, keyed on its
+                                    #     question context; the question rows train ONLY the fact units (the trunk takes no question gradient)
+    inf_distill_fu_max=1024         #     reserve of fact units per block
+    inf_distill_fu_tau=0.5          #     cosine threshold: a unit fires where cos(MLP input, its key) > tau
+    inf_distill_fu_g=4.0            #     initial gain (trained, >= 0)
+    inf_distill_fu_lr=3.0           #     Adam lr of the fact units = cfg.lr x this
+    inf_distill_ns_probe=0          #   11 Nov READOUT: NULL SPACE PROBE - share of a question-row gradient inside the old domains' high-energy mlp_out input directions
+    inf_distill_bridge=0            #   11 Nov BRIDGE ANCHORING: N > 0 = up to N shared descriptors (taught facts about the bridge, no chain partner) in both hops' question rows
+    inf_distill_conc_ctl=0          #   11 Nov: 1 = every conclusion held back from the question rows (composition test)
+    inf_distill_pd_probe=0          #   11 Nov READOUT: SOURCE IN CONTEXT - taught and never-taught facts answered without vs with their stored source sentence before the question
+    inf_distill_wake_pd=0           #   11 Nov PROMPT DISTILLATION (after Kujanpaa et al.): 1 = soft targets - the teacher (no gradient) reads the fact's stored source
+                                    #   sentence(s) before the question, the student the question alone; KL at temperature inf_distill_wake_pd_T on the answer bytes
+    inf_distill_wake_pd_T=2.0       #     distillation temperature (the paper's best: 2)
+    inf_distill_wake_pd_ce=0.0      #     + this x cross-entropy on the true answer bytes (0 = soft targets only)
+    inf_distill_wake_spaced_conc=0  #   11 Nov: 0 = spaced rehearsal spaces FACTS only (conclusions always rehearsed: their taught-wording check passes through the closed-form edits); 1 = conclusions too
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
                                     #   sentences naming taught subjects, at the positions the memory changes (after arXiv 2610.05200)
     inf_gate_theta=0.0              #   11 Nov RHYTHM GATES (inference.distill): >0 = THETA phase gate, mean consolidation phase length in steps
     inf_gate_theta_jitter=1         #     1 = stochastic phase lengths (exponential), 0 = fixed (control)
+    inf_gate_theta_cap=0.0          #     >0 = stochastic phase lengths capped at this x the mean (no visit without replay in long phases)
     inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
     inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
     inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)

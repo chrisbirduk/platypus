@@ -274,6 +274,133 @@ Width 32: trunk 0.1M + shared n-gram tables 6.6M (width 64: 0.3M + 13.1M). Witho
 the forgetting; replay removes all of it at either width (slight backward transfer). Replay, not parameter count, is the protection.
 The width-32 runs were stopped by container restarts during visit 9 (an idle container is reclaimed after about an hour).
 
+## Interleaved distillation on the GPU (11 November 2026, seed 4, pass 1)
+
+Three runs on the same seed and schedule: **cg27a_distillm** (question rows, mlp_out weights only, pool = the name memory's material,
+capped at 384; stopped in visit 6), **cg27a_distillcap** (the same with the pool taken from the store up to 2000; stopped after visit 6),
+**cg27a_distillctl** (the control: identical to distillcap, pool and readouts included, but no question rows trained; visits 1-5).
+Recall is from the trunk (memory and store off), open-ended (greedy answer exact), in two wordings never taught.
+
+**Facts.** 32-fact sample, taught vs never-taught:
+
+| After visit | distillm | distillcap | control (no question rows) |
+|---|---|---|---|
+| 2 | 0.29 (45) vs 0.00 (15) | 0.33 (43) vs 0.00 (15) | 0.00 (45) vs 0.00 (15) |
+| 3 | 0.62 (42) vs 0.02 (41) | 0.46 (39) vs 0.02 (41) | 0.00 (42) vs 0.00 (41) |
+| 4 | 0.64 (39) vs 0.00 (37) | 0.51 (39) vs 0.03 (37) | 0.03 (39) vs 0.00 (37) |
+| 5 | 0.71 (38) vs 0.05 (42) | 0.64 (42) vs 0.07 (42) | 0.02 (42) vs 0.00 (42) |
+
+Fact recall from the weights is entirely the question rows' doing (control 0.00-0.03 on the same pool).
+
+**Capacity and accumulation (distillcap, ever-taught ledger).** Pool 68 / 164 / 255 / 307 / 406 taught after visits 1-5 (the name memory
+holds 0 / 78 / 198 / 311 / 382). Recall over a stable sample of everything ever taught: 0.12 / 0.31 / 0.42 / **0.55** after visits 2-5
+(the youngest bin includes facts that entered at that sleep and were not yet taught); by age after visit 5: taught 2-3 visits ago
+**0.73** (143 questions), 4+ visits ago **0.69** (61); never-taught control 0.03 / 0.05 / 0.06. Recall holds and rises while the pool
+grows six-fold past the memory's cap; facts taught early are not lost as new ones arrive.
+
+**Conclusions (2 x 2: closed-form edits in place -> subtracted).**
+
+| | Taught | Never taught | Never taught, both premises taught |
+|---|---|---|---|
+| distillcap, visit 4 | 0.48 -> 0.08 (50) | 0.25 -> 0.00 (8) | 0.17 -> 0.00 (6) |
+| distillcap, visit 5 | 0.69 -> **0.15** (68) | 0.19 -> **0.00** (16) | 0.07 -> 0.00 (14) |
+| control, visit 4 | 0.26 -> 0.00 (50) | 0.00 -> 0.00 (8) | 0.00 -> 0.00 (6) |
+| control, visit 5 | 0.40 -> 0.00 (68) | 0.25 -> 0.00 (16) | 0.21 -> 0.00 (14) |
+
+Conclusions in the weights come from the closed-form edits (both rows fall to ~0 without them in the control); with the question
+rows, taught conclusions keep 0.08-0.15 without the edits against 0.00 never taught - a small distillation effect. No composition from
+taught premises.
+
+**Cost.** Post-train BPC of the visited domain, distillcap vs control: 2.020 / 2.009, 2.083 / 2.078, 2.031 / 2.033, 1.666 / 1.662,
+1.574 / 1.577 (visits 1-5) - none. Old domains' BPC at each sleep (fast store on), distillcap vs control: 1.999 / 1.976, 2.021 / 2.002,
+1.977 / 1.959, 1.898 / 1.878 (sleeps 2-5) - **+0.018 to +0.023, steady**. End-of-run forgetting not measured (both runs stopped).
+
+**Probe recall from the weights** (standard 134 probes, store off), distillcap vs control: visit 4 one-hop 0.37 / 0.15, open one-hop
+0.19 / 0.00, two-hop 0.08 / 0.10, open two-hop 0.04 / 0.02; visit 5 one-hop 0.40 / 0.19, open 0.31 / 0.00, two-hop 0.14 / 0.16, open
+two-hop 0.08 / 0.06. The one-hop rise is the distillation's; the two-hop rise over the run (0.03 -> 0.16-0.22) happens without it
+(conclusion replay and the closed-form edits). **Replay retention** (two-hop from the weights on the last sleep's replayed sample after a
+visit): with distillation 0.75 / 0.88 / 0.96 (visits 4-6), control 0.67 / 0.83 (visits 4-5) - conclusion replay sticks without question
+training; the question rows add about 0.05 at most (the 'access' reading is not supported for retention).
+**Gaussian drift** of old domains (output layer) identical with and without the question rows (0.31 / 0.29, 0.30 / 0.29, 0.22 visits 2-4).
+
+**Memory.** The 70 GB sleep peak was the probe evaluation's beam search (134 probes x 26 first-step beams of long prompts in one pass);
+chunked (`inf_eval_chunk 128`; local: evaluation lines identical over 7 visits) the sleep peak is 49-50 GB, now set by dream mixing.
+
+**Spaced rehearsal on the GPU** (cg27a_distillsp = distillcap + `inf_distill_wake_spaced 1`, facts only; conclusions rehearsed every
+step). Sleep 4 against distillcap: facts still in the pool 0.42 / 0.42 (320 questions), facts taught 2-3 visits 0.55 / 0.54, taught facts
+after the visit (32-fact probe) 0.57 / 0.51, control facts 0.03-0.04 / 0.03-0.05; 190 of 282 taught facts known in a taught wording, mean
+rehearsal interval 2.61 (known facts skipped). Conclusions taught 0.60 / 0.48 with the edits, 0.08 / 0.08 subtracted (edits, as before).
+Drift of old domains (output layer) 0.215 / 0.202. Visit 5 probes: one-hop 0.41 / 0.40, open one-hop 0.28 / 0.31, paraphrased 0.23 / 0.34
+(n 44). Sleep peak 50.0 GB. **Same recall with known facts skipped**: the local gain (0.19 vs 0.11 taught) does not appear on the GPU
+by sleep 4; the saving is in rehearsal rows, which matters as the pool grows.
+Sleep 5 (pool 405): facts still in the pool 0.51 / 0.55, taught 2-3 visits 0.65 / 0.73, 4+ visits 0.66 / 0.69 (61 questions), taught
+facts after the visit 0.71 / 0.64, control 0.05 / 0.06; mean interval 3.83, 26 facts at 16; drift 0.182 / 0.186. **Verdict: no gain,
+slightly lower for facts 2-3 visits old**; not carried into the next build (cg27a_distillrp: distillcap + repair replay).
+
+**Second seed** (cg27a_distillcap5 = distillcap + chunked evaluation, SEED 5; same options). Seed 5 vs seed 4 (capacity): sleep 3 facts
+still in the pool 0.32 / 0.31, taught 2-3 visits 0.53 / 0.59, taught facts after the visit 0.47, control 0.00 / 0.03; sleep 4 still in the
+pool 0.39 / 0.42, taught at least one visit 0.51 (distillsp 0.50), 2-3 visits 0.50 / 0.54, after the visit 0.44 / 0.51, control 0.01 / 0.05;
+visit-4 probes open one-hop 0.24 / 0.19, paraphrased 0.36 / 0.27. **The fact-recall result reproduces on a second seed** (sleep 2 lower:
+0.20 vs 0.33 for facts taught one visit). Conclusions lag only because seed 5's first closed-form edit came a sleep later (sleep 4).
+Sleep 5 (pool 412): taught 4+ visits **0.71 / 0.69**, 2-3 visits 0.61 / 0.73, still in the pool 0.46 / 0.55, taught at least one visit
+0.59, after the visit 0.67 / 0.64, control 0.01 / 0.06; visit-5 probes one-hop 0.42 / 0.40, open 0.30 / 0.31, paraphrased 0.39 / 0.34;
+drift 0.194 / 0.186; sleep peak 49.8 GB. Conclusions 2x2: never taught with both premises taught 0.42 -> 0.08 with the edits subtracted
+(12 questions, 6 conclusions: one answered; conclusion replay still runs for them) - not evidence of composition at this n.
+
+**Repair replay on the GPU** (cg27a_distillrp = distillcap + `inf_distill_repair 160`, seed 4): **a clear failure, stopped at sleep 2.**
+The repair burst took the old slot's KL to the previous sleep's predictions from 0.062 to 0.0035 (3 s) - a near-complete revert of
+the mlp_out weights - and took the visit's fact learning with it: taught facts right after the visit 0.31 (before the repair), facts
+taught one visit 0.06 after it (distillcap 0.33, distillsp 0.33 at the same point), control 0.00. Locally (40 steps, small pools) the
+KL fell only 0.033 -> 0.023 and recall was too low to show the loss. The question rows and the repair act on the same weights, so the
+repair cannot tell fact learning from drift. **Source in context** (same run): sleep 1 answer bytes 0.47 -> 0.49 with the sentence, exact
+0.00 -> 0.00; sleep 2 taught facts, taught wording, exact 0.11 -> **0.02** with the sentence (it hurts), answer bytes 0.57 -> 0.59;
+never-taught 0.43 -> 0.49 (n 33). The trunk does not read the answer from its context window (1024 bytes): no teacher for prompt
+distillation at this scale.
+
+### Rhythm gates and other add-ons (11 November 2026, local short runs, mlp_out writes)
+
+| Add-on | Taught at the end | Forgetting | Final BPC |
+|---|---|---|---|
+| none (DWM) | 0.11 | -0.140 | 2.991 |
+| repair replay at each sleep (40 KL steps) | 0.11 | **-0.156** | 2.996 |
+| spindle: questions only inside the sleep burst | 0.00 | -0.087 | 3.068 |
+| beta drift brake (throttled 17-87% of steps, gate mean 0.52-0.98) | 0.11 | -0.142 | 2.988 |
+| theta, stochastic phases | 0.11 | -0.161 | 2.976 |
+| theta, fixed phases | 0.07 | -0.138 | 2.993 |
+| hinted self-distillation, all parameters (pool 3-9 sentences) | 0.11 | -0.128 | 2.999 |
+
+Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
+phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
+separable from where the random phases fell in 24-step visits; a full-run trio with bounded phases is queued. Spindle-style writing
+fails; the beta brake changes nothing measurable.
+
+**Theta, full runs (11 November, seed 0, mlp_out distillation, bounded stochastic phases):** no gate (TH0) vs stochastic theta (THS):
+pass 1 mean forgetting -0.045 / -0.036, BPC 2.753 / 2.758; pass 2 forgetting +0.014 / +0.008, final BPC 2.428 / 2.438; lost between
+visits at the revisits (Gutenberg, Wikipedia, ArXiv, PubMed, FreeLaw) -0.136 / -0.134, -0.046 / -0.031, +0.010 / -0.010, -0.015 / -0.017,
+-0.010 / +0.009 (means -0.039 / -0.037). **No effect** - every difference inside seed noise; the short-run gain was the dream allocation.
+(Replay-only reference without distillation, FR: -0.005 / 2.415.) Rhythm gating is not carried forward.
+
+### Null-space probe (11 November, local full runs, seed 0; readout only)
+
+Inputs to each block's mlp_out (H = 512) on stored sentences of the old slots, against a question-row gradient on taught facts (sleeps 2-3,
+BR0/BR1): 90 / 99 / 99.9% of the old-domain energy sits in 18-30 / 94-157 / 256-329 of 512 directions, and **0.95 / 0.99 / 1.00 of the
+fact update lies inside them** (an isotropic update would put 0.04-0.05 / 0.22-0.27 / 0.54-0.61 there). The facts are written in the very
+directions the old domains use most - which is why the question rows cost old-domain BPC and why repair replay, pulling those directions
+back, erased the facts. A hard null-space projection (AlphaEdit) would keep 0.05 / 0.01 / 0.00 of the fact update: **not viable at this
+width**; any separation has to come from elsewhere (separate weights for facts, or a key that is not the old text's main directions).
+
+### Prompt distillation (soft targets from a teacher that reads the source sentence; 11 November 2026, local full runs, mlp_out writes)
+
+| Run | Taught at the end | Forgetting | Final BPC | Teacher vs student, answer bytes right |
+|---|---|---|---|---|
+| none (DWM) | 0.11 | -0.140 | 2.991 | - |
+| soft targets + 0.5 CE (PDC) | 0.07 (n 27) | -0.140 | 2.990 | 0.73 vs 0.73, 0.72 vs 0.72, 0.82 vs 0.84 (visits 8-10) |
+| soft targets only (PD) | **0.00** (n 27) | -0.152 | 2.977 | 0.79 vs 0.79, 0.72 vs 0.73, 0.79 vs 0.79, 0.50 vs 0.51, 0.59 vs 0.59 (visits 6-10, 570-690 bytes) |
+
+Soft targets alone teach nothing (answer loss flat at 1.96-1.97; the slightly lower cost is that of no question learning). The teacher is no better than the student: reading the fact's source sentence first does not help the local trunk answer, so the soft
+targets carry nothing the hard answer does not. No harm, no gain. The GPU readout (inf_distill_pd_probe, SOURCE IN CONTEXT) asks the same
+question at the GPU window, for taught and never-taught facts.
+
 ## Write side (cg27a), configuration results
 
 | Result | Numbers | Conditions |
