@@ -273,9 +273,14 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     import zlib
     from platypus.inference.namemem import _nm_material, _NM
     vis = int(model.__dict__.get('_visit', 0)); D = model.__dict__.get('_dtw')
-    allm = _nm_material(model, cfg, S_)
-    ctl = lambda e: zlib.crc32(repr(e['key']).encode()) % 5 == 0
+    pmx = int(getattr(cfg, 'inf_distill_pool_max', 0))                         # 11 Nov CAPACITY: the question pool no longer stops at the name memory's cap
+    allm = _nm_material(model, cfg, S_, nmax=pmx if pmx > 0 else None)          #   (inf_nm_max): every fact the store holds (seen 2+ times, latest object)
+    ctl = lambda e: zlib.crc32(repr(e['key']).encode()) % 5 == 0               #   and every live conclusion, up to inf_distill_pool_max
     ents = [e for e in allm if not ctl(e)]; held = [e for e in allm if ctl(e)]
+    if pmx > 0:
+        nmm = len(model.__dict__.get('_nm_ents', []) or [])
+        print(f"  [DISTILLATION, CAPACITY | visit {vis + 1}] question pool {len(ents)} facts and conclusions taught ({sum(1 for e in ents if e['key'][0] == 'conclusion')} conclusions), "
+              f"{len(held)} held back as control, from {len(allm)} the store holds (budget {pmx}; the name memory keeps {nmm}, cap {int(getattr(cfg, 'inf_nm_max', 384))})", flush=True)
     f = lambda x: " | ".join(f"{k} {v[0]:.2f} ({v[1]})" for k, v in x.items()) if x else "none"
     was = _NM['force']; _NM['force'] = False
     try:

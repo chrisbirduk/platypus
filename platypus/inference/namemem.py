@@ -134,8 +134,8 @@ def _nm_install(model, cfg):
 
 
 # ---------------------------------------------------------------- material
-def _nm_material(model, cfg, S_):
-    it = S_.get('it', []); nmax = int(getattr(cfg, 'inf_nm_max', 384)); nw = max(1, min(len(_CONC_CF), int(getattr(cfg, 'inf_cf_wordings', 1))))
+def _nm_material(model, cfg, S_, nmax=None):
+    it = S_.get('it', []); nmax = int(getattr(cfg, 'inf_nm_max', 384)) if nmax is None else int(nmax); nw = max(1, min(len(_CONC_CF), int(getattr(cfg, 'inf_cf_wordings', 1))))
     lv = [c for c in S_.get('conc', []) if not c.get('freed') and not c.get('retracted') and isinstance(c.get('A'), str) and isinstance(c.get('C'), str)]
     out, seen = [], set()
     for c in reversed(lv):                                                     # newest first
@@ -154,7 +154,7 @@ def _nm_material(model, cfg, S_):
         if best is not None and best[2] >= mins: fx.append((best[2], best[1], a.decode('latin-1'), r, best[0].decode('latin-1'), it[best[1]]['d']))
     for n9, _, A, r, o, d in sorted(fx, reverse=True)[:max(0, nmax - len(out))]:   # MOST SEEN first, then newest (10 Nov, GPU: the newest
         out.append(dict(key=('fact', A, r, o), A=A, r=r, ans=o, d=d, pfs=[f"{A} {r} "], seen=n9))   #   were prose co-occurrences seen once)
-    model.__dict__['_nm_cand'] = (len(fx), sum(1 for x in fx if x[0] >= 3))
+    if nmax == int(getattr(cfg, 'inf_nm_max', 384)): model.__dict__['_nm_cand'] = (len(fx), sum(1 for x in fx if x[0] >= 3))
     return out
 
 
