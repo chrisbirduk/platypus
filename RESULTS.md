@@ -379,6 +379,7 @@ distillation at this scale.
 | theta, fixed phases | 0.07 | -0.138 | 2.993 |
 | hinted self-distillation, all parameters (pool 3-9 sentences) | 0.11 | -0.128 | 2.999 |
 | soft anchor: KL to the old slots' predictions during the visit, x1.0 (DWA) | **0.22** | -0.144 | 2.988 |
+| hinted self-distillation, mlp_out only (HM; pool 5-9 sentences) | 0.11 (n 9) | -0.152 | 2.979 |
 
 Repair replay brings forgetting back to the replay-only level (-0.156). The stochastic theta run's lower cost is not reproduced by fixed
 phases and coincides with a 10-dream-step final visit (its allocation per visit was 5 / 0 / 1 / 3 / 10 against 5-6 normally): not
