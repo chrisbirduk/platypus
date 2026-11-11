@@ -305,6 +305,47 @@ def _dw_conc22(model, cfg, S_, S_slot, ents, held, vis):
         _fail('inference.distill:conc22'); print(f"  [DISTILLATION, CONCLUSIONS 2x2] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
+def _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis):
+    """SOURCE-IN-CONTEXT PROBE (readout, 11 Nov; inf_distill_pd_probe): does the trunk answer better when the fact's stored source
+    sentence comes before the question? (What prompt distillation needs: a teacher better than the student.) Facts only, up to 64 taught
+    and 64 never-taught (the control fifth - never trained, so with vs without context is pure reading from context), in a TAUGHT wording
+    and a TEST wording (new frame): open-ended greedy answer exact, without -> with the sentence; answer bytes top-1; mean KL(with || without)
+    per answer byte (the signal soft targets would carry)."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    L0 = int(cfg_seq_(model)); rs = np.random.RandomState(int(cfg.seed) + 7777 + vis)
+    def pick(es):
+        es = [e for e in es if e['key'][0] == 'fact' and repr(e['key']) in ctx_]
+        return [es[int(i)] for i in rs.choice(len(es), min(64, len(es)), replace=False)] if es else []
+    def one(es, wf):
+        r = dict(n=0, ex0=0, ex1=0, b=0, b0=0, b1=0, kl=0.0)
+        for e in es:
+            q = wf(e).encode('latin-1', 'replace'); a = (e['ans'] + '.').encode('latin-1', 'replace'); cx = ctx_[repr(e['key'])]
+            room = L0 - len(q) - len(a) - 1
+            if room <= 8: continue
+            cx = cx[-room:]
+            X, _ = _ws_batch(model, [q + a, cx + q + a])
+            with torch.no_grad(): lg = _ws_run(model, X, int(S_slot(e['d']))).float()
+            p0 = len(q) - 1; p1 = len(cx) + p0; n_ = len(a)
+            if p1 + n_ - 1 >= lg.shape[1]: continue
+            z0 = lg[0, p0:p0 + n_]; z1 = lg[1, p1:p1 + n_]; tr = torch.tensor(list(a), device=lg.device)
+            t0 = z0.argmax(-1); t1 = z1.argmax(-1); isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122
+            r['n'] += 1; r['b'] += n_ - 1
+            r['ex0'] += int(bool((t0[:-1] == tr[:-1]).all()) and not isl(int(t0[-1]))); r['ex1'] += int(bool((t1[:-1] == tr[:-1]).all()) and not isl(int(t1[-1])))
+            r['b0'] += int((t0[:-1] == tr[:-1]).sum()); r['b1'] += int((t1[:-1] == tr[:-1]).sum())
+            l1 = F.log_softmax(z1, -1); r['kl'] += float((l1.exp() * (l1 - F.log_softmax(z0, -1))).sum(-1)[:-1].sum())
+        return r
+    fmt = lambda r: (f"exact {r['ex0'] / r['n']:.2f} -> {r['ex1'] / r['n']:.2f}, answer bytes {r['b0'] / max(1, r['b']):.2f} -> {r['b1'] / max(1, r['b']):.2f}, KL {r['kl'] / max(1, r['b']):.3f} (n {r['n']})" if r['n'] else "none")
+    try:
+        tf = lambda e: _DT_FORMS[0].format(A=e['A'], r=e['r']); nf = lambda e: f"It is on record that {e['A']} {e['r']} "
+        T, C = pick(ents), pick(held)
+        print(f"  [SOURCE IN CONTEXT | visit {vis + 1}] the trunk answers WITHOUT -> WITH the fact's stored source sentence before the question (window {L0}) || "
+              f"TAUGHT facts, taught wording: {fmt(one(T, tf))} | test wording: {fmt(one(T, nf))} || NEVER-TAUGHT facts (reading from context alone), "
+              f"taught wording: {fmt(one(C, tf))} | test wording: {fmt(one(C, nf))}", flush=True)
+    except Exception as e:
+        _fail('inference.distill:pdprobe'); print(f"  [SOURCE IN CONTEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     """INTERLEAVED DISTILLATION (inf_distill_wake > 0; 10 Nov): at each sleep, report the visit just finished (rows used, the mean
     answer loss, recall from the trunk in test wordings for taught facts against the never-taught control fifth) and rebuild the pool of
@@ -352,9 +393,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         rows = []; nt = 0
         from platypus.inference.closed_form import _ws_batch, _ws_run
         ctx_ = {}                                                              # 11 Nov PROMPT DISTILLATION: each fact's / conclusion's stored source sentence(s)
-        if int(getattr(cfg, 'inf_distill_wake_pd', 0)):
+        pdp = int(getattr(cfg, 'inf_distill_pd_probe', 0))
+        if int(getattr(cfg, 'inf_distill_wake_pd', 0)) or pdp:
             it9 = S_.get('it', [])
-            for e in ents:
+            for e in ents + (held if pdp else []):
                 ss = []
                 for i9 in (e.get('src') or ())[:2]:
                     if isinstance(i9, (int, np.integer)) and 0 <= int(i9) < len(it9):
@@ -362,11 +404,13 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                         b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
                         ss.append(b9.strip()[:160])
                 if ss: ctx_[repr(e['key'])] = b' '.join(ss) + b' '
+            if pdp: _dw_pd_probe(model, cfg, S_slot, ents, held, ctx_, vis)
             H9 = (D or {}).get('pdst')
             if H9 and H9['n']:
                 print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] last visit: {H9['n']} rows with the source sentence in the teacher's context (T {float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)):g}); "
                       f"answer bytes the TEACHER gets right {H9['t'] / max(1, H9['b']):.2f}, the STUDENT {H9['s'] / max(1, H9['b']):.2f} (of {H9['b']}); rows without a source sentence {H9['nos']} (hard targets)", flush=True)
-            print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] {len(ctx_)} of {len(ents)} taught facts and conclusions have a stored source sentence for the teacher", flush=True)
+            if int(getattr(cfg, 'inf_distill_wake_pd', 0)):
+                print(f"  [DISTILLATION, PROMPT DISTILLATION | visit {vis + 1}] {len(ctx_)} of {len(ents)} taught facts and conclusions have a stored source sentence for the teacher", flush=True)
         for e in ents:
             k_ = repr(e['key']); sl = int(S_slot(e['d']))
             for fm in _DT_FORMS:

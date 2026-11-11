@@ -548,6 +548,7 @@ class Config:
     inf_distill_repair=0            #   11 Nov: >0 = REPAIR REPLAY at each sleep: this many steps of that KL on the old slots (previous sleep's predictions)
     inf_distill_repair_lr=0.1       #     its Adam lr = cfg.lr x this
     inf_distill_wake_spaced=0       #   11 Nov: 1 = SPACED REHEARSAL: facts answered in a taught wording at a sleep sampled 1/interval (doubling to 16)
+    inf_distill_pd_probe=0          #   11 Nov READOUT: SOURCE IN CONTEXT - taught and never-taught facts answered without vs with their stored source sentence before the question
     inf_distill_wake_pd=0           #   11 Nov PROMPT DISTILLATION (after Kujanpaa et al.): 1 = soft targets - the teacher (no gradient) reads the fact's stored source
                                     #   sentence(s) before the question, the student the question alone; KL at temperature inf_distill_wake_pd_T on the answer bytes
     inf_distill_wake_pd_T=2.0       #     distillation temperature (the paper's best: 2)
