@@ -56,7 +56,7 @@ from platypus.inference.jindex import (
     _jx_sleep,
 )
 
-_PHASE_T={}; _PHASE_M={}
+_PHASE_T={}; _PHASE_M={}; _PHASE_PK=[0]; _PHASE_FREE=[0]
 def _phase_wrap(on_):
     """SLEEP PHASE TIMING (9 Nov, readout only): while a sleep runs, every function this module calls by its global name is timed
     (inclusive, outermost call only, so nothing is counted twice). Returns the names wrapped and their originals, to restore"""
@@ -66,13 +66,20 @@ def _phase_wrap(on_):
     def mk_(nm_,f_):
         def w_(*a_,**k_):
             if depth_['d']: return f_(*a_,**k_)
-            depth_['d']=1; t_=_tm.time(); m0_=torch.cuda.max_memory_allocated() if torch.cuda.is_available() else 0
+            depth_['d']=1; t_=_tm.time(); cu_=torch.cuda.is_available()
+            if cu_:                                                             # 11 Nov: each phase's OWN peak (the running peak is kept in _PHASE_PK, so the
+                try:                                                            #   sleep's peak and the memory guard still see it): allocated at entry, then reset
+                    _PHASE_PK[0]=max(_PHASE_PK[0],torch.cuda.max_memory_allocated()); b_=torch.cuda.memory_allocated(); torch.cuda.reset_peak_memory_stats()
+                except Exception: cu_=False
             try: return f_(*a_,**k_)
             finally:
                 depth_['d']=0; _PHASE_T[nm_]=_PHASE_T.get(nm_,0.0)+_tm.time()-t_
-                if torch.cuda.is_available():                                   # 10 Nov: which phase raised the sleep's GPU peak (allocated, GB), and to what
-                    m1_=torch.cuda.max_memory_allocated()
-                    if m1_>m0_: _PHASE_M[nm_]=(max(_PHASE_M.get(nm_,(0.0,0.0))[0],(m1_-m0_)/2**30),m1_/2**30)
+                if cu_:
+                    try:
+                        m1_=torch.cuda.max_memory_allocated(); _PHASE_PK[0]=max(_PHASE_PK[0],m1_)
+                        o_=_PHASE_M.get(nm_,(0.0,0.0)); _PHASE_M[nm_]=(max(o_[0],(m1_-b_)/2**30),max(o_[1],m1_/2**30))   # (above its entry level, own peak)
+                        if _PHASE_FREE[0]: torch.cuda.empty_cache()             # 11 Nov: cached blocks released after each phase (inf_sleep_phase_free)
+                    except Exception: pass
         return w_
     called_=set(g_['_inf_sleep_body'].__code__.co_names)|set(g_['inf_sleep'].__code__.co_names)   # only what the sleep calls by name (also right in a single-file build)
     for nm_,f_ in list(g_.items()):
@@ -86,11 +93,11 @@ def _phase_report(orig_,tt_):
     top_=sorted(_PHASE_T.items(),key=lambda x_:-x_[1]); acc_=sum(v_ for _,v_ in top_)
     print(f"  [inference SLEEP PHASES] {tt_:.0f}s in all | "+" | ".join(f"{k_} {v_:.0f}s" for k_,v_ in top_[:14] if v_>=1.0)
           +f" | not in a timed call {max(0.0,tt_-acc_):.0f}s"
-          +(" || GPU PEAK RAISED BY: "+" | ".join(f"{k_} +{v_[0]:.1f} GB (to {v_[1]:.1f})" for k_,v_ in sorted(_PHASE_M.items(),key=lambda x_:-x_[1][0]) if v_[0]>=0.5) if _PHASE_M else ""),flush=True)
+          +(" || GPU, EACH PHASE'S OWN PEAK (GB above its entry level -> peak): "+" | ".join(f"{k_} +{v_[0]:.1f} -> {v_[1]:.1f}" for k_,v_ in sorted(_PHASE_M.items(),key=lambda x_:-x_[1][1])[:10] if v_[1]>=0.5) if _PHASE_M else ""),flush=True)
     _PHASE_T.clear(); _PHASE_M.clear()
 def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
     """timing wrapper: wall time of the whole sleep and of the linking step"""
-    t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb(); ph9_=_phase_wrap(int(getattr(cfg,'inf_sleep_phases',1)))
+    t0_=__import__('time').time(); _INF['t_link']=0.0; gd_=_gpu_gb(); _PHASE_PK[0]=0; _PHASE_FREE[0]=int(getattr(cfg,'inf_sleep_phase_free',0)); ph9_=_phase_wrap(int(getattr(cfg,'inf_sleep_phases',1)))
     try:                                                                        # READOUT: visits per TRUE domain, so UPDATED probes are scored only after a revisit
         S9v_=_inf_store(model); td9_=int(model.__dict__.get('_s2t',{}).get(int(ts),int(t))); vv9_=int(model.__dict__.get('_visit',0))
         if '_vdom' not in S9v_: S9v_['_vdom']={}; S9v_['_vdom_from']=vv9_
@@ -152,6 +159,7 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         return r9_
     finally:
         gs_=_gpu_gb()
+        if gs_ is not None and _PHASE_PK[0]: gs_=(max(gs_[0],_PHASE_PK[0]/2**30),gs_[1])   # 11 Nov: per-phase resets: the sleep's peak is the running one
         try:
             if gs_ is not None: torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
         except Exception: pass

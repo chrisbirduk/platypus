@@ -56,7 +56,7 @@ def gauss_drift(model, cfg, S_, S_slot, vslot, oslots):
             st = {}
             for l, h in cap['h'].items():
                 Z = h[:, :m.shape[1]][m[:, :h.shape[1]]].double()
-                mu = Z.mean(0); C = Z - mu; st[l] = (mu, C.T @ C / max(1, Z.shape[0] - 1))
+                mu = Z.mean(0); C = Z - mu; st[l] = (mu.cpu(), (C.T @ C / max(1, Z.shape[0] - 1)).cpu())   # statistics kept on the CPU
             cur[sl] = st
         rows = {}
         for sl, st in cur.items():

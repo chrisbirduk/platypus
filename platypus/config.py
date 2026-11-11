@@ -552,6 +552,7 @@ class Config:
     inf_gate_beta=0.0               #   >0 = BETA drift brake strength s: question weight x min(1, (ref / dream-KL ema)^s)
     inf_gate_beta_ref=1.0           #     ref = previous visit's median dream KL x this
     inf_distill_spindle=0           #   1 = SPINDLE coupling: question rows only inside the sleep's repair replay burst (needs inf_distill_repair)
+    inf_sleep_phase_free=0          # 11 Nov: 1 = release the CUDA cache after each timed sleep phase (with inf_sleep_phases)
     inf_gauss_drift=0               # 11 Nov READOUT: Gaussian (mean, covariance) drift of each layer's states on fixed stored sentences, sleep to sleep
     inf_distill_brake=0.01          #   distillation: rolled back if the visited or the old domains' BPC rises by more than this
     pu_cons_steps=0                 # cg19 (1) PRIVATE-INTO-SHARED CONSOLIDATION after every closed-loop visit: this many offline steps in which a
