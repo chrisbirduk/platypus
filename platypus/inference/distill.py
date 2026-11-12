@@ -189,6 +189,67 @@ def _dw_bench_recall(model, cfg, S_slot, vis):
 
 
 _RTX_PRON = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ', 'The ')
+
+
+def _dw_bench_diag(model, cfg, S_slot, vis):
+    """12 Nov READOUT: REAL-TEXT RECALL DIAGNOSTICS - why recall sits near the prior. Benchmark relations of documents read, from ONE
+    sentence: NAMED (both names in the sentence, subject first) or PRONOUN-LED (the subject is the document's title, the sentence opens with
+    He / She / It / They / The ...). Per group (replayed / control documents x named / pronoun-led): STORAGE - the trunk completes the
+    object after the sentence's own prefix, as read (every byte top-1); OWN-FRAME recall - the question in the sentence's own words with the
+    subject named ('Thatcher, a native of'); TEMPLATE recall ('Thatcher was born in') and the FRESH-subject prior; the last three among the
+    same 10 candidates (true object + 9 same-type names of the domain)."""
+    from platypus.inference.probes import _bench
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    G = _bench(cfg); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); rs = np.random.RandomState(int(cfg.seed) + 4646 + vis)
+    nm = G['ent_name']; ty = G.get('ent_type', {}); L0 = int(cfg_seq_(model)); rtx = int(getattr(cfg, 'inf_distill_rtx', 0)) > 0; items = []
+    PR = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ')
+    for d in sorted(seen):
+        dl = G['docs'].get(str(d), [])
+        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        for di, doc in enumerate(dl):
+            sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
+            for h, t, fl, ps in G['rel']:
+                if str(h) not in inX or str(t) not in inX: continue
+                pc = next((p for p in ps if p in _BR_T), None)
+                if pc is None: continue
+                H, T = nm[str(h)], nm[str(t)]
+                if len(H) < 3 or len(T) < 3: continue
+                same = [nm[e] for e in inD if e not in (str(h), str(t)) and ty.get(e) == ty.get(str(t)) and len(nm[e]) >= 3]
+                if len(same) < 3: continue
+                got = None
+                for s_ in sents:
+                    if T not in s_: continue
+                    j = s_.index(T)
+                    if H in s_ and s_.index(H) + len(H) < j:
+                        mid = s_[s_.index(H) + len(H):j]
+                        if 0 < len(mid.split()) <= 15: got = ('named', s_[:j], H + mid); break
+                    elif H not in s_ and doc.startswith(H) and (s_.startswith(PR) or s_.startswith('The ')) and j > 0:
+                        cut = s_.index(' ') if s_.startswith(PR) else s_.index(' ', 4) if ' ' in s_[4:] else -1
+                        if 0 < cut < j and len(s_[cut:j].split()) <= 15: got = ('pronoun-led', s_[:j], H + s_[cut:j]); break
+                if got: items.append((d, pc, H, T, same, _rtx_rep(d, di) if rtx else False, got[0], got[1], got[2]))
+    if not items: return
+    items = list({(x[0], x[2], x[3]): x for x in items}.values())
+    fresh = lambda: ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel'], 3)).capitalize()
+    def score(L):
+        L = [L[int(i)] for i in rs.permutation(len(L))[:48]]; st, own, tpl, pri = [], [], [], []
+        for d, pc, H, T, same, rp, kd, pre, oq in L:
+            sl = int(S_slot(d)); oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth
+            pb = pre.encode('latin-1', 'replace')[-(L0 - 2 - len(T)):]; tb = T.encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb + b' '])
+            with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
+            p0 = len(pb) - 1
+            if p0 + len(tb) <= lg.shape[0]: st.append(bool((lg[p0:p0 + len(tb)].argmax(-1) == torch.tensor(list(tb), device=lg.device)).all()))
+            own.append(_dw_cand_mc(model, sl, oq.rstrip() + ' ', cands) == 0); tpl.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0)
+            pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0)
+        m = lambda v: f"{np.mean(v):.2f}" if v else "nan"
+        return f"storage {m(st)} | own-frame {m(own)} | template {m(tpl)} | prior {m(pri)} ({len(L)})"
+    parts = []
+    for rp in ((True, False) if rtx else (False,)):
+        for kd in ('named', 'pronoun-led'):
+            L = [x for x in items if x[5] == rp and x[6] == kd]
+            if L: parts.append(f"{'REPLAYED' if rp else ('CONTROL' if rtx else 'ALL')}, {kd}: {score(L)}")
+    print(f"  [REAL-TEXT RECALL, DIAGNOSTICS | visit {vis + 1}] from the weights; storage = completes the object after its own sentence; own-frame / template / prior "
+          f"= the true object among up to 10 same-type names (chance ~0.10) || " + " || ".join(parts), flush=True)
 _RTX_LEAD = {'In', 'On', 'At', 'After', 'During', 'Before', 'Since', 'From', 'For', 'By', 'As', 'A', 'An', 'When', 'While', 'Although', 'However', 'Following', 'Between', 'Despite', 'Under', 'With', 'Of', 'This', 'These', 'That', 'There'}
 _RTX_FORMS = ("In short, ", "From the notes: ", "As noted before, ", "It turns out ")
 
@@ -1534,6 +1595,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if int(getattr(cfg, 'inf_distill_bench_recall', 1)) and str(getattr(cfg, 'inf_bench', '') or ''):
             try: _dw_bench_recall(model, cfg, S_slot, vis)
             except Exception as e9: _fail('inference.distill:bench_recall'); print(f"  [REAL-TEXT RECALL] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+            try: _dw_bench_diag(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.distill:bench_diag'); print(f"  [REAL-TEXT RECALL, DIAGNOSTICS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);
