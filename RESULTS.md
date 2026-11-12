@@ -483,6 +483,22 @@ facts still answer only ~half in question form, the gap alignment closes in the 
 sentences of pool AND control facts replayed as plain text, control never asked), then alignment on top. The mismatched-pair cosine (question
 vs another fact's declaration) is added to the readout to tell a fact-specific 0.96 from a shared direction.
 
+**Toy alignment tests (tools/toy_align2.py, seed 0, 6,000 steps; never-taught facts in UNSEEN question wordings):**
+
+| test | result |
+|---|---|
+| A READINGS (never-taught facts read 2 / 8 / 32 / 128 times): alignment off | stored (completes 'A r') 0.22 / 0.71 / 0.96 / 0.96; question 0.06 / 0.18 / 0.43 / 0.50 |
+| ... alignment on | stored 0.04 / 0.51 / 0.93 / 0.96; question 0.02 / 0.30 / **0.78 / 0.76** - alignment pays once a fact is stored (~32 readings) |
+| B LABEL-FREE (aligned but never asked / read-only control) | none 0.33 / 0.33; taught facts aligned 0.79 / 0.76; **+ the never-asked facts aligned (no labels) 0.92 / 0.87** |
+| C OBJECTIVE, 1,500 facts | none 0.40; **cosine 0.59**; InfoNCE 0.53; predictor head + cosine 0.48 (as LLM-JEPA: cosine best) |
+| D WHERE | **answer position 0.87**; subject position 0.53; both 0.88; middle layer 0.89 |
+| E [PRED] TOKENS (LLM-JEPA's tied predictor) | **k 0 (as built) 0.85**; k 1 0.50; k 2 0.47; k 3 0.61; no alignment 0.52 |
+| F WEIGHT | **0.5 (as built) 0.85**; 2 0.83; 8 0.79 |
+
+Every variant points back to the build: cosine, stop-gradient declaration, answer position, no predictor, weight 0.5. The open variable
+is STORAGE (A) - hence source replay (cg27a_replay). Local safety, short runs: alignment with a stop-gradient target 3.006 / -0.141, both
+sides trained 3.006 / -0.140, vs 3.006 / -0.141 without (local alignment loss 0.007: the states coincide at the local context length).
+
 Rule world with the sleep layer held off (inf_rw_nosleep, the clean step-4 control): 0 rule-world conclusions leak (control conclusions 0.00
 vs 0.44 in cg27a_chunk at visit 4); written facts 11 at visit 3, precision 1.00, 8 never planted; from the trunk, edits subtracted: taught
 1.00 (4) vs held back 0.50 (2); never planted 1.00 (2) vs 1.00 (1) - n far too small to separate.
