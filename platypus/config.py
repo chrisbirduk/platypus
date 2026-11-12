@@ -585,6 +585,8 @@ class Config:
     inf_distill_align_src=1         #     1 = the declaration is the fact's stored source sentence when its answer is found there; 0 = always 'A r ans.'
     inf_distill_align_lf=0          #   12 Nov LABEL-FREE ALIGNMENT (toy B: never-asked facts 0.79 -> 0.92): 1 = half the never-asked control facts (second hash) are
                                     #     ALIGNED too (question -> declaration, no answer label); the other half stays the pure control
+    inf_distill_align_para=0        #   12 Nov PARAPHRASE ALIGNMENT (toy: never-taught facts asked in a paraphrase 0.61 -> 0.82): 1 = taught facts also asked with
+                                    #     each paraphrase of their relation the relational module merged from the text, aligned to the stored declaration (no labels)
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
     inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
                                     #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk

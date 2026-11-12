@@ -101,6 +101,21 @@ def _dw_align_probe(model, S_, S_slot, es, src):
             f"recall completing its own declaration {m(rd)}, completing plain 'A r' {m(pl)}")
 
 
+def _dt_recall_para(model, S_slot, es):
+    """open-ended recall from the trunk in the PARAPHRASED test wording only ('A is a colleague of'; facts whose relation has one)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122; ok = []
+    for e in es:
+        if e['r'] not in _DT_PARA: continue
+        pb = f"{e['A']} {_DT_PARA[e['r']]} ".encode('latin-1', 'replace'); tb = (e['ans'] + '.').encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb])
+        with torch.no_grad(): lg = _ws_run(model, X, int(S_slot(e['d'])))[0]
+        p0 = len(pb) - 1; ps = torch.arange(p0, p0 + len(tb), device=lg.device)
+        if int(ps[-1]) >= lg.shape[0]: continue
+        top = lg[ps].argmax(-1); tr = torch.tensor(list(tb), device=lg.device)
+        ok.append(bool((top[:-1] == tr[:-1]).all()) and not isl(int(top[-1])))
+    return (float(np.mean(ok)) if ok else float('nan')), len(ok)
+
+
 def _dt_items(ents, rs, n):
     out = []
     for i in rs.choice(len(ents), min(n, len(ents)), replace=False):
@@ -1109,7 +1124,8 @@ def _dw_relmod(model, cfg, ents, held, vis):
         WR = model.__dict__.setdefault('_rm_written', {})                     # STEP 4 (inf_distill_relmod_write): facts written at earlier sleeps -
         for (r9, a9, c9) in WR: pairs.setdefault(r9, set()).add((a9, c9))      #   hops for later chains, never evidence (provenance)
         R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}), derived=set(WR))
-        rels = R['rels']
+        rels = R['rels']; mg9 = model.__dict__.setdefault('_rm_merged', set())   # 12 Nov: the paraphrase merges, kept across sleeps (paraphrase alignment)
+        for a9, b9 in R['merged']: mg9.add((str(a9), str(b9)))
         if len(rels) < 2: print(f"  [RELATIONAL MODULE | visit {vis + 1}] too few relations recorded ({len(rels)})", flush=True); return
         rw = W.get('rel', {}); par, mgr = W.get('parent', {}), W.get('mgr', {})
         cl = {r: r for r in rels}
@@ -1416,7 +1432,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         aw9 = float(getattr(cfg, 'inf_distill_align', 0.0)); decl9 = {}; asrc9 = int(getattr(cfg, 'inf_distill_align_src', 1))
         lf9 = aw9 > 0 and int(getattr(cfg, 'inf_distill_align_lf', 0))
         held_lf9 = [e for e in held if e['key'][0] == 'fact' and zlib.crc32((repr(e['key']) + '|lf').encode()) % 2 == 0] if lf9 else []
-        lfrows9 = {}
+        lfrows9 = {}; pararows9 = {}; para9 = aw9 > 0 and int(getattr(cfg, 'inf_distill_align_para', 0))
         for e in held_lf9:
             for fm in FORMS9: lfrows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), repr(e['key'])))
         if aw9 > 0:                                                            # 12 Nov VIEW ALIGNMENT: each TAUGHT fact's declaration (control never aligned)
@@ -1436,6 +1452,26 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 print(f"  [DISTILLATION, LABEL-FREE ALIGNMENT | visit {vis + 1}] last visit: alignment loss on never-asked facts {np.mean(L1[:20]) if L1 else float('nan'):.3f} (first 20) -> "
                       f"{np.mean(L1[-20:]) if L1 else float('nan'):.3f} (last 20) | FROM THE TRUNK, test wordings: ALIGNED, NEVER ASKED {ff(rl1)} || PURE CONTROL, never asked or aligned "
                       f"{ff(rp1)} || states: aligned {al1} || pure control {ap1} | next visit: {len(held_lf9)} never-asked facts aligned, {len(held) - len(held_lf9)} pure control", flush=True)
+            if para9:                                                          # 12 Nov PARAPHRASE ALIGNMENT: taught facts asked with a paraphrase of their relation
+                mg = model.__dict__.get('_rm_merged') or set(); eq = {}        #   that the relational module merged (from the text) -> the stored declaration's state
+                for a9, b9 in mg: eq.setdefault(a9, set()).add(b9); eq.setdefault(b9, set()).add(a9)
+                for _ in range(3):
+                    for r9 in list(eq): eq[r9] |= set().union(*[eq.get(x, set()) for x in eq[r9]]) - {r9}
+                for e in ents:
+                    if e['key'][0] != 'fact' or repr(e['key']) not in decl9: continue
+                    for r2 in sorted(eq.get(str(e['r']).strip(), ())):
+                        for fm in FORMS9: pararows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=r2).encode('latin-1', 'replace'), repr(e['key'])))
+                LP = (D or {}).get('al_pa') or []
+                try:
+                    tp1 = [e for e in ((D or {}).get('probe') or []) if e['key'][0] == 'fact' and e['r'] in _DT_PARA]; cp1 = [e for e in ((D or {}).get('hprobe') or []) if e['key'][0] == 'fact' and e['r'] in _DT_PARA]
+                    inm = lambda e: _DT_PARA[e['r']] in eq.get(str(e['r']).strip(), ())
+                    rr = [_dt_recall_para(model, S_slot, L) for L in ([e for e in tp1 if inm(e)], [e for e in tp1 if not inm(e)], [e for e in cp1 if inm(e)], [e for e in cp1 if not inm(e)])]
+                except Exception: _fail('inference.distill:para_probe'); rr = [(float('nan'), 0)] * 4
+                fr = lambda x: f"{x[0]:.2f} ({x[1]})"
+                print(f"  [DISTILLATION, PARAPHRASE ALIGNMENT | visit {vis + 1}] last visit: alignment loss on paraphrased questions {np.mean(LP[:20]) if LP else float('nan'):.3f} (first 20) -> "
+                      f"{np.mean(LP[-20:]) if LP else float('nan'):.3f} (last 20) | FROM THE TRUNK, the PARAPHRASED test wording ('A is a colleague of'): TAUGHT facts, the test paraphrase "
+                      f"WAS merged by the module {fr(rr[0])}, was NOT {fr(rr[1])} || CONTROL (never asked or aligned) merged {fr(rr[2])}, not merged {fr(rr[3])} | merges known: "
+                      f"{sorted(mg)[:8]} | next visit: {sum(len(v) for v in pararows9.values())} paraphrase rows", flush=True)
             print(f"  [DISTILLATION, VIEW ALIGNMENT | visit {vis + 1}] last visit: alignment loss (1 - cosine, weight {aw9:g}, "
                   f"{'declaration a stop-gradient target' if int(getattr(cfg, 'inf_distill_align_detach', 1)) else 'both sides trained'}) {np.mean(A9[:20]) if A9 else float('nan'):.3f} (first 20) -> "
                   f"{np.mean(A9[-20:]) if A9 else float('nan'):.3f} (last 20) | NOW, a TEST-wording question's state vs the declaration's: TAUGHT facts {ct9} | "
@@ -1527,7 +1563,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
         lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
         pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
-        model.__dict__['_dtw'] = dict(riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1595,9 +1631,10 @@ def distill_wake_loss(model, cfg):
                 if ok:
                     hq = torch.stack([Hq[j, len(items[j][0]) - 1] for j, n in ok]).float(); hd = torch.stack([Hd[n, dec[j][1]] for j, n in ok]).float()
                     al = (1 - F.cosine_similarity(hq, hd, dim=-1)).mean(); loss = loss + aw * al; D['al'].append(float(al.detach()))
-        lfp_ = (D.get('lf') or {}).get(sl) if aw > 0 else None
-        if lfp_:                                                               # LABEL-FREE ALIGNMENT: never-asked facts' questions (no answer bytes, no
-            qs = [lfp_[int(i)] for i in rs.choice(len(lfp_), min(k, len(lfp_)), replace=False)]   #   cross-entropy) -> their declarations' states
+        for pk_, lk_ in (('lf', 'al_lf'), ('para', 'al_pa')):                 # LABEL-FREE ALIGNMENT (never-asked facts) and PARAPHRASE ALIGNMENT (taught facts asked
+            lfp_ = (D.get(pk_) or {}).get(sl) if aw > 0 else None             #   with a merged paraphrase of their relation): questions with no answer bytes and
+            if not lfp_: continue                                              #   no cross-entropy -> the stored declaration's state
+            qs = [lfp_[int(i)] for i in rs.choice(len(lfp_), min(k, len(lfp_)), replace=False)]
             dq = [(q, D['decl'].get(k9)) for q, k9 in qs if D['decl'].get(k9) is not None]
             if dq:
                 Xq2, _ = _ws_batch(model, [q for q, d_ in dq]); Xd2, _ = _ws_batch(model, [d_[0] for q, d_ in dq])
@@ -1606,7 +1643,7 @@ def distill_wake_loss(model, cfg):
                 ok2 = [j for j, (q, d_) in enumerate(dq) if Hq2 is not None and Hd2 is not None and len(q) - 1 < Hq2.shape[1] and d_[1] < Hd2.shape[1]]
                 if ok2:
                     hq2 = torch.stack([Hq2[j, len(dq[j][0]) - 1] for j in ok2]).float(); hd2 = torch.stack([Hd2[j, dq[j][1][1]] for j in ok2]).float()
-                    a2 = (1 - F.cosine_similarity(hq2, hd2, dim=-1)).mean(); loss = loss + aw * a2; D['al_lf'].append(float(a2.detach()))
+                    a2 = (1 - F.cosine_similarity(hq2, hd2, dim=-1)).mean(); loss = loss + aw * a2; D.setdefault(lk_, []).append(float(a2.detach()))
         return loss
     except Exception as e:
         _fail('inference.distill:wake')
