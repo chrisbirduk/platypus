@@ -1261,6 +1261,24 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
 
 
 @torch.no_grad()
+def _dw_stored(model, S_, S_slot, es, L0, bs=32):
+    """12 Nov SPACED REPLAY: repr(key) -> True when the trunk completes the fact's OWN source sentence (every answer byte top-1 after the
+    sentence's prefix; store and memory off); facts whose answer is not found in a stored sentence are left out (always replayed)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    out = {}; by = {}
+    for e in es:
+        d, pos, kd = _dw_decl(S_, e, L0, 1)
+        if kd == 'src': by.setdefault(int(S_slot(e['d'])), []).append((repr(e['key']), d, pos, e['ans'].encode('latin-1', 'replace')))
+    for sl, L in by.items():
+        for i in range(0, len(L), bs):
+            ch = L[i:i + bs]; X, _ = _ws_batch(model, [d for k, d, p, a in ch]); lg = _ws_run(model, X, sl)
+            for j, (k, d, p, a) in enumerate(ch):
+                n_ = min(len(a), lg.shape[1] - p)
+                out[k] = n_ == len(a) and bool((lg[j, p:p + n_].argmax(-1) == torch.tensor(list(a), device=lg.device)).all())
+    return out
+
+
+@torch.no_grad()
 def _dw_greedy(model, prompt, sl, n=24):
     """the trunk's greedy continuation of PROMPT (store and memory off), up to n bytes or a full stop"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
@@ -1476,21 +1494,40 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
             print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
                   f"(sentences naming a control subject left out)", flush=True)
-        rp9 = int(getattr(cfg, 'inf_distill_replay', 0)); rpl9 = {}             # 12 Nov SOURCE REPLAY: the stored source sentences of the pool's facts AND
+        rp9 = int(getattr(cfg, 'inf_distill_replay', 0)); rpl9 = {}; riv9 = {}; rw9 = {}             # 12 Nov SOURCE REPLAY: the stored source sentences of the pool's facts AND
         if rp9 > 0:                                                            #   of the control fifth (read, never asked), replayed as plain text
-            R9 = (D or {}).get('rl') or []; nt9 = nc9 = 0
+            R9 = (D or {}).get('rl') or []; nt9 = nc9 = 0; sp9 = int(getattr(cfg, 'inf_distill_replay_space', 0)); riv9 = dict((D or {}).get('riv') or {}); rw9 = {}
+            cand9 = []
             for grp9, es9 in ((0, ents), (1, held if int(getattr(cfg, 'inf_distill_replay_ctl', 1)) else [])):
                 for e in es9:
                     if e['key'][0] != 'fact': continue
                     ss9 = [x[-(L09 - 1):] for x in _dw_src_bytes(S_, e) if len(x) >= 8]
-                    if ss9: rpl9.setdefault(int(S_slot(e['d'])), []).extend(ss9); nt9 += grp9 == 0; nc9 += grp9 == 1
+                    if ss9: cand9.append((grp9, e, ss9))
+            st9 = {}
+            if sp9 > 1:                                                        # 12 Nov SPACED REPLAY (retire what is stored): a fact whose own source sentence
+                try: st9 = _dw_stored(model, S_, S_slot, [e for g_, e, ss_ in cand9], L09)   #   the trunk already completes has its replay interval doubled
+                except Exception: _fail('inference.distill:replay_space'); st9 = {}   #   (up to inf_distill_replay_space); one it fails resets to 1
+                for g_, e, ss_ in cand9:
+                    k9 = repr(e['key'])
+                    if k9 in st9: riv9[k9] = min(sp9, 2 * riv9.get(k9, 1)) if st9[k9] else 1
+            for g_, e, ss_ in cand9:
+                sl9 = int(S_slot(e['d'])); w9 = 1.0 / riv9.get(repr(e['key']), 1) if sp9 > 1 else 1.0
+                rpl9.setdefault(sl9, []).extend(ss_); rw9.setdefault(sl9, []).extend([w9] * len(ss_)); nt9 += g_ == 0; nc9 += g_ == 1
+            sinfo9 = ""
+            if sp9 > 1 and st9:
+                stT = [v for (g_, e, ss_) in cand9 for v in [st9.get(repr(e['key']))] if g_ == 0 and v is not None]
+                stC = [v for (g_, e, ss_) in cand9 for v in [st9.get(repr(e['key']))] if g_ == 1 and v is not None]
+                ivs = [riv9.get(repr(e['key']), 1) for g_, e, ss_ in cand9]; wt = sum(1.0 / x for x in ivs)
+                sinfo9 = (f" | SPACED (max interval {sp9}): own sentence completed by taught {np.mean(stT) if stT else float('nan'):.2f} ({len(stT)}), control "
+                          f"{np.mean(stC) if stC else float('nan'):.2f} ({len(stC)}); mean interval {np.mean(ivs):.2f}, at {sp9}: {sum(1 for x in ivs if x >= sp9)}; "
+                          f"share of replay on facts NOT yet stored {sum(1.0 / riv9.get(repr(e['key']), 1) for g_, e, ss_ in cand9 if not st9.get(repr(e['key']))) / max(wt, 1e-9):.2f}")
             print(f"  [DISTILLATION, SOURCE REPLAY | visit {vis + 1}] last visit: {len(R9)} steps x {rp9} stored source sentences, next-byte loss "
                   f"{np.mean(R9[:20]) if R9 else float('nan'):.3f} (first 20) -> {np.mean(R9[-20:]) if R9 else float('nan'):.3f} (last 20) | next visit: sentences of "
-                  f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences", flush=True)
+                  f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences" + sinfo9, flush=True)
         lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
         lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
         pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
-        model.__dict__['_dtw'] = dict(lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1541,7 +1578,8 @@ def distill_wake_loss(model, cfg):
         loss = tot / cnt; D['n'] += 1; D['losses'].append(float(np.mean(ce)) if ce else float(loss.detach()))
         rpk = int(getattr(cfg, 'inf_distill_replay', 0)); rpp = (D.get('rpl') or {}).get(sl)
         if rpk > 0 and rpp:                                                    # SOURCE REPLAY: next-byte loss on stored source sentences of this slot
-            ss = [rpp[int(i)] for i in rs.choice(len(rpp), min(rpk, len(rpp)), replace=False)]
+            pw_ = (D.get('rpw') or {}).get(sl); pw_ = (np.asarray(pw_, float) / float(np.sum(pw_))) if pw_ is not None and len(pw_) == len(rpp) and np.sum(pw_) > 0 else None
+            ss = [rpp[int(i)] for i in rs.choice(len(rpp), min(rpk, len(rpp), int(np.count_nonzero(pw_)) if pw_ is not None else len(rpp)), replace=False, p=pw_)]
             Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
             cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
             lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rl'].append(float(lr_.detach()))

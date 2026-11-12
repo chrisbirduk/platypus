@@ -591,6 +591,9 @@ class Config:
                                     #   completed only 0.08 of control facts' own sentences vs 0.47 taught)
     inf_distill_replay_w=1.0        #     weight of the replay loss (relative to the question rows)
     inf_distill_replay_ctl=1        #     1 = the control fifth's sentences are replayed too (0 = taught facts only)
+    inf_distill_replay_space=0      #   12 Nov SPACED REPLAY: N > 1 = a fact whose own source sentence the trunk already completes has its replay interval
+                                    #     doubled at each sleep up to N (sampled 1/interval as often); a fact it fails resets to 1 (cg27a_replay: 0.91 of taught
+                                    #     facts stored by visit 9 while Gutenberg's shared-trunk reliance rose to 0.36)
     inf_distill_wake_spaced_conc=0  #   11 Nov: 0 = spaced rehearsal spaces FACTS only (conclusions always rehearsed: their taught-wording check passes through the closed-form edits); 1 = conclusions too
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
