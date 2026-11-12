@@ -8,7 +8,9 @@ from scratch on synthetic facts (CPU):
       training prefixes (2, 7 or 20 random word strings); test the taught facts in UNSEEN prefixes (new strings of the same words).
   (3) VIEW ALIGNMENT (LLM-JEPA, 2025): + a cosine term aligning the question's last state with the declaration's state after 'A r' (the
       position that predicts B); same test.
-Usage: python3 tools/toy_compose_rows.py [seed] [steps]"""
+Usage: python3 tools/toy_compose_rows.py [seed] [steps]   (env: TOY_SKIP2=1 skips (2); TOY_K=7 one prefix count; TOY_DETACH=1 the
+declaration's state is a stop-gradient target, as the Platypus build uses it)"""
+import os
 import sys
 import numpy as np
 import torch
@@ -45,7 +47,7 @@ def train(seqs, steps, sd, align=None, aw=0.5):
         loss = F.cross_entropy(lg[:, :-1].reshape(-1, V), X[:, 1:].reshape(-1), ignore_index=PAD)
         if align:                                                              # VIEW ALIGNMENT: question's last state ~ declaration's state after 'A r'
             ab = [align[i] for i in rr.randint(len(align), size=48)]; Xq = pad([q for q, d in ab]); Xd = pad([d for q, d in ab])
-            hq, _ = m(Xq); hd, _ = m(Xd); lq = torch.tensor([len(q) - 1 for q, d in ab])
+            hq, _ = m(Xq); hd, _ = m(Xd); hd = hd.detach() if os.environ.get('TOY_DETACH') else hd; lq = torch.tensor([len(q) - 1 for q, d in ab])
             loss = loss + aw * (1 - F.cosine_similarity(hq[torch.arange(len(ab)), lq], hd[:, 1], dim=-1)).mean()
         opt.zero_grad(); loss.backward(); opt.step()
     return m
@@ -61,7 +63,7 @@ rs = np.random.RandomState(seed)
 # ---------------- (2) TWO-HOP CURSE ----------------
 perm = rs.permutation(NE); ch = [(ENT(perm[3 * i]), ENT(perm[3 * i + 1]), ENT(perm[3 * i + 2]), REL(rs.randint(NR)), REL(rs.randint(NR))) for i in range(400)]
 trc, tec = ch[:300], ch[300:]
-for cond in ('SEPARATE', 'CO-LOCATED'):
+for cond in (() if os.environ.get('TOY_SKIP2') else ('SEPARATE', 'CO-LOCATED')):
     seqs = []
     for A, B, C, r1, r2 in ch: seqs += [[A, r1, B, DOT], [B, r2, C, DOT]]
     for A, B, C, r1, r2 in trc: seqs += [[Q, A, r1, r2, QM, C]] * 2 + [[A, r1, B, DOT, B, r2, C, DOT]]
@@ -78,7 +80,7 @@ facts = [(ENT(rs.randint(NE)), REL(rs.randint(NR)), ENT(rs.randint(NE))) for _ i
 taught = facts[:420]; untaught = facts[420:]
 mk = lambda: [WRD(w) for w in rs.choice(NW, rs.randint(1, 4), replace=False)]
 test_pref = [mk() for _ in range(10)]
-for K in (2, 7, 20):
+for K in ([int(os.environ['TOY_K'])] if os.environ.get('TOY_K') else (2, 7, 20)):
     pref = [mk() for _ in range(K)]
     for al in (False, True):
         seqs = [[A, r, B, DOT] for A, r, B in facts]; align = []

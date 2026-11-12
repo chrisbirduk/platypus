@@ -19,6 +19,72 @@ _DT_FORMS = ("In short, {A} {r} ", "Notes on {A}: {A} {r} ", "{A}, as noted befo
 _DT_PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
             'trained under': 'was taught by', 'is connected to': 'is tied to'}
 _DT_TEST = ("{A} is tied to ", "The one tied to {A} is ", "It is on record that {A} {r} ")   # never taught (checked below)
+_DT_FORMS2 = ("Earlier we saw that {A} {r} ", "It turns out {A} {r} ", "Remember: {A} {r} ", "According to the file, {A} {r} ",
+              "Of all people, {A} {r} ", "Ask anyone and they will say {A} {r} ", "{A} (mentioned above) {r} ", "Fact: {A} {r} ",
+              "The notes about {A} say {A} {r} ", "{A}; in other words, {A} {r} ", "Some say that {A} {r} ", "Plainly, {A} {r} ",
+              "Going back to {A}: {A} {r} ", "{A}, it seems, {r} ")   # 12 Nov: inf_distill_forms > 7 adds these (none a test wording)
+
+
+def _dt_forms(cfg):
+    """the self-written question wordings in use: the original 7, + up to 14 more (inf_distill_forms)"""
+    n = max(1, min(len(_DT_FORMS) + len(_DT_FORMS2), int(getattr(cfg, 'inf_distill_forms', 7))))
+    fs = (_DT_FORMS + _DT_FORMS2)[:n]
+    assert all('tied to' not in f and 'on record' not in f and 'We read' not in f for f in fs)   # no taught wording is a test wording
+    return fs
+
+
+def _dw_src_bytes(S_, e, n=2):
+    """the fact's stored source sentence(s) as bytes (up to n)"""
+    it9 = S_.get('it', []); ss = []
+    for i9 in (e.get('src') or ())[:n]:
+        if isinstance(i9, (int, np.integer)) and 0 <= int(i9) < len(it9):
+            b9 = it9[int(i9)]['s']
+            b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
+            ss.append(b9.strip())
+    return ss
+
+
+def _dw_decl(S_, e, L0, src=True):
+    """12 Nov VIEW ALIGNMENT: the fact's DECLARATION and the position whose state predicts the answer's first byte: the stored source
+    sentence cut after the answer (the answer found after a space, after the subject when the subject is there; trimmed from the left to
+    the window), else the plain 'A r ans.'. Returns (bytes, position, 'src' | 'plain')"""
+    ab = e['ans'].encode('latin-1', 'replace'); Ab = e['A'].encode('latin-1', 'replace')
+    if src:
+        for sb in _dw_src_bytes(S_, e):
+            i = sb.find(b' ' + ab, max(0, sb.find(Ab)))
+            if i < 1 or (Ab not in sb[:i + 1] and sb.find(Ab) >= 0): continue
+            d = sb[:i + 1 + len(ab)]; cut = max(0, len(d) - (L0 - 2)); d = d[cut:]; pos = i - cut
+            if pos >= 1: return d, pos, 'src'
+    pb = f"{e['A']} {e['r']} ".encode('latin-1', 'replace'); return pb + ab + b'.', len(pb) - 1, 'plain'
+
+
+def _ws_hidden(model, fn):
+    """(fn(), the last block's output states during it) - the trunk's state that the view alignment compares"""
+    H = {}
+
+    def hk(m_, i_, o_): H['h'] = o_[0] if isinstance(o_, tuple) else o_
+    h_ = model.blocks[-1].register_forward_hook(hk)
+    try: out = fn()
+    finally: h_.remove()
+    return out, H.get('h')
+
+
+@torch.no_grad()
+def _dw_align_probe(model, S_, S_slot, es, src):
+    """mean cosine between the last-block state where a TEST-wording question ('It is on record that A r') predicts its answer and the
+    state where the fact's declaration predicts it - for taught facts and for the never-taught control (never aligned)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    L0 = int(cfg_seq_(model)); cs = []
+    for e in es:
+        if e['key'][0] == 'conclusion': continue
+        sl = int(S_slot(e['d'])); pb = f"It is on record that {e['A']} {e['r']} ".encode('latin-1', 'replace')
+        d, pos, _ = _dw_decl(S_, e, L0, src)
+        Xq, _ = _ws_batch(model, [pb + (e['ans'] + '.').encode('latin-1', 'replace')]); _, hq = _ws_hidden(model, lambda: _ws_run(model, Xq, sl))
+        Xd, _ = _ws_batch(model, [d]); _, hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl))
+        if hq is None or hd is None or len(pb) - 1 >= hq.shape[1] or pos >= hd.shape[1]: continue
+        cs.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), hd[0, pos].float(), dim=0)))
+    return (float(np.mean(cs)) if cs else float('nan')), len(cs)
 
 
 def _dt_items(ents, rs, n):
@@ -1262,13 +1328,27 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             except Exception as e9:
                 _fail('inference.distill:bridge'); print(f"  [DISTILLATION, BRIDGE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         from platypus.inference.jepa import cfg_seq_
-        L09 = int(cfg_seq_(model))
+        L09 = int(cfg_seq_(model)); FORMS9 = _dt_forms(cfg)
+        aw9 = float(getattr(cfg, 'inf_distill_align', 0.0)); decl9 = {}; asrc9 = int(getattr(cfg, 'inf_distill_align_src', 1))
+        if aw9 > 0:                                                            # 12 Nov VIEW ALIGNMENT: each TAUGHT fact's declaration (control never aligned)
+            A9 = (D or {}).get('al') or []
+            try: ct9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('probe') or [], asrc9); ch9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('hprobe') or [], asrc9)
+            except Exception: _fail('inference.distill:align_probe'); ct9 = ch9 = (float('nan'), 0)
+            for e in ents:
+                if e['key'][0] == 'fact': decl9[repr(e['key'])] = _dw_decl(S_, e, L09, asrc9)
+            print(f"  [DISTILLATION, VIEW ALIGNMENT | visit {vis + 1}] last visit: alignment loss (1 - cosine, weight {aw9:g}, "
+                  f"{'declaration a stop-gradient target' if int(getattr(cfg, 'inf_distill_align_detach', 1)) else 'both sides trained'}) {np.mean(A9[:20]) if A9 else float('nan'):.3f} (first 20) -> "
+                  f"{np.mean(A9[-20:]) if A9 else float('nan'):.3f} (last 20) | NOW, cosine of a TEST-wording question's state with the declaration's: taught facts {ct9[0]:.3f} ({ct9[1]}) | "
+                  f"CONTROL, never taught or aligned {ch9[0]:.3f} ({ch9[1]}) | next visit: {len(decl9)} taught facts with a declaration, "
+                  f"{sum(1 for v in decl9.values() if v[2] == 'src')} from the stored source sentence ({len(FORMS9)} question wordings)", flush=True)
+        elif len(FORMS9) != len(_DT_FORMS):
+            print(f"  [DISTILLATION, WORDINGS | visit {vis + 1}] {len(FORMS9)} self-written question wordings", flush=True)
         for e in ents:
             k_ = repr(e['key']); sl = int(S_slot(e['d']))
             own9 = f"{e['A']} {e['r']} {e['ans']}.".encode('latin-1', 'replace')   #   (never the row's own fact as its descriptor)
             d1 = [d for d in brd.get(e['ans'], []) if d != own9] if e['key'][0] == 'fact' else None
             d2 = [d for d in brd.get(e['A'], []) if d != own9] if e['key'][0] == 'fact' else None
-            for j9, fm in enumerate(_DT_FORMS):
+            for j9, fm in enumerate(FORMS9):
                 pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
                 if d2:                                                         #   BRIDGE ANCHORING: the bridge as SUBJECT - its descriptor before the question,
                     rm9 = L09 - 1 - len(pb) - len(ab) - 1                          #   trimmed from the left to keep the answer in the window
@@ -1314,7 +1394,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
             print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
                   f"(sentences naming a control subject left out)", flush=True)
-        model.__dict__['_dtw'] = dict(pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1329,7 +1409,10 @@ def distill_wake_loss(model, cfg):
         k = int(getattr(cfg, 'inf_distill_wake_rows', 4)); rs = D['rs']; sls = list(D['bysl']); sl = sls[rs.randint(len(sls))]; pool = D['bysl'][sl]
         pw = (D.get('w') or {}).get(sl)
         items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False, p=pw)]
-        X, M = _ws_batch(model, [it[0] + it[1] for it in items]); lg = _ws_run(model, X, sl, grad_=True)
+        aw = float(getattr(cfg, 'inf_distill_align', 0.0)) if D.get('decl') else 0.0
+        X, M = _ws_batch(model, [it[0] + it[1] for it in items])
+        if aw > 0: lg, Hq = _ws_hidden(model, lambda: _ws_run(model, X, sl, grad_=True))
+        else: lg = _ws_run(model, X, sl, grad_=True); Hq = None
         tot = 0.0; cnt = 0; ce = []
         pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
         if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
@@ -1360,6 +1443,18 @@ def distill_wake_loss(model, cfg):
             cnt += n_
         if not cnt: return 0.0
         loss = tot / cnt; D['n'] += 1; D['losses'].append(float(np.mean(ce)) if ce else float(loss.detach()))
+        if aw > 0 and Hq is not None:                                          # VIEW ALIGNMENT: the question's state where it predicts the answer ~ the
+            dec = [D['decl'].get(it[3]) for it in items]                       #   declaration's state where it predicts it (taught facts only)
+            ix = [j for j, d_ in enumerate(dec) if d_ is not None and len(items[j][0]) - 1 < Hq.shape[1]]
+            if ix:
+                Xd, _ = _ws_batch(model, [dec[j][0] for j in ix])
+                if int(getattr(cfg, 'inf_distill_align_detach', 1)):
+                    with torch.no_grad(): _, Hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl))
+                else: _, Hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl, grad_=True))
+                ok = [(j, n) for n, j in enumerate(ix) if Hd is not None and dec[j][1] < Hd.shape[1]]
+                if ok:
+                    hq = torch.stack([Hq[j, len(items[j][0]) - 1] for j, n in ok]).float(); hd = torch.stack([Hd[n, dec[j][1]] for j, n in ok]).float()
+                    al = (1 - F.cosine_similarity(hq, hd, dim=-1)).mean(); loss = loss + aw * al; D['al'].append(float(al.detach()))
         return loss
     except Exception as e:
         _fail('inference.distill:wake')

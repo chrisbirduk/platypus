@@ -578,6 +578,12 @@ class Config:
                                     #   sentence(s) before the question, the student the question alone; KL at temperature inf_distill_wake_pd_T on the answer bytes
     inf_distill_wake_pd_T=2.0       #     distillation temperature (the paper's best: 2)
     inf_distill_wake_pd_ce=0.0      #     + this x cross-entropy on the true answer bytes (0 = soft targets only)
+    inf_distill_align=0.0           #   12 Nov VIEW ALIGNMENT (after LLM-JEPA; toy: facts only READ answered 0.64 -> 0.88): > 0 = + this x (1 - cosine) between the
+                                    #   trunk's last-block state where a question row predicts its answer and the state where the fact's DECLARATION predicts it
+                                    #   (its stored source sentence, else 'A r ans.'), taught facts only; the control fifth never gets an alignment row
+    inf_distill_align_detach=1      #     1 = the declaration's state is a stop-gradient target (reading is left alone); 0 = both sides trained (the toy)
+    inf_distill_align_src=1         #     1 = the declaration is the fact's stored source sentence when its answer is found there; 0 = always 'A r ans.'
+    inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
     inf_distill_wake_spaced_conc=0  #   11 Nov: 0 = spaced rehearsal spaces FACTS only (conclusions always rehearsed: their taught-wording check passes through the closed-form edits); 1 = conclusions too
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
