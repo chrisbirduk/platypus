@@ -475,6 +475,29 @@ documents, 25% part of a gold entity name): **capitalised-not-first 0.93, byte s
 **The JEPA does not find names on real text**; byte surprise carries a weak signal for the names capitalisation misses (many of those
 'names' are common nouns inside entity names: 'University', 'Party'). Name finding beyond capitalisation needs another route.
 
+### Can the trunk guide the store? Boundaries and mention linking (tools/trunk_guides.py, 12 November; Re-DocRED dev, 500 documents, 13,189 gold mentions)
+
+After EM-LLM (episode boundaries at the model's own surprise) and hippocampal indexing (memory keyed by the cortex's states). Stand-in trunk:
+a byte LM trained here on local Wikipedia + the documents (128 wide, 3 layers, 4,000 steps, 2.10 bits/byte); control: the same network
+untrained. Thresholds and combinations fitted on documents 1-250, scored on 251-500.
+
+| test | baseline (the reader's own cues) | trained trunk | untrained network | combined |
+|---|---|---|---|---|
+| joins inside capitalised runs: same mention vs boundary (AUC) | - | 0.565 | - | split threshold fitted: none (exact-span F1 0.698 unchanged) |
+| sentence-initial capitalised word starts a mention (AUC) | corpus mid-sentence capitalisation **0.978** | 0.864 | - | 0.970 (worse than the baseline) |
+| same-entity mention pairs, all (AUC) | words + letter triples 0.904 | 0.927 | **0.937** | string + trunk 0.949, string + untrained 0.952 |
+| pairs sharing no word (1,221) | 0.472 | 0.684 | **0.719** | 0.739 vs 0.757 |
+| pairs sharing no word and few letter triples (932) | 0.322 | 0.612 | **0.649** | 0.669 vs 0.692 |
+| antecedent right (1,759 mentions) | 0.932 | 0.906 | 0.902 | 0.936 vs 0.941 |
+
+**At this scale the trunk adds nothing the store's own cues or plain byte form do not already give.** Boundaries: its surprise barely
+separates a name's continuation from a new mention, and the corpus capitalisation statistic beats it on sentence-initial names. Linking:
+the TRAINED states never beat the UNTRAINED network - what the states carry is byte form (shared capitals, as in acronyms), not learned
+identity; the remaining hard pairs need world knowledge ('AGF' / 'Asian Games Federation', 'Osaka Bay' / its Japanese name, 'Fatih Terim'
+/ 'Imparator'). Not tested: pronouns and descriptions ('she', 'the company') - Re-DocRED annotates named mentions only. Caveats: a small
+stand-in trunk (the GPU trunk reaches ~1.7 bits/byte); the guidance would have to grow with the trunk, and with 'guidance only adds' the
+floor stays at today's reader.
+
 ### Reference ceiling on real text (tools/reference_ceiling.py, 12 November; Re-DocRED benchmark documents, names = fast-channel fillers)
 
 Gold relations whose two names are found in ONE sentence: no reference 435 (9.2%); + the title in sentences with a third-person pronoun or
