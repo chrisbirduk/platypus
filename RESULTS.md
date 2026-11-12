@@ -505,6 +505,43 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
+### Refusal rows, replay by storage check, abstention, compression gain on the real trunk (cg27a_refuse to visit 6, cg27a_rtxsp to visit 4; seed 4; 12 November, night; both stopped by the author)
+
+Both = cg27a_rtx16 + ONE change: `cg27a_refuse` - a fifth of the question rows ask about FRESH names never read (taught wordings), answered
+'unknown' (inf_distill_refuse 0.2); `cg27a_rtxsp` - real-text replay probability ~ the trunk's own loss on each sentence squared
+(inf_distill_rtx_space 2), with the COMPRESSION GAIN readout. Local safety (short runs): final BPC 3.000 / forgetting -0.154 (refuse) and
+3.000 / -0.153 (rtxsp, alpha 1) vs 2.996 / -0.158; GPU BPC within 0.006 of cg27a_rtx16; no errors.
+
+REAL TEXT, replayed documents, named sentences (48): storage / own wording / ANOTHER wording (template) / fresh-subject prior
+
+| visit | cg27a_refuse | cg27a_rtxsp | cg27a_rtx16 | control documents (refuse): own wording / template / prior |
+|---|---|---|---|---|
+| 3 | 0.02 / 0.19 / - / 0.06 | 0.02 / 0.12 / - / 0.10 | 0.02 / 0.12 / 0.08 / 0.06 | 0.06 / - / - |
+| 4 | 0.04 / 0.27 / - / 0.12 | 0.08 / 0.35 / 0.23 / 0.23 | 0.06 / 0.23 / 0.08 / 0.08 | 0.06 / - / - |
+| 5 | 0.02 / 0.27 / - / 0.17 | - | - | 0.06 / - / - |
+| 6 | **0.19 / 0.33 / 0.17 / 0.10** | - | - | 0.10 / 0.08 / 0.06 |
+
+**At visit 6 real sentences are STORED (9 of 48 completed; control 0) and answered in a wording they never used above the prior (0.17
+vs 0.10; pronoun-led 0.12 vs 0.06; control at its prior)** - the planted world's order (storage, own wording, new wording) on real text,
+one visit, small numbers. Replay weighted by the trunk's loss lowered that loss fast (median 1.89 -> 1.06 by visit 4, hardest quarter
+-1.4 then -0.5 nats; ~0.33 of replay to the hardest quarter) but did not store faster by visit 4: loss-hard sentences are not the
+unstored ones.
+
+FALSE MEMORIES AND ABSTENTION (from the trunk; 64 questions per group): fresh name answered with a stored name - refuse 0.56 / 0.71 /
+0.56 / **0.69** at visits 3-6 vs cg27a_rtx 0.61 / 0.69 / 0.60 / **0.87**; known subject, missing relation 0.47 / 0.58 / 0.34 / **0.33**
+vs 0.58 / 0.47 / 0.48 / 0.44. Explicit 'unknown' in the untaught test wording only 0.03-0.05 (refusal-row loss 0.26 -> 0.05): refusal
+does not transfer as a word, but false answers fall. **A confidence threshold keeping 75% of the known facts answered right leaves 0.12-0.18
+false answers (0.45-0.64 without; refuse, visits 4-6) and 0.23-0.25 without refusal rows (rtxsp)**; confidence AUC known-right vs
+never-read 0.86-0.88 (refuse), 0.80-0.84 (rtxsp). Over-refusal of known facts 0.00-0.02. No cost to learning: taught 0.57-0.60, never
+asked 0.09-0.12 vs cg27a_rtx 0.57-0.60 / 0.05-0.09.
+
+COMPRESSION GAIN ON THE REAL TRUNK (rtxsp; Re-DocRED gold mentions of the domains read): links - an earlier mention saves bits on a later
+one of the same entity (1.88 vs 0.53 bits), AUC all pairs 0.756 / 0.758 at visits 2 / 4; pairs sharing NO word **0.611 -> 0.684**, very
+hard 0.622 -> 0.657, where letter overlap is 0.17-0.22; combined with letters 0.897 (visit 2) vs letters alone 0.862; antecedent choice
+worse than letters (0.59 vs 0.88). Units - binding gain at joins of capitalised words 0.492 / 0.516 (surprise 0.571 / 0.591): no signal.
+Offline, counts: PMI separates a name's continuation from a boundary at 0.730 (strict MDL with a spelling cost 0.496), but splitting
+capitalised runs by it does not change exact-span F1 (0.698; tools/mdl_units.py).
+
 ### Finding names: a text JEPA vs byte surprise (tools/toy_jname.py, tools/realtext_names.py; 12 November)
 
 TOY (synthetic documents, unseen test names; EMA-target JEPA; AUC name vs other words): training wordings, first mention - byte surprise
