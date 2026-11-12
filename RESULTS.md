@@ -464,6 +464,17 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Why no real-text rule passes (tools/rule_diag.py, 12 November)
+
+The relational module on the fast channel's real-text records (local Wikipedia + the benchmark; adjacent and centre records only, so the
+reader's own list structure is gone; untyped frames): 16,577 facts, 3,827 fillers, 24 frames, 2,009 candidates beat the null. Of them
+**1,491 fail the chain-existence guard** (fewer than half of the subjects with a composite fact have an observed two-hop chain at all),
+50 have fewer than 3 testable subjects, and the **467 testable ones predict their composite facts at a median of 0.00** (none reaches
+0.5). Real-text facts at this scale do not form chains: each filler sits in few records and the two hops are rarely both read (entity
+identity is also fragmented - 'Paris' vs 'Paris , France'). The bottleneck for real-text inference is the density and identity of the
+fact graph, before typing. (AMIE's partial-completeness confidence, test C, turned out to equal the current check: only subjects with a
+recorded composite fact are tested.)
+
 ### DCT-style consistency on writes (tools/relmod_hard.py CONSIST=1, seed 1, 10% wrong parents; 12 November)
 
 After Deductive Closure Training (Akyürek et al. 2024: keep the implications that are jointly consistent): the module finds the INVERSE
