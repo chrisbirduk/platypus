@@ -464,6 +464,17 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Finding names: a text JEPA vs byte surprise (tools/toy_jname.py, tools/realtext_names.py; 12 November)
+
+TOY (synthetic documents, unseen test names; EMA-target JEPA; AUC name vs other words): training wordings, first mention - byte surprise
+1.00, low JEPA surprise 0.68, gap 0.96; held-out wording - byte 0.52, JEPA 0.60, gap 0.55; swap test 0.39-0.53 (fails); identity of a name
+across documents: byte LM hidden state 0.66, JEPA latent 0.46 (chance 0.02). (The LeJEPA variant was cut off by the time limit.)
+REAL TEXT (byte LM 2.12 bits/byte and a LeJEPA-style JEPA, trained on local Wikipedia + the benchmark; 39,163 words of the benchmark
+documents, 25% part of a gold entity name): **capitalised-not-first 0.93, byte surprise 0.69, low JEPA surprise 0.48 (no signal), gap
+0.65**; on the 2,355 gold-name words capitalisation cannot see (lower-case or sentence-initial): byte surprise 0.58, JEPA 0.46, gap 0.55.
+**The JEPA does not find names on real text**; byte surprise carries a weak signal for the names capitalisation misses (many of those
+'names' are common nouns inside entity names: 'University', 'Party'). Name finding beyond capitalisation needs another route.
+
 ### Reference ceiling on real text (tools/reference_ceiling.py, 12 November; Re-DocRED benchmark documents, names = fast-channel fillers)
 
 Gold relations whose two names are found in ONE sentence: no reference 435 (9.2%); + the title in sentences with a third-person pronoun or
