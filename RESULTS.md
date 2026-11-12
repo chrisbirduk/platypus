@@ -464,6 +464,27 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Source replay on the GPU: facts only READ are now stored (cg27a_replay, seed 4, interim visits 1-6; 12 November)
+
+cg27a_align + inf_distill_replay 4 (4 stored source sentences of pool AND control facts per question-row step; the control is never
+asked; 399 replay steps per visit, the replay loss 1.30 -> 0.35-0.40 within each visit).
+
+| visit | control: completes its OWN source sentence (align run) | taught: own sentence | control, test-wording question (ledger) | taught, ledger | cosine own / ANOTHER fact's declaration (control) |
+|---|---|---|---|---|---|
+| 2 | 0.15 (13) (0.08) | 0.55 | 0.00 (43) | 0.19 | 0.963 / 0.881 |
+| 3 | 0.13 (31) (**0.00**) | 0.61 | 0.04 (75) (0.01) | 0.43 (0.38) | 0.932 / 0.789 |
+| 4 | **0.30 (30)** | 0.72 | 0.09 (81) (0.02) | 0.46 (0.42) | 0.904 / 0.654 |
+| 5 | 0.21 (29) | 0.81 | 0.04 (77) | 0.58 | 0.887 / 0.594 |
+| 6 | **0.40 (30)** | 0.82 | 0.03 (74) | 0.60 | 0.871 / 0.529 |
+
+**Replay stores facts the model only read** (own-sentence completion 0.00 without replay at visit 3 -> 0.30-0.40 by visits 4-6) and
+taught facts too (0.47 -> 0.82). Taught recall in the test wordings is a little higher than without replay (ledger 0.43 / 0.46 vs 0.38 /
+0.42 at visits 3 / 4; 0.58 / 0.60 at 5 / 6). But **the stored control facts are not yet answerable as questions**: control in the test
+wordings 0.03-0.09 (after-visit probe 0.07 / 0.14 / 0.03 / 0.10), barely above cg27a_align (0.01-0.02). The states are separating by fact
+(own vs another fact's declaration 0.96 / 0.88 -> 0.87 / 0.53; alignment loss 0.03 -> 0.07: alignment now has work to do). No cost seen
+on the GPU: post-train BPC per visit 2.031 / 2.078 / 2.028 / 1.667 vs cg27a_chunk 2.036 / 2.071 / 2.024 / 1.669 (local short runs: 3.021
+/ -0.127 vs 3.006 / -0.141 - a consistent +0.015 locally). Step 4: 23 facts written by visit 6, precision 1.00 (20 never planted).
+
 ### View alignment on the GPU (cg27a_align, seed 4, interim visits 1-4; 12 November) - the bottleneck is STORAGE, not routing
 
 cg27a_rwclean + view alignment (0.5 x (1 - cosine), declaration a stop-gradient target, taught facts only). Against cg27a_chunk (seed 4):
