@@ -1466,7 +1466,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                         for fm in FORMS9: pararows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=r2).encode('latin-1', 'replace'), repr(e['key'])))
                 LP = (D or {}).get('al_pa') or []
                 try:
-                    tp1 = [e for e in ((D or {}).get('probe') or []) if e['key'][0] == 'fact' and e['r'] in _DT_PARA]; cp1 = [e for e in ((D or {}).get('hprobe') or []) if e['key'][0] == 'fact' and e['r'] in _DT_PARA]
+                    prevk = set(((D or {}).get('decl') or {}).keys()); rq8 = np.random.RandomState(int(cfg.seed) + 9797 + vis)   # 12 Nov: a LARGER sample - every
+                    tp1 = [e for e in ents if e['key'][0] == 'fact' and e['r'] in _DT_PARA and repr(e['key']) in prevk]           #   taught fact of the last visit and
+                    cp1 = [e for e in held if e['key'][0] == 'fact' and e['r'] in _DT_PARA]                                     #   every never-asked fact with a test
+                    tp1 = [tp1[int(i)] for i in rq8.permutation(len(tp1))[:96]]; cp1 = [cp1[int(i)] for i in rq8.permutation(len(cp1))[:96]]   #   paraphrase, up to 96 each
                     inm = lambda e: _DT_PARA[e['r']] in eq.get(str(e['r']).strip(), ())
                     rr = [_dt_recall_para(model, S_slot, L) for L in ([e for e in tp1 if inm(e)], [e for e in tp1 if not inm(e)], [e for e in cp1 if inm(e)], [e for e in cp1 if not inm(e)])]
                 except Exception: _fail('inference.distill:para_probe'); rr = [(float('nan'), 0)] * 4
