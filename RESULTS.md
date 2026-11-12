@@ -539,11 +539,12 @@ written at an earlier sleep, **closed-form edits SUBTRACTED**:
 | 5 | **0.50** (28) | 0.13 (30) | 6 / 0 / 24 of 30 |
 | 6 | **0.56** (32) | 0.18 (34) | 8 / 0 / 26 of 34 |
 | 7 | **0.44** (45) | 0.14 (50) | 5 / 0 / 45 of 50 |
+| 8 | **0.56** (55) | 0.17 (65) | 10 / 0 / 55 of 65 |
 
 **Facts the system INFERRED, never stated in its text, are recalled from its weights when taught (0.44-0.61), and held-back ones stay at
 the guessing level (0.12-0.18, chance ~0.17)** - visit 7: 20 of 45 vs 7 of 50 (edits subtracted), a gap the small runs could not show
 (withdrawn above at n 2-6). The held-back answers are wrong names, not the middle hop: no sign of the trunk composing on its own (as
-before). Taught recall dips at visit 7 as the pool grows (45 new facts). One seed; no false writes.
+before). Taught recall dipped at visit 7 as the pool grew and recovered at visit 8 (0.56, 31 of 55 right vs held back 10 of 65). 148 written by visit 8, all correct, 144 never planted. Gutenberg's reliance in this run 0.19-0.22 at visits 5-8 (cg27a_replay 0.26-0.30 on the same seed and replay): the erosion varies run to run. One seed.
 
 ### Seed 5 REPLICATES learning from reading (cg27a_replay_s5, visits 1-10; 12 November)
 
