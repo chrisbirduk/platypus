@@ -464,6 +464,14 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Matching the Blanks on the fast channel (tools/mtb_probe.py, 12 November)
+
+A frame encoder (BiGRU over '[A] frame words [B]') trained with no labels to bring together frames that link the SAME filler pair in
+different sentences (74749 positive pairs from local Wikipedia + the benchmark), tested on 370 benchmark gold-pair records:
+nearest other record of the same gold relation type - untrained 0.40, frame words (tf-idf) 0.44, **MTB code after 4 epochs 0.44, MTB +
+frame words 0.47** (0.39 / 0.43 / 0.42 / 0.44 by epoch). Level with the connector words, a small gain combined: at 10 MB there are too few
+repeated pairs for the encoder to learn more than the words already say (the published method used hundreds of millions of sentences).
+
 ### Rule constraints and entity identity (tools/toy_rules_constrain.py, tools/entity_identity.py; 12 November)
 
 RULE CONSTRAINTS (after RiJEPA, 2026), toy world of tools/toy_rules.py, seed 0: once child o child -> grandchild and supervised o
