@@ -464,6 +464,14 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### DCT-style consistency on writes (tools/relmod_hard.py CONSIST=1, seed 1, 10% wrong parents; 12 November)
+
+After Deductive Closure Training (Akyürek et al. 2024: keep the implications that are jointly consistent): the module finds the INVERSE
+relation in the data ('is a child of' <-> 'is the parent of', 80%+ agreement) and keeps a write only if one of its chains has no premise
+the inverse contradicts. Round 1: writes 738 -> 705, precision 0.96 -> **0.97**; round 2 (inferred facts as premises, where noise
+compounds): writes 130 -> 94, precision **0.79 -> 0.84**, recall unchanged (great-grandchildren 58 of 72 new, 80 of 84 training). The
+first precision lever that works; it needs an inverse (or other constraining) relation in the data.
+
 ### Overnight reader tests T1-T6 (tools/reader_tests.py, 12 November, offline against Re-DocRED gold) and the clean step-4 control (T7)
 
 | test | result | verdict |
