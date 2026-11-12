@@ -9,6 +9,9 @@ training prefixes, tested in 10 UNSEEN prefixes:
   C  OBJECTIVE      1,500 facts: cosine vs InfoNCE (other facts' declarations as negatives) vs a predictor head (LLM-JEPA) + cosine
   D  WHERE          align at the answer position (as built) vs the SUBJECT's position (subject enrichment, ROME / Geva) vs both vs the
                     middle layer's state
+  E  PREDICTOR      LLM-JEPA's tied predictor: k = 1 / 2 / 3 [PRED] tokens appended to the question in the alignment pass (its last state is
+                    the prediction; k 0 = as built, no predictor)
+  F  WEIGHT         alignment weight 0.5 (as built) / 2 / 8
 Usage: python3 tools/toy_align2.py [tests, e.g. AB] [seed] [steps]"""
 import sys
 import numpy as np
@@ -42,7 +45,7 @@ def pad(L):
     return X
 
 
-def train(seqs, wts, steps, sd, align=None, mode='cos', where='ans', aw=0.5):
+def train(seqs, wts, steps, sd, align=None, mode='cos', where='ans', aw=0.5, kpred=0):
     """seqs sampled with probabilities wts; align = [(question, declaration)]: question's last state ~ declaration's state after 'A r'"""
     torch.manual_seed(sd); rr = np.random.RandomState(sd); m = LM(); opt = torch.optim.Adam(m.parameters(), lr=1e-3)
     p = np.asarray(wts, float); p /= p.sum()
@@ -50,10 +53,10 @@ def train(seqs, wts, steps, sd, align=None, mode='cos', where='ans', aw=0.5):
         b = [seqs[i] for i in rr.choice(len(seqs), size=96, p=p)]; X = pad(b); hs, lg = m(X)
         loss = F.cross_entropy(lg[:, :-1].reshape(-1, V), X[:, 1:].reshape(-1), ignore_index=PAD)
         if align:
-            ab = [align[i] for i in rr.randint(len(align), size=48)]; Xq = pad([q for q, d in ab]); Xd = pad([d for q, d in ab])
+            ab = [align[i] for i in rr.randint(len(align), size=48)]; Xq = pad([q + [4] * kpred for q, d in ab]); Xd = pad([d for q, d in ab])
             hq, _ = m(Xq)
             with torch.no_grad(): hd, _ = m(Xd)
-            lq = torch.tensor([len(q) - 1 for q, d in ab]); sq = torch.tensor([len(q) - 3 for q, d in ab]); ar = torch.arange(len(ab))
+            lq = torch.tensor([len(q) + kpred - 1 for q, d in ab]); sq = torch.tensor([len(q) - 3 for q, d in ab]); ar = torch.arange(len(ab))
             lay = 0 if where == 'mid' else -1
             pairs = []
             if where in ('ans', 'both', 'mid'): pairs.append((hq[lay][ar, lq], hd[lay][:, 1]))
@@ -128,4 +131,18 @@ if 'D' in TESTS:
     for wh in ('ans', 'subj', 'both', 'mid'):
         m = train(seqs, [1.0] * len(seqs), STEPS, seed + 4, al, where=wh)
         P(f"   {wh}: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
+if 'E' in TESTS or 'F' in TESTS:
+    facts = world(600); taught = facts[:420]; un = facts[420:]
+    seqs = [[A, r, B, DOT] for A, r, B in facts] + [p + [A, r, QM, B] for A, r, B in taught for p in pref]
+    al = [(p + [A, r, QM], [A, r, B, DOT]) for A, r, B in taught for p in pref]
+    m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, None)
+    P(f"E/F reference, no alignment: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
+    if 'E' in TESTS:
+        for k in (0, 1, 2, 3):
+            m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, al, kpred=k)
+            P(f"E [PRED] tokens k {k}: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
+    if 'F' in TESTS:
+        for w in (2.0, 8.0):                                               # 0.5 = E k 0 (the same run)
+            m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, al, aw=w)
+            P(f"F weight {w:g}: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
 P("DONE")
