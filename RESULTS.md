@@ -544,7 +544,7 @@ written at an earlier sleep, **closed-form edits SUBTRACTED**:
 **Facts the system INFERRED, never stated in its text, are recalled from its weights when taught (0.44-0.61), and held-back ones stay at
 the guessing level (0.12-0.18, chance ~0.17)** - visit 7: 20 of 45 vs 7 of 50 (edits subtracted), a gap the small runs could not show
 (withdrawn above at n 2-6). The held-back answers are wrong names, not the middle hop: no sign of the trunk composing on its own (as
-before). Taught recall dipped at visit 7 as the pool grew and recovered at visit 8 (0.56, 31 of 55 right vs held back 10 of 65). 148 written by visit 8, all correct, 144 never planted. Gutenberg's reliance in this run 0.19-0.22 at visits 5-8 (cg27a_replay 0.26-0.30 on the same seed and replay): the erosion varies run to run. One seed.
+before). SAFETY: the local short run FAILS (mean BPC 3.210 / forgetting -0.058 vs 3.021 / -0.127 for the same build at normal rule-world size: 4x the planted template facts are a large share of the small local text); on the GPU, where a domain's visit reads ~6.5 MB, post-train BPC per visit is within +0.01 of cg27a_replay (2.021 / 2.081 / 2.034 / 1.675 / 1.587 / 2.085 / 1.802 / 1.413 vs 2.031 / 2.078 / 2.028 / 1.667 / 1.574 / 2.065 / 1.798 / 1.400) - a scale artefact locally, not a GPU cost. Taught recall dipped at visit 7 as the pool grew and recovered at visit 8 (0.56, 31 of 55 right vs held back 10 of 65). 148 written by visit 8, all correct, 144 never planted. Gutenberg's reliance in this run 0.19-0.22 at visits 5-8 (cg27a_replay 0.26-0.30 on the same seed and replay): the erosion varies run to run. One seed.
 
 ### Seed 5 REPLICATES learning from reading (cg27a_replay_s5, visits 1-10; 12 November)
 
