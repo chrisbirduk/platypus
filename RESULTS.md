@@ -522,6 +522,9 @@ asked; 399 replay steps per visit, the replay loss 1.30 -> 0.35-0.40 within each
 | 7 | 0.38 (29) | 0.82 | **0.11 (72)** (after-visit probe 0.11 (36)) | 0.62 | 0.872 / 0.488 |
 | 8 | **0.59 (29)** | 0.97 | **0.14 (71)** (after-visit probe **0.23 (39)**) | **0.72** | 0.876 / 0.424 |
 | 9 | 0.42 (24) | 0.91 | **0.18 (68)** (after-visit probe 0.15 (27)) | 0.70 | 0.883 / 0.496 |
+| **10** | **0.69 (26)** | 0.96 | **0.21 (67)** (after-visit probe **0.31 (36)**) | 0.72 | 0.904 / 0.417 |
+
+**Final (pass 1, visit 10): never-asked facts answered from the weights at 0.21 (ledger) / 0.31 (probe), against 0.01-0.03 without replay; their own sentences completed 0.69.** Cost: pass-1 mean forgetting +0.026, final BPC 1.767 (earlier pass-1 runs on other seeds: +0.006 / 1.725-1.734; no seed-4 pass-1 summary to compare), Gutenberg's private-parts reliance 0.38 at visit 10 (0.20-0.26 in earlier runs) - a real cost of replay, the target of spaced replay (cg27a_spaced).
 
 By visit 8 the facts the trunk only READ and was never asked are answered in the test wordings at 0.14 (ledger, 71) / 0.23 (after-visit probe, 39)
 against 0.01-0.03 in every run without replay - storage first (own sentence 0.00 -> 0.59), question recall following a visit or two behind.
