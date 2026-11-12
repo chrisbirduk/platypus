@@ -8,6 +8,7 @@ Groups (a group is printed only if some log has it):
   rpl   replay losses (last 20 steps): source sentences, real-text sentences
   ctl   [EVER TAUGHT] never-asked CONTROL facts from the trunk (learning from reading)
   ab    [ABSTENTION] explicit refusals, false answers with no threshold and at the threshold keeping 75% of known-right; refusal-row loss
+  gate  [GATED ANSWERS] the trunk answers only above last sleep's calibrated confidence: known answered / right, never-read false vs ungated
   sc    [REPLAY BY STORAGE CHECK] the trunk's loss on replayed sentences, replay share to the hardest quarter, last hardest quarter's change
   cg    [COMPRESSION GAIN] units (binding gain vs surprise) and links (mutual compression gain vs letter triples)
   s4    [RELATIONAL MODULE WRITES] step 4, edits subtracted: taught vs held back
@@ -77,6 +78,11 @@ def parse(path):
         elif '[DISTILLATION, REPLAY BY STORAGE CHECK | visit' in ln:
             m = re.search(r'median ' + NUM + r'.*?HARDEST quarter ' + NUM + r'.*?loss change ([-+]?[0-9.]+|[-+]?nan)', ln)
             if m: d['sc_med'], d['sc_hard'], d['sc_mv'] = m.groups()
+        elif '[DISTILLATION, GATED ANSWERS | visit' in ln:
+            m = re.search(r'answered ' + NUM + r', right when answered ' + NUM + r', right overall ' + NUM + r' \(ungated ' + NUM + r'\)', ln)
+            if m: d['g_ans'], d['g_acc'], d['g_right'], d['g_right0'] = m.groups()
+            m = re.search(r'given a stored name ' + NUM + r' \(ungated ' + NUM + r'\), abstained ' + NUM, ln)
+            if m: d['g_false'], d['g_false0'], d['g_abst'] = m.groups()
         elif '[COMPRESSION GAIN | visit' in ln:
             m = re.search(r'BINDING GAIN ' + NUM, ln)
             if m: d['cg_unit'] = m.group(1)
@@ -104,6 +110,8 @@ GROUPS = {
     'ctl': ('Learning from reading (ledger, from the trunk)', [('taught', 'taught'), ('ctl', 'never asked')]),
     'ab': ('Abstention (from the trunk)', [('ab_rk', 'refuse known'), ('ab_ra', 'refuse (a) fresh'), ('ab_rb', 'refuse (b) missing rel'), ('ab_leak0', 'false, no threshold'),
                                            ('ab_k75', 'known answered @75%'), ('ab_acc75', 'accuracy @75%'), ('ab_leak75', 'false @75%'), ('rf_loss', 'refusal-row loss')]),
+    'gate': ('Gated answers (threshold from the previous sleep)', [('g_ans', 'known answered'), ('g_acc', 'right when answered'), ('g_right', 'right overall'),
+                                                                  ('g_right0', 'right ungated'), ('g_false', 'never-read: false'), ('g_false0', 'false ungated'), ('g_abst', 'abstained')]),
     'sc': ('Replay by storage check', [('sc_med', 'median loss'), ('sc_hard', 'share to hardest quarter'), ('sc_mv', 'hardest quarter change')]),
     'cg': ('Compression gain (AUC)', [('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
                                        ('cg_vh', 'links: gain VERY HARD'), ('cg_str', 'links: letter triples'), ('cg_strh', 'letter triples HARD')]),

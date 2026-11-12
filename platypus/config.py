@@ -589,9 +589,11 @@ class Config:
     inf_distill_align_para=0        #   12 Nov PARAPHRASE ALIGNMENT (toy: never-taught facts asked in a paraphrase 0.61 -> 0.82): 1 = taught facts also asked with
                                     #     each paraphrase of their relation the relational module merged from the text, aligned to the stored declaration (no labels)
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
-    inf_distill_false_probe_n=32    #     questions per group (fresh names / missing relations / known facts); + the ABSTENTION readout (risk-coverage of the
-                                    #     trunk's confidence, explicit refusals)
-    inf_compress_gain=0             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits: does the trunk compress text better once a
+    inf_distill_false_probe_n=64    #     questions per group (fresh names / missing relations / known facts; 32 before 12 Nov, 23:00); + the ABSTENTION readout
+                                    #     (risk-coverage of the trunk's confidence, explicit refusals)
+    inf_distill_gate_q=0.75         #     GATED ANSWERS readout: the trunk answers only above the confidence threshold that kept this share of its right answers
+                                    #     at the PREVIOUS sleep (calibrated there, applied to the new questions: out of sample); a decision rule, no training change
+    inf_compress_gain=2             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits (default 2 from 12 Nov, 23:00; 0 = off): does the trunk compress text better once a
                                     #     pattern is in place - binding gain at joins of capitalised words (units) and mutual compression gain between
                                     #     mentions (links), against the Re-DocRED gold mentions of the embedded documents read (needs inf_bench)
     inf_compress_n=600              #     joins sampled (pairs: up to 10x as many)

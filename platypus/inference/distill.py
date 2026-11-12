@@ -375,6 +375,22 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
                   f"{np.mean([ok_ for ok_, c, rf in kr]):.2f} || CONFIDENCE THRESHOLD: " + " | ".join(parts), flush=True)
         except Exception as e9:
             _fail('inference.distill:abstain'); print(f"  [DISTILLATION, ABSTENTION] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        try:                                                                  # 12 Nov GATED ANSWERS (readout of a decision rule; no training change): the trunk
+            gq = float(getattr(cfg, 'inf_distill_gate_q', 0.75))              #   answers only when its first-byte confidence >= t, else it abstains (defers to
+            kr2 = [(ok_, c, ref(a)) for (ok_, c), a in zip(K_, Ka)]          #   the store). t is CALIBRATED at the previous sleep (the threshold that kept a
+            un2 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share gq of the known facts it answered
+            kc2 = np.array([c for ok_, c, rf in kr2 if ok_ and not rf])       #   right) and APPLIED to this sleep's new questions: out of sample
+            tp = model.__dict__.get('_gate_t'); tn = float(np.quantile(kc2, 1 - gq)) if len(kc2) >= 4 else tp
+            if tp is not None and kr2 and un2:
+                ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
+                print(f"  [DISTILLATION, GATED ANSWERS | visit {vis + 1}] rule: the trunk answers only when its confidence >= t = {tp:.2f} (calibrated at the previous sleep to keep "
+                      f"{gq:.0%} of its right answers), else abstains; on THIS sleep's new questions: KNOWN facts ({len(kr2)}): answered {len(ak) / len(kr2):.2f}, right when answered "
+                      f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} (ungated {np.mean([ok_ for ok_, c, rf in kr2]):.2f}) | "
+                      f"NEVER READ ({len(un2)}): given a stored name {sum(ru) / len(un2):.2f} (ungated {np.mean([bool(st) and not rf for st, c, rf in un2]):.2f}), abstained "
+                      f"{1 - len(ru) / len(un2):.2f} | next t {tn if tn is not None else float('nan'):.2f}", flush=True)
+            if tn is not None: model.__dict__['_gate_t'] = tn
+        except Exception as e9:
+            _fail('inference.distill:gate'); print(f"  [DISTILLATION, GATED ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
 
 def _dt_items(ents, rs, n):
