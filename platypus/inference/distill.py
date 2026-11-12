@@ -959,7 +959,7 @@ def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xs
         if not te: return 0.0, 0
         if guards:                                                             # GUARD: the chain must EXIST in the observed facts and end
             ex = sum(1 for a in te if any(c != a for x in sub[rels[i]][a] for c in sub[rels[j]].get(x, ())))   #   on someone other than
-            if ex < 0.5 * len(te): return 0.0, 0                               #   the subject (r o r-inverse; missing generations)
+            if ex < 0.5 * len(te): return 0.0, -1                              #   the subject (r o r-inverse; missing generations); -1 = guard
         Bs, Cs, _ = chain(te, i, j)
         ok = [(a, c) for a, B, c in zip(te, Bs, Cs) if not guards or B in sub[rels[j]]]    # GUARD: no snapping through a missing hop
         return (sum(1 for a, c in ok if c in sub[rels[b]][a]) / len(ok) if ok else 0.0), len(ok)
@@ -983,6 +983,7 @@ def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xs
                         if min(nk) - d[k] <= 0.05: continue
                         out['cand'] += 1
                         fc, fn = fcheck(i, j, k)
+                        out.setdefault('cdiag', []).append((rels[i], rels[j], rels[k], float(d[k]), float(min(nk)), fc, fn))   # diagnostic: every candidate's check
                         n_, p_ = fn, fc; lb_ = (p_ + 1.92 / n_ - 1.96 * np.sqrt(p_ * (1 - p_) / n_ + 0.96 / n_ ** 2)) / (1 + 3.84 / n_) if n_ else 0.0
                         if fn >= 3 and fc >= 0.5 and lb_ >= 0.5:                 # WILSON 95% lower bound >= 0.5 (GPU sleep 3: a FALSE rule passed on 2 of 4)
                             out['rules'].append((rels[i], rels[j], rels[k], float(d[k]), float(np.mean(nk)), float((np.mean(nk) - d[k]) / (np.std(nk) + 1e-6)), fc, fn))
