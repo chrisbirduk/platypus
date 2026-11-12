@@ -71,20 +71,27 @@ def _ws_hidden(model, fn):
 
 @torch.no_grad()
 def _dw_align_probe(model, S_, S_slot, es, src):
-    """mean cosine between the last-block state where a TEST-wording question ('It is on record that A r') predicts its answer and the
-    state where the fact's declaration predicts it - for taught facts and for the never-taught control (never aligned)"""
+    """for taught facts and the never-taught control (never aligned): cosine between the last-block state where a TEST-wording question
+    predicts its answer and the state where the fact's declaration predicts it - 'It is on record that A r' (it ends in the declaration's
+    own 'A r ', so it is near 1 by construction) and the paraphrased relation ('A is a colleague of', a different ending: the informative
+    one); and RECALL IN THE READING FORM: the trunk completes the fact's own declaration (every answer byte top-1 after its source
+    sentence's prefix) - whether reading put the fact in the weights at all, which alignment can only route to, not create"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
     from platypus.inference.jepa import cfg_seq_
-    L0 = int(cfg_seq_(model)); cs = []
+    L0 = int(cfg_seq_(model)); c1, c2, rd = [], [], []
     for e in es:
         if e['key'][0] == 'conclusion': continue
-        sl = int(S_slot(e['d'])); pb = f"It is on record that {e['A']} {e['r']} ".encode('latin-1', 'replace')
-        d, pos, _ = _dw_decl(S_, e, L0, src)
-        Xq, _ = _ws_batch(model, [pb + (e['ans'] + '.').encode('latin-1', 'replace')]); _, hq = _ws_hidden(model, lambda: _ws_run(model, Xq, sl))
-        Xd, _ = _ws_batch(model, [d]); _, hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl))
-        if hq is None or hd is None or len(pb) - 1 >= hq.shape[1] or pos >= hd.shape[1]: continue
-        cs.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), hd[0, pos].float(), dim=0)))
-    return (float(np.mean(cs)) if cs else float('nan')), len(cs)
+        sl = int(S_slot(e['d'])); d, pos, _ = _dw_decl(S_, e, L0, src); ab = e['ans'].encode('latin-1', 'replace')
+        Xd, _ = _ws_batch(model, [d]); lg, hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl))
+        if hd is None or pos >= hd.shape[1]: continue
+        n_ = min(len(ab), lg.shape[1] - pos)
+        if n_ == len(ab): rd.append(bool((lg[0, pos:pos + n_].argmax(-1) == torch.tensor(list(ab), device=lg.device)).all()))
+        qs = [(c1, f"It is on record that {e['A']} {e['r']} ")] + ([(c2, f"{e['A']} {_DT_PARA[e['r']]} ")] if e['r'] in _DT_PARA else [])
+        for acc, q in qs:
+            pb = q.encode('latin-1', 'replace'); Xq, _ = _ws_batch(model, [pb + ab + b'.']); _, hq = _ws_hidden(model, lambda: _ws_run(model, Xq, sl))
+            if hq is not None and len(pb) - 1 < hq.shape[1]: acc.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), hd[0, pos].float(), dim=0)))
+    m = lambda v: f"{np.mean(v):.3f} ({len(v)})" if v else "nan (0)"
+    return f"cosine, 'on record' wording {m(c1)}, PARAPHRASED relation {m(c2)}; recall completing its own declaration {m(rd)}"
 
 
 def _dt_items(ents, rs, n):
@@ -1333,13 +1340,13 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if aw9 > 0:                                                            # 12 Nov VIEW ALIGNMENT: each TAUGHT fact's declaration (control never aligned)
             A9 = (D or {}).get('al') or []
             try: ct9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('probe') or [], asrc9); ch9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('hprobe') or [], asrc9)
-            except Exception: _fail('inference.distill:align_probe'); ct9 = ch9 = (float('nan'), 0)
+            except Exception: _fail('inference.distill:align_probe'); ct9 = ch9 = 'unavailable'
             for e in ents:
                 if e['key'][0] == 'fact': decl9[repr(e['key'])] = _dw_decl(S_, e, L09, asrc9)
             print(f"  [DISTILLATION, VIEW ALIGNMENT | visit {vis + 1}] last visit: alignment loss (1 - cosine, weight {aw9:g}, "
                   f"{'declaration a stop-gradient target' if int(getattr(cfg, 'inf_distill_align_detach', 1)) else 'both sides trained'}) {np.mean(A9[:20]) if A9 else float('nan'):.3f} (first 20) -> "
-                  f"{np.mean(A9[-20:]) if A9 else float('nan'):.3f} (last 20) | NOW, cosine of a TEST-wording question's state with the declaration's: taught facts {ct9[0]:.3f} ({ct9[1]}) | "
-                  f"CONTROL, never taught or aligned {ch9[0]:.3f} ({ch9[1]}) | next visit: {len(decl9)} taught facts with a declaration, "
+                  f"{np.mean(A9[-20:]) if A9 else float('nan'):.3f} (last 20) | NOW, a TEST-wording question's state vs the declaration's: TAUGHT facts {ct9} | "
+                  f"CONTROL, never taught or aligned: {ch9} | next visit: {len(decl9)} taught facts with a declaration, "
                   f"{sum(1 for v in decl9.values() if v[2] == 'src')} from the stored source sentence ({len(FORMS9)} question wordings)", flush=True)
         elif len(FORMS9) != len(_DT_FORMS):
             print(f"  [DISTILLATION, WORDINGS | visit {vis + 1}] {len(FORMS9)} self-written question wordings", flush=True)
