@@ -464,6 +464,18 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Real-text views for label-free alignment (tools/realtext_views.py, 12 November; Re-DocRED benchmark documents)
+
+A view = (question, declaration) cut from one sentence by the fast channel: subject (the title supplied for pronoun- or frame-led
+sentences) + the frame before an object filler. 5,696 views in 262 documents (21.7 per document): adjacent 2,991, anchored with the
+title supplied 1,986, anchored and named 719. **Gold relations with a view: 342 of 4,726 (7.2%)** - the same ceiling as the reader (one
+sentence holds both names), 126 of them only through a title-supplied view; only 34 have views in 2+ frames. **Paraphrase load: a relation
+type arrives in about as many frames as it has relations** (median 1.00 distinct frames per relation; located-in 63 frames / 73 relations,
+birthplace 23 / 34: 'was born in', ', born in', '( born in', 'in [F] ,' ...). Label-free alignment on ordinary text is bounded by one-sentence
+views (~7%) unless cross-sentence reference grows, and its test questions in another wording need frames merged into relation types.
+Label-free alignment does not need the view to be a TRUE relation (it aligns a question with what the text says), so the reader's precision
+matters less here than its coverage.
+
 ### Reader tests 4-6 (tools/reader_tests3.py, 12 November; subject-anchored + cleaned records, local Wikipedia + the benchmark, Re-DocRED gold)
 
 Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations covered.
