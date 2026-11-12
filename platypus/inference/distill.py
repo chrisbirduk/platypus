@@ -1650,6 +1650,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             except Exception as e9: _fail('inference.distill:bench_recall'); print(f"  [REAL-TEXT RECALL] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
             try: _dw_bench_diag(model, cfg, S_slot, vis)
             except Exception as e9: _fail('inference.distill:bench_diag'); print(f"  [REAL-TEXT RECALL, DIAGNOSTICS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        cgn9 = int(getattr(cfg, 'inf_compress_gain', 0))
+        if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
+            from platypus.inference.compress import compress_gain
+            compress_gain(model, cfg, S_slot, vis)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);

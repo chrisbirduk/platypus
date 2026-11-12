@@ -109,5 +109,7 @@
   "inf_distill_rtx_space": 1.0,
   "_inf_distill_rtx_space": "THE ONE MODEL CHANGE: before each visit the trunk reads every replayed real sentence; replay probability ~ its own loss (clipped q10-q90) ** 1, so sentences already predicted are replayed less; readout [DISTILLATION, REPLAY BY STORAGE CHECK]",
   "inf_distill_false_probe_n": 64,
-  "_inf_distill_false_probe_n": "readout: 64 questions per group in the false-memory probe, + the ABSTENTION readout (risk-coverage of the trunk's confidence)"
+  "_inf_distill_false_probe_n": "readout: 64 questions per group in the false-memory probe, + the ABSTENTION readout (risk-coverage of the trunk's confidence)",
+  "inf_compress_gain": 2,
+  "_inf_compress_gain": "readout every 2nd visit: COMPRESSION GAIN - binding gain at joins of capitalised words and mutual compression gain between mentions, from the trunk, against the Re-DocRED gold mentions (does the trunk know which patterns are real?)"
 }

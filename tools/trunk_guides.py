@@ -13,7 +13,7 @@ Scored against the Re-DocRED dev set's own mention annotations (500 documents, e
                  mention's bytes, and the last byte; centred cosine), and an UNTRAINED copy of the same network (byte overlap alone).
                  Logistic combinations fitted on the first half of the documents, scored on the second: pair AUC on all pairs and on HARD
                  pairs (no word in common), and antecedent accuracy (each mention's best-scoring earlier mention is the same entity).
-Usage: python3 tools/trunk_guides.py [lm steps] [documents]     env TG_D (width, default 128), TG_NL (layers, default 3)"""
+Usage: python3 tools/trunk_guides.py [lm steps] [documents]     env TG_D (width, default 128), TG_NL (layers, default 3), TG_CKPT (model file)"""
 import os
 import re
 import sys
@@ -79,7 +79,11 @@ def train(steps):
         if (st + 1) % 1000 == 0: P(f"   step {st + 1}: {np.mean(ls[-200:]) / math.log(2):.2f} bits per byte  ({time.time() - T0:.0f}s)")
     m.eval(); return m
 torch.manual_seed(1); lm0 = LM().eval()                                       # the UNTRAINED control (same network, random weights)
-torch.manual_seed(0); lm = train(STEPS)
+CK = os.environ.get('TG_CKPT', '')                                            # TG_CKPT: load the trained model if the file exists, else train and save it
+if CK and os.path.exists(CK): lm = LM(); lm.load_state_dict(torch.load(CK)); lm.eval(); P(f"   loaded {CK}")
+else:
+    torch.manual_seed(0); lm = train(STEPS)
+    if CK: torch.save(lm.state_dict(), CK)
 @torch.no_grad()
 def run(m, b):
     """per byte: surprise (bits) and last-layer state, each byte read with up to 127 bytes before it (windows of 128, stride 64)"""

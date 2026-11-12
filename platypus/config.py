@@ -591,6 +591,10 @@ class Config:
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
     inf_distill_false_probe_n=32    #     questions per group (fresh names / missing relations / known facts); + the ABSTENTION readout (risk-coverage of the
                                     #     trunk's confidence, explicit refusals)
+    inf_compress_gain=0             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits: does the trunk compress text better once a
+                                    #     pattern is in place - binding gain at joins of capitalised words (units) and mutual compression gain between
+                                    #     mentions (links), against the Re-DocRED gold mentions of the embedded documents read (needs inf_bench)
+    inf_compress_n=600              #     joins sampled (pairs: up to 10x as many)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
