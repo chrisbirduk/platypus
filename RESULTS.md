@@ -527,6 +527,23 @@ Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations cover
 Constraints help only at heavy filtering (+0.05 at a quarter of the records); completion beats chance but adds <10 relations; real text
 still yields no rules at this scale. The name-fragment filter is the one free gain. Reader work stops here (see the alignment route).
 
+### Seed 5 REPLICATES learning from reading (cg27a_replay_s5, visits 1-10; 12 November)
+
+The same build as cg27a_replay on seed 5 (no model change). Never-asked facts (read only, replayed, never questioned), from the weights:
+
+| visit | own sentence completed (control) | test-wording questions, ledger (seed 4) | after-visit probe (seed 4) | taught, ledger (seed 4) | Gutenberg reliance (seed 4) |
+|---|---|---|---|---|---|
+| 4 | 0.53 | 0.09 (0.09) | 0.14 (0.14) | 0.54 (0.46) | 0.29 (0.21) |
+| 6 | 0.57 | 0.12 (0.03) | 0.18 (0.10) | 0.62 (0.60) | 0.30 (0.31) |
+| 8 | 0.59 | 0.25 (0.14) | 0.29 (0.23) | 0.69 (0.72) | 0.25 (0.27) |
+| 10 | **0.81** | **0.30** (0.21) | **0.52** (0.31) | 0.69 (0.72) | 0.34 (0.38) |
+
+**Two seeds agree: replay makes facts the model only read answerable from its weights** - 0.21-0.30 (ledger, ~70 facts) and 0.31-0.52 (after-visit
+probe, ~35) at visit 10, against 0.01-0.03 in every run without replay; storage 0.69-0.81. Seed 5 is ahead of seed 4 throughout. Taught
+facts 0.69-0.72 on both. Gutenberg's shared-trunk reliance rises on both seeds (0.34 / 0.38 at visit 10) - replay's cost, still without a
+same-seed no-replay run past visit 4. Post-train BPC per visit: 2.027 / 2.067 / 2.011 / 1.679 / 1.585 / 2.076 / 1.799 / 1.397 / 1.122 / 1.685.
+Alignment of taught facts was on in both runs; its share is the open question (cg27a_replaynoal).
+
 ### Label-free alignment and the two diagnostics (cg27a_alignlf, seed 4, interim visits 1-7; 12 November)
 
 cg27a_replay + half the never-asked facts aligned (question -> stored declaration, no labels), the other half the pure control.
