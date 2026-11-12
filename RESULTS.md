@@ -527,6 +527,18 @@ Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations cover
 Constraints help only at heavy filtering (+0.05 at a quarter of the records); completion beats chance but adds <10 relations; real text
 still yields no rules at this scale. The name-fragment filter is the one free gain. Reader work stops here (see the alignment route).
 
+### Option B, stages 1-2 offline: relation codes from a byte LM's states, rules over them (tools/relcodes.py; 12 November) - NO GO at this scale
+
+130,798 records (anchored + cleaned adjacent; local Wikipedia + the benchmark), 97,322 distinct frames. A byte LM (2.12 bits/byte) reads
+'Someone <frame> '; a projector trained contrastively on 66,301 same-name-pair positives (Matching-the-Blanks on the model's states). The
+contrastive loss barely moves (5.29 -> 5.10; chance ~5.5): same-pair records rarely share a relation (list items, co-mentions).
+STAGE 1 (425 benchmark gold-pair records; nearest record shares a gold relation type): majority 0.20, **frame words 0.54**, raw LM state
+0.41, **trained relation code 0.40**, code + words 0.55; 48 clusters, gold-type purity 0.36. Clusters are sorted mostly by the frame's last
+word ('in' / 'was born in' / 'died in'; 'to' / 'returned to' / 'moved to'). STAGE 2: rules over the 48 clusters - 9,431 candidates, 1,403
+testable (vs 49 over frame strings: pooling does gather evidence), functional accuracy median 0.03, best 0.37 of 27 - **0 rules**; over frame
+strings 0 rules (best 0.22). The learned code does not beat frame words; neither supports a rule. Needs a stronger trunk (or more text)
+and cleaner positives before option B can go further.
+
 ### POWERED STEP 4: inferred facts become the trunk's own knowledge when taught (cg27a_step4p, seed 4, visits 1-7; 12 November)
 
 cg27a_replay + the rule world x4 (48 families, 48 org charts) and HALF the relational module's written facts held back. Written facts: 120
