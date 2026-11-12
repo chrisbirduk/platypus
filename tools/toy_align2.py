@@ -13,6 +13,7 @@ training prefixes, tested in 10 UNSEEN prefixes:
                     the prediction; k 0 = as built, no predictor)
   F  WEIGHT         alignment weight 0.5 (as built) / 2 / 8
 Usage: python3 tools/toy_align2.py [tests, e.g. AB] [seed] [steps]"""
+import os
 import sys
 import numpy as np
 import torch
@@ -135,14 +136,14 @@ if 'E' in TESTS or 'F' in TESTS:
     facts = world(600); taught = facts[:420]; un = facts[420:]
     seqs = [[A, r, B, DOT] for A, r, B in facts] + [p + [A, r, QM, B] for A, r, B in taught for p in pref]
     al = [(p + [A, r, QM], [A, r, B, DOT]) for A, r, B in taught for p in pref]
-    m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, None)
-    P(f"E/F reference, no alignment: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
+    if not os.environ.get('TOY_NOREF'): m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, None)
+    if not os.environ.get('TOY_NOREF'): P(f"E/F reference, no alignment: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
     if 'E' in TESTS:
-        for k in (0, 1, 2, 3):
+        for k in [int(x) for x in os.environ.get('TOY_KS', '0,1,2,3').split(',')]:
             m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, al, kpred=k)
             P(f"E [PRED] tokens k {k}: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
     if 'F' in TESTS:
-        for w in (2.0, 8.0):                                               # 0.5 = E k 0 (the same run)
+        for w in [float(x) for x in os.environ.get('TOY_WS', '2,8').split(',')]:                                               # 0.5 = E k 0 (the same run)
             m = train(seqs, [1.0] * len(seqs), STEPS, seed + 5, al, aw=w)
             P(f"F weight {w:g}: taught {acc(m, *qa(taught, test_pref)):.2f} | never taught {acc(m, *qa(un, test_pref)):.2f}")
 P("DONE")
