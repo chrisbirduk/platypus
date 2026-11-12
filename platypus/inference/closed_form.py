@@ -1,6 +1,7 @@
 """Closed-form edits of the last block MLP: layer states, drift, application."""
 from platypus.common import _fail, _CONC_CF
 import numpy as np
+import collections
 import torch
 import torch.nn.functional as F
 from platypus.private import (
@@ -173,6 +174,12 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             try: _cf_layer_drift(model,cfg,lv_,S_slot,vis_)
             except Exception as e8_: _fail('inference.closed_form:173'); print(f"  [inference LAYER DRIFT] unavailable ({type(e8_).__name__}: {e8_})"[:240],flush=True)
         e0_=tw_(E_); v0_=tv_(E_); n0_=tw_(N_) if N_ else float('nan'); b0_,o0_=_ws_bpc(model,cfg,vals,t,ts,olds_)
+        Ns9_=Nc9_=None                                                          # 12 Nov READOUT: the not-edited control split by OVERLAP with the edited set
+        try:                                                                    #   (shares a subject or answer name); never allowed to touch the edit itself
+            eA9_={c_['A'] for c_ in E_}; eC9_={c_['C'] for c_ in E_}
+            Ns9_=[c_ for c_ in N_ if c_['A'] in eA9_ or c_['C'] in eC9_ or c_['A'] in eC9_ or c_['C'] in eA9_]; Nc9_=[c_ for c_ in N_ if all(c_ is not x_ for x_ in Ns9_)]
+            ns0_=tw_(Ns9_) if Ns9_ else float('nan'); nc0_=tw_(Nc9_) if Nc9_ else float('nan')
+        except Exception: _fail('inference.closed_form:overlap'); Ns9_=None
         rl_=[x_ for x_ in S_['it'] if x_.get('k')=='real' and not x_.get('gone') and len(x_['s'])>=40]; gk_=[]
         for j_ in rs_.choice(len(rl_),min(64,len(rl_)),replace=False) if rl_ else []:
             X_,M_=_ws_batch(model,[rl_[int(j_)]['s']]); cap_['on']=True; cap_['k']=[]; _ws_run(model,X_,int(S_slot(rl_[int(j_)]['d']))); cap_['on']=False; gk_.append(cap_['k'][-1][0][M_[0,:-1]>0])
@@ -266,6 +273,13 @@ def _cf_apply(model,cfg,S_,vals,olds_,t,ts,S_slot):
             cum_[3]+=1
             print(f"  [inference CLOSED-FORM CONSOLIDATION APPLIED] ROLLED BACK (brake {bk_}): "+" | ".join(tr_)+f" | before: edited {e0_:.2f} | PERSISTENCE: {pers_}",flush=True); return
         e1_=tw_(E_); v1_=tv_(E_); n1_=tw_(N_) if N_ else float('nan')
+        if Ns9_ is not None:
+            try:
+                ns1_=tw_(Ns9_) if Ns9_ else float('nan'); nc1_=tw_(Nc9_) if Nc9_ else float('nan')
+                hub9_=collections.Counter(c_['C'] for c_ in E_).most_common(1)
+                rinfo_+=(f" | CONTROL BY OVERLAP with the edited conclusions: sharing a subject or answer name {ns0_:.2f} -> {ns1_:.2f} ({len(Ns9_)}), "
+                         f"no shared name {nc0_:.2f} -> {nc1_:.2f} ({len(Nc9_)}); commonest edited answer {hub9_[0][0] if hub9_ else '-'} x{hub9_[0][1] if hub9_ else 0} of {len(E_)}")
+            except Exception: _fail('inference.closed_form:overlap2')
         rfid9_={id(x_) for x_ in RF_}
         for c_ in E_:
             if id(c_) in rfid9_: c_['cfr']=vis_

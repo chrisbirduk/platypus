@@ -9,6 +9,8 @@ the visited domain's and the old domains' BPC before and after and rolls the who
 inf_distill_brake. CONTROL: a fixed fifth of the facts (by a hash of the fact) is never taught. READOUT: recall from the trunk (every
 memory off) in the TEST wordings for a sample of the taught facts and of the never-taught control, before and after; across sleeps, [FROM THE WEIGHTS, FIXED SET] (with and without the closed-form edits) is the consolidation measure."""
 import time
+import re
+import collections
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -18,7 +20,361 @@ _DT_FORMS = ("In short, {A} {r} ", "Notes on {A}: {A} {r} ", "{A}, as noted befo
              "Q: {A} {r} whom? A: ", "{A}, whose name came up earlier in the report, {r} ", "From the notes: {A} {r} ")
 _DT_PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
             'trained under': 'was taught by', 'is connected to': 'is tied to'}
+_DT_REFUSE = 'unknown'                                                   # 12 Nov REFUSAL ROWS (inf_distill_refuse): the answer to a question about a name
+_DT_REFUSE_SYL = ['bo', 'ne', 'ri', 'so', 'pa', 'gu', 'lin', 'mor', 'tes', 'vad', 'hel', 'zo']   #   never read; fresh names from syllables the false-memory
 _DT_TEST = ("{A} is tied to ", "The one tied to {A} is ", "It is on record that {A} {r} ")   # never taught (checked below)
+_DT_FORMS2 = ("Earlier we saw that {A} {r} ", "It turns out {A} {r} ", "Remember: {A} {r} ", "According to the file, {A} {r} ",
+              "Of all people, {A} {r} ", "Ask anyone and they will say {A} {r} ", "{A} (mentioned above) {r} ", "Fact: {A} {r} ",
+              "The notes about {A} say {A} {r} ", "{A}; in other words, {A} {r} ", "Some say that {A} {r} ", "Plainly, {A} {r} ",
+              "Going back to {A}: {A} {r} ", "{A}, it seems, {r} ")   # 12 Nov: inf_distill_forms > 7 adds these (none a test wording)
+
+
+def _dt_forms(cfg):
+    """the self-written question wordings in use: the original 7, + up to 14 more (inf_distill_forms)"""
+    n = max(1, min(len(_DT_FORMS) + len(_DT_FORMS2), int(getattr(cfg, 'inf_distill_forms', 7))))
+    fs = (_DT_FORMS + _DT_FORMS2)[:n]
+    assert all('tied to' not in f and 'on record' not in f and 'We read' not in f for f in fs)   # no taught wording is a test wording
+    return fs
+
+
+def _dw_src_bytes(S_, e, n=2):
+    """the fact's stored source sentence(s) as bytes (up to n)"""
+    it9 = S_.get('it', []); ss = []
+    for i9 in (e.get('src') or ())[:n]:
+        if isinstance(i9, (int, np.integer)) and 0 <= int(i9) < len(it9):
+            b9 = it9[int(i9)]['s']
+            b9 = bytes(int(v) & 255 for v in b9.tolist()) if hasattr(b9, 'tolist') and not isinstance(b9, (bytes, bytearray)) else (b9.encode('latin-1', 'replace') if isinstance(b9, str) else bytes(b9))
+            ss.append(b9.strip())
+    return ss
+
+
+def _dw_decl(S_, e, L0, src=True):
+    """12 Nov VIEW ALIGNMENT: the fact's DECLARATION and the position whose state predicts the answer's first byte: the stored source
+    sentence cut after the answer (the answer found after a space, after the subject when the subject is there; trimmed from the left to
+    the window), else the plain 'A r ans.'. Returns (bytes, position, 'src' | 'plain')"""
+    ab = e['ans'].encode('latin-1', 'replace'); Ab = e['A'].encode('latin-1', 'replace')
+    if src:
+        for sb in _dw_src_bytes(S_, e):
+            i = sb.find(b' ' + ab, max(0, sb.find(Ab)))
+            if i < 1 or (Ab not in sb[:i + 1] and sb.find(Ab) >= 0): continue
+            d = sb[:i + 1 + len(ab)]; cut = max(0, len(d) - (L0 - 2)); d = d[cut:]; pos = i - cut
+            if pos >= 1: return d, pos, 'src'
+    pb = f"{e['A']} {e['r']} ".encode('latin-1', 'replace'); return pb + ab + b'.', len(pb) - 1, 'plain'
+
+
+def _ws_hidden(model, fn):
+    """(fn(), the last block's output states during it) - the trunk's state that the view alignment compares"""
+    H = {}
+
+    def hk(m_, i_, o_): H['h'] = o_[0] if isinstance(o_, tuple) else o_
+    h_ = model.blocks[-1].register_forward_hook(hk)
+    try: out = fn()
+    finally: h_.remove()
+    return out, H.get('h')
+
+
+@torch.no_grad()
+def _dw_align_probe(model, S_, S_slot, es, src):
+    """for taught facts and the never-taught control (never aligned): cosine between the last-block state where a TEST-wording question
+    predicts its answer and the state where the fact's declaration predicts it - 'It is on record that A r' (it ends in the declaration's
+    own 'A r ', so it is near 1 by construction) and the paraphrased relation ('A is a colleague of', a different ending: the informative
+    one); and RECALL IN THE READING FORM: the trunk completes the fact's own declaration (every answer byte top-1 after its source
+    sentence's prefix) - whether reading put the fact in the weights at all, which alignment can only route to, not create"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    L0 = int(cfg_seq_(model)); c1, c2, rd, c0, pl = [], [], [], [], []; prev = None   # c0: the 'on record' question vs ANOTHER fact's declaration
+    for e in es:
+        if e['key'][0] == 'conclusion': continue
+        sl = int(S_slot(e['d'])); d, pos, _ = _dw_decl(S_, e, L0, src); ab = e['ans'].encode('latin-1', 'replace')
+        Xd, _ = _ws_batch(model, [d]); lg, hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl))
+        if hd is None or pos >= hd.shape[1]: continue
+        n_ = min(len(ab), lg.shape[1] - pos)
+        if n_ == len(ab): rd.append(bool((lg[0, pos:pos + n_].argmax(-1) == torch.tensor(list(ab), device=lg.device)).all()))
+        pp = f"{e['A']} {e['r']} ".encode('latin-1', 'replace'); Xp, _ = _ws_batch(model, [pp + ab + b'.']); lp = _ws_run(model, Xp, sl)   # PLAIN 'A r ' (no sentence context)
+        if len(pp) - 1 + len(ab) <= lp.shape[1]: pl.append(bool((lp[0, len(pp) - 1:len(pp) - 1 + len(ab)].argmax(-1) == torch.tensor(list(ab), device=lp.device)).all()))
+        qs = [(c1, f"It is on record that {e['A']} {e['r']} ")] + ([(c2, f"{e['A']} {_DT_PARA[e['r']]} ")] if e['r'] in _DT_PARA else [])
+        for acc, q in qs:
+            pb = q.encode('latin-1', 'replace'); Xq, _ = _ws_batch(model, [pb + ab + b'.']); _, hq = _ws_hidden(model, lambda: _ws_run(model, Xq, sl))
+            if hq is not None and len(pb) - 1 < hq.shape[1]:
+                acc.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), hd[0, pos].float(), dim=0)))
+                if acc is c1 and prev is not None: c0.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), prev, dim=0)))
+        prev = hd[0, pos].float()
+    m = lambda v: f"{np.mean(v):.3f} ({len(v)})" if v else "nan (0)"
+    return (f"cosine, 'on record' wording {m(c1)} (vs ANOTHER fact's declaration {m(c0)}), PARAPHRASED relation {m(c2)}; "
+            f"recall completing its own declaration {m(rd)}, completing plain 'A r' {m(pl)}")
+
+
+def _dt_recall_para(model, S_slot, es):
+    """open-ended recall from the trunk in the PARAPHRASED test wording only ('A is a colleague of'; facts whose relation has one)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    isl = lambda b: 65 <= b <= 90 or 97 <= b <= 122; ok = []
+    for e in es:
+        if e['r'] not in _DT_PARA: continue
+        pb = f"{e['A']} {_DT_PARA[e['r']]} ".encode('latin-1', 'replace'); tb = (e['ans'] + '.').encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb])
+        with torch.no_grad(): lg = _ws_run(model, X, int(S_slot(e['d'])))[0]
+        p0 = len(pb) - 1; ps = torch.arange(p0, p0 + len(tb), device=lg.device)
+        if int(ps[-1]) >= lg.shape[0]: continue
+        top = lg[ps].argmax(-1); tr = torch.tensor(list(tb), device=lg.device)
+        ok.append(bool((top[:-1] == tr[:-1]).all()) and not isl(int(top[-1])))
+    return (float(np.mean(ok)) if ok else float('nan')), len(ok)
+
+
+_BR_T = {'P19': "{h} was born in ", 'P20': "{h} died in ", 'P27': "{h} is a citizen of ", 'P69': "{h} was educated at ", 'P54': "{h} played for ",
+         'P463': "{h} is a member of ", 'P50': "{h} was written by ", 'P57': "{h} was directed by ", 'P175': "{h} was performed by ",
+         'P264': "{h} was released on the label ", 'P571': "{h} was founded in ", 'P577': "{h} was first published in ", 'P569': "{h} was born on ",
+         'P570': "{h} died on ", 'P131': "{h} is located in ", 'P17': "{h} is in the country ", 'P150': "{h} contains ", 'P36': "The capital of {h} is ",
+         'P102': "{h} is a member of the party ", 'P108': "{h} worked for ", 'P26': "{h} was married to ", 'P40': "A child of {h} is ",
+         'P22': "The father of {h} is ", 'P3373': "A sibling of {h} is ", 'P1344': "{h} took part in ", 'P361': "{h} is part of ",
+         'P527': "{h} includes ", 'P159': "The headquarters of {h} are in ", 'P740': "{h} was formed in ", 'P276': "{h} took place in "}
+
+
+@torch.no_grad()
+def _dw_cand_mc(model, sl, prompt, cands):
+    """index of the candidate with the best MEAN log-probability per byte after PROMPT (store and memory off)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    pb = prompt.encode('latin-1', 'replace'); cb = [(c + '.').encode('latin-1', 'replace') for c in cands]
+    X, _ = _ws_batch(model, [pb + c for c in cb]); lp = F.log_softmax(_ws_run(model, X, sl).float(), -1); sc = []
+    for j, c in enumerate(cb):
+        p0 = len(pb) - 1; n_ = min(len(c), lp.shape[1] - p0)
+        sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else -1e9)
+    return int(np.argmax(sc))
+
+
+def _rtx_rep(d, di):
+    """12 Nov REAL-TEXT REPLAY: which benchmark documents are replayed (half, by a hash of domain and document index); the rest are the control"""
+    import zlib
+    return zlib.crc32(f"rtx|{int(d)}|{int(di)}".encode()) % 2 == 0
+
+
+def _dw_bench_recall(model, cfg, S_slot, vis):
+    """12 Nov READOUT: REAL-TEXT RECALL FROM THE WEIGHTS - Re-DocRED gold relations of the benchmark documents the model has READ (planted
+    once in pass 1, in visited domains), whose two names stand in one sentence, asked in a templated test wording per relation type
+    ('X was born in'); the true object against up to 9 other entity names of the same type from the same domain's documents (mean
+    log-prob per byte; chance ~0.1-0.2), and the same question with the subject replaced by a fresh name (the relation prior alone).
+    With inf_distill_rtx (real-text replay of half the documents), split into REPLAYED documents and the never-replayed CONTROL half."""
+    from platypus.inference.probes import _bench
+    G = _bench(cfg); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); rs = np.random.RandomState(int(cfg.seed) + 4242 + vis)
+    nm = G['ent_name']; ty = G.get('ent_type', {}); items = []; rtx = int(getattr(cfg, 'inf_distill_rtx', 0)) > 0
+    for d in sorted(seen):
+        dl = G['docs'].get(str(d), [])
+        if not dl: continue
+        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        for di, doc in enumerate(dl):
+            sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
+            for h, t, fl, ps in G['rel']:
+                if str(h) not in inX or str(t) not in inX: continue
+                pc = next((p for p in ps if p in _BR_T), None)
+                if pc is None: continue
+                H, T = nm[str(h)], nm[str(t)]
+                if len(H) < 3 or len(T) < 3 or not any(H in s_ and T in s_ for s_ in sents): continue
+                same = [nm[e] for e in inD if e not in (str(h), str(t)) and ty.get(e) == ty.get(str(t)) and len(nm[e]) >= 3]
+                if len(same) >= 3: items.append((d, pc, H, T, same, _rtx_rep(d, di) if rtx else False))
+    if not items: print(f"  [REAL-TEXT RECALL | visit {vis + 1}] no readable benchmark relations in the visited domains yet", flush=True); return
+    items = list({(x[0], x[2], x[3]): x for x in items}.values())
+    fresh = lambda: ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel'], 3)).capitalize()
+    def score(L):
+        L = [L[int(i)] for i in rs.permutation(len(L))[:64]]; ok = []; pri = []
+        for d, pc, H, T, same, rp in L:
+            oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = int(S_slot(d))
+            ok.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0); pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0)
+        ch = np.mean([1.0 / (1 + min(9, len(x[4]))) for x in L]) if L else float('nan')
+        return (f"the true object among up to 10 same-type names {np.mean(ok) if ok else float('nan'):.2f} | with a FRESH subject (relation prior alone) "
+                f"{np.mean(pri) if pri else float('nan'):.2f} | chance {ch:.2f} ({len(L)} asked)"), L
+    pcs = collections.Counter(x[1] for x in items).most_common(4)
+    if rtx:
+        a, _ = score([x for x in items if x[5]]); b, _ = score([x for x in items if not x[5]])
+        print(f"  [REAL-TEXT RECALL | visit {vis + 1}] benchmark relations in documents READ (two names in one sentence; commonest {pcs}): FROM THE WEIGHTS, "
+              f"REPLAYED documents: {a} || CONTROL documents (read once, never replayed): {b}", flush=True)
+    else:
+        a, _ = score(items)
+        print(f"  [REAL-TEXT RECALL | visit {vis + 1}] benchmark relations in documents READ (two names in one sentence; commonest {pcs}): FROM THE WEIGHTS, {a}", flush=True)
+
+
+_RTX_PRON = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ', 'The ')
+
+
+def _dw_bench_diag(model, cfg, S_slot, vis):
+    """12 Nov READOUT: REAL-TEXT RECALL DIAGNOSTICS - why recall sits near the prior. Benchmark relations of documents read, from ONE
+    sentence: NAMED (both names in the sentence, subject first) or PRONOUN-LED (the subject is the document's title, the sentence opens with
+    He / She / It / They / The ...). Per group (replayed / control documents x named / pronoun-led): STORAGE - the trunk completes the
+    object after the sentence's own prefix, as read (every byte top-1); OWN-FRAME recall - the question in the sentence's own words with the
+    subject named ('Thatcher, a native of'); TEMPLATE recall ('Thatcher was born in') and the FRESH-subject prior; the last three among the
+    same 10 candidates (true object + 9 same-type names of the domain)."""
+    from platypus.inference.probes import _bench
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.jepa import cfg_seq_
+    G = _bench(cfg); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); rs = np.random.RandomState(int(cfg.seed) + 4646 + vis)
+    nm = G['ent_name']; ty = G.get('ent_type', {}); L0 = int(cfg_seq_(model)); rtx = int(getattr(cfg, 'inf_distill_rtx', 0)) > 0; items = []
+    PR = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ')
+    for d in sorted(seen):
+        dl = G['docs'].get(str(d), [])
+        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        for di, doc in enumerate(dl):
+            sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
+            for h, t, fl, ps in G['rel']:
+                if str(h) not in inX or str(t) not in inX: continue
+                pc = next((p for p in ps if p in _BR_T), None)
+                if pc is None: continue
+                H, T = nm[str(h)], nm[str(t)]
+                if len(H) < 3 or len(T) < 3: continue
+                same = [nm[e] for e in inD if e not in (str(h), str(t)) and ty.get(e) == ty.get(str(t)) and len(nm[e]) >= 3]
+                if len(same) < 3: continue
+                got = None
+                for s_ in sents:
+                    if T not in s_: continue
+                    j = s_.index(T)
+                    if H in s_ and s_.index(H) + len(H) < j:
+                        mid = s_[s_.index(H) + len(H):j]
+                        if 0 < len(mid.split()) <= 15: got = ('named', s_[:j], H + mid); break
+                    elif H not in s_ and doc.startswith(H) and (s_.startswith(PR) or s_.startswith('The ')) and j > 0:
+                        cut = s_.index(' ') if s_.startswith(PR) else s_.index(' ', 4) if ' ' in s_[4:] else -1
+                        if 0 < cut < j and len(s_[cut:j].split()) <= 15: got = ('pronoun-led', s_[:j], H + s_[cut:j]); break
+                if got: items.append((d, pc, H, T, same, _rtx_rep(d, di) if rtx else False, got[0], got[1], got[2]))
+    if not items: return
+    items = list({(x[0], x[2], x[3]): x for x in items}.values())
+    fresh = lambda: ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel'], 3)).capitalize()
+    def score(L):
+        L = [L[int(i)] for i in rs.permutation(len(L))[:48]]; st, own, tpl, pri = [], [], [], []
+        for d, pc, H, T, same, rp, kd, pre, oq in L:
+            sl = int(S_slot(d)); oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth
+            pb = pre.encode('latin-1', 'replace')[-(L0 - 2 - len(T)):]; tb = T.encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb + b' '])
+            with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
+            p0 = len(pb) - 1
+            if p0 + len(tb) <= lg.shape[0]: st.append(bool((lg[p0:p0 + len(tb)].argmax(-1) == torch.tensor(list(tb), device=lg.device)).all()))
+            own.append(_dw_cand_mc(model, sl, oq.rstrip() + ' ', cands) == 0); tpl.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0)
+            pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0)
+        m = lambda v: f"{np.mean(v):.2f}" if v else "nan"
+        return f"storage {m(st)} | own-frame {m(own)} | template {m(tpl)} | prior {m(pri)} ({len(L)})"
+    parts = []
+    for rp in ((True, False) if rtx else (False,)):
+        for kd in ('named', 'pronoun-led'):
+            L = [x for x in items if x[5] == rp and x[6] == kd]
+            if L: parts.append(f"{'REPLAYED' if rp else ('CONTROL' if rtx else 'ALL')}, {kd}: {score(L)}")
+    print(f"  [REAL-TEXT RECALL, DIAGNOSTICS | visit {vis + 1}] from the weights; storage = completes the object after its own sentence; own-frame / template / prior "
+          f"= the true object among up to 10 same-type names (chance ~0.10) || " + " || ".join(parts), flush=True)
+_RTX_LEAD = {'In', 'On', 'At', 'After', 'During', 'Before', 'Since', 'From', 'For', 'By', 'As', 'A', 'An', 'When', 'While', 'Although', 'However', 'Following', 'Between', 'Despite', 'Under', 'With', 'Of', 'This', 'These', 'That', 'There'}
+_RTX_FORMS = ("In short, ", "From the notes: ", "As noted before, ", "It turns out ")
+
+
+def _rtx_views(sent, title, L0, maxw=12):
+    """12 Nov REAL-TEXT VIEWS: (question, declaration, position) pairs cut from one sentence - subject = the opening capitalised run, or
+    the document's TITLE for a sentence led by a pronoun / 'The'; object = the next capitalised run within maxw words; declaration = the
+    sentence up to the object (its state predicts the object); question = a self-written lead-in + subject + the words between (never a
+    test template: always a lead-in)"""
+    out = []
+    caps = [(m.start(), m.end()) for m in re.finditer(r"(?:[A-Z][\w'\-]*)(?:\s+(?:of|de|the|and|von|van|la|le)?\s*[A-Z][\w'\-]*)*", sent)]
+    if not caps: return out
+    if caps[0][0] == 0 and not sent.startswith(_RTX_PRON):
+        subj = sent[caps[0][0]:caps[0][1]]; rest0 = caps[0][1]; objs = caps[1:]
+        if subj.split()[0] in _RTX_LEAD: return out                         #   'In 1979 ...', 'After the war ...': no subject
+    elif sent.startswith(_RTX_PRON) and title: subj = title; rest0 = sent.index(' ') if sent.startswith(_RTX_PRON[:4]) else sent.index(' ', 4) if ' ' in sent[4:] else 0; objs = [c for c in caps if c[0] > rest0]
+    else: return out
+    for k, (o0, o1) in enumerate(objs[:3]):
+        mid = sent[rest0:o0].strip()
+        if not mid or len(mid.split()) > maxw or len(mid) < 2: continue
+        decl = sent[:o0].encode('latin-1', 'replace')
+        if len(decl) < 8: continue
+        decl = decl[-(L0 - 2):]; pos = len(decl) - 1
+        if decl[-1:] != b' ': continue
+        q = (_RTX_FORMS[k % len(_RTX_FORMS)] + subj + ' ' + mid + ' ').encode('latin-1', 'replace')
+        out.append((q, decl, pos))
+    return out
+
+
+def _rtx_weights(model, rtx, alpha, vis, bs=64):
+    """12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space): the trunk's mean next-byte loss (store and memory off) on every replayed
+    real sentence of each slot; replay probability ~ clip(loss, q10, q90) ** alpha, so sentences the trunk already predicts (stored) are
+    replayed less and the ones it does not, more (prioritised replay; Schaul et al. 2016, Mattar & Daw 2018). Prints the loss spread, the
+    share of replay going to the hardest and the easiest quarter (uniform 0.25), and how last visit's hardest quarter moved."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    H = model.__dict__.setdefault('_rtx_hist', {}); W = {}; allL = []; easy = hard = 0.0; nsl = 0; mv = []
+    prevhard = model.__dict__.get('_rtx_hard') or set(); newhard = set()
+    for sl, ss in rtx.items():
+        Ls = []
+        with torch.no_grad():
+            for i in range(0, len(ss), bs):
+                X, M = _ws_batch(model, ss[i:i + bs]); lg = _ws_run(model, X, sl); T = lg.shape[1]; m = M[:, 1:T + 1].float()
+                ce = F.cross_entropy(lg.reshape(-1, lg.shape[-1]).float(), X[:, 1:T + 1].reshape(-1), reduction='none').view(m.shape)
+                Ls.extend(((ce * m).sum(1) / m.sum(1).clamp(min=1)).cpu().tolist())
+        Ls = np.asarray(Ls, float); lo, hi = np.quantile(Ls, 0.1), np.quantile(Ls, 0.9); w = np.clip(Ls, lo, hi) ** float(alpha)
+        w = w / w.sum() if w.sum() > 0 else np.full(len(Ls), 1.0 / len(Ls)); W[sl] = w; allL.extend(Ls.tolist()); nsl += 1
+        o = np.argsort(Ls); q = max(1, len(Ls) // 4); hard += float(w[o[-q:]].sum()); easy += float(w[o[:q]].sum())
+        for j in o[-q:]: newhard.add(hash(ss[int(j)]))
+        for j, x in enumerate(ss):
+            k = hash(x)
+            if k in prevhard and k in H: mv.append(Ls[j] - H[k])
+            H[k] = float(Ls[j])
+    model.__dict__['_rtx_hard'] = newhard
+    if allL:
+        print(f"  [DISTILLATION, REPLAY BY STORAGE CHECK | visit {vis + 1}] the trunk's loss on {len(allL)} replayed sentences (nats per byte): median {np.median(allL):.3f}, "
+              f"q10 {np.quantile(allL, 0.1):.3f}, q90 {np.quantile(allL, 0.9):.3f} | replay share to the HARDEST quarter {hard / max(1, nsl):.2f}, to the EASIEST "
+              f"{easy / max(1, nsl):.2f} (uniform 0.25; alpha {alpha}) | last visit's hardest quarter: loss change {np.mean(mv) if mv else float('nan'):+.3f} ({len(mv)} sentences)", flush=True)
+    return W
+
+
+def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
+    """12 Nov READOUT: FALSE MEMORIES - questions about facts NEVER read: (a) a FRESH name with a known relation ('It is on record that
+    Kamisen works with'), (b) a KNOWN subject with a relation it has no fact for. Greedy answer from the trunk (store and memory off): the
+    share that is a STORED name (a confabulation drawn from memory), for (b) also the share that is the subject's object for ANOTHER
+    relation (leakage across relations), and the mean probability of the answer's first byte (confidence)."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    rs = np.random.RandomState(int(cfg.seed) + 4343 + vis); fs = [e for e in ents + held if e['key'][0] == 'fact']
+    if len(fs) < 8: return
+    known = set(e['A'] for e in fs) | set(e['ans'] for e in fs); rels = sorted(set(e['r'] for e in fs)); bysub = collections.defaultdict(dict)
+    for e in fs: bysub[e['A']][e['r']] = e['ans']
+    def ask(A, r, d):
+        sl = int(S_slot(d)); pb = f"It is on record that {A} {r} ".encode('latin-1', 'replace'); a = _dw_greedy(model, pb, sl, 20)
+        X, _ = _ws_batch(model, [pb + b'x'])
+        with torch.no_grad(): lg = _ws_run(model, X, sl)[0, len(pb) - 1].float()
+        return a, float(F.softmax(lg, -1).max())
+    nq = int(getattr(cfg, 'inf_distill_false_probe_n', 32)); ref = lambda a: a.lower().startswith(_DT_REFUSE)
+    A_ = []; Aa = []                                                          # (answer strings kept for the ABSTENTION readout below)
+    for _ in range(nq):
+        e = fs[rs.randint(len(fs))]; nm = ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel', 'nor', 'qui'], rs.randint(2, 4))).capitalize()
+        if nm in known: continue
+        a, c = ask(nm, e['r'], e['d']); A_.append((a in known, c)); Aa.append(a)
+    B_ = []; Ba = []
+    subs = [s for s in bysub if len(set(rels) - set(bysub[s]))]
+    for i in rs.permutation(len(subs))[:nq]:
+        A = subs[int(i)]; r = rels[rs.randint(len(rels))]
+        if r in bysub[A]: continue
+        d = next(e['d'] for e in fs if e['A'] == A); a, c = ask(A, r, d); B_.append((a in known, a in bysub[A].values(), c)); Ba.append(a)
+    K_ = []; Ka = []                                                          # (c) KNOWN facts (taught): is the trunk MORE CONFIDENT where it knows? - the
+    tf = [e for e in ents if e['key'][0] == 'fact']                           #   same question form and the same confidence measure (first answer byte)
+    for i in rs.permutation(len(tf))[:nq]:
+        e = tf[int(i)]; a, c = ask(e['A'], e['r'], e['d']); K_.append((a == e['ans'], c)); Ka.append(a)
+    kinfo = ""
+    if K_:
+        kc = [c for ok_, c in K_ if ok_]; kw = [c for ok_, c in K_ if not ok_]; un = [x[1] for x in A_] + [x[2] for x in B_]
+        au = float('nan')
+        if kc and un:
+            r_ = np.concatenate([kc, un]).argsort().argsort().astype(float) + 1; au = (r_[:len(kc)].sum() - len(kc) * (len(kc) + 1) / 2) / (len(kc) * len(un))
+        kinfo = (f" || (c) KNOWN (taught) facts ({len(K_)}): answered right {np.mean([ok_ for ok_, c in K_]):.2f}, confidence when RIGHT "
+                 f"{np.mean(kc) if kc else float('nan'):.2f}, when wrong {np.mean(kw) if kw else float('nan'):.2f} | CONFIDENCE TELLS KNOWN-RIGHT FROM NEVER-READ: AUC {au:.2f}"
+                 f" (0.5 = no; the trunk could abstain on its own only if this is high)")
+    f = lambda L, k: f"{np.mean([x[k] for x in L]):.2f}" if L else "nan"
+    print(f"  [DISTILLATION, FALSE MEMORY PROBE | visit {vis + 1}] questions about facts NEVER read, from the trunk: (a) FRESH name, known relation ({len(A_)}): answer is a "
+          f"STORED name {f(A_, 0)}, confidence {f(A_, 1)} || (b) KNOWN subject, a relation it has no fact for ({len(B_)}): answer is a STORED name {f(B_, 0)}, "
+          f"its object for ANOTHER relation {f(B_, 1)}, confidence {f(B_, 2)}" + kinfo, flush=True)
+    if K_ and (A_ or B_):                                                     # 12 Nov ABSTENTION (readout): could the trunk refuse by itself? It ABSTAINS when
+        try:                                                                  #   it answers the refusal word, or when its confidence is below a threshold t.
+            kr = [(ok_, c, ref(a)) for (ok_, c), a in zip(K_, Ka)]            #   t is set to keep a share of the known facts it answers RIGHT; reported: what
+            un = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share of never-read questions still get
+            kc = np.array([c for ok_, c, rf in kr if ok_ and not rf])          #   a stored name (false memories let through), and the known facts' accuracy
+            parts = []                                                         #   among those answered (selective accuracy)
+            for keep in (0.9, 0.75, 0.5):
+                if not len(kc): break
+                t = float(np.quantile(kc, 1 - keep))
+                ans_k = [(ok_, c) for ok_, c, rf in kr if not rf and c >= t]; leak = np.mean([bool(st) and not rf and c >= t for st, c, rf in un])
+                parts.append(f"keep {keep:.0%} of known-right (t {t:.2f}): known answered {len(ans_k) / len(kr):.2f}, accuracy when answered "
+                             f"{np.mean([ok_ for ok_, c in ans_k]) if ans_k else float('nan'):.2f}, NEVER-READ still given a stored name {leak:.2f}")
+            print(f"  [DISTILLATION, ABSTENTION | visit {vis + 1}] from the trunk, known facts ({len(kr)}) vs never-read questions ({len(un)}; (a) + (b) above): "
+                  f"EXPLICIT REFUSAL ('{_DT_REFUSE}') on known facts {np.mean([rf for ok_, c, rf in kr]):.2f}, on (a) fresh names "
+                  f"{np.mean([ref(a) for a in Aa]) if Aa else float('nan'):.2f}, on (b) missing relations {np.mean([ref(a) for a in Ba]) if Ba else float('nan'):.2f} | "
+                  f"WITHOUT ABSTENTION: never-read given a stored name {np.mean([bool(st) and not rf for st, c, rf in un]):.2f}, known right "
+                  f"{np.mean([ok_ for ok_, c, rf in kr]):.2f} || CONFIDENCE THRESHOLD: " + " | ".join(parts), flush=True)
+        except Exception as e9:
+            _fail('inference.distill:abstain'); print(f"  [DISTILLATION, ABSTENTION] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
 
 def _dt_items(ents, rs, n):
@@ -959,7 +1315,7 @@ def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xs
         if not te: return 0.0, 0
         if guards:                                                             # GUARD: the chain must EXIST in the observed facts and end
             ex = sum(1 for a in te if any(c != a for x in sub[rels[i]][a] for c in sub[rels[j]].get(x, ())))   #   on someone other than
-            if ex < 0.5 * len(te): return 0.0, 0                               #   the subject (r o r-inverse; missing generations)
+            if ex < 0.5 * len(te): return 0.0, -1                              #   the subject (r o r-inverse; missing generations); -1 = guard
         Bs, Cs, _ = chain(te, i, j)
         ok = [(a, c) for a, B, c in zip(te, Bs, Cs) if not guards or B in sub[rels[j]]]    # GUARD: no snapping through a missing hop
         return (sum(1 for a, c in ok if c in sub[rels[b]][a]) / len(ok) if ok else 0.0), len(ok)
@@ -983,6 +1339,7 @@ def _rm_mine(pairs, steps, seed, D=64, hist=None, merge=True, data_dist=True, xs
                         if min(nk) - d[k] <= 0.05: continue
                         out['cand'] += 1
                         fc, fn = fcheck(i, j, k)
+                        out.setdefault('cdiag', []).append((rels[i], rels[j], rels[k], float(d[k]), float(min(nk)), fc, fn))   # diagnostic: every candidate's check
                         n_, p_ = fn, fc; lb_ = (p_ + 1.92 / n_ - 1.96 * np.sqrt(p_ * (1 - p_) / n_ + 0.96 / n_ ** 2)) / (1 + 3.84 / n_) if n_ else 0.0
                         if fn >= 3 and fc >= 0.5 and lb_ >= 0.5:                 # WILSON 95% lower bound >= 0.5 (GPU sleep 3: a FALSE rule passed on 2 of 4)
                             out['rules'].append((rels[i], rels[j], rels[k], float(d[k]), float(np.mean(nk)), float((np.mean(nk) - d[k]) / (np.std(nk) + 1e-6)), fc, fn))
@@ -1028,7 +1385,8 @@ def _dw_relmod(model, cfg, ents, held, vis):
         WR = model.__dict__.setdefault('_rm_written', {})                     # STEP 4 (inf_distill_relmod_write): facts written at earlier sleeps -
         for (r9, a9, c9) in WR: pairs.setdefault(r9, set()).add((a9, c9))      #   hops for later chains, never evidence (provenance)
         R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}), derived=set(WR))
-        rels = R['rels']
+        rels = R['rels']; mg9 = model.__dict__.setdefault('_rm_merged', set())   # 12 Nov: the paraphrase merges, kept across sleeps (paraphrase alignment)
+        for a9, b9 in R['merged']: mg9.add((str(a9), str(b9)))
         if len(rels) < 2: print(f"  [RELATIONAL MODULE | visit {vis + 1}] too few relations recorded ({len(rels)})", flush=True); return
         rw = W.get('rel', {}); par, mgr = W.get('parent', {}), W.get('mgr', {})
         cl = {r: r for r in rels}
@@ -1082,7 +1440,49 @@ def _dw_relmod(model, cfg, ents, held, vis):
         _fail('inference.distill:relmod'); print(f"  [RELATIONAL MODULE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
-def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
+def _dw_relmod_real(model, cfg, S_, vis):
+    """RELATIONAL MODULE ON REAL TEXT (11 Nov; with inf_distill_relmod and inf_reader_chunk; READOUT ONLY): the same miner (_rm_mine, every
+    guard) on the fast sequence channel's records of the real text read (S_['relc']: fillers and the frames between them), the 60 commonest
+    frames and the 4,000 best-connected fillers; rules found (frame o frame -> frame) and their proposals scored against the gold relations
+    of the embedded Re-DocRED documents where both arguments name benchmark entities (the records themselves: about 0.26 gold offline)"""
+    from platypus.inference.probes import _bench
+    try:
+        t0 = time.time(); RC = S_.get('relc') or {}
+        if not RC: print(f"  [RELATIONAL MODULE, REAL TEXT | visit {vis + 1}] no fast-channel records", flush=True); return
+        dec = lambda w: w.decode('utf-8', 'ignore') if isinstance(w, (bytes, bytearray)) else str(w)
+        fc_ = {}
+        for (a, r), ob in RC.items(): fc_[r] = fc_.get(r, 0) + len(ob)
+        top = set(sorted(fc_, key=lambda r: -fc_[r])[:60]); deg = {}
+        for (a, r), ob in RC.items():
+            if r not in top: continue
+            for b in ob: deg[a] = deg.get(a, 0) + 1; deg[b] = deg.get(b, 0) + 1
+        keep = set(sorted(deg, key=lambda n: -deg[n])[:4000]); pairs = {}; nf = 0
+        for (a, r), ob in RC.items():
+            if r not in top or a not in keep: continue
+            for b in ob:
+                if b in keep and b != a and nf < 20000: pairs.setdefault(dec(r), set()).add((dec(a), dec(b))); nf += 1
+        R = _rm_mine(pairs, min(800, int(getattr(cfg, 'inf_distill_relmod', 800))), int(cfg.seed) * 100 + 919, hist=model.__dict__.setdefault('_rm_hist_real', {}))
+        G = _bench(cfg); t2e = G['_t2e']; gold = {(min(h, t), max(h, t)) for h, t, _, _ in G['rel']}
+        def ents(x):
+            es = set()
+            for w in str(x).split(): es |= t2e.get(w, set())
+            return es
+        def isgold(a, c):
+            ea, ec = ents(a), ents(c)
+            if not ea or not ec: return None
+            return any(x != y and (min(x, y), max(x, y)) in gold for x in ea for y in ec)
+        pr = [(p[0], p[1], c) for p in R['props'] for c in (p[4] or [p[2]])]; wr = [(p[0], p[1], c) for p in R['props'] if p[6] for c in p[4]]
+        g1 = [isgold(a, c) for a, r, c in pr]; g1 = [x for x in g1 if x is not None]; g2 = [isgold(a, c) for a, r, c in wr]; g2 = [x for x in g2 if x is not None]
+        print(f"  [RELATIONAL MODULE, REAL TEXT | visit {vis + 1}] {len(RC)} fast-channel record keys; mined {R['nfacts']} facts, {R['N']} fillers, {len(R['rels'])} frames"
+              + (f" (paraphrases merged: {'; '.join(f'{a} = {b}' for a, b in R['merged'][:4])})" if R['merged'] else "")
+              + f" | RULES {len(R['rules'])} ({R['cand']} beat the null): " + (" | ".join(f"'{t[0]}' o '{t[1]}' -> '{t[2]}' predicts {t[6]:.2f} of {t[7]}" for t in R['rules'][:6]) or "none")
+              + f" || PROPOSALS {len(pr)}, on benchmark entities {len(g1)}, GOLD {np.mean(g1) if g1 else float('nan'):.2f} | would be written {len(wr)}, on benchmark entities {len(g2)}, "
+              f"GOLD {np.mean(g2) if g2 else float('nan'):.2f} (nothing written) | {time.time() - t0:.0f}s", flush=True)
+    except Exception as e:
+        _fail('inference.distill:relmod_real'); print(f"  [RELATIONAL MODULE, REAL TEXT] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     """STEP 4 OF THE RULE TEST (11 Nov; inf_distill_relmod_write 1, with inf_distill_relmod; ONE MODEL CHANGE): the relational module's
     WRITTEN facts (a rule found against the null, verified on 0.9+ of its observed composite facts with a Wilson bound, applied through
     STORED premises only - tools/relmod_hard.py: 746 + 92 writes, all right) join the question pool as facts, taught to the trunk by the
@@ -1090,7 +1490,9 @@ def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
     keeps them apart (hops for later chains, never evidence for a rule), and a fact the reader later records itself replaces the written
     one. READOUT: how many written, their precision against the rule world's truth, and RECALL FROM THE TRUNK (test wording, store and
     memory off) of facts written at an earlier sleep - taught vs held back, all and the composites that were NEVER PLANTED anywhere."""
+    import zlib
     from platypus.inference.probes import inf_rule_world
+    from platypus.inference.namemem import _nm_layer
     WR = model.__dict__.get('_rm_written') or {}
     if not WR:
         print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
@@ -1105,18 +1507,104 @@ def _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis):
     for (r, A, C), w in WR.items():
         e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=w['d'], pfs=[f"{A} {r} "], seen=2, src=w['src'], rm=w['vis'])
         if repr(e['key']) in have or (A, r) in haveAr: rep += 1; continue    # recorded by the reader meanwhile: the observation wins
-        (H_ if ctl(e) else T_).append(e)
+        wc9 = float(getattr(cfg, 'inf_distill_relmod_write_ctl', 0.0))        # 12 Nov POWERED STEP 4: a separate, larger held-back share for written facts
+        held9 = (zlib.crc32((repr(e['key']) + '|w').encode()) % 1000 < wc9 * 1000) if wc9 > 0 else ctl(e)
+        (H_ if held9 else T_).append(e)
     kn = [(k, truth(k[1], k[0])) for k in WR]; kn = [(k, t) for k, t in kn if t is not None]
     prec = sum(1 for k, t in kn if k[2] == t) / len(kn) if kn else float('nan')
     old = lambda L: [e for e in L if e['rm'] < vis]; nv = lambda L: [e for e in L if (e['A'], e['r']) in never]
     f = lambda x: f"{x['facts'][0]:.2f} ({x['facts'][1]})"
-    rT = _dt_recall(model, S_slot, old(T_)); rH = _dt_recall(model, S_slot, old(H_))
-    rTn = _dt_recall(model, S_slot, nv(old(T_))); rHn = _dt_recall(model, S_slot, nv(old(H_)))
+    cAC = {(c.get('A'), c.get('C')) for c in S_.get('conc', []) if c.get('A') is not None}   # GPU sleep 4: the held-back control answered too - the
+    gen = lambda L: [e for e in L if (e['A'], e['ans']) in cAC]; nog = lambda L: [e for e in L if (e['A'], e['ans']) not in cAC]   # sleep layer's own
+    def ask():                                                                 #   generic conclusions ('A is connected to C') are taught by edits
+        return [_dt_recall(model, S_slot, L) for L in (old(T_), old(H_), nv(old(T_)), nv(old(H_)), nog(old(T_)), nog(old(H_)))]
+    rT, rH, rTn, rHn, rTg, rHg = ask(); sub = None
+    E = model.__dict__.get('_cf_E'); mo = _nm_layer(model, cfg) if E is not None else None
+    if E is not None and mo is not None and tuple(E.shape) == tuple(mo.weight.shape):
+        W0 = mo.weight.detach().clone()
+        try:
+            with torch.no_grad(): mo.weight.copy_((W0.float() - E.float().to(W0.device)).to(W0.dtype))
+            sub = ask()
+        finally:
+            with torch.no_grad(): mo.weight.copy_(W0)
     print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] {len(WR)} facts written so far ({sum(1 for w in WR.values() if w['vis'] == vis)} this sleep; rule-world truth known for {len(kn)}, "
           f"precision {prec:.2f}; {sum(1 for k in WR if (k[1], k[0]) in never)} of them composites NEVER PLANTED; {rep} since recorded by the reader) -> question pool: "
-          f"{len(T_)} taught, {len(H_)} held back (control) || FROM THE TRUNK, test wording, written at an earlier sleep: TAUGHT {f(rT)} vs HELD BACK {f(rH)} | "
-          f"NEVER PLANTED composites: TAUGHT {f(rTn)} vs HELD BACK {f(rHn)}", flush=True)
+          f"{len(T_)} taught, {len(H_)} held back (control); {len(gen(old(T_)))} / {len(gen(old(H_)))} of the earlier ones also concluded by the sleep layer as 'A is connected to C' || "
+          f"FROM THE TRUNK, test wording, written at an earlier sleep, closed-form edits IN PLACE: TAUGHT {f(rT)} vs HELD BACK {f(rH)} | NEVER PLANTED: TAUGHT {f(rTn)} vs HELD BACK {f(rHn)} | "
+          f"NOT ALSO A SLEEP CONCLUSION: TAUGHT {f(rTg)} vs HELD BACK {f(rHg)}"
+          + (f" || edits SUBTRACTED: TAUGHT {f(sub[0])} vs HELD BACK {f(sub[1])} | NEVER PLANTED: TAUGHT {f(sub[2])} vs HELD BACK {f(sub[3])} | NOT ALSO A SLEEP CONCLUSION: "
+             f"TAUGHT {f(sub[4])} vs HELD BACK {f(sub[5])}" if sub else " || no closed-form edits"), flush=True)
+    try: _dw_relmod_answers(model, S_slot, old(T_), old(H_), par, mgr, truth, rw, vis)
+    except Exception as e9:
+        _fail('inference.distill:relmod_answers'); print(f"  [RELATIONAL MODULE WRITES, WHAT THE TRUNK ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     return ents + T_, held + H_
+
+
+@torch.no_grad()
+def _dw_stored(model, S_, S_slot, es, L0, bs=32):
+    """12 Nov SPACED REPLAY: repr(key) -> True when the trunk completes the fact's OWN source sentence (every answer byte top-1 after the
+    sentence's prefix; store and memory off); facts whose answer is not found in a stored sentence are left out (always replayed)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    out = {}; by = {}
+    for e in es:
+        d, pos, kd = _dw_decl(S_, e, L0, 1)
+        if kd == 'src': by.setdefault(int(S_slot(e['d'])), []).append((repr(e['key']), d, pos, e['ans'].encode('latin-1', 'replace')))
+    for sl, L in by.items():
+        for i in range(0, len(L), bs):
+            ch = L[i:i + bs]; X, _ = _ws_batch(model, [d for k, d, p, a in ch]); lg = _ws_run(model, X, sl)
+            for j, (k, d, p, a) in enumerate(ch):
+                n_ = min(len(a), lg.shape[1] - p)
+                out[k] = n_ == len(a) and bool((lg[j, p:p + n_].argmax(-1) == torch.tensor(list(a), device=lg.device)).all())
+    return out
+
+
+@torch.no_grad()
+def _dw_greedy(model, prompt, sl, n=24):
+    """the trunk's greedy continuation of PROMPT (store and memory off), up to n bytes or a full stop"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    b = bytearray(prompt)
+    for _ in range(n):
+        X, _m = _ws_batch(model, [bytes(b) + b' ']); lg = _ws_run(model, X, sl)
+        p = len(b) - 1
+        if p >= lg.shape[1]: break
+        c = int(lg[0, p].argmax())
+        if c in (46, 10): break
+        b.append(c)
+    return bytes(b[len(prompt):]).decode('latin-1', 'replace').strip()
+
+
+def _dw_relmod_answers(model, S_slot, T_, H_, par, mgr, truth, rw, vis):
+    """12 Nov READOUT (after the GPU sleep-6 finding: held-back written composites answered about as often as taught ones): WHAT the trunk
+    answers in the test wording for written rule-world facts, taught vs held back - RIGHT, the MIDDLE hop (the parent / manager: one hop
+    instead of two), ANOTHER member of the subject's family, the relation's commonest written answer (a HUB), or other; with the mean family
+    size (chance of a right guess within the family ~ 1 / size). Guessing within small families predicts right ~ 1 / size and hubs or
+    family members for the rest; composition predicts right well above that."""
+    def fam(m, A):
+        r_ = A; seen = {A}
+        while r_ in m and m[r_] not in seen: r_ = m[r_]; seen.add(r_)
+        root = r_; out = set()
+        for x in set(m) | set(m.values()):
+            y = x; sn = {x}
+            while y in m and m[y] not in sn: y = m[y]; sn.add(y)
+            if y == root: out.add(x)
+        return out
+    hub = {}
+    for e in T_ + H_: hub.setdefault(e['r'], collections.Counter())[e['ans']] += 1
+    def cls(L):
+        c = collections.Counter(); fs = []; ex = []
+        for e in L:
+            m = par if e['r'] == rw.get('grand') else mgr if e['r'] == rw.get('skip') else None
+            if m is None: continue
+            a = _dw_greedy(model, f"It is on record that {e['A']} {e['r']} ".encode('latin-1', 'replace'), int(S_slot(e['d']))); t = truth(e['A'], e['r'])
+            F_ = fam(m, e['A']) - {e['A']}; fs.append(max(1, len(F_)))
+            k = 'right' if a == t else 'middle hop' if a == m.get(e['A']) else 'family' if a in F_ else 'hub' if hub[e['r']] and a == hub[e['r']].most_common(1)[0][0] else 'other'
+            c[k] += 1
+            if len(ex) < 3: ex.append(f"{e['A']} {e['r']} -> {a or '(nothing)'} [{t}]")
+        n = sum(c.values())
+        return (" ".join(f"{k} {c[k]}" for k in ('right', 'middle hop', 'family', 'hub', 'other')) + f" of {n}, family size {np.mean(fs) if fs else float('nan'):.1f}"
+                + (" | e.g. " + "; ".join(ex) if ex else ""))
+    print(f"  [RELATIONAL MODULE WRITES, WHAT THE TRUNK ANSWERS | visit {vis + 1}] written at an earlier sleep, test wording, edits in place || TAUGHT: {cls(T_)} || "
+          f"HELD BACK: {cls(H_)}", flush=True)
 
 
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
@@ -1154,6 +1642,18 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
+        if int(getattr(cfg, 'inf_distill_false_probe', 1)):
+            try: _dw_false_probe(model, cfg, S_slot, ents, held, vis)
+            except Exception as e9: _fail('inference.distill:false_probe'); print(f"  [DISTILLATION, FALSE MEMORY PROBE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_distill_bench_recall', 1)) and str(getattr(cfg, 'inf_bench', '') or ''):
+            try: _dw_bench_recall(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.distill:bench_recall'); print(f"  [REAL-TEXT RECALL] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+            try: _dw_bench_diag(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.distill:bench_diag'); print(f"  [REAL-TEXT RECALL, DIAGNOSTICS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        cgn9 = int(getattr(cfg, 'inf_compress_gain', 0))
+        if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
+            from platypus.inference.compress import compress_gain
+            compress_gain(model, cfg, S_slot, vis)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);
@@ -1161,8 +1661,9 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             if int(getattr(cfg, 'inf_distill_lchain', 0)): _dw_latent_chain(model, cfg, S_, S_slot, ents, held, D, vis)   # (local: runs with
             if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)                       #  opalg diverged
             if int(getattr(cfg, 'inf_distill_relmod', 0)): _dw_relmod(model, cfg, ents, held, vis)                         #  after sleep 1)
+            if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_reader_chunk', 0)): _dw_relmod_real(model, cfg, S_, vis)
         if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_distill_relmod_write', 0)):
-            try: ents, held = _dw_relmod_write(model, cfg, S_slot, ents, held, ctl, vis)
+            try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:
                 _fail('inference.distill:relmod_write'); print(f"  [RELATIONAL MODULE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
@@ -1203,13 +1704,66 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             except Exception as e9:
                 _fail('inference.distill:bridge'); print(f"  [DISTILLATION, BRIDGE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         from platypus.inference.jepa import cfg_seq_
-        L09 = int(cfg_seq_(model))
+        L09 = int(cfg_seq_(model)); FORMS9 = _dt_forms(cfg)
+        aw9 = float(getattr(cfg, 'inf_distill_align', 0.0)); decl9 = {}; asrc9 = int(getattr(cfg, 'inf_distill_align_src', 1))
+        lf9 = aw9 > 0 and int(getattr(cfg, 'inf_distill_align_lf', 0))
+        held_lf9 = [e for e in held if e['key'][0] == 'fact' and zlib.crc32((repr(e['key']) + '|lf').encode()) % 2 == 0] if lf9 else []
+        lfrows9 = {}; pararows9 = {}; para9 = aw9 > 0 and int(getattr(cfg, 'inf_distill_align_para', 0))
+        for e in held_lf9:
+            for fm in FORMS9: lfrows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), repr(e['key'])))
+        if aw9 > 0 or int(getattr(cfg, 'inf_distill_replay', 0)) > 0:          # 12 Nov VIEW ALIGNMENT (readout also for replay without alignment): each TAUGHT fact's declaration (control never aligned)
+            A9 = (D or {}).get('al') or []
+            try: ct9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('probe') or [], asrc9); ch9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('hprobe') or [], asrc9)
+            except Exception: _fail('inference.distill:align_probe'); ct9 = ch9 = 'unavailable'
+            for e in ents:
+                if e['key'][0] == 'fact': decl9[repr(e['key'])] = _dw_decl(S_, e, L09, asrc9)
+            if lf9:                                                            # 12 Nov LABEL-FREE ALIGNMENT: half the never-asked facts (by a second hash)
+                L1 = (D or {}).get('al_lf') or []                              #   are aligned (question -> declaration, no answer label); the other half
+                try:                                                           #   is the pure control (never asked, never aligned)
+                    rl1 = _dt_recall(model, S_slot, (D or {}).get('lfp') or []); rp1 = _dt_recall(model, S_slot, (D or {}).get('pcp') or [])
+                    al1 = _dw_align_probe(model, S_, S_slot, (D or {}).get('lfp') or [], asrc9); ap1 = _dw_align_probe(model, S_, S_slot, (D or {}).get('pcp') or [], asrc9)
+                except Exception: _fail('inference.distill:align_lf_probe'); rl1 = rp1 = {}; al1 = ap1 = 'unavailable'
+                ff = lambda x: " | ".join(f"{k} {v[0]:.2f} ({v[1]})" for k, v in x.items()) if x else "none"
+                for e in held_lf9: decl9[repr(e['key'])] = _dw_decl(S_, e, L09, asrc9)
+                print(f"  [DISTILLATION, LABEL-FREE ALIGNMENT | visit {vis + 1}] last visit: alignment loss on never-asked facts {np.mean(L1[:20]) if L1 else float('nan'):.3f} (first 20) -> "
+                      f"{np.mean(L1[-20:]) if L1 else float('nan'):.3f} (last 20) | FROM THE TRUNK, test wordings: ALIGNED, NEVER ASKED {ff(rl1)} || PURE CONTROL, never asked or aligned "
+                      f"{ff(rp1)} || states: aligned {al1} || pure control {ap1} | next visit: {len(held_lf9)} never-asked facts aligned, {len(held) - len(held_lf9)} pure control", flush=True)
+            if para9:                                                          # 12 Nov PARAPHRASE ALIGNMENT: taught facts asked with a paraphrase of their relation
+                mg = model.__dict__.get('_rm_merged') or set(); eq = {}        #   that the relational module merged (from the text) -> the stored declaration's state
+                for a9, b9 in mg: eq.setdefault(a9, set()).add(b9); eq.setdefault(b9, set()).add(a9)
+                for _ in range(3):
+                    for r9 in list(eq): eq[r9] |= set().union(*[eq.get(x, set()) for x in eq[r9]]) - {r9}
+                for e in ents:
+                    if e['key'][0] != 'fact' or repr(e['key']) not in decl9: continue
+                    for r2 in sorted(eq.get(str(e['r']).strip(), ())):
+                        for fm in FORMS9: pararows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=r2).encode('latin-1', 'replace'), repr(e['key'])))
+                LP = (D or {}).get('al_pa') or []
+                try:
+                    prevk = set(((D or {}).get('decl') or {}).keys()); rq8 = np.random.RandomState(int(cfg.seed) + 9797 + vis)   # 12 Nov: a LARGER sample - every
+                    tp1 = [e for e in ents if e['key'][0] == 'fact' and e['r'] in _DT_PARA and repr(e['key']) in prevk]           #   taught fact of the last visit and
+                    cp1 = [e for e in held if e['key'][0] == 'fact' and e['r'] in _DT_PARA]                                     #   every never-asked fact with a test
+                    tp1 = [tp1[int(i)] for i in rq8.permutation(len(tp1))[:96]]; cp1 = [cp1[int(i)] for i in rq8.permutation(len(cp1))[:96]]   #   paraphrase, up to 96 each
+                    inm = lambda e: _DT_PARA[e['r']] in eq.get(str(e['r']).strip(), ())
+                    rr = [_dt_recall_para(model, S_slot, L) for L in ([e for e in tp1 if inm(e)], [e for e in tp1 if not inm(e)], [e for e in cp1 if inm(e)], [e for e in cp1 if not inm(e)])]
+                except Exception: _fail('inference.distill:para_probe'); rr = [(float('nan'), 0)] * 4
+                fr = lambda x: f"{x[0]:.2f} ({x[1]})"
+                print(f"  [DISTILLATION, PARAPHRASE ALIGNMENT | visit {vis + 1}] last visit: alignment loss on paraphrased questions {np.mean(LP[:20]) if LP else float('nan'):.3f} (first 20) -> "
+                      f"{np.mean(LP[-20:]) if LP else float('nan'):.3f} (last 20) | FROM THE TRUNK, the PARAPHRASED test wording ('A is a colleague of'): TAUGHT facts, the test paraphrase "
+                      f"WAS merged by the module {fr(rr[0])}, was NOT {fr(rr[1])} || CONTROL (never asked or aligned) merged {fr(rr[2])}, not merged {fr(rr[3])} | merges known: "
+                      f"{sorted(mg)[:8]} | next visit: {sum(len(v) for v in pararows9.values())} paraphrase rows", flush=True)
+            print(f"  [DISTILLATION, VIEW ALIGNMENT | visit {vis + 1}] last visit: alignment loss (1 - cosine, weight {aw9:g}, "
+                  f"{'declaration a stop-gradient target' if int(getattr(cfg, 'inf_distill_align_detach', 1)) else 'both sides trained'}) {np.mean(A9[:20]) if A9 else float('nan'):.3f} (first 20) -> "
+                  f"{np.mean(A9[-20:]) if A9 else float('nan'):.3f} (last 20) | NOW, a TEST-wording question's state vs the declaration's: TAUGHT facts {ct9} | "
+                  f"CONTROL, never taught or aligned: {ch9} | next visit: {len(decl9)} taught facts with a declaration, "
+                  f"{sum(1 for v in decl9.values() if v[2] == 'src')} from the stored source sentence ({len(FORMS9)} question wordings)", flush=True)
+        elif len(FORMS9) != len(_DT_FORMS):
+            print(f"  [DISTILLATION, WORDINGS | visit {vis + 1}] {len(FORMS9)} self-written question wordings", flush=True)
         for e in ents:
             k_ = repr(e['key']); sl = int(S_slot(e['d']))
             own9 = f"{e['A']} {e['r']} {e['ans']}.".encode('latin-1', 'replace')   #   (never the row's own fact as its descriptor)
             d1 = [d for d in brd.get(e['ans'], []) if d != own9] if e['key'][0] == 'fact' else None
             d2 = [d for d in brd.get(e['A'], []) if d != own9] if e['key'][0] == 'fact' else None
-            for j9, fm in enumerate(_DT_FORMS):
+            for j9, fm in enumerate(FORMS9):
                 pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
                 if d2:                                                         #   BRIDGE ANCHORING: the bridge as SUBJECT - its descriptor before the question,
                     rm9 = L09 - 1 - len(pb) - len(ab) - 1                          #   trimmed from the left to keep the answer in the window
@@ -1226,6 +1780,21 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught {'facts and conclusions' if (sk or spc) else 'facts (conclusions always rehearsed)'} in a taught wording"
                   + (f" | spaced rehearsal: mean interval {np.mean([iv.get(repr(e['key']), 1) for e in ents]):.2f}, at 16: {sum(1 for e in ents if iv.get(repr(e['key']), 1) >= 16)}" if sp else "")
                   + (f" | held by KL to their own answers: {nt} rows" if sk else ""), flush=True)
+        rf9 = float(getattr(cfg, 'inf_distill_refuse', 0.0))                   # 12 Nov REFUSAL ROWS: questions about FRESH names never read, in the taught
+        if 0 < rf9 < 1 and rows:                                               #   wordings, answered with the refusal word - a share rf9 of each slot's pool
+            RL9 = (D or {}).get('refl') or []; known9 = {e['A'] for e in ents + held} | {e['ans'] for e in ents + held}
+            rr9 = np.random.RandomState(int(cfg.seed) + 9797 + vis); n0 = collections.Counter(rw[2] for rw in rows); rel9 = collections.defaultdict(list); nref9 = 0
+            for e in ents: rel9[int(S_slot(e['d']))].append(e['r'])
+            allr9 = sorted({e['r'] for e in ents})
+            for sl, n_ in n0.items():
+                for _ in range(int(round(n_ * rf9 / (1 - rf9)))):
+                    nm9 = ''.join(rr9.choice(_DT_REFUSE_SYL, rr9.randint(2, 4))).capitalize()
+                    if nm9 in known9: continue
+                    rl_ = rel9.get(sl) or allr9; r9 = rl_[rr9.randint(len(rl_))]; fm9 = FORMS9[rr9.randint(len(FORMS9))]
+                    rows.append((fm9.format(A=nm9, r=r9).encode('latin-1', 'replace'), (_DT_REFUSE + '.').encode('latin-1', 'replace'), sl, f"refuse|{nm9}|{r9}", None, None)); nref9 += 1
+            print(f"  [DISTILLATION, REFUSAL ROWS | visit {vis + 1}] last visit: loss on refusal rows {np.mean(RL9[:20]) if RL9 else float('nan'):.3f} (first 20) -> "
+                  f"{np.mean(RL9[-20:]) if RL9 else float('nan'):.3f} (last 20), {len(RL9)} rows | next visit: {nref9} rows about fresh names never read (share {rf9:.2f} of the pool; "
+                  f"answer '{_DT_REFUSE}'; names from syllables the false-memory probe never uses; known subjects with a missing relation are NOT trained - the probe's (b) tests transfer)", flush=True)
         rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
         probe = [ents[int(i)] for i in rs.choice(len(ents), min(32, len(ents)), replace=False)] if ents else []
         hprobe = [held[int(i)] for i in rs.choice(len(held), min(32, len(held)), replace=False)] if held else []
@@ -1255,7 +1824,65 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
             print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
                   f"(sentences naming a control subject left out)", flush=True)
-        model.__dict__['_dtw'] = dict(pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        rp9 = int(getattr(cfg, 'inf_distill_replay', 0)); rpl9 = {}; riv9 = {}; rw9 = {}             # 12 Nov SOURCE REPLAY: the stored source sentences of the pool's facts AND
+        if rp9 > 0:                                                            #   of the control fifth (read, never asked), replayed as plain text
+            R9 = (D or {}).get('rl') or []; nt9 = nc9 = 0; sp9 = int(getattr(cfg, 'inf_distill_replay_space', 0)); riv9 = dict((D or {}).get('riv') or {}); rw9 = {}
+            cand9 = []
+            for grp9, es9 in ((0, ents), (1, held if int(getattr(cfg, 'inf_distill_replay_ctl', 1)) else [])):
+                for e in es9:
+                    if e['key'][0] != 'fact': continue
+                    ss9 = [x[-(L09 - 1):] for x in _dw_src_bytes(S_, e) if len(x) >= 8]
+                    if ss9: cand9.append((grp9, e, ss9))
+            st9 = {}
+            if sp9 > 1:                                                        # 12 Nov SPACED REPLAY (retire what is stored): a fact whose own source sentence
+                try: st9 = _dw_stored(model, S_, S_slot, [e for g_, e, ss_ in cand9], L09)   #   the trunk already completes has its replay interval doubled
+                except Exception: _fail('inference.distill:replay_space'); st9 = {}   #   (up to inf_distill_replay_space); one it fails resets to 1
+                for g_, e, ss_ in cand9:
+                    k9 = repr(e['key'])
+                    if k9 in st9: riv9[k9] = min(sp9, 2 * riv9.get(k9, 1)) if st9[k9] else 1
+            for g_, e, ss_ in cand9:
+                sl9 = int(S_slot(e['d'])); w9 = 1.0 / riv9.get(repr(e['key']), 1) if sp9 > 1 else 1.0
+                rpl9.setdefault(sl9, []).extend(ss_); rw9.setdefault(sl9, []).extend([w9] * len(ss_)); nt9 += g_ == 0; nc9 += g_ == 1
+            sinfo9 = ""
+            if sp9 > 1 and st9:
+                stT = [v for (g_, e, ss_) in cand9 for v in [st9.get(repr(e['key']))] if g_ == 0 and v is not None]
+                stC = [v for (g_, e, ss_) in cand9 for v in [st9.get(repr(e['key']))] if g_ == 1 and v is not None]
+                ivs = [riv9.get(repr(e['key']), 1) for g_, e, ss_ in cand9]; wt = sum(1.0 / x for x in ivs)
+                sinfo9 = (f" | SPACED (max interval {sp9}): own sentence completed by taught {np.mean(stT) if stT else float('nan'):.2f} ({len(stT)}), control "
+                          f"{np.mean(stC) if stC else float('nan'):.2f} ({len(stC)}); mean interval {np.mean(ivs):.2f}, at {sp9}: {sum(1 for x in ivs if x >= sp9)}; "
+                          f"share of replay on facts NOT yet stored {sum(1.0 / riv9.get(repr(e['key']), 1) for g_, e, ss_ in cand9 if not st9.get(repr(e['key']))) / max(wt, 1e-9):.2f}")
+            print(f"  [DISTILLATION, SOURCE REPLAY | visit {vis + 1}] last visit: {len(R9)} steps x {rp9} stored source sentences, next-byte loss "
+                  f"{np.mean(R9[:20]) if R9 else float('nan'):.3f} (first 20) -> {np.mean(R9[-20:]) if R9 else float('nan'):.3f} (last 20) | next visit: sentences of "
+                  f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences" + sinfo9, flush=True)
+        rtxN9 = int(getattr(cfg, 'inf_distill_rtx', 0)); rtx9 = {}; rtxv9 = {}; rtw9 = {}   # 12 Nov REAL-TEXT REPLAY: the sentences of HALF the benchmark documents read (by
+        if rtxN9 > 0 and str(getattr(cfg, 'inf_bench', '') or ''):          #   hash; the other half is the control) replayed as plain text, and alignment
+            try:                                                               #   views cut from them (question: lead-in + subject + words up to an object;
+                from platypus.inference.probes import _bench                   #   declaration: the sentence up to that object) - no labels, no templates
+                Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = 0
+                for d9 in sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())):
+                    sl9 = int(S_slot(d9))
+                    for di9, doc9 in enumerate(Gb['docs'].get(str(d9), [])):
+                        if not _rtx_rep(d9, di9): continue
+                        ss9 = [x for x in re.split(r'(?<=[.!?])\s+', doc9) if len(x) >= 20]
+                        if not ss9: continue
+                        m9 = re.match(r"(?:[A-Z][\w'\-]*)(?:\s+(?:of|de|the|and)?\s*[A-Z][\w'\-]*)*", ss9[0]); tt9 = m9.group(0) if m9 else None
+                        rtx9.setdefault(sl9, []).extend(x.encode('latin-1', 'replace')[:L09 - 1] for x in ss9); nd9 += 1
+                        if int(getattr(cfg, 'inf_distill_rtx_align', 1)) and aw9 > 0:
+                            for x in ss9:
+                                v9 = _rtx_views(x, tt9, L09); rtxv9.setdefault(sl9, []).extend(v9); nv9 += len(v9)
+                print(f"  [DISTILLATION, REAL-TEXT REPLAY | visit {vis + 1}] last visit: {len(R1)} steps x {rtxN9} benchmark sentences, next-byte loss "
+                      f"{np.mean(R1[:20]) if R1 else float('nan'):.3f} (first 20) -> {np.mean(R1[-20:]) if R1 else float('nan'):.3f} (last 20); alignment on real-text views "
+                      f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
+                      f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views", flush=True)
+                spx9 = float(getattr(cfg, 'inf_distill_rtx_space', 0.0))
+                if spx9 > 0 and rtx9:                                          # 12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space = alpha): before each
+                    rtw9 = _rtx_weights(model, rtx9, spx9, vis)                #   visit the trunk reads every replayed sentence; sentences it already predicts
+            except Exception as e9:
+                _fail('inference.distill:rtx'); print(f"  [DISTILLATION, REAL-TEXT REPLAY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True); rtx9 = {}; rtxv9 = {}
+        lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
+        lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
+        pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
+        model.__dict__['_dtw'] = dict(rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1270,7 +1897,10 @@ def distill_wake_loss(model, cfg):
         k = int(getattr(cfg, 'inf_distill_wake_rows', 4)); rs = D['rs']; sls = list(D['bysl']); sl = sls[rs.randint(len(sls))]; pool = D['bysl'][sl]
         pw = (D.get('w') or {}).get(sl)
         items = [pool[int(i)] for i in rs.choice(len(pool), min(k, len(pool)), replace=False, p=pw)]
-        X, M = _ws_batch(model, [it[0] + it[1] for it in items]); lg = _ws_run(model, X, sl, grad_=True)
+        aw = float(getattr(cfg, 'inf_distill_align', 0.0)) if D.get('decl') else 0.0
+        X, M = _ws_batch(model, [it[0] + it[1] for it in items])
+        if aw > 0: lg, Hq = _ws_hidden(model, lambda: _ws_run(model, X, sl, grad_=True))
+        else: lg = _ws_run(model, X, sl, grad_=True); Hq = None
         tot = 0.0; cnt = 0; ce = []
         pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
         if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
@@ -1298,9 +1928,59 @@ def distill_wake_loss(model, cfg):
                 t_ = tl[:n_].float(); tot = tot + (t_.exp() * (t_ - F.log_softmax(z, -1))).sum()
             else:
                 c_ = F.cross_entropy(z, X[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); tot = tot + c_; ce.append(float(c_.detach()) / n_)
+                if str(it[3]).startswith('refuse|'): D.setdefault('refl', []).append(float(c_.detach()) / n_)
             cnt += n_
         if not cnt: return 0.0
         loss = tot / cnt; D['n'] += 1; D['losses'].append(float(np.mean(ce)) if ce else float(loss.detach()))
+        rpk = int(getattr(cfg, 'inf_distill_replay', 0)); rpp = (D.get('rpl') or {}).get(sl)
+        if rpk > 0 and rpp:                                                    # SOURCE REPLAY: next-byte loss on stored source sentences of this slot
+            pw_ = (D.get('rpw') or {}).get(sl); pw_ = (np.asarray(pw_, float) / float(np.sum(pw_))) if pw_ is not None and len(pw_) == len(rpp) and np.sum(pw_) > 0 else None
+            ss = [rpp[int(i)] for i in rs.choice(len(rpp), min(rpk, len(rpp), int(np.count_nonzero(pw_)) if pw_ is not None else len(rpp)), replace=False, p=pw_)]
+            Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
+            cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
+            lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rl'].append(float(lr_.detach()))
+        if aw > 0 and Hq is not None:                                          # VIEW ALIGNMENT: the question's state where it predicts the answer ~ the
+            dec = [D['decl'].get(it[3]) for it in items]                       #   declaration's state where it predicts it (taught facts only)
+            ix = [j for j, d_ in enumerate(dec) if d_ is not None and len(items[j][0]) - 1 < Hq.shape[1]]
+            if ix:
+                Xd, _ = _ws_batch(model, [dec[j][0] for j in ix])
+                if int(getattr(cfg, 'inf_distill_align_detach', 1)):
+                    with torch.no_grad(): _, Hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl))
+                else: _, Hd = _ws_hidden(model, lambda: _ws_run(model, Xd, sl, grad_=True))
+                ok = [(j, n) for n, j in enumerate(ix) if Hd is not None and dec[j][1] < Hd.shape[1]]
+                if ok:
+                    hq = torch.stack([Hq[j, len(items[j][0]) - 1] for j, n in ok]).float(); hd = torch.stack([Hd[n, dec[j][1]] for j, n in ok]).float()
+                    al = (1 - F.cosine_similarity(hq, hd, dim=-1)).mean(); loss = loss + aw * al; D['al'].append(float(al.detach()))
+        rtk = int(getattr(cfg, 'inf_distill_rtx', 0)); rtp = (D.get('rtx') or {}).get(sl)
+        if rtk > 0 and rtp:                                                    # REAL-TEXT REPLAY: next-byte loss on replayed benchmark sentences of this slot
+            pw3 = (D.get('rtxw') or {}).get(sl); pw3 = pw3 if pw3 is not None and len(pw3) == len(rtp) else None
+            ss = [rtp[int(i)] for i in rs.choice(len(rtp), min(rtk, len(rtp)), replace=False, p=pw3)]
+            Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
+            cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
+            lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rtxl'].append(float(lr_.detach()))
+        rtv = (D.get('rtxv') or {}).get(sl) if aw > 0 else None
+        if rtv:                                                                # REAL-TEXT ALIGNMENT: a view's question state -> its declaration's (no labels)
+            vv = [rtv[int(i)] for i in rs.choice(len(rtv), min(k, len(rtv)), replace=False)]
+            Xq3, _ = _ws_batch(model, [q for q, d_, p_ in vv]); Xd3, _ = _ws_batch(model, [d_ for q, d_, p_ in vv])
+            _, Hq3 = _ws_hidden(model, lambda: _ws_run(model, Xq3, sl, grad_=True))
+            with torch.no_grad(): _, Hd3 = _ws_hidden(model, lambda: _ws_run(model, Xd3, sl))
+            ok3 = [j for j, (q, d_, p_) in enumerate(vv) if Hq3 is not None and Hd3 is not None and len(q) - 1 < Hq3.shape[1] and p_ < Hd3.shape[1]]
+            if ok3:
+                hq3 = torch.stack([Hq3[j, len(vv[j][0]) - 1] for j in ok3]).float(); hd3 = torch.stack([Hd3[j, vv[j][2]] for j in ok3]).float()
+                a3 = (1 - F.cosine_similarity(hq3, hd3, dim=-1)).mean(); loss = loss + aw * a3; D['rtxa'].append(float(a3.detach()))
+        for pk_, lk_ in (('lf', 'al_lf'), ('para', 'al_pa')):                 # LABEL-FREE ALIGNMENT (never-asked facts) and PARAPHRASE ALIGNMENT (taught facts asked
+            lfp_ = (D.get(pk_) or {}).get(sl) if aw > 0 else None             #   with a merged paraphrase of their relation): questions with no answer bytes and
+            if not lfp_: continue                                              #   no cross-entropy -> the stored declaration's state
+            qs = [lfp_[int(i)] for i in rs.choice(len(lfp_), min(k, len(lfp_)), replace=False)]
+            dq = [(q, D['decl'].get(k9)) for q, k9 in qs if D['decl'].get(k9) is not None]
+            if dq:
+                Xq2, _ = _ws_batch(model, [q for q, d_ in dq]); Xd2, _ = _ws_batch(model, [d_[0] for q, d_ in dq])
+                _, Hq2 = _ws_hidden(model, lambda: _ws_run(model, Xq2, sl, grad_=True))
+                with torch.no_grad(): _, Hd2 = _ws_hidden(model, lambda: _ws_run(model, Xd2, sl))
+                ok2 = [j for j, (q, d_) in enumerate(dq) if Hq2 is not None and Hd2 is not None and len(q) - 1 < Hq2.shape[1] and d_[1] < Hd2.shape[1]]
+                if ok2:
+                    hq2 = torch.stack([Hq2[j, len(dq[j][0]) - 1] for j in ok2]).float(); hd2 = torch.stack([Hd2[j, dq[j][1][1]] for j in ok2]).float()
+                    a2 = (1 - F.cosine_similarity(hq2, hd2, dim=-1)).mean(); loss = loss + aw * a2; D.setdefault(lk_, []).append(float(a2.detach()))
         return loss
     except Exception as e:
         _fail('inference.distill:wake')

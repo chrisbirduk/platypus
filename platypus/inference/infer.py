@@ -11,7 +11,7 @@ from platypus.inference.units import (
     _INF_NAME, _INF_TRIP, _RDR, _UNITS, _ent_ok,
 )
 from platypus.inference.probes import (
-    _INF, inf_probes,
+    _INF, inf_probes, inf_rule_world,
 )
 from platypus.inference.sentences import (
     _inf_rel, _inf_store,
@@ -652,13 +652,18 @@ def _cue_readout(model,cfg,S_):
 def _kgx_hold(cfg):
     """HELD-OUT COMPOSITION (inf_kgx_hold N): every Nth probe chain never gets a conclusion (no store, fast store, replay or edit of it): its two facts
     are read as usual, so whether the weights answer its two-hop question measures composition the weights learned, not a stored conclusion"""
-    N_=int(getattr(cfg,'inf_kgx_hold',0))
-    if N_<=0: return frozenset()
+    N_=int(getattr(cfg,'inf_kgx_hold',0)); rw_=int(getattr(cfg,'inf_rw_nosleep',0))
+    if N_<=0 and not rw_: return frozenset()
     if _INF.get('kgho') is None:
         P_=set()
-        for i_,c_ in enumerate(inf_probes(cfg)):
+        for i_,c_ in enumerate(inf_probes(cfg) if N_>0 else ()):
             if i_%N_!=N_-1: continue
             n_=c_['names']; P_|={frozenset((n_[a_],n_[b_])) for a_ in range(len(n_)) for b_ in range(a_+2,len(n_))}
+        if rw_:                                                                 # 12 Nov (inf_rw_nosleep): the RULE WORLD's two-hop pairs (grandchild-root,
+            W_=inf_rule_world(cfg)                                              #   staff-top) are never concluded by the sleep layer, so a composite fact
+            for k_ in ('parent','mgr'):                                         #   reaches the trunk only through the relational module's write (step 4):
+                m_=W_.get(k_,{})                                                #   the clean control for consolidation of self-inferred facts
+                P_|={frozenset((a_,m_[m_[a_]])) for a_ in m_ if m_.get(a_) in m_}
         _INF['kgho']=frozenset(P_)
     return _INF['kgho']
 def _kgx_ho(cfg,c_):

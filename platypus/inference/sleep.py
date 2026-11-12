@@ -29,7 +29,7 @@ from platypus.inference.units import (
     _INF_NAME, _INF_SYL, _RDR, _UNITS, _ent_update, _rdr_update, _u_rare, _units_on,
 )
 from platypus.inference.probes import (
-    _INF, _inf_bench_readout, inf_probes,
+    _INF, _inf_bench_readout, _reader_gold_readout, inf_probes,
 )
 from platypus.inference.sentences import (
     _inf_store,
@@ -235,6 +235,9 @@ def _inf_sleep_body(model,cfg,t,ts,vals,olds_,S_slot):
             print(f"    REAL: {c_['s']} | via {c_['B']} (bridges {c_.get('cor','?')}, staged evidence {c_.get('stg','-')}, mutual compression {c_.get('mg','-')} bits) | sources: {s1_!r} || {s2_!r}",flush=True)
     if st_.get('graph'): print(st_['graph'],flush=True)
     if str(getattr(cfg,'inf_bench','') or ''): _inf_bench_readout(S_,cfg)
+    if str(getattr(cfg,'inf_bench','') or '') and int(getattr(cfg,'inf_reader_gold',1)):
+        try: _reader_gold_readout(S_,cfg,int(model.__dict__.get('_visit',0)))
+        except Exception as e9_: _fail('inference.sleep:reader_gold'); print(f"  [READER vs GOLD] unavailable ({type(e9_).__name__}: {e9_})"[:240],flush=True)
     if int(getattr(cfg,'inf_jd',0)):
         try: _jd_train(model,cfg,S_)                                            # cg26 JEPA DREAM SELECTOR (trained every sleep, before the splicing it chooses for)
         except Exception as e_:

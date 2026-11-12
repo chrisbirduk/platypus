@@ -83,6 +83,7 @@ def tconf(r1, r2, r):                                                          #
 
 
 DER = set()
+CONSIST = bool(int(os.environ.get('CONSIST', '0')))                         # 12 Nov: DCT-style consistency filter on writes
 
 
 def run(tag, pairs, **kw):
@@ -100,6 +101,32 @@ def run(tag, pairs, **kw):
     for a, r, c, mg, st, fc, w, dep in R['props']:
         props.setdefault((a, real(r)), set()).update(st if st else [c])
         if w: wr.setdefault((a, r), set()).update(st)                           # WRITTEN (step 4): a rule verified 0.9+, premises stored
+    if CONSIST:                                                                 # DCT-STYLE CONSISTENCY (12 Nov): a write is kept only if one of its chains
+        sub = R['sub']; obs = {r: {} for r in sub}                              #   has no premise CONTRADICTED by an inverse relation found in the data
+        for r, v in pairs.items():
+            for x, y in v:
+                if (r, x, y) not in DER: obs.setdefault(r, {}).setdefault(x, set()).add(y)
+        inv = {}
+        for r in obs:                                                           # q is r's inverse if (b q a) holds for 80%+ of the (a r b) whose b has q facts
+            best = None
+            for q in obs:
+                if q == r: continue
+                tst = [(x, y) for x, ys in obs[r].items() for y in ys if y in obs[q]]
+                if len(tst) >= 20:
+                    agr = np.mean([x in obs[q][y] for x, y in tst])
+                    if agr >= 0.8 and (best is None or agr > best[1]): best = (q, agr)
+            if best: inv[r] = best[0]
+        def contra(x, r, y):
+            q = inv.get(r); return q is not None and y in obs[q] and x not in obs[q][y]
+        rl = {}
+        for t in R['rules']: rl.setdefault(t[2], []).append(t[:2])
+        wr2 = {}
+        for (a, r), cs in wr.items():
+            for c in cs:
+                good = any(not contra(a, r1, B) and not contra(B, r2, c) for r1, r2 in rl.get(r, ()) for B in sub.get(r1, {}).get(a, ()) if c in sub.get(r2, {}).get(B, ()))
+                if good: wr2.setdefault((a, r), set()).add(c)
+        print(f"   CONSISTENCY: inverse relations found {inv}; writes {sum(len(v) for v in wr.values())} -> {sum(len(v) for v in wr2.values())}")
+        wr = wr2
     ok = lambda a, r, cs: any(c in T.get(r, {}).get(a, ()) for c in cs)
     np_ = len(props); prec = sum(ok(a, r, cs) for (a, r), cs in props.items()) / max(1, np_)
     by = {}

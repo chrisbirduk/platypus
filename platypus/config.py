@@ -551,6 +551,15 @@ class Config:
     inf_distill_opalg=0             # 11 Nov READOUT: OPERATOR ALGEBRA on the rule world - relation operators on the trunk's name codes compose? discover the rules (vs a shuffled null)?
     inf_distill_relmod=0            # 11 Nov READOUT (step 3): RELATIONAL MODULE - N training steps of free name codes + relation operators on the reader's facts; rules vs a shuffled null, proposed composite facts scored (nothing written)
     inf_distill_relmod_write=0      # 11 Nov STEP 4 (ONE MODEL CHANGE): 1 = the relational module's written facts (rule verified 0.9+, stored premises) join the question pool; a fifth held back
+    inf_reader_chunk=0              # 11 Nov FAST SEQUENCE CHANNEL READER: 1 = online counts of the text read; frames = common word sequences, fillers = what varies;
+                                    #   (filler, frame, filler) records into a SEPARATE evidence record S_['relc'] (readouts: [READER vs GOLD], relational module on real text)
+    inf_reader_chunk_k=300          #   the K most frequent word types are frame material
+    inf_reader_chunk_skip=3         #   records between fillers up to this many apart
+    inf_reader_chunk_gap=12         #   frames up to this many tokens
+    inf_reader_chunk_cap=1000000    #   bound on each count table and on the record's keys
+    inf_reader_gold=1               # 11 Nov READOUT (with inf_bench): the evidence record(s) scored against the benchmark's gold relations each sleep
+    inf_rw_nosleep=0                # 12 Nov: 1 = the sleep layer never concludes the rule world's two-hop pairs (held out like inf_kgx_hold): composites reach the trunk only via step 4
+    inf_distill_relmod_write_ctl=0.0  # 12 Nov POWERED STEP 4: > 0 = this share of the relational module's written facts held back (own hash) instead of the general fifth
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each
@@ -570,6 +579,39 @@ class Config:
                                     #   sentence(s) before the question, the student the question alone; KL at temperature inf_distill_wake_pd_T on the answer bytes
     inf_distill_wake_pd_T=2.0       #     distillation temperature (the paper's best: 2)
     inf_distill_wake_pd_ce=0.0      #     + this x cross-entropy on the true answer bytes (0 = soft targets only)
+    inf_distill_align=0.0           #   12 Nov VIEW ALIGNMENT (after LLM-JEPA; toy: facts only READ answered 0.64 -> 0.88): > 0 = + this x (1 - cosine) between the
+                                    #   trunk's last-block state where a question row predicts its answer and the state where the fact's DECLARATION predicts it
+                                    #   (its stored source sentence, else 'A r ans.'), taught facts only; the control fifth never gets an alignment row
+    inf_distill_align_detach=1      #     1 = the declaration's state is a stop-gradient target (reading is left alone); 0 = both sides trained (the toy)
+    inf_distill_align_src=1         #     1 = the declaration is the fact's stored source sentence when its answer is found there; 0 = always 'A r ans.'
+    inf_distill_align_lf=0          #   12 Nov LABEL-FREE ALIGNMENT (toy B: never-asked facts 0.79 -> 0.92): 1 = half the never-asked control facts (second hash) are
+                                    #     ALIGNED too (question -> declaration, no answer label); the other half stays the pure control
+    inf_distill_align_para=0        #   12 Nov PARAPHRASE ALIGNMENT (toy: never-taught facts asked in a paraphrase 0.61 -> 0.82): 1 = taught facts also asked with
+                                    #     each paraphrase of their relation the relational module merged from the text, aligned to the stored declaration (no labels)
+    inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
+    inf_distill_false_probe_n=32    #     questions per group (fresh names / missing relations / known facts); + the ABSTENTION readout (risk-coverage of the
+                                    #     trunk's confidence, explicit refusals)
+    inf_compress_gain=0             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits: does the trunk compress text better once a
+                                    #     pattern is in place - binding gain at joins of capitalised words (units) and mutual compression gain between
+                                    #     mentions (links), against the Re-DocRED gold mentions of the embedded documents read (needs inf_bench)
+    inf_compress_n=600              #     joins sampled (pairs: up to 10x as many)
+    inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
+                                    #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
+    inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
+    inf_distill_rtx=0               #   12 Nov REAL-TEXT REPLAY (with inf_bench): N > 0 = N sentences of HALF the benchmark documents read (hash; the other half
+                                    #     is the control) replayed with each question-row step; REAL-TEXT RECALL then splits replayed vs control documents
+    inf_distill_rtx_align=1         #     1 = + alignment of views cut from those sentences (needs inf_distill_align > 0): no labels, no templates
+    inf_distill_rtx_space=0.0       #   12 Nov REPLAY BY STORAGE CHECK: alpha > 0 = replay probability ~ the trunk's own loss on each replayed sentence
+                                    #     (clipped to q10-q90) ** alpha, re-measured before each visit: sentences already predicted are replayed less
+    inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
+    inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
+                                    #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk
+                                    #   completed only 0.08 of control facts' own sentences vs 0.47 taught)
+    inf_distill_replay_w=1.0        #     weight of the replay loss (relative to the question rows)
+    inf_distill_replay_ctl=1        #     1 = the control fifth's sentences are replayed too (0 = taught facts only)
+    inf_distill_replay_space=0      #   12 Nov SPACED REPLAY: N > 1 = a fact whose own source sentence the trunk already completes has its replay interval
+                                    #     doubled at each sleep up to N (sampled 1/interval as often); a fact it fails resets to 1 (cg27a_replay: 0.91 of taught
+                                    #     facts stored by visit 9 while Gutenberg's shared-trunk reliance rose to 0.36)
     inf_distill_wake_spaced_conc=0  #   11 Nov: 0 = spaced rehearsal spaces FACTS only (conclusions always rehearsed: their taught-wording check passes through the closed-form edits); 1 = conclusions too
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real

@@ -464,6 +464,402 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Real-text replay, false memories, the trunk's confidence and the alignment control (cg27a_rtx, cg27a_rtx16, cg27a_replaynoal; seed 4; 12 November evening)
+
+All three = cg27a_replay (source replay of planted facts) plus: `cg27a_rtx` - the sentences of HALF the benchmark documents read replayed as
+plain text, 4 per question-row step (the other half read once: the control), no real-text view alignment; `cg27a_rtx16` - the same, 16 per
+step; `cg27a_replaynoal` - no real-text replay and NO view alignment (inf_distill_align 0; the alignment control). cg27a_rtx16 and
+cg27a_replaynoal were stopped at visit 4 (the author: enough to choose the next runs).
+
+REAL-TEXT RECALL from the weights (true object among up to 10 same-type names; 'prior' = the same question with a fresh subject):
+
+| visit | rtx: replayed / prior | rtx: control / prior | rtx16: replayed / prior | rtx16 DIAGNOSTICS, replayed named (48): storage / own-frame / template / prior | rtx16 control named: own-frame / prior |
+|---|---|---|---|---|---|
+| 2 | 0.12 / 0.12 | 0.05 / 0.03 | 0.19 / 0.19 | 0.00 / 0.12 / 0.06 / 0.08 | 0.15 / 0.08 |
+| 3 | 0.14 / 0.14 | 0.14 / 0.12 | 0.17 / 0.16 | 0.02 / 0.12 / 0.08 / 0.06 | 0.08 / 0.08 |
+| 4 | 0.27 / 0.27 | 0.12 / 0.09 | 0.30 / 0.27 | **0.06 / 0.23 / 0.08 / 0.08** | 0.04 / 0.04 |
+| 7 | 0.19 / 0.14 | 0.08 / 0.06 | - | - | - |
+
+**First sign of storage of real sentences (rtx16, visit 4): replayed documents asked in their own sentence's wording 0.23 vs 0.08 (about
+11 of 48 vs 4), never-replayed documents at their prior; not in another wording (0.08).** One visit. cg27a_rtx's gap over the prior
+(+0.05 at visit 7) is within noise: cg27a_replaynoal, which replays no real text, moved +0.05 at visit 3. Real-text replay loss after ~15
+readings a sentence: 0.97 (rtx16) vs 0.95 (rtx); planted source sentences 0.4-0.6. Cost: BPC within 0.006 of cg27a_rtx, under a minute a
+visit for 4x the replay. Local safety (short run, 4x replay): final BPC 2.996 / forgetting -0.158 vs 3.003 / -0.149.
+
+FALSE MEMORY PROBE (from the trunk; (a) a fresh name with a known relation, (b) a known subject with a relation it has no fact for;
+greedy answer is a STORED name) and the trunk's confidence (first answer byte) on known facts it answers right vs never-read questions:
+
+| visit | (a) rtx / rtx16 / replaynoal | (b) rtx / rtx16 / replaynoal | AUC known-right vs never-read: rtx16 / replaynoal |
+|---|---|---|---|
+| 2 | 0.09 / 0.12 / 0.16 | 0.19 / 0.19 / 0.22 | 0.70 / 0.59 |
+| 3 | 0.61 / 0.61 / 0.71 | 0.58 / 0.61 / 0.65 | 0.71 / 0.73 |
+| 4 | 0.69 / 0.83 / 0.83 | 0.47 / 0.56 / 0.59 | **0.84 / 0.82** |
+| 7 | 0.93 / - / - | 0.47 / - / - | - |
+
+**The trunk learns to answer any question in the taught form with a stored name** - in every build, with or without real-text replay, so
+the question rows (or planted replay) cause it, not real text; leakage of a subject's other-relation object 0.00. **Its confidence
+separates what it knows from what it never read better as training goes on** (AUC 0.59-0.73 -> 0.82-0.84); not enough to abstain on (the
+store stays the gatekeeper). Tested next: refusal rows (cg27a_refuse) and the ABSTENTION readout.
+
+ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 / 0.03 / 0.06 at visits 2-4 without alignment
+(replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
+difference through visit 4; the decisive visits were not run.
+
+### Finding names: a text JEPA vs byte surprise (tools/toy_jname.py, tools/realtext_names.py; 12 November)
+
+TOY (synthetic documents, unseen test names; EMA-target JEPA; AUC name vs other words): training wordings, first mention - byte surprise
+1.00, low JEPA surprise 0.68, gap 0.96; held-out wording - byte 0.52, JEPA 0.60, gap 0.55; swap test 0.39-0.53 (fails); identity of a name
+across documents: byte LM hidden state 0.66, JEPA latent 0.46 (chance 0.02). (The LeJEPA variant was cut off by the time limit.)
+REAL TEXT (byte LM 2.12 bits/byte and a LeJEPA-style JEPA, trained on local Wikipedia + the benchmark; 39,163 words of the benchmark
+documents, 25% part of a gold entity name): **capitalised-not-first 0.93, byte surprise 0.69, low JEPA surprise 0.48 (no signal), gap
+0.65**; on the 2,355 gold-name words capitalisation cannot see (lower-case or sentence-initial): byte surprise 0.58, JEPA 0.46, gap 0.55.
+**The JEPA does not find names on real text**; byte surprise carries a weak signal for the names capitalisation misses (many of those
+'names' are common nouns inside entity names: 'University', 'Party'). Name finding beyond capitalisation needs another route.
+
+### Can the trunk guide the store? Boundaries and mention linking (tools/trunk_guides.py, 12 November; Re-DocRED dev, 500 documents, 13,189 gold mentions)
+
+After EM-LLM (episode boundaries at the model's own surprise) and hippocampal indexing (memory keyed by the cortex's states). Stand-in trunk:
+a byte LM trained here on local Wikipedia + the documents (128 wide, 3 layers, 4,000 steps, 2.10 bits/byte); control: the same network
+untrained. Thresholds and combinations fitted on documents 1-250, scored on 251-500.
+
+| test | baseline (the reader's own cues) | trained trunk | untrained network | combined |
+|---|---|---|---|---|
+| joins inside capitalised runs: same mention vs boundary (AUC) | - | 0.565 | - | split threshold fitted: none (exact-span F1 0.698 unchanged) |
+| sentence-initial capitalised word starts a mention (AUC) | corpus mid-sentence capitalisation **0.978** | 0.864 | - | 0.970 (worse than the baseline) |
+| same-entity mention pairs, all (AUC) | words + letter triples 0.904 | 0.927 | **0.937** | string + trunk 0.949, string + untrained 0.952 |
+| pairs sharing no word (1,221) | 0.472 | 0.684 | **0.719** | 0.739 vs 0.757 |
+| pairs sharing no word and few letter triples (932) | 0.322 | 0.612 | **0.649** | 0.669 vs 0.692 |
+| antecedent right (1,759 mentions) | 0.932 | 0.906 | 0.902 | 0.936 vs 0.941 |
+
+**At this scale the trunk adds nothing the store's own cues or plain byte form do not already give.** Boundaries: its surprise barely
+separates a name's continuation from a new mention, and the corpus capitalisation statistic beats it on sentence-initial names. Linking:
+the TRAINED states never beat the UNTRAINED network - what the states carry is byte form (shared capitals, as in acronyms), not learned
+identity; the remaining hard pairs need world knowledge ('AGF' / 'Asian Games Federation', 'Osaka Bay' / its Japanese name, 'Fatih Terim'
+/ 'Imparator'). Not tested: pronouns and descriptions ('she', 'the company') - Re-DocRED annotates named mentions only. Caveats: a small
+stand-in trunk (the GPU trunk reaches ~1.7 bits/byte); the guidance would have to grow with the trunk, and with 'guidance only adds' the
+floor stays at today's reader.
+
+### Reference ceiling on real text (tools/reference_ceiling.py, 12 November; Re-DocRED benchmark documents, names = fast-channel fillers)
+
+Gold relations whose two names are found in ONE sentence: no reference 435 (9.2%); + the title in sentences with a third-person pronoun or
+opening with frame material **614 (13.0%)**; + the title in every sentence 622 (13.2%); + the previous sentence's subject 537 (11.4%); both
+618. Upper bound - both names found anywhere in the document: **857 (18.1%)**, 41% of them with the title as one argument. Reference by
+the title lifts the one-sentence ceiling by 40% (9 -> 13%); cross-sentence pairs beyond it add at most 5 points; **the larger limit is
+recognising the names at all** (82% of gold relations have a name the fast channel never isolates as a filler: common-noun entities,
+dates and numbers, lower-case names).
+
+### Toy: paraphrase alignment closes the paraphrase gap (tools/toy_para_align.py, seed 0, 6,000 steps)
+
+3 relations x 2 phrasings; every fact declared in phrasing a, 20% also in phrasing b; 420 of 600 taught as questions in phrasing a only.
+Unseen question prefixes:
+
+| alignment | taught: phrasing a / PARAPHRASE b | never taught: phrasing a / PARAPHRASE b |
+|---|---|---|
+| off | 0.92 / 0.76 | 0.67 / 0.41 |
+| as built (question a -> declaration a, taught) | 0.92 / 0.83 | 0.82 / 0.61 |
+| **+ paraphrase (question b -> declaration a, taught)** | 0.93 / **0.93** | 0.82 / **0.82** |
+| + paraphrase, never-asked facts too (label-free) | 0.92 / 0.91 | 0.80 / 0.80 |
+
+Aligning the paraphrased question of TAUGHT facts with the stored wording's declaration removes the paraphrase gap for facts never taught
+(0.61 -> 0.82, equal to the stored wording): the paraphrase is learned as a relation-level mapping, not per fact. Aligning the never-asked
+facts as well adds nothing here. For Platypus: the relational module's paraphrase merges (always correct on the GPU) give the pairs.
+
+### Real-text views for label-free alignment (tools/realtext_views.py, 12 November; Re-DocRED benchmark documents)
+
+A view = (question, declaration) cut from one sentence by the fast channel: subject (the title supplied for pronoun- or frame-led
+sentences) + the frame before an object filler. 5,696 views in 262 documents (21.7 per document): adjacent 2,991, anchored with the
+title supplied 1,986, anchored and named 719. **Gold relations with a view: 342 of 4,726 (7.2%)** - the same ceiling as the reader (one
+sentence holds both names), 126 of them only through a title-supplied view; only 34 have views in 2+ frames. **Paraphrase load: a relation
+type arrives in about as many frames as it has relations** (median 1.00 distinct frames per relation; located-in 63 frames / 73 relations,
+birthplace 23 / 34: 'was born in', ', born in', '( born in', 'in [F] ,' ...). Label-free alignment on ordinary text is bounded by one-sentence
+views (~7%) unless cross-sentence reference grows, and its test questions in another wording need frames merged into relation types.
+Label-free alignment does not need the view to be a TRUE relation (it aligns a question with what the text says), so the reader's precision
+matters less here than its coverage.
+
+### Reader tests 4-6 (tools/reader_tests3.py, 12 November; subject-anchored + cleaned records, local Wikipedia + the benchmark, Re-DocRED gold)
+
+Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations covered.
+
+| test | result |
+|---|---|
+| M5 relation properties as filters: type signature / functional / irreflexive (name fragments) / all three | 0.44 (random drop 0.44) / 0.43 (87 "functional" frames, all glue: '(', 'in the') / **0.45 at no coverage loss** / 0.46 at 297 covered |
+| M4 tensor factorisation as a filter (keep the best-explained 75 / 50 / 25%): no constraints | 0.44 / 0.45 / 0.43 |
+| ... + inverse and paraphrase constraints (19 paraphrase, 1 inverse pair mined) / + tied to frame clusters | 0.43 / 0.45 / **0.47** ; 0.43 / 0.45 / **0.48** (155 covered) |
+| M4 completion (each title's best unread object per frame, among its document's fillers) vs a random document filler | 0.22 / 0.30 / 0.33 vs 0.16-0.19; 7-9 new gold relations |
+| M6 rules: anchored frames as read / pooled into 40 clusters / cluster x type pair | **0 rules** in each; 93-95% of candidates have no observed chains; best testable predicts 0.12-0.33 |
+
+Constraints help only at heavy filtering (+0.05 at a quarter of the records); completion beats chance but adds <10 relations; real text
+still yields no rules at this scale. The name-fragment filter is the one free gain. Reader work stops here (see the alignment route).
+
+### Option B, stages 1-2 offline: relation codes from a byte LM's states, rules over them (tools/relcodes.py; 12 November) - NO GO at this scale
+
+130,798 records (anchored + cleaned adjacent; local Wikipedia + the benchmark), 97,322 distinct frames. A byte LM (2.12 bits/byte) reads
+'Someone <frame> '; a projector trained contrastively on 66,301 same-name-pair positives (Matching-the-Blanks on the model's states). The
+contrastive loss barely moves (5.29 -> 5.10; chance ~5.5): same-pair records rarely share a relation (list items, co-mentions).
+STAGE 1 (425 benchmark gold-pair records; nearest record shares a gold relation type): majority 0.20, **frame words 0.54**, raw LM state
+0.41, **trained relation code 0.40**, code + words 0.55; 48 clusters, gold-type purity 0.36. Clusters are sorted mostly by the frame's last
+word ('in' / 'was born in' / 'died in'; 'to' / 'returned to' / 'moved to'). STAGE 2: rules over the 48 clusters - 9,431 candidates, 1,403
+testable (vs 49 over frame strings: pooling does gather evidence), functional accuracy median 0.03, best 0.37 of 27 - **0 rules**; over frame
+strings 0 rules (best 0.22). The learned code does not beat frame words; neither supports a rule. Needs a stronger trunk (or more text)
+and cleaner positives before option B can go further.
+
+### POWERED STEP 4: inferred facts become the trunk's own knowledge when taught (cg27a_step4p, seed 4, visits 1-7; 12 November)
+
+cg27a_replay + the rule world x4 (48 families, 48 org charts) and HALF the relational module's written facts held back. Written facts: 120
+by visit 7, **precision 1.00, 117 of them composites never planted anywhere**. From the trunk (store and memory off), test wording, facts
+written at an earlier sleep, **closed-form edits SUBTRACTED**:
+
+| visit | TAUGHT | HELD BACK | trunk's answers to held-back facts (right / middle hop / other; family size 6, chance ~0.17) |
+|---|---|---|---|
+| 4 | **0.61** (18) | 0.12 (25) | 4 / 1 / 20 of 25 |
+| 5 | **0.50** (28) | 0.13 (30) | 6 / 0 / 24 of 30 |
+| 6 | **0.56** (32) | 0.18 (34) | 8 / 0 / 26 of 34 |
+| 7 | **0.44** (45) | 0.14 (50) | 5 / 0 / 45 of 50 |
+| 8 | **0.56** (55) | 0.17 (65) | 10 / 0 / 55 of 65 |
+
+**Facts the system INFERRED, never stated in its text, are recalled from its weights when taught (0.44-0.61), and held-back ones stay at
+the guessing level (0.12-0.18, chance ~0.17)** - visit 7: 20 of 45 vs 7 of 50 (edits subtracted), a gap the small runs could not show
+(withdrawn above at n 2-6). The held-back answers are wrong names, not the middle hop: no sign of the trunk composing on its own (as
+before). SAFETY: the local short run FAILS (mean BPC 3.210 / forgetting -0.058 vs 3.021 / -0.127 for the same build at normal rule-world size: 4x the planted template facts are a large share of the small local text); on the GPU, where a domain's visit reads ~6.5 MB, post-train BPC per visit is within +0.01 of cg27a_replay (2.021 / 2.081 / 2.034 / 1.675 / 1.587 / 2.085 / 1.802 / 1.413 vs 2.031 / 2.078 / 2.028 / 1.667 / 1.574 / 2.065 / 1.798 / 1.400) - a scale artefact locally, not a GPU cost. Taught recall dipped at visit 7 as the pool grew and recovered at visit 8 (0.56, 31 of 55 right vs held back 10 of 65). 148 written by visit 8, all correct, 144 never planted. Gutenberg's reliance in this run 0.19-0.22 at visits 5-8 (cg27a_replay 0.26-0.30 on the same seed and replay): the erosion varies run to run. One seed.
+
+### Seed 5 REPLICATES learning from reading (cg27a_replay_s5, visits 1-10; 12 November)
+
+The same build as cg27a_replay on seed 5 (no model change). Never-asked facts (read only, replayed, never questioned), from the weights:
+
+| visit | own sentence completed (control) | test-wording questions, ledger (seed 4) | after-visit probe (seed 4) | taught, ledger (seed 4) | Gutenberg reliance (seed 4) |
+|---|---|---|---|---|---|
+| 4 | 0.53 | 0.09 (0.09) | 0.14 (0.14) | 0.54 (0.46) | 0.29 (0.21) |
+| 6 | 0.57 | 0.12 (0.03) | 0.18 (0.10) | 0.62 (0.60) | 0.30 (0.31) |
+| 8 | 0.59 | 0.25 (0.14) | 0.29 (0.23) | 0.69 (0.72) | 0.25 (0.27) |
+| 10 | **0.81** | **0.30** (0.21) | **0.52** (0.31) | 0.69 (0.72) | 0.34 (0.38) |
+
+**Two seeds agree: replay makes facts the model only read answerable from its weights** - 0.21-0.30 (ledger, ~70 facts) and 0.31-0.52 (after-visit
+probe, ~35) at visit 10, against 0.01-0.03 in every run without replay; storage 0.69-0.81. Seed 5 is ahead of seed 4 throughout. Taught
+facts 0.69-0.72 on both. Gutenberg's shared-trunk reliance rises on both seeds (0.34 / 0.38 at visit 10) - replay's cost, still without a
+same-seed no-replay run past visit 4. Post-train BPC per visit: 2.027 / 2.067 / 2.011 / 1.679 / 1.585 / 2.076 / 1.799 / 1.397 / 1.122 / 1.685.
+Alignment of taught facts was on in both runs; its share is the open question (cg27a_replaynoal).
+
+### Label-free alignment and the two diagnostics (cg27a_alignlf, seed 4, interim visits 1-7; 12 November)
+
+cg27a_replay + half the never-asked facts aligned (question -> stored declaration, no labels), the other half the pure control.
+
+| visit | ALIGNED, never asked: questions | PURE CONTROL: questions | aligned / pure: own sentence | ledger, all never-asked |
+|---|---|---|---|---|
+| 3 | 0.08 (24) | 0.00 (21) | 0.18 / 0.06 | - |
+| 4 | 0.09 (43) | 0.03 (35) | 0.39 / 0.33 | - |
+| 5 | 0.13 (45) | 0.05 (40) | 0.31 / 0.31 | 0.09 (77) |
+| 6 | 0.05 (43) | 0.12 (42) | 0.31 / 0.28 | 0.07 (74) |
+| 7 | 0.17 (42) | 0.16 (44) | 0.47 / 0.75 | 0.14 (72) |
+
+**No per-fact benefit of label-free alignment**: the aligned half led at visits 3-5 by 0.05-0.08 and the halves are level by visit 7
+(0.17 / 0.16) - within the noise of ~40 facts. Both halves rise with replay as in cg27a_replay (0.11 at visit 7). Plain 'A r' completion
+tracks own-sentence completion (0.44 / 0.47 aligned; 0.69 / 0.75 pure). Gutenberg's private-parts reliance here 0.21 / 0.22 / 0.19 at
+visits 5-7 vs 0.26 / 0.31 / 0.30 in cg27a_replay - the same replay, so the erosion seen there is not simply replay's doing (run-to-run
+variation or the alignment rows; not separable on one seed).
+
+DIAGNOSTICS: (1) **the closed-form edit's lift on unedited conclusions is shared names**: control sharing a subject or answer with an
+edited conclusion 0.00 -> 0.60 (5) and 0.57 -> 0.86 (7) when the edit lands; with no shared name 0.18 -> 0.18 (11), 0.00 -> 0.00 (2) - no
+generalisation to unrelated conclusions. (2) **What the trunk answers for written rule-world facts** (test wording, edits in place, family
+size 6, chance ~0.17): taught 16 of 17 right at visit 7 (2 of 4 at visit 3); held back 3 of 6 right (0 of 2 at visit 3, 0 of 3 at 4), the
+wrong ones a consistent other name ('is overseen by -> Edgalzo' for two held-back subjects whose truth is Orgalqui), never the middle hop.
+Taught 0.94 vs held back 0.50 - a gap again, but n 6.
+
+### Source replay on the GPU: facts only READ are now stored (cg27a_replay, seed 4, interim visits 1-6; 12 November)
+
+cg27a_align + inf_distill_replay 4 (4 stored source sentences of pool AND control facts per question-row step; the control is never
+asked; 399 replay steps per visit, the replay loss 1.30 -> 0.35-0.40 within each visit).
+
+| visit | control: completes its OWN source sentence (align run) | taught: own sentence | control, test-wording question (ledger) | taught, ledger | cosine own / ANOTHER fact's declaration (control) |
+|---|---|---|---|---|---|
+| 2 | 0.15 (13) (0.08) | 0.55 | 0.00 (43) | 0.19 | 0.963 / 0.881 |
+| 3 | 0.13 (31) (**0.00**) | 0.61 | 0.04 (75) (0.01) | 0.43 (0.38) | 0.932 / 0.789 |
+| 4 | **0.30 (30)** | 0.72 | 0.09 (81) (0.02) | 0.46 (0.42) | 0.904 / 0.654 |
+| 5 | 0.21 (29) | 0.81 | 0.04 (77) | 0.58 | 0.887 / 0.594 |
+| 6 | **0.40 (30)** | 0.82 | 0.03 (74) | 0.60 | 0.871 / 0.529 |
+| 7 | 0.38 (29) | 0.82 | **0.11 (72)** (after-visit probe 0.11 (36)) | 0.62 | 0.872 / 0.488 |
+| 8 | **0.59 (29)** | 0.97 | **0.14 (71)** (after-visit probe **0.23 (39)**) | **0.72** | 0.876 / 0.424 |
+| 9 | 0.42 (24) | 0.91 | **0.18 (68)** (after-visit probe 0.15 (27)) | 0.70 | 0.883 / 0.496 |
+| **10** | **0.69 (26)** | 0.96 | **0.21 (67)** (after-visit probe **0.31 (36)**) | 0.72 | 0.904 / 0.417 |
+
+**Final (pass 1, visit 10): never-asked facts answered from the weights at 0.21 (ledger) / 0.31 (probe), against 0.01-0.03 without replay; their own sentences completed 0.69.** Cost: pass-1 mean forgetting +0.026, final BPC 1.767 (earlier pass-1 runs on other seeds: +0.006 / 1.725-1.734; no seed-4 pass-1 summary to compare), Gutenberg's private-parts reliance 0.38 at visit 10 (0.20-0.26 in earlier runs) - a real cost of replay, the target of spaced replay (cg27a_spaced).
+
+By visit 8 the facts the trunk only READ and was never asked are answered in the test wordings at 0.14 (ledger, 71) / 0.23 (after-visit probe, 39)
+against 0.01-0.03 in every run without replay - storage first (own sentence 0.00 -> 0.59), question recall following a visit or two behind.
+Taught facts 0.72 (the best ledger figure so far). Gutenberg's private-parts reliance 0.31 -> 0.30 -> 0.27 -> **0.36** (visits 6-9: rising again). One seed.
+
+**Replay stores facts the model only read** (own-sentence completion 0.00 without replay at visit 3 -> 0.30-0.40 by visits 4-6) and
+taught facts too (0.47 -> 0.82). Taught recall in the test wordings is a little higher than without replay (ledger 0.43 / 0.46 vs 0.38 /
+0.42 at visits 3 / 4; 0.58 / 0.60 at 5 / 6). But **the stored control facts are not yet answerable as questions**: control in the test
+wordings 0.03-0.09 (after-visit probe 0.07 / 0.14 / 0.03 / 0.10), barely above cg27a_align (0.01-0.02). The states are separating by fact
+(own vs another fact's declaration 0.96 / 0.88 -> 0.87 / 0.53; alignment loss 0.03 -> 0.07: alignment now has work to do). No cost seen
+on the GPU: post-train BPC per visit 2.031 / 2.078 / 2.028 / 1.667 vs cg27a_chunk 2.036 / 2.071 / 2.024 / 1.669 (local short runs: 3.021
+/ -0.127 vs 3.006 / -0.141 - a consistent +0.015 locally). Step 4: 23 facts written by visit 6, precision 1.00 (20 never planted).
+
+### View alignment on the GPU (cg27a_align, seed 4, interim visits 1-4; 12 November) - the bottleneck is STORAGE, not routing
+
+cg27a_rwclean + view alignment (0.5 x (1 - cosine), declaration a stop-gradient target, taught facts only). Against cg27a_chunk (seed 4):
+taught facts, ledger "taught at least one visit" 0.38 / 0.42 at visits 3 / 4 (chunk 0.38 / 0.41); never-taught control facts 0.01 / 0.02
+(chunk 0.01 / 0.01) - **no effect of alignment on recall**. The new readout says why:
+
+| visit | cosine, test-wording question vs declaration (taught / control) | paraphrased relation (taught / control) | **trunk completes the fact's OWN source sentence (taught / control)** |
+|---|---|---|---|
+| 2 | 0.963 / 0.969 | 0.891 / 0.891 | **0.47 (32) / 0.08 (13)** |
+| 3 | 0.951 / 0.961 | 0.863 / 0.869 | **0.48 (31) / 0.00 (31)** |
+
+The question's state already sits at the declaration's (alignment loss 0.03-0.06 from the start; taught = control), so alignment has little
+to do; but the facts the trunk only READ are not in its weights even in their own wording (0.00 of 31). Reading a fact a few times does not
+store it; question rows do. Toy (tools/toy_align2.py, test A, no alignment): a never-taught fact read 2 / 8 / 32 / 128 times is completed
+0.22 / 0.71 / 0.96 / 0.96 and answered in an unseen question wording 0.06 / 0.18 / 0.43 / 0.50 - storage needs ~8-30 readings, and stored
+facts still answer only ~half in question form, the gap alignment closes in the toy. Next: SOURCE REPLAY (inf_distill_replay: stored source
+sentences of pool AND control facts replayed as plain text, control never asked), then alignment on top. The mismatched-pair cosine (question
+vs another fact's declaration) is added to the readout to tell a fact-specific 0.96 from a shared direction.
+
+**Toy alignment tests (tools/toy_align2.py, seed 0, 6,000 steps; never-taught facts in UNSEEN question wordings):**
+
+| test | result |
+|---|---|
+| A READINGS (never-taught facts read 2 / 8 / 32 / 128 times): alignment off | stored (completes 'A r') 0.22 / 0.71 / 0.96 / 0.96; question 0.06 / 0.18 / 0.43 / 0.50 |
+| ... alignment on | stored 0.04 / 0.51 / 0.93 / 0.96; question 0.02 / 0.30 / **0.78 / 0.76** - alignment pays once a fact is stored (~32 readings) |
+| B LABEL-FREE (aligned but never asked / read-only control) | none 0.33 / 0.33; taught facts aligned 0.79 / 0.76; **+ the never-asked facts aligned (no labels) 0.92 / 0.87** |
+| C OBJECTIVE, 1,500 facts | none 0.40; **cosine 0.59**; InfoNCE 0.53; predictor head + cosine 0.48 (as LLM-JEPA: cosine best) |
+| D WHERE | **answer position 0.87**; subject position 0.53; both 0.88; middle layer 0.89 |
+| E [PRED] TOKENS (LLM-JEPA's tied predictor) | **k 0 (as built) 0.85**; k 1 0.50; k 2 0.47; k 3 0.61; no alignment 0.52 |
+| F WEIGHT | **0.5 (as built) 0.85**; 2 0.83; 8 0.79 |
+
+Every variant points back to the build: cosine, stop-gradient declaration, answer position, no predictor, weight 0.5. The open variable
+is STORAGE (A) - hence source replay (cg27a_replay). Local safety, short runs: alignment with a stop-gradient target 3.006 / -0.141, both
+sides trained 3.006 / -0.140, vs 3.006 / -0.141 without (local alignment loss 0.007: the states coincide at the local context length).
+
+Rule world with the sleep layer held off (inf_rw_nosleep, the clean step-4 control): 0 rule-world conclusions leak (control conclusions 0.00
+vs 0.44 in cg27a_chunk at visit 4); written facts 11 at visit 3, precision 1.00, 8 never planted; from the trunk, edits subtracted: taught
+1.00 (4) vs held back 0.50 (2); never planted 1.00 (2) vs 1.00 (1) - n far too small to separate.
+
+### Reader tests 2 and the toy transformer (tools/reader_tests2.py, tools/toy_compose_rows.py; 12 November)
+
+READER (offline, Re-DocRED gold; gold rate of records between benchmark entities / gold relations covered):
+
+| reader | gold rate | covered |
+|---|---|---|
+| baseline: adjacent + pronoun-centre records | 0.34 | 338 |
+| **M2 subject-anchored records** (every sentence about the title: title, frame, each of its first 3 fillers) | **0.46** | 223 |
+| baseline + subject-anchored | 0.38 | **373** |
+| M3 lists (3+ fillers joined by one frame) and neighbour dates dropped | 0.39 | 293 |
+| **M2 + M3** | **0.41** | 342 |
+
+The anchored records' gold frames are relational ('was born in', 'was elected as a', 'was married to', 'was the flag bearer for').
+M1 INFORMATIVE FRAMES (selectional preference strength over the co-clustered types): the top frames are units, dates and name fragments
+('metres (', 'km h (', 'Summer', 'Film'; 'was born in' 1.44 vs 'and' 1.11) - the types are too weak; rules among them: 995 candidates, 879
+with no chains, 0 rules (best 'May' o ', and' -> 'October'). The anchored reader's frames are the better input for rule mining.
+
+TOY TRANSFORMER (2 layers, 128 wide, from scratch on synthetic facts; seed 0, 6,000 steps):
+- TWO-HOP CURSE: held-out chains (never asked) answered **0.00** whether their premises were taught SEPARATELY or also CO-LOCATED in one
+  training sequence - though every first hop (1.00) and every trained two-hop question (1.00) is right. Co-location in training is not
+  enough at this scale; composition belongs at question time (chained retrieval) or outside the weights (the relational module).
+- WORDING DIVERSITY and VIEW ALIGNMENT (recall in UNSEEN question wordings; facts declared 'A r B .', 70% also taught as questions):
+
+| training wordings | alignment | taught facts | facts only read (never taught) |
+|---|---|---|---|
+| 2 | off / on | 0.20 / 0.20 | 0.19 / 0.19 |
+| 7 | off / **on** | 0.93 / **0.95** | 0.64 / **0.88** |
+| 20 | off / on | **0.96** / 0.96 | 0.55 / 0.87 |
+
+With 2 wordings, teaching adds nothing in a new wording; with 7+ the taught facts carry over (0.93-0.96). Aligning the question's state
+with the declaration's state after 'A r' (after LLM-JEPA) then lets the model answer questions about facts it only READ at 0.88 (0.64
+without). For Platypus: many more question wordings, and an alignment term between a fact sentence and its question.
+
+### Matching the Blanks on the fast channel (tools/mtb_probe.py, 12 November)
+
+A frame encoder (BiGRU over '[A] frame words [B]') trained with no labels to bring together frames that link the SAME filler pair in
+different sentences (74749 positive pairs from local Wikipedia + the benchmark), tested on 370 benchmark gold-pair records:
+nearest other record of the same gold relation type - untrained 0.40, frame words (tf-idf) 0.44, **MTB code after 4 epochs 0.44, MTB +
+frame words 0.47** (0.39 / 0.43 / 0.42 / 0.44 by epoch). Level with the connector words, a small gain combined: at 10 MB there are too few
+repeated pairs for the encoder to learn more than the words already say (the published method used hundreds of millions of sentences).
+
+### Rule constraints and entity identity (tools/toy_rules_constrain.py, tools/entity_identity.py; 12 November)
+
+RULE CONSTRAINTS (after RiJEPA, 2026), toy world of tools/toy_rules.py, seed 0: once child o child -> grandchild and supervised o
+supervised -> overseen are discovered, the operators are refitted with an energy term pulling the composite operator toward the product.
+The composite operator applied DIRECTLY to new families and charts (never seen with a composite fact): **0.00 -> 0.81 / 0.79 (weight
+0.3), 0.85 / 0.85 (1.0), 0.90 / 0.88 (3.0)**; composition itself 0.94 -> 0.85-0.90. A discovered rule, fed back as a constraint, becomes
+part of the representation and transfers - the lookup no longer has to be composed at question time.
+
+ENTITY IDENTITY (real text, local Wikipedia + the benchmark, adjacent and centre records): name variants merged within a document by head
+match ('Belyi' -> 'Vladimirovich Belyi', 11,526 merges) and across the corpus (one-word fillers to their dominant multi-word name, 5,307:
+'Latifah' -> 'Queen Latifah'): fillers 27,488 -> 22,653, records per filler 12.1 -> 14.2, gold relations covered **338 -> 358**, gold
+rate 0.34 -> 0.33. Rule diagnosis unchanged: 1,476 of 1,902 candidates with no observed chain, the 401 testable at a median of 0.00, 0
+rules - and the best testable are glue ('January' o 'and' -> 'March', ':' o 'and' -> 'and the'). The miner takes the 60 MOST FREQUENT
+frames, which are function words, punctuation and month names; the relational frames ('was born in', 'is a town in') are rarer and cut.
+Frames must be chosen by how relational they are, not by frequency.
+
+### Hand-checked precision of the fast channel (tools/precision_sample.py, seed 0, 100 benchmark records; 12 November)
+
+Each record judged by reading its sentence: does it state a real relation between the two fillers as written? **24 of 100 (0.24)** -
+close to the gold-based 0.26-0.30, so the incomplete annotation was not hiding much. **Document-centre records: 12 of 22 (0.55)**
+('Sibiu - the capital of - Sibiu County', 'Mera Ki Rishta - distributed by - Eros International', 'Stoddard Hurd Martin - was a son of -
+Stoddard Martin'); **adjacent records: 12 of 78 (0.15)**. The adjacent errors fall in three classes: DATES AND NUMBERS as fillers paired
+with whatever follows ('1979 - in - Bratislava', '2011 - the town had a population of - 73'), LISTS read as relations ('Kenya , Zambia',
+'Changzhou , Fuzhou', 'Michael Sarrazin , Susannah'), and NAME FRAGMENTS ('Lake - National - Park', 'Port - of - Quanzhou'). Real
+adjacent relations: 'Westwood , Los Angeles', 'Leipzig , Germany', 'Wong Nai Siong - was born in - Fuzhou', 'Ubu Roi - is often cited as
+a forerunner of - Dada', 'Bee Gees : Barry'. A two-item apposition is a relation, a three-plus list is not; a date belongs to its event,
+not to its neighbour.
+
+### Why no real-text rule passes (tools/rule_diag.py, 12 November)
+
+The relational module on the fast channel's real-text records (local Wikipedia + the benchmark; adjacent and centre records only, so the
+reader's own list structure is gone; untyped frames): 16,577 facts, 3,827 fillers, 24 frames, 2,009 candidates beat the null. Of them
+**1,491 fail the chain-existence guard** (fewer than half of the subjects with a composite fact have an observed two-hop chain at all),
+50 have fewer than 3 testable subjects, and the **467 testable ones predict their composite facts at a median of 0.00** (none reaches
+0.5). Real-text facts at this scale do not form chains: each filler sits in few records and the two hops are rarely both read (entity
+identity is also fragmented - 'Paris' vs 'Paris , France'). The bottleneck for real-text inference is the density and identity of the
+fact graph, before typing. (AMIE's partial-completeness confidence, test C, turned out to equal the current check: only subjects with a
+recorded composite fact are tested.)
+
+### DCT-style consistency on writes (tools/relmod_hard.py CONSIST=1, seed 1, 10% wrong parents; 12 November)
+
+After Deductive Closure Training (Akyürek et al. 2024: keep the implications that are jointly consistent): the module finds the INVERSE
+relation in the data ('is a child of' <-> 'is the parent of', 80%+ agreement) and keeps a write only if one of its chains has no premise
+the inverse contradicts. Round 1: writes 738 -> 705, precision 0.96 -> **0.97**; round 2 (inferred facts as premises, where noise
+compounds): writes 130 -> 94, precision **0.79 -> 0.84**, recall unchanged (great-grandchildren 58 of 72 new, 80 of 84 training). The
+first precision lever that works; it needs an inverse (or other constraining) relation in the data.
+
+### Overnight reader tests T1-T6 (tools/reader_tests.py, 12 November, offline against Re-DocRED gold) and the clean step-4 control (T7)
+
+| test | result | verdict |
+|---|---|---|
+| T1 REDUNDANCY: gold rate of benchmark-entity filler pairs (records from 630 Wikipedia articles + the benchmark) by independent sightings | sentences 1 / 2 / 3-4 / 5+: **0.12 / 0.09 / 0.04 / 0.00** (n 4,351 / 383 / 138 / 67); frames and documents alike | **Refuted here**: pairs seen more often are LESS often gold - repeated pairs are generic co-occurrences (common places, dates, name fragments), and the gold covers only the benchmark documents' relations, so the 'urns' boost does not show at this scale |
+| T2a TYPES: fillers co-clustered by frame sides (PPMI, SVD 50, k-means), against gold entity types | purity 0.53 / 0.57 / 0.61 at k 6 / 12 / 24 vs majority 0.52; NMI 0.07 / 0.17 / 0.18 vs shuffled 0.03-0.08; one clean TIME cluster, LOC and PER mixed | Weak: 10 MB of text gives too few frame contexts per filler |
+| T2b TYPED FRAMES: nearest gold-pair record shares the gold relation type | majority 0.23, frame words 0.44, types only 0.12, **frame words + types 0.47** | Small gain from types |
+| T5 FUNCTIONAL FILTER (subjects seen twice in a frame) | **0 single-valued frames** found - no effect | Sparse: few subjects repeat in a frame |
+| T3 TYPED DOCUMENT CENTRE (latest filler of the title's type) | 438 gold relations vs 444 for the title | No gain over the title |
+| T6 RULES ON TYPED FRAMES ('t3 , t10' ...), adjacent + centre records | 9,871 facts: 1,031 beat the null, **0 rules**; pairs sighted 2+ times: 1,708 beat the null, 0 rules | No real-text rule passes the functional check (diagnosis below) |
+| T7 CLEAN STEP-4 CONTROL, local short run (`inf_rw_nosleep 1`) | 3.006 / -0.141 vs 3.008 / -0.139 without it; no errors | Safe; preset `cg27a_rwclean_pass1` in the notebook |
+
+What is learned: at 10 MB the fast channel's real-text records are too sparse and too generic for the statistics that work in large
+corpora (redundancy, co-clustered types, functional relations); none of them lifts precision here. The gains so far come from structure,
+not counts: frames (9x), reference by the document's title (+37%).
+
+### Fast channel: reference by salience, simplified frames, rules on real text (tools/chunk_reader2.py; GPU cg27a_chunk; 11 November)
+
+Offline, against the 4,726 Re-DocRED gold relations: REFERENCE BY SALIENCE (a sentence opening with frame material - 'He was born in',
+'The company was founded by' - gets the document's centre as its subject) raises the gold relations covered from **325 to 444** and the
+gold-pair rate from 0.26 to 0.30 (centre = the document's first filler; the previous sentence's subject: 426). SIMPLIFIED FRAMES (inner
+fillers as a slot, 'was born on [F] in') leave coverage unchanged and raise the records whose frame repeats 5+ times from 0.18 to 0.22.
+RULES ON REAL TEXT (240,991 records from 630 Wikipedia articles + the benchmark; 17,721 facts in the 60 commonest frames): 3,941
+candidates beat the null; 5 rules pass the functional check, all of them the reader's own list / apposition structure - ',' o ',' ->
+', [F] ,' (0.56 of 385), ', [F] ,' o ',' -> ', [F] , [F] ,' (0.62 of 202) ... - true by construction (a record between fillers two
+apart IS the chain of the two adjacent ones); their 6,011 proposals are gold 0.02 on benchmark entities (records themselves: 0.26-0.30)
+and none would be written (every rule predicts < 0.9). The guards hold - nothing false is written - but untyped frames (',' joins
+places, dates, people, list items) cannot carry semantic rules: frames need TYPED slots (filler types by co-clustering) and the slot
+records must not be mined as relations.
+
+GPU, cg27a_chunk (seed 4), the fast channel as a readout: gold relations covered at sleeps 1 / 2 / 3: **54 / 144 / 204** against 4 / 11 / 16
+for the current reader (13x); the relational module on the real-text records: 438-968 candidates beat the null, 0 rules. Local short run
+with the reader on: identical to the run without it (3.008 / -0.139). Step-4 readout at sleep 3 with the new split: taught 0.25 (1 of 4)
+vs held back 0.00 (0 of 2), unchanged with the edits subtracted - but 3 of the 4 taught and both held-back facts were ALSO concluded by
+the sleep layer as 'A is connected to C' (and replayed into the trunk); not also a sleep conclusion: 0.00 (0 of 1). The relwrite run's
+0.75 is not reproduced; consolidation of self-inferred facts is NOT yet shown - the rule world's chains must be held out of the sleep
+layer's own joining for a clean test.
+
 ### Step 4 on the GPU: written conclusions consolidate (cg27a_relwrite, seed 4; interim, sleeps 1-3)
 
 The fixed relational module on the reader's facts: sleep 2 - paraphrases merged (resides close to = lives near, was taught by = trained
@@ -472,7 +868,7 @@ never planted); sleep 3 - four true paraphrase merges (+ partners with = is a pa
 child -> grandchild 11 of 11; overseen 2 sleeps running), 0 false, 5 more written (11 in all, precision 1.00, 8 never planted; 8 taught,
 3 held back). **FROM THE TRUNK (store and memory off), written at sleep 2 and taught for one visit: 0.75 (3 of 4) vs held back 0.00 (0 of
 2); composites NEVER PLANTED anywhere: taught 1.00 (2 of 2) vs held back 0.00 (0 of 1).** Ordinary facts taught one visit: 0.33,
-control 0.00. Tiny n - the first sign that facts the model inferred itself, never stated in its text, consolidate into its weights.
+control 0.00. Tiny n. **Not supported as n grew** (cg27a_replay sleep 6: taught 0.69 (13) vs held back 0.60 (5), edits in place; never planted 0.64 (11) vs 0.75 (4)): the trunk answers held-back rule-world composites about as often as taught ones - teaching the module's writes is not shown to be the cause; why held-back composites are known (guessing hub names in small families?) is open.
 
 ### A fast sequence channel as the reader (tools/chunk_reader.py, 11 November, local)
 
