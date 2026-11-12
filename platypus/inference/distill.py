@@ -244,10 +244,23 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
         A = subs[int(i)]; r = rels[rs.randint(len(rels))]
         if r in bysub[A]: continue
         d = next(e['d'] for e in fs if e['A'] == A); a, c = ask(A, r, d); B_.append((a in known, a in bysub[A].values(), c))
+    K_ = []                                                                   # (c) KNOWN facts (taught): is the trunk MORE CONFIDENT where it knows? - the
+    tf = [e for e in ents if e['key'][0] == 'fact']                           #   same question form and the same confidence measure (first answer byte)
+    for i in rs.permutation(len(tf))[:32]:
+        e = tf[int(i)]; a, c = ask(e['A'], e['r'], e['d']); K_.append((a == e['ans'], c))
+    kinfo = ""
+    if K_:
+        kc = [c for ok_, c in K_ if ok_]; kw = [c for ok_, c in K_ if not ok_]; un = [x[1] for x in A_] + [x[2] for x in B_]
+        au = float('nan')
+        if kc and un:
+            r_ = np.concatenate([kc, un]).argsort().argsort().astype(float) + 1; au = (r_[:len(kc)].sum() - len(kc) * (len(kc) + 1) / 2) / (len(kc) * len(un))
+        kinfo = (f" || (c) KNOWN (taught) facts ({len(K_)}): answered right {np.mean([ok_ for ok_, c in K_]):.2f}, confidence when RIGHT "
+                 f"{np.mean(kc) if kc else float('nan'):.2f}, when wrong {np.mean(kw) if kw else float('nan'):.2f} | CONFIDENCE TELLS KNOWN-RIGHT FROM NEVER-READ: AUC {au:.2f}"
+                 f" (0.5 = no; the trunk could abstain on its own only if this is high)")
     f = lambda L, k: f"{np.mean([x[k] for x in L]):.2f}" if L else "nan"
     print(f"  [DISTILLATION, FALSE MEMORY PROBE | visit {vis + 1}] questions about facts NEVER read, from the trunk: (a) FRESH name, known relation ({len(A_)}): answer is a "
           f"STORED name {f(A_, 0)}, confidence {f(A_, 1)} || (b) KNOWN subject, a relation it has no fact for ({len(B_)}): answer is a STORED name {f(B_, 0)}, "
-          f"its object for ANOTHER relation {f(B_, 1)}, confidence {f(B_, 2)}", flush=True)
+          f"its object for ANOTHER relation {f(B_, 1)}, confidence {f(B_, 2)}" + kinfo, flush=True)
 
 
 def _dt_items(ents, rs, n):
