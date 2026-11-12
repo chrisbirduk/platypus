@@ -464,6 +464,29 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### View alignment on the GPU (cg27a_align, seed 4, interim visits 1-4; 12 November) - the bottleneck is STORAGE, not routing
+
+cg27a_rwclean + view alignment (0.5 x (1 - cosine), declaration a stop-gradient target, taught facts only). Against cg27a_chunk (seed 4):
+taught facts, ledger "taught at least one visit" 0.38 / 0.42 at visits 3 / 4 (chunk 0.38 / 0.41); never-taught control facts 0.01 / 0.02
+(chunk 0.01 / 0.01) - **no effect of alignment on recall**. The new readout says why:
+
+| visit | cosine, test-wording question vs declaration (taught / control) | paraphrased relation (taught / control) | **trunk completes the fact's OWN source sentence (taught / control)** |
+|---|---|---|---|
+| 2 | 0.963 / 0.969 | 0.891 / 0.891 | **0.47 (32) / 0.08 (13)** |
+| 3 | 0.951 / 0.961 | 0.863 / 0.869 | **0.48 (31) / 0.00 (31)** |
+
+The question's state already sits at the declaration's (alignment loss 0.03-0.06 from the start; taught = control), so alignment has little
+to do; but the facts the trunk only READ are not in its weights even in their own wording (0.00 of 31). Reading a fact a few times does not
+store it; question rows do. Toy (tools/toy_align2.py, test A, no alignment): a never-taught fact read 2 / 8 / 32 / 128 times is completed
+0.22 / 0.71 / 0.96 / 0.96 and answered in an unseen question wording 0.06 / 0.18 / 0.43 / 0.50 - storage needs ~8-30 readings, and stored
+facts still answer only ~half in question form, the gap alignment closes in the toy. Next: SOURCE REPLAY (inf_distill_replay: stored source
+sentences of pool AND control facts replayed as plain text, control never asked), then alignment on top. The mismatched-pair cosine (question
+vs another fact's declaration) is added to the readout to tell a fact-specific 0.96 from a shared direction.
+
+Rule world with the sleep layer held off (inf_rw_nosleep, the clean step-4 control): 0 rule-world conclusions leak (control conclusions 0.00
+vs 0.44 in cg27a_chunk at visit 4); written facts 11 at visit 3, precision 1.00, 8 never planted; from the trunk, edits subtracted: taught
+1.00 (4) vs held back 0.50 (2); never planted 1.00 (2) vs 1.00 (1) - n far too small to separate.
+
 ### Reader tests 2 and the toy transformer (tools/reader_tests2.py, tools/toy_compose_rows.py; 12 November)
 
 READER (offline, Re-DocRED gold; gold rate of records between benchmark entities / gold relations covered):
