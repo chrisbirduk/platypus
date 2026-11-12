@@ -78,7 +78,7 @@ def _dw_align_probe(model, S_, S_slot, es, src):
     sentence's prefix) - whether reading put the fact in the weights at all, which alignment can only route to, not create"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
     from platypus.inference.jepa import cfg_seq_
-    L0 = int(cfg_seq_(model)); c1, c2, rd = [], [], []
+    L0 = int(cfg_seq_(model)); c1, c2, rd, c0 = [], [], [], []; prev = None   # c0: the 'on record' question vs ANOTHER fact's declaration
     for e in es:
         if e['key'][0] == 'conclusion': continue
         sl = int(S_slot(e['d'])); d, pos, _ = _dw_decl(S_, e, L0, src); ab = e['ans'].encode('latin-1', 'replace')
@@ -89,9 +89,13 @@ def _dw_align_probe(model, S_, S_slot, es, src):
         qs = [(c1, f"It is on record that {e['A']} {e['r']} ")] + ([(c2, f"{e['A']} {_DT_PARA[e['r']]} ")] if e['r'] in _DT_PARA else [])
         for acc, q in qs:
             pb = q.encode('latin-1', 'replace'); Xq, _ = _ws_batch(model, [pb + ab + b'.']); _, hq = _ws_hidden(model, lambda: _ws_run(model, Xq, sl))
-            if hq is not None and len(pb) - 1 < hq.shape[1]: acc.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), hd[0, pos].float(), dim=0)))
+            if hq is not None and len(pb) - 1 < hq.shape[1]:
+                acc.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), hd[0, pos].float(), dim=0)))
+                if acc is c1 and prev is not None: c0.append(float(F.cosine_similarity(hq[0, len(pb) - 1].float(), prev, dim=0)))
+        prev = hd[0, pos].float()
     m = lambda v: f"{np.mean(v):.3f} ({len(v)})" if v else "nan (0)"
-    return f"cosine, 'on record' wording {m(c1)}, PARAPHRASED relation {m(c2)}; recall completing its own declaration {m(rd)}"
+    return (f"cosine, 'on record' wording {m(c1)} (vs ANOTHER fact's declaration {m(c0)}), PARAPHRASED relation {m(c2)}; "
+            f"recall completing its own declaration {m(rd)}")
 
 
 def _dt_items(ents, rs, n):
@@ -1401,7 +1405,18 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             probe = [hents[int(i)] for i in rs.choice(len(hents), min(32, len(hents)), replace=False)] if hents else []
             print(f"  [DISTILLATION, HINTED | visit {vis + 1}] pool for the next visit: {sum(len(v) for v in hpool.values())} stored real sentences naming {len(hents)} taught facts' subjects "
                   f"(sentences naming a control subject left out)", flush=True)
-        model.__dict__['_dtw'] = dict(decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        rp9 = int(getattr(cfg, 'inf_distill_replay', 0)); rpl9 = {}             # 12 Nov SOURCE REPLAY: the stored source sentences of the pool's facts AND
+        if rp9 > 0:                                                            #   of the control fifth (read, never asked), replayed as plain text
+            R9 = (D or {}).get('rl') or []; nt9 = nc9 = 0
+            for grp9, es9 in ((0, ents), (1, held if int(getattr(cfg, 'inf_distill_replay_ctl', 1)) else [])):
+                for e in es9:
+                    if e['key'][0] != 'fact': continue
+                    ss9 = [x[-(L09 - 1):] for x in _dw_src_bytes(S_, e) if len(x) >= 8]
+                    if ss9: rpl9.setdefault(int(S_slot(e['d'])), []).extend(ss9); nt9 += grp9 == 0; nc9 += grp9 == 1
+            print(f"  [DISTILLATION, SOURCE REPLAY | visit {vis + 1}] last visit: {len(R9)} steps x {rp9} stored source sentences, next-byte loss "
+                  f"{np.mean(R9[:20]) if R9 else float('nan'):.3f} (first 20) -> {np.mean(R9[-20:]) if R9 else float('nan'):.3f} (last 20) | next visit: sentences of "
+                  f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences", flush=True)
+        model.__dict__['_dtw'] = dict(rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1450,6 +1465,12 @@ def distill_wake_loss(model, cfg):
             cnt += n_
         if not cnt: return 0.0
         loss = tot / cnt; D['n'] += 1; D['losses'].append(float(np.mean(ce)) if ce else float(loss.detach()))
+        rpk = int(getattr(cfg, 'inf_distill_replay', 0)); rpp = (D.get('rpl') or {}).get(sl)
+        if rpk > 0 and rpp:                                                    # SOURCE REPLAY: next-byte loss on stored source sentences of this slot
+            ss = [rpp[int(i)] for i in rs.choice(len(rpp), min(rpk, len(rpp)), replace=False)]
+            Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
+            cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
+            lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rl'].append(float(lr_.detach()))
         if aw > 0 and Hq is not None:                                          # VIEW ALIGNMENT: the question's state where it predicts the answer ~ the
             dec = [D['decl'].get(it[3]) for it in items]                       #   declaration's state where it predicts it (taught facts only)
             ix = [j for j, d_ in enumerate(dec) if d_ is not None and len(items[j][0]) - 1 < Hq.shape[1]]

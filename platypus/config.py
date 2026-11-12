@@ -584,6 +584,11 @@ class Config:
     inf_distill_align_detach=1      #     1 = the declaration's state is a stop-gradient target (reading is left alone); 0 = both sides trained (the toy)
     inf_distill_align_src=1         #     1 = the declaration is the fact's stored source sentence when its answer is found there; 0 = always 'A r ans.'
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
+    inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
+                                    #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk
+                                    #   completed only 0.08 of control facts' own sentences vs 0.47 taught)
+    inf_distill_replay_w=1.0        #     weight of the replay loss (relative to the question rows)
+    inf_distill_replay_ctl=1        #     1 = the control fifth's sentences are replayed too (0 = taught facts only)
     inf_distill_wake_spaced_conc=0  #   11 Nov: 0 = spaced rehearsal spaces FACTS only (conclusions always rehearsed: their taught-wording check passes through the closed-form edits); 1 = conclusions too
     inf_distill_wake_selfkl=0       #   11 Nov: 1 = facts answered in a taught wording held by KL to their own answer at that sleep, not cross-entropy
     inf_distill_wake_hint=0         #   11 Nov: 1 = HINTED SELF-DISTILLATION instead of question rows: KL(trunk + name memory || trunk) on stored real
