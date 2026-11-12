@@ -138,35 +138,84 @@ def _dw_cand_mc(model, sl, prompt, cands):
     return int(np.argmax(sc))
 
 
+def _rtx_rep(d, di):
+    """12 Nov REAL-TEXT REPLAY: which benchmark documents are replayed (half, by a hash of domain and document index); the rest are the control"""
+    import zlib
+    return zlib.crc32(f"rtx|{int(d)}|{int(di)}".encode()) % 2 == 0
+
+
 def _dw_bench_recall(model, cfg, S_slot, vis):
     """12 Nov READOUT: REAL-TEXT RECALL FROM THE WEIGHTS - Re-DocRED gold relations of the benchmark documents the model has READ (planted
     once in pass 1, in visited domains), whose two names stand in one sentence, asked in a templated test wording per relation type
     ('X was born in'); the true object against up to 9 other entity names of the same type from the same domain's documents (mean
-    log-prob per byte; chance ~0.1-0.2), and the same question with the subject replaced by a fresh name (the relation prior alone)."""
+    log-prob per byte; chance ~0.1-0.2), and the same question with the subject replaced by a fresh name (the relation prior alone).
+    With inf_distill_rtx (real-text replay of half the documents), split into REPLAYED documents and the never-replayed CONTROL half."""
     from platypus.inference.probes import _bench
     G = _bench(cfg); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); rs = np.random.RandomState(int(cfg.seed) + 4242 + vis)
-    nm = G['ent_name']; ty = G.get('ent_type', {}); items = []
+    nm = G['ent_name']; ty = G.get('ent_type', {}); items = []; rtx = int(getattr(cfg, 'inf_distill_rtx', 0)) > 0
     for d in sorted(seen):
         dl = G['docs'].get(str(d), [])
         if not dl: continue
-        sents = [s for t in dl for s in re.split(r'(?<=[.!?])\s+', t)]; inD = set(e for e, n in nm.items() if any(n in t for t in dl))
-        for h, t, fl, ps in G['rel']:
-            if str(h) not in inD or str(t) not in inD: continue
-            pc = next((p for p in ps if p in _BR_T), None)
-            if pc is None: continue
-            H, T = nm[str(h)], nm[str(t)]
-            if len(H) < 3 or len(T) < 3 or not any(H in s and T in s for s in sents): continue
-            same = [nm[e] for e in inD if e not in (str(h), str(t)) and ty.get(e) == ty.get(str(t)) and len(nm[e]) >= 3]
-            if len(same) >= 3: items.append((d, pc, H, T, same))
+        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        for di, doc in enumerate(dl):
+            sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
+            for h, t, fl, ps in G['rel']:
+                if str(h) not in inX or str(t) not in inX: continue
+                pc = next((p for p in ps if p in _BR_T), None)
+                if pc is None: continue
+                H, T = nm[str(h)], nm[str(t)]
+                if len(H) < 3 or len(T) < 3 or not any(H in s_ and T in s_ for s_ in sents): continue
+                same = [nm[e] for e in inD if e not in (str(h), str(t)) and ty.get(e) == ty.get(str(t)) and len(nm[e]) >= 3]
+                if len(same) >= 3: items.append((d, pc, H, T, same, _rtx_rep(d, di) if rtx else False))
     if not items: print(f"  [REAL-TEXT RECALL | visit {vis + 1}] no readable benchmark relations in the visited domains yet", flush=True); return
-    items = [items[int(i)] for i in rs.permutation(len(items))[:64]]; ok = []; pri = []; pcs = collections.Counter()
+    items = list({(x[0], x[2], x[3]): x for x in items}.values())
     fresh = lambda: ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel'], 3)).capitalize()
-    for d, pc, H, T, same in items:
-        oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = int(S_slot(d))
-        ok.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0); pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0); pcs[pc] += 1
-    ch = np.mean([1.0 / (1 + min(9, len(x[4]))) for x in items])
-    print(f"  [REAL-TEXT RECALL | visit {vis + 1}] benchmark relations in documents READ (two names in one sentence, {len(items)} asked, commonest {pcs.most_common(4)}): "
-          f"FROM THE WEIGHTS, the true object among up to 10 same-type names {np.mean(ok):.2f} | the same with a FRESH subject (relation prior alone) {np.mean(pri):.2f} | chance {ch:.2f}", flush=True)
+    def score(L):
+        L = [L[int(i)] for i in rs.permutation(len(L))[:64]]; ok = []; pri = []
+        for d, pc, H, T, same, rp in L:
+            oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = int(S_slot(d))
+            ok.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0); pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0)
+        ch = np.mean([1.0 / (1 + min(9, len(x[4]))) for x in L]) if L else float('nan')
+        return (f"the true object among up to 10 same-type names {np.mean(ok) if ok else float('nan'):.2f} | with a FRESH subject (relation prior alone) "
+                f"{np.mean(pri) if pri else float('nan'):.2f} | chance {ch:.2f} ({len(L)} asked)"), L
+    pcs = collections.Counter(x[1] for x in items).most_common(4)
+    if rtx:
+        a, _ = score([x for x in items if x[5]]); b, _ = score([x for x in items if not x[5]])
+        print(f"  [REAL-TEXT RECALL | visit {vis + 1}] benchmark relations in documents READ (two names in one sentence; commonest {pcs}): FROM THE WEIGHTS, "
+              f"REPLAYED documents: {a} || CONTROL documents (read once, never replayed): {b}", flush=True)
+    else:
+        a, _ = score(items)
+        print(f"  [REAL-TEXT RECALL | visit {vis + 1}] benchmark relations in documents READ (two names in one sentence; commonest {pcs}): FROM THE WEIGHTS, {a}", flush=True)
+
+
+_RTX_PRON = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ', 'The ')
+_RTX_LEAD = {'In', 'On', 'At', 'After', 'During', 'Before', 'Since', 'From', 'For', 'By', 'As', 'A', 'An', 'When', 'While', 'Although', 'However', 'Following', 'Between', 'Despite', 'Under', 'With', 'Of', 'This', 'These', 'That', 'There'}
+_RTX_FORMS = ("In short, ", "From the notes: ", "As noted before, ", "It turns out ")
+
+
+def _rtx_views(sent, title, L0, maxw=12):
+    """12 Nov REAL-TEXT VIEWS: (question, declaration, position) pairs cut from one sentence - subject = the opening capitalised run, or
+    the document's TITLE for a sentence led by a pronoun / 'The'; object = the next capitalised run within maxw words; declaration = the
+    sentence up to the object (its state predicts the object); question = a self-written lead-in + subject + the words between (never a
+    test template: always a lead-in)"""
+    out = []
+    caps = [(m.start(), m.end()) for m in re.finditer(r"(?:[A-Z][\w'\-]*)(?:\s+(?:of|de|the|and|von|van|la|le)?\s*[A-Z][\w'\-]*)*", sent)]
+    if not caps: return out
+    if caps[0][0] == 0 and not sent.startswith(_RTX_PRON):
+        subj = sent[caps[0][0]:caps[0][1]]; rest0 = caps[0][1]; objs = caps[1:]
+        if subj.split()[0] in _RTX_LEAD: return out                         #   'In 1979 ...', 'After the war ...': no subject
+    elif sent.startswith(_RTX_PRON) and title: subj = title; rest0 = sent.index(' ') if sent.startswith(_RTX_PRON[:4]) else sent.index(' ', 4) if ' ' in sent[4:] else 0; objs = [c for c in caps if c[0] > rest0]
+    else: return out
+    for k, (o0, o1) in enumerate(objs[:3]):
+        mid = sent[rest0:o0].strip()
+        if not mid or len(mid.split()) > maxw or len(mid) < 2: continue
+        decl = sent[:o0].encode('latin-1', 'replace')
+        if len(decl) < 8: continue
+        decl = decl[-(L0 - 2):]; pos = len(decl) - 1
+        if decl[-1:] != b' ': continue
+        q = (_RTX_FORMS[k % len(_RTX_FORMS)] + subj + ' ' + mid + ' ').encode('latin-1', 'replace')
+        out.append((q, decl, pos))
+    return out
 
 
 def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
@@ -1657,10 +1706,32 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             print(f"  [DISTILLATION, SOURCE REPLAY | visit {vis + 1}] last visit: {len(R9)} steps x {rp9} stored source sentences, next-byte loss "
                   f"{np.mean(R9[:20]) if R9 else float('nan'):.3f} (first 20) -> {np.mean(R9[-20:]) if R9 else float('nan'):.3f} (last 20) | next visit: sentences of "
                   f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences" + sinfo9, flush=True)
+        rtxN9 = int(getattr(cfg, 'inf_distill_rtx', 0)); rtx9 = {}; rtxv9 = {}       # 12 Nov REAL-TEXT REPLAY: the sentences of HALF the benchmark documents read (by
+        if rtxN9 > 0 and str(getattr(cfg, 'inf_bench', '') or ''):          #   hash; the other half is the control) replayed as plain text, and alignment
+            try:                                                               #   views cut from them (question: lead-in + subject + words up to an object;
+                from platypus.inference.probes import _bench                   #   declaration: the sentence up to that object) - no labels, no templates
+                Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = 0
+                for d9 in sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())):
+                    sl9 = int(S_slot(d9))
+                    for di9, doc9 in enumerate(Gb['docs'].get(str(d9), [])):
+                        if not _rtx_rep(d9, di9): continue
+                        ss9 = [x for x in re.split(r'(?<=[.!?])\s+', doc9) if len(x) >= 20]
+                        if not ss9: continue
+                        m9 = re.match(r"(?:[A-Z][\w'\-]*)(?:\s+(?:of|de|the|and)?\s*[A-Z][\w'\-]*)*", ss9[0]); tt9 = m9.group(0) if m9 else None
+                        rtx9.setdefault(sl9, []).extend(x.encode('latin-1', 'replace')[:L09 - 1] for x in ss9); nd9 += 1
+                        if int(getattr(cfg, 'inf_distill_rtx_align', 1)) and aw9 > 0:
+                            for x in ss9:
+                                v9 = _rtx_views(x, tt9, L09); rtxv9.setdefault(sl9, []).extend(v9); nv9 += len(v9)
+                print(f"  [DISTILLATION, REAL-TEXT REPLAY | visit {vis + 1}] last visit: {len(R1)} steps x {rtxN9} benchmark sentences, next-byte loss "
+                      f"{np.mean(R1[:20]) if R1 else float('nan'):.3f} (first 20) -> {np.mean(R1[-20:]) if R1 else float('nan'):.3f} (last 20); alignment on real-text views "
+                      f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
+                      f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views", flush=True)
+            except Exception as e9:
+                _fail('inference.distill:rtx'); print(f"  [DISTILLATION, REAL-TEXT REPLAY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True); rtx9 = {}; rtxv9 = {}
         lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
         lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
         pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
-        model.__dict__['_dtw'] = dict(para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(rtx=rtx9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1728,6 +1799,22 @@ def distill_wake_loss(model, cfg):
                 if ok:
                     hq = torch.stack([Hq[j, len(items[j][0]) - 1] for j, n in ok]).float(); hd = torch.stack([Hd[n, dec[j][1]] for j, n in ok]).float()
                     al = (1 - F.cosine_similarity(hq, hd, dim=-1)).mean(); loss = loss + aw * al; D['al'].append(float(al.detach()))
+        rtk = int(getattr(cfg, 'inf_distill_rtx', 0)); rtp = (D.get('rtx') or {}).get(sl)
+        if rtk > 0 and rtp:                                                    # REAL-TEXT REPLAY: next-byte loss on replayed benchmark sentences of this slot
+            ss = [rtp[int(i)] for i in rs.choice(len(rtp), min(rtk, len(rtp)), replace=False)]
+            Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
+            cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
+            lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rtxl'].append(float(lr_.detach()))
+        rtv = (D.get('rtxv') or {}).get(sl) if aw > 0 else None
+        if rtv:                                                                # REAL-TEXT ALIGNMENT: a view's question state -> its declaration's (no labels)
+            vv = [rtv[int(i)] for i in rs.choice(len(rtv), min(k, len(rtv)), replace=False)]
+            Xq3, _ = _ws_batch(model, [q for q, d_, p_ in vv]); Xd3, _ = _ws_batch(model, [d_ for q, d_, p_ in vv])
+            _, Hq3 = _ws_hidden(model, lambda: _ws_run(model, Xq3, sl, grad_=True))
+            with torch.no_grad(): _, Hd3 = _ws_hidden(model, lambda: _ws_run(model, Xd3, sl))
+            ok3 = [j for j, (q, d_, p_) in enumerate(vv) if Hq3 is not None and Hd3 is not None and len(q) - 1 < Hq3.shape[1] and p_ < Hd3.shape[1]]
+            if ok3:
+                hq3 = torch.stack([Hq3[j, len(vv[j][0]) - 1] for j in ok3]).float(); hd3 = torch.stack([Hd3[j, vv[j][2]] for j in ok3]).float()
+                a3 = (1 - F.cosine_similarity(hq3, hd3, dim=-1)).mean(); loss = loss + aw * a3; D['rtxa'].append(float(a3.detach()))
         for pk_, lk_ in (('lf', 'al_lf'), ('para', 'al_pa')):                 # LABEL-FREE ALIGNMENT (never-asked facts) and PARAPHRASE ALIGNMENT (taught facts asked
             lfp_ = (D.get(pk_) or {}).get(sl) if aw > 0 else None             #   with a merged paraphrase of their relation): questions with no answer bytes and
             if not lfp_: continue                                              #   no cross-entropy -> the stored declaration's state
