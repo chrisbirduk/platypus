@@ -9,6 +9,7 @@ the visited domain's and the old domains' BPC before and after and rolls the who
 inf_distill_brake. CONTROL: a fixed fifth of the facts (by a hash of the fact) is never taught. READOUT: recall from the trunk (every
 memory off) in the TEST wordings for a sample of the taught facts and of the never-taught control, before and after; across sleeps, [FROM THE WEIGHTS, FIXED SET] (with and without the closed-form edits) is the consolidation measure."""
 import time
+import collections
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -1253,7 +1254,59 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
           f"NOT ALSO A SLEEP CONCLUSION: TAUGHT {f(rTg)} vs HELD BACK {f(rHg)}"
           + (f" || edits SUBTRACTED: TAUGHT {f(sub[0])} vs HELD BACK {f(sub[1])} | NEVER PLANTED: TAUGHT {f(sub[2])} vs HELD BACK {f(sub[3])} | NOT ALSO A SLEEP CONCLUSION: "
              f"TAUGHT {f(sub[4])} vs HELD BACK {f(sub[5])}" if sub else " || no closed-form edits"), flush=True)
+    try: _dw_relmod_answers(model, S_slot, old(T_), old(H_), par, mgr, truth, rw, vis)
+    except Exception as e9:
+        _fail('inference.distill:relmod_answers'); print(f"  [RELATIONAL MODULE WRITES, WHAT THE TRUNK ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     return ents + T_, held + H_
+
+
+@torch.no_grad()
+def _dw_greedy(model, prompt, sl, n=24):
+    """the trunk's greedy continuation of PROMPT (store and memory off), up to n bytes or a full stop"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    b = bytearray(prompt)
+    for _ in range(n):
+        X, _m = _ws_batch(model, [bytes(b) + b' ']); lg = _ws_run(model, X, sl)
+        p = len(b) - 1
+        if p >= lg.shape[1]: break
+        c = int(lg[0, p].argmax())
+        if c in (46, 10): break
+        b.append(c)
+    return bytes(b[len(prompt):]).decode('latin-1', 'replace').strip()
+
+
+def _dw_relmod_answers(model, S_slot, T_, H_, par, mgr, truth, rw, vis):
+    """12 Nov READOUT (after the GPU sleep-6 finding: held-back written composites answered about as often as taught ones): WHAT the trunk
+    answers in the test wording for written rule-world facts, taught vs held back - RIGHT, the MIDDLE hop (the parent / manager: one hop
+    instead of two), ANOTHER member of the subject's family, the relation's commonest written answer (a HUB), or other; with the mean family
+    size (chance of a right guess within the family ~ 1 / size). Guessing within small families predicts right ~ 1 / size and hubs or
+    family members for the rest; composition predicts right well above that."""
+    def fam(m, A):
+        r_ = A; seen = {A}
+        while r_ in m and m[r_] not in seen: r_ = m[r_]; seen.add(r_)
+        root = r_; out = set()
+        for x in set(m) | set(m.values()):
+            y = x; sn = {x}
+            while y in m and m[y] not in sn: y = m[y]; sn.add(y)
+            if y == root: out.add(x)
+        return out
+    hub = {}
+    for e in T_ + H_: hub.setdefault(e['r'], collections.Counter())[e['ans']] += 1
+    def cls(L):
+        c = collections.Counter(); fs = []; ex = []
+        for e in L:
+            m = par if e['r'] == rw.get('grand') else mgr if e['r'] == rw.get('skip') else None
+            if m is None: continue
+            a = _dw_greedy(model, f"It is on record that {e['A']} {e['r']} ".encode('latin-1', 'replace'), int(S_slot(e['d']))); t = truth(e['A'], e['r'])
+            F_ = fam(m, e['A']) - {e['A']}; fs.append(max(1, len(F_)))
+            k = 'right' if a == t else 'middle hop' if a == m.get(e['A']) else 'family' if a in F_ else 'hub' if hub[e['r']] and a == hub[e['r']].most_common(1)[0][0] else 'other'
+            c[k] += 1
+            if len(ex) < 3: ex.append(f"{e['A']} {e['r']} -> {a or '(nothing)'} [{t}]")
+        n = sum(c.values())
+        return (" ".join(f"{k} {c[k]}" for k in ('right', 'middle hop', 'family', 'hub', 'other')) + f" of {n}, family size {np.mean(fs) if fs else float('nan'):.1f}"
+                + (" | e.g. " + "; ".join(ex) if ex else ""))
+    print(f"  [RELATIONAL MODULE WRITES, WHAT THE TRUNK ANSWERS | visit {vis + 1}] written at an earlier sleep, test wording, edits in place || TAUGHT: {cls(T_)} || "
+          f"HELD BACK: {cls(H_)}", flush=True)
 
 
 def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):

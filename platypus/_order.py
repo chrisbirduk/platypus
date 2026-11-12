@@ -750,6 +750,8 @@ ORDER = (
     ('inference.distill', '_dw_relmod'),
     ('inference.distill', '_dw_relmod_real'),
     ('inference.distill', '_dw_relmod_write'),
+    ('inference.distill', '_dw_greedy'),
+    ('inference.distill', '_dw_relmod_answers'),
     ('inference.distill', '_fu_init'),
     ('inference.distill', '_fu_old_sents'),
     ('inference.distill', '_fu_sleep'),
