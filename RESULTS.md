@@ -464,6 +464,22 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Rule constraints and entity identity (tools/toy_rules_constrain.py, tools/entity_identity.py; 12 November)
+
+RULE CONSTRAINTS (after RiJEPA, 2026), toy world of tools/toy_rules.py, seed 0: once child o child -> grandchild and supervised o
+supervised -> overseen are discovered, the operators are refitted with an energy term pulling the composite operator toward the product.
+The composite operator applied DIRECTLY to new families and charts (never seen with a composite fact): **0.00 -> 0.81 / 0.79 (weight
+0.3), 0.85 / 0.85 (1.0), 0.90 / 0.88 (3.0)**; composition itself 0.94 -> 0.85-0.90. A discovered rule, fed back as a constraint, becomes
+part of the representation and transfers - the lookup no longer has to be composed at question time.
+
+ENTITY IDENTITY (real text, local Wikipedia + the benchmark, adjacent and centre records): name variants merged within a document by head
+match ('Belyi' -> 'Vladimirovich Belyi', 11,526 merges) and across the corpus (one-word fillers to their dominant multi-word name, 5,307:
+'Latifah' -> 'Queen Latifah'): fillers 27,488 -> 22,653, records per filler 12.1 -> 14.2, gold relations covered **338 -> 358**, gold
+rate 0.34 -> 0.33. Rule diagnosis unchanged: 1,476 of 1,902 candidates with no observed chain, the 401 testable at a median of 0.00, 0
+rules - and the best testable are glue ('January' o 'and' -> 'March', ':' o 'and' -> 'and the'). The miner takes the 60 MOST FREQUENT
+frames, which are function words, punctuation and month names; the relational frames ('was born in', 'is a town in') are rarer and cut.
+Frames must be chosen by how relational they are, not by frequency.
+
 ### Hand-checked precision of the fast channel (tools/precision_sample.py, seed 0, 100 benchmark records; 12 November)
 
 Each record judged by reading its sentence: does it state a real relation between the two fillers as written? **24 of 100 (0.24)** -
