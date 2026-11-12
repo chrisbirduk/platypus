@@ -20,6 +20,8 @@ _DT_FORMS = ("In short, {A} {r} ", "Notes on {A}: {A} {r} ", "{A}, as noted befo
              "Q: {A} {r} whom? A: ", "{A}, whose name came up earlier in the report, {r} ", "From the notes: {A} {r} ")
 _DT_PARA = {'works with': 'is a colleague of', 'lives near': 'is a neighbour of', 'reports to': 'is managed by', 'is a partner of': 'is partnered with',
             'trained under': 'was taught by', 'is connected to': 'is tied to'}
+_DT_REFUSE = 'unknown'                                                   # 12 Nov REFUSAL ROWS (inf_distill_refuse): the answer to a question about a name
+_DT_REFUSE_SYL = ['bo', 'ne', 'ri', 'so', 'pa', 'gu', 'lin', 'mor', 'tes', 'vad', 'hel', 'zo']   #   never read; fresh names from syllables the false-memory
 _DT_TEST = ("{A} is tied to ", "The one tied to {A} is ", "It is on record that {A} {r} ")   # never taught (checked below)
 _DT_FORMS2 = ("Earlier we saw that {A} {r} ", "It turns out {A} {r} ", "Remember: {A} {r} ", "According to the file, {A} {r} ",
               "Of all people, {A} {r} ", "Ask anyone and they will say {A} {r} ", "{A} (mentioned above) {r} ", "Fact: {A} {r} ",
@@ -279,6 +281,37 @@ def _rtx_views(sent, title, L0, maxw=12):
     return out
 
 
+def _rtx_weights(model, rtx, alpha, vis, bs=64):
+    """12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space): the trunk's mean next-byte loss (store and memory off) on every replayed
+    real sentence of each slot; replay probability ~ clip(loss, q10, q90) ** alpha, so sentences the trunk already predicts (stored) are
+    replayed less and the ones it does not, more (prioritised replay; Schaul et al. 2016, Mattar & Daw 2018). Prints the loss spread, the
+    share of replay going to the hardest and the easiest quarter (uniform 0.25), and how last visit's hardest quarter moved."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    H = model.__dict__.setdefault('_rtx_hist', {}); W = {}; allL = []; easy = hard = 0.0; nsl = 0; mv = []
+    prevhard = model.__dict__.get('_rtx_hard') or set(); newhard = set()
+    for sl, ss in rtx.items():
+        Ls = []
+        with torch.no_grad():
+            for i in range(0, len(ss), bs):
+                X, M = _ws_batch(model, ss[i:i + bs]); lg = _ws_run(model, X, sl); T = lg.shape[1]; m = M[:, 1:T + 1].float()
+                ce = F.cross_entropy(lg.reshape(-1, lg.shape[-1]).float(), X[:, 1:T + 1].reshape(-1), reduction='none').view(m.shape)
+                Ls.extend(((ce * m).sum(1) / m.sum(1).clamp(min=1)).cpu().tolist())
+        Ls = np.asarray(Ls, float); lo, hi = np.quantile(Ls, 0.1), np.quantile(Ls, 0.9); w = np.clip(Ls, lo, hi) ** float(alpha)
+        w = w / w.sum() if w.sum() > 0 else np.full(len(Ls), 1.0 / len(Ls)); W[sl] = w; allL.extend(Ls.tolist()); nsl += 1
+        o = np.argsort(Ls); q = max(1, len(Ls) // 4); hard += float(w[o[-q:]].sum()); easy += float(w[o[:q]].sum())
+        for j in o[-q:]: newhard.add(hash(ss[int(j)]))
+        for j, x in enumerate(ss):
+            k = hash(x)
+            if k in prevhard and k in H: mv.append(Ls[j] - H[k])
+            H[k] = float(Ls[j])
+    model.__dict__['_rtx_hard'] = newhard
+    if allL:
+        print(f"  [DISTILLATION, REPLAY BY STORAGE CHECK | visit {vis + 1}] the trunk's loss on {len(allL)} replayed sentences (nats per byte): median {np.median(allL):.3f}, "
+              f"q10 {np.quantile(allL, 0.1):.3f}, q90 {np.quantile(allL, 0.9):.3f} | replay share to the HARDEST quarter {hard / max(1, nsl):.2f}, to the EASIEST "
+              f"{easy / max(1, nsl):.2f} (uniform 0.25; alpha {alpha}) | last visit's hardest quarter: loss change {np.mean(mv) if mv else float('nan'):+.3f} ({len(mv)} sentences)", flush=True)
+    return W
+
+
 def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
     """12 Nov READOUT: FALSE MEMORIES - questions about facts NEVER read: (a) a FRESH name with a known relation ('It is on record that
     Kamisen works with'), (b) a KNOWN subject with a relation it has no fact for. Greedy answer from the trunk (store and memory off): the
@@ -294,21 +327,22 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
         X, _ = _ws_batch(model, [pb + b'x'])
         with torch.no_grad(): lg = _ws_run(model, X, sl)[0, len(pb) - 1].float()
         return a, float(F.softmax(lg, -1).max())
-    A_ = []
-    for _ in range(32):
+    nq = int(getattr(cfg, 'inf_distill_false_probe_n', 32)); ref = lambda a: a.lower().startswith(_DT_REFUSE)
+    A_ = []; Aa = []                                                          # (answer strings kept for the ABSTENTION readout below)
+    for _ in range(nq):
         e = fs[rs.randint(len(fs))]; nm = ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel', 'nor', 'qui'], rs.randint(2, 4))).capitalize()
         if nm in known: continue
-        a, c = ask(nm, e['r'], e['d']); A_.append((a in known, c))
-    B_ = []
+        a, c = ask(nm, e['r'], e['d']); A_.append((a in known, c)); Aa.append(a)
+    B_ = []; Ba = []
     subs = [s for s in bysub if len(set(rels) - set(bysub[s]))]
-    for i in rs.permutation(len(subs))[:32]:
+    for i in rs.permutation(len(subs))[:nq]:
         A = subs[int(i)]; r = rels[rs.randint(len(rels))]
         if r in bysub[A]: continue
-        d = next(e['d'] for e in fs if e['A'] == A); a, c = ask(A, r, d); B_.append((a in known, a in bysub[A].values(), c))
-    K_ = []                                                                   # (c) KNOWN facts (taught): is the trunk MORE CONFIDENT where it knows? - the
+        d = next(e['d'] for e in fs if e['A'] == A); a, c = ask(A, r, d); B_.append((a in known, a in bysub[A].values(), c)); Ba.append(a)
+    K_ = []; Ka = []                                                          # (c) KNOWN facts (taught): is the trunk MORE CONFIDENT where it knows? - the
     tf = [e for e in ents if e['key'][0] == 'fact']                           #   same question form and the same confidence measure (first answer byte)
-    for i in rs.permutation(len(tf))[:32]:
-        e = tf[int(i)]; a, c = ask(e['A'], e['r'], e['d']); K_.append((a == e['ans'], c))
+    for i in rs.permutation(len(tf))[:nq]:
+        e = tf[int(i)]; a, c = ask(e['A'], e['r'], e['d']); K_.append((a == e['ans'], c)); Ka.append(a)
     kinfo = ""
     if K_:
         kc = [c for ok_, c in K_ if ok_]; kw = [c for ok_, c in K_ if not ok_]; un = [x[1] for x in A_] + [x[2] for x in B_]
@@ -322,6 +356,25 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
     print(f"  [DISTILLATION, FALSE MEMORY PROBE | visit {vis + 1}] questions about facts NEVER read, from the trunk: (a) FRESH name, known relation ({len(A_)}): answer is a "
           f"STORED name {f(A_, 0)}, confidence {f(A_, 1)} || (b) KNOWN subject, a relation it has no fact for ({len(B_)}): answer is a STORED name {f(B_, 0)}, "
           f"its object for ANOTHER relation {f(B_, 1)}, confidence {f(B_, 2)}" + kinfo, flush=True)
+    if K_ and (A_ or B_):                                                     # 12 Nov ABSTENTION (readout): could the trunk refuse by itself? It ABSTAINS when
+        try:                                                                  #   it answers the refusal word, or when its confidence is below a threshold t.
+            kr = [(ok_, c, ref(a)) for (ok_, c), a in zip(K_, Ka)]            #   t is set to keep a share of the known facts it answers RIGHT; reported: what
+            un = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share of never-read questions still get
+            kc = np.array([c for ok_, c, rf in kr if ok_ and not rf])          #   a stored name (false memories let through), and the known facts' accuracy
+            parts = []                                                         #   among those answered (selective accuracy)
+            for keep in (0.9, 0.75, 0.5):
+                if not len(kc): break
+                t = float(np.quantile(kc, 1 - keep))
+                ans_k = [(ok_, c) for ok_, c, rf in kr if not rf and c >= t]; leak = np.mean([bool(st) and not rf and c >= t for st, c, rf in un])
+                parts.append(f"keep {keep:.0%} of known-right (t {t:.2f}): known answered {len(ans_k) / len(kr):.2f}, accuracy when answered "
+                             f"{np.mean([ok_ for ok_, c in ans_k]) if ans_k else float('nan'):.2f}, NEVER-READ still given a stored name {leak:.2f}")
+            print(f"  [DISTILLATION, ABSTENTION | visit {vis + 1}] from the trunk, known facts ({len(kr)}) vs never-read questions ({len(un)}; (a) + (b) above): "
+                  f"EXPLICIT REFUSAL ('{_DT_REFUSE}') on known facts {np.mean([rf for ok_, c, rf in kr]):.2f}, on (a) fresh names "
+                  f"{np.mean([ref(a) for a in Aa]) if Aa else float('nan'):.2f}, on (b) missing relations {np.mean([ref(a) for a in Ba]) if Ba else float('nan'):.2f} | "
+                  f"WITHOUT ABSTENTION: never-read given a stored name {np.mean([bool(st) and not rf for st, c, rf in un]):.2f}, known right "
+                  f"{np.mean([ok_ for ok_, c, rf in kr]):.2f} || CONFIDENCE THRESHOLD: " + " | ".join(parts), flush=True)
+        except Exception as e9:
+            _fail('inference.distill:abstain'); print(f"  [DISTILLATION, ABSTENTION] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
 
 def _dt_items(ents, rs, n):
@@ -1723,6 +1776,21 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             print(f"  [DISTILLATION, INTERLEAVED | visit {vis + 1}] TAUGHT-WORDING CHECK: the trunk answers {nk} of {len(known)} taught {'facts and conclusions' if (sk or spc) else 'facts (conclusions always rehearsed)'} in a taught wording"
                   + (f" | spaced rehearsal: mean interval {np.mean([iv.get(repr(e['key']), 1) for e in ents]):.2f}, at 16: {sum(1 for e in ents if iv.get(repr(e['key']), 1) >= 16)}" if sp else "")
                   + (f" | held by KL to their own answers: {nt} rows" if sk else ""), flush=True)
+        rf9 = float(getattr(cfg, 'inf_distill_refuse', 0.0))                   # 12 Nov REFUSAL ROWS: questions about FRESH names never read, in the taught
+        if 0 < rf9 < 1 and rows:                                               #   wordings, answered with the refusal word - a share rf9 of each slot's pool
+            RL9 = (D or {}).get('refl') or []; known9 = {e['A'] for e in ents + held} | {e['ans'] for e in ents + held}
+            rr9 = np.random.RandomState(int(cfg.seed) + 9797 + vis); n0 = collections.Counter(rw[2] for rw in rows); rel9 = collections.defaultdict(list); nref9 = 0
+            for e in ents: rel9[int(S_slot(e['d']))].append(e['r'])
+            allr9 = sorted({e['r'] for e in ents})
+            for sl, n_ in n0.items():
+                for _ in range(int(round(n_ * rf9 / (1 - rf9)))):
+                    nm9 = ''.join(rr9.choice(_DT_REFUSE_SYL, rr9.randint(2, 4))).capitalize()
+                    if nm9 in known9: continue
+                    rl_ = rel9.get(sl) or allr9; r9 = rl_[rr9.randint(len(rl_))]; fm9 = FORMS9[rr9.randint(len(FORMS9))]
+                    rows.append((fm9.format(A=nm9, r=r9).encode('latin-1', 'replace'), (_DT_REFUSE + '.').encode('latin-1', 'replace'), sl, f"refuse|{nm9}|{r9}", None, None)); nref9 += 1
+            print(f"  [DISTILLATION, REFUSAL ROWS | visit {vis + 1}] last visit: loss on refusal rows {np.mean(RL9[:20]) if RL9 else float('nan'):.3f} (first 20) -> "
+                  f"{np.mean(RL9[-20:]) if RL9 else float('nan'):.3f} (last 20), {len(RL9)} rows | next visit: {nref9} rows about fresh names never read (share {rf9:.2f} of the pool; "
+                  f"answer '{_DT_REFUSE}'; names from syllables the false-memory probe never uses; known subjects with a missing relation are NOT trained - the probe's (b) tests transfer)", flush=True)
         rs = np.random.RandomState(int(cfg.seed) + 9393 + vis)
         probe = [ents[int(i)] for i in rs.choice(len(ents), min(32, len(ents)), replace=False)] if ents else []
         hprobe = [held[int(i)] for i in rs.choice(len(held), min(32, len(held)), replace=False)] if held else []
@@ -1782,7 +1850,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             print(f"  [DISTILLATION, SOURCE REPLAY | visit {vis + 1}] last visit: {len(R9)} steps x {rp9} stored source sentences, next-byte loss "
                   f"{np.mean(R9[:20]) if R9 else float('nan'):.3f} (first 20) -> {np.mean(R9[-20:]) if R9 else float('nan'):.3f} (last 20) | next visit: sentences of "
                   f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences" + sinfo9, flush=True)
-        rtxN9 = int(getattr(cfg, 'inf_distill_rtx', 0)); rtx9 = {}; rtxv9 = {}       # 12 Nov REAL-TEXT REPLAY: the sentences of HALF the benchmark documents read (by
+        rtxN9 = int(getattr(cfg, 'inf_distill_rtx', 0)); rtx9 = {}; rtxv9 = {}; rtw9 = {}   # 12 Nov REAL-TEXT REPLAY: the sentences of HALF the benchmark documents read (by
         if rtxN9 > 0 and str(getattr(cfg, 'inf_bench', '') or ''):          #   hash; the other half is the control) replayed as plain text, and alignment
             try:                                                               #   views cut from them (question: lead-in + subject + words up to an object;
                 from platypus.inference.probes import _bench                   #   declaration: the sentence up to that object) - no labels, no templates
@@ -1802,12 +1870,15 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                       f"{np.mean(R1[:20]) if R1 else float('nan'):.3f} (first 20) -> {np.mean(R1[-20:]) if R1 else float('nan'):.3f} (last 20); alignment on real-text views "
                       f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
                       f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views", flush=True)
+                spx9 = float(getattr(cfg, 'inf_distill_rtx_space', 0.0))
+                if spx9 > 0 and rtx9:                                          # 12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space = alpha): before each
+                    rtw9 = _rtx_weights(model, rtx9, spx9, vis)                #   visit the trunk reads every replayed sentence; sentences it already predicts
             except Exception as e9:
                 _fail('inference.distill:rtx'); print(f"  [DISTILLATION, REAL-TEXT REPLAY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True); rtx9 = {}; rtxv9 = {}
         lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
         lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
         pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
-        model.__dict__['_dtw'] = dict(rtx=rtx9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1853,6 +1924,7 @@ def distill_wake_loss(model, cfg):
                 t_ = tl[:n_].float(); tot = tot + (t_.exp() * (t_ - F.log_softmax(z, -1))).sum()
             else:
                 c_ = F.cross_entropy(z, X[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); tot = tot + c_; ce.append(float(c_.detach()) / n_)
+                if str(it[3]).startswith('refuse|'): D.setdefault('refl', []).append(float(c_.detach()) / n_)
             cnt += n_
         if not cnt: return 0.0
         loss = tot / cnt; D['n'] += 1; D['losses'].append(float(np.mean(ce)) if ce else float(loss.detach()))
@@ -1877,7 +1949,8 @@ def distill_wake_loss(model, cfg):
                     al = (1 - F.cosine_similarity(hq, hd, dim=-1)).mean(); loss = loss + aw * al; D['al'].append(float(al.detach()))
         rtk = int(getattr(cfg, 'inf_distill_rtx', 0)); rtp = (D.get('rtx') or {}).get(sl)
         if rtk > 0 and rtp:                                                    # REAL-TEXT REPLAY: next-byte loss on replayed benchmark sentences of this slot
-            ss = [rtp[int(i)] for i in rs.choice(len(rtp), min(rtk, len(rtp)), replace=False)]
+            pw3 = (D.get('rtxw') or {}).get(sl); pw3 = pw3 if pw3 is not None and len(pw3) == len(rtp) else None
+            ss = [rtp[int(i)] for i in rs.choice(len(rtp), min(rtk, len(rtp)), replace=False, p=pw3)]
             Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
             cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
             lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rtxl'].append(float(lr_.detach()))

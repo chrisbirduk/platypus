@@ -589,10 +589,16 @@ class Config:
     inf_distill_align_para=0        #   12 Nov PARAPHRASE ALIGNMENT (toy: never-taught facts asked in a paraphrase 0.61 -> 0.82): 1 = taught facts also asked with
                                     #     each paraphrase of their relation the relational module merged from the text, aligned to the stored declaration (no labels)
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
+    inf_distill_false_probe_n=32    #     questions per group (fresh names / missing relations / known facts); + the ABSTENTION readout (risk-coverage of the
+                                    #     trunk's confidence, explicit refusals)
+    inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
+                                    #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
     inf_distill_rtx=0               #   12 Nov REAL-TEXT REPLAY (with inf_bench): N > 0 = N sentences of HALF the benchmark documents read (hash; the other half
                                     #     is the control) replayed with each question-row step; REAL-TEXT RECALL then splits replayed vs control documents
     inf_distill_rtx_align=1         #     1 = + alignment of views cut from those sentences (needs inf_distill_align > 0): no labels, no templates
+    inf_distill_rtx_space=0.0       #   12 Nov REPLAY BY STORAGE CHECK: alpha > 0 = replay probability ~ the trunk's own loss on each replayed sentence
+                                    #     (clipped to q10-q90) ** alpha, re-measured before each visit: sentences already predicted are replayed less
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
     inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
                                     #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk

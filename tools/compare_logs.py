@@ -7,6 +7,8 @@ Groups (a group is printed only if some log has it):
   fm    [FALSE MEMORY PROBE]: (a) fresh name -> stored name + confidence, (b) known subject, missing relation, (c) known facts + AUC
   rpl   replay losses (last 20 steps): source sentences, real-text sentences
   ctl   [EVER TAUGHT] never-asked CONTROL facts from the trunk (learning from reading)
+  ab    [ABSTENTION] explicit refusals, false answers with no threshold and at the threshold keeping 75% of known-right; refusal-row loss
+  sc    [REPLAY BY STORAGE CHECK] the trunk's loss on replayed sentences, replay share to the hardest quarter, last hardest quarter's change
   s4    [RELATIONAL MODULE WRITES] step 4, edits subtracted: taught vs held back
 Missing values print as '-'. Reads plain text only."""
 import os
@@ -61,6 +63,19 @@ def parse(path):
             if m: d['ctl'], d['ctl_n'] = m.groups()
             m = re.search(r'TAUGHT FOR AT LEAST ONE VISIT \(\d+\) (?:conclusions [^|]*\| )?facts ' + NUM, ln)
             if m: d['taught'] = m.group(1)
+        elif '[DISTILLATION, ABSTENTION | visit' in ln:
+            m = re.search(r'on known facts ' + NUM + r', on \(a\) fresh names ' + NUM + r', on \(b\) missing relations ' + NUM, ln)
+            if m: d['ab_rk'], d['ab_ra'], d['ab_rb'] = m.groups()
+            m = re.search(r'WITHOUT ABSTENTION: never-read given a stored name ' + NUM, ln)
+            if m: d['ab_leak0'] = m.group(1)
+            m = re.search(r'keep 75% of known-right \(t [0-9.]+\): known answered ' + NUM + r', accuracy when answered ' + NUM + r', NEVER-READ still given a stored name ' + NUM, ln)
+            if m: d['ab_k75'], d['ab_acc75'], d['ab_leak75'] = m.groups()
+        elif '[DISTILLATION, REFUSAL ROWS | visit' in ln:
+            m = re.search(r'-> ' + NUM + r' \(last 20\)', ln)
+            if m: d['rf_loss'] = m.group(1)
+        elif '[DISTILLATION, REPLAY BY STORAGE CHECK | visit' in ln:
+            m = re.search(r'median ' + NUM + r'.*?HARDEST quarter ' + NUM + r'.*?loss change ([-+]?[0-9.]+|[-+]?nan)', ln)
+            if m: d['sc_med'], d['sc_hard'], d['sc_mv'] = m.groups()
         elif '[RELATIONAL MODULE WRITES | visit' in ln:
             m = re.search(r'edits SUBTRACTED: TAUGHT ' + NUM + r' \((\d+)\) vs HELD BACK ' + NUM + r' \((\d+)\)', ln)
             if m: d['s4_t'], d['s4_tn'], d['s4_h'], d['s4_hn'] = m.groups()
@@ -77,6 +92,9 @@ GROUPS = {
                                   ('fm_k', '(c) known right'), ('fm_k_cr', '(c) conf right'), ('fm_auc', 'AUC')]),
     'rpl': ('Replay loss, last 20 steps', [('rp_src', 'source'), ('rp_rtx', 'real text')]),
     'ctl': ('Learning from reading (ledger, from the trunk)', [('taught', 'taught'), ('ctl', 'never asked')]),
+    'ab': ('Abstention (from the trunk)', [('ab_rk', 'refuse known'), ('ab_ra', 'refuse (a) fresh'), ('ab_rb', 'refuse (b) missing rel'), ('ab_leak0', 'false, no threshold'),
+                                           ('ab_k75', 'known answered @75%'), ('ab_acc75', 'accuracy @75%'), ('ab_leak75', 'false @75%'), ('rf_loss', 'refusal-row loss')]),
+    'sc': ('Replay by storage check', [('sc_med', 'median loss'), ('sc_hard', 'share to hardest quarter'), ('sc_mv', 'hardest quarter change')]),
     's4': ('Step 4, edits subtracted', [('s4_t', 'taught'), ('s4_tn', 'n'), ('s4_h', 'held back'), ('s4_hn', 'n')]),
 }
 
