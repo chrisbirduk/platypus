@@ -492,6 +492,11 @@ asked; 399 replay steps per visit, the replay loss 1.30 -> 0.35-0.40 within each
 | 5 | 0.21 (29) | 0.81 | 0.04 (77) | 0.58 | 0.887 / 0.594 |
 | 6 | **0.40 (30)** | 0.82 | 0.03 (74) | 0.60 | 0.871 / 0.529 |
 | 7 | 0.38 (29) | 0.82 | **0.11 (72)** (after-visit probe 0.11 (36)) | 0.62 | 0.872 / 0.488 |
+| 8 | **0.59 (29)** | 0.97 | **0.14 (71)** (after-visit probe **0.23 (39)**) | **0.72** | 0.876 / 0.424 |
+
+By visit 8 the facts the trunk only READ and was never asked are answered in the test wordings at 0.14 (ledger, 71) / 0.23 (after-visit probe, 39)
+against 0.01-0.03 in every run without replay - storage first (own sentence 0.00 -> 0.59), question recall following a visit or two behind.
+Taught facts 0.72 (the best ledger figure so far). Gutenberg's private-parts reliance eased 0.31 -> 0.30 -> 0.27 (visits 6-8). One seed.
 
 **Replay stores facts the model only read** (own-sentence completion 0.00 without replay at visit 3 -> 0.30-0.40 by visits 4-6) and
 taught facts too (0.47 -> 0.82). Taught recall in the test wordings is a little higher than without replay (ledger 0.43 / 0.46 vs 0.38 /
