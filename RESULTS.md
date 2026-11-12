@@ -464,6 +464,21 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Reader tests 4-6 (tools/reader_tests3.py, 12 November; subject-anchored + cleaned records, local Wikipedia + the benchmark, Re-DocRED gold)
+
+Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations covered.
+
+| test | result |
+|---|---|
+| M5 relation properties as filters: type signature / functional / irreflexive (name fragments) / all three | 0.44 (random drop 0.44) / 0.43 (87 "functional" frames, all glue: '(', 'in the') / **0.45 at no coverage loss** / 0.46 at 297 covered |
+| M4 tensor factorisation as a filter (keep the best-explained 75 / 50 / 25%): no constraints | 0.44 / 0.45 / 0.43 |
+| ... + inverse and paraphrase constraints (19 paraphrase, 1 inverse pair mined) / + tied to frame clusters | 0.43 / 0.45 / **0.47** ; 0.43 / 0.45 / **0.48** (155 covered) |
+| M4 completion (each title's best unread object per frame, among its document's fillers) vs a random document filler | 0.22 / 0.30 / 0.33 vs 0.16-0.19; 7-9 new gold relations |
+| M6 rules: anchored frames as read / pooled into 40 clusters / cluster x type pair | **0 rules** in each; 93-95% of candidates have no observed chains; best testable predicts 0.12-0.33 |
+
+Constraints help only at heavy filtering (+0.05 at a quarter of the records); completion beats chance but adds <10 relations; real text
+still yields no rules at this scale. The name-fragment filter is the one free gain. Reader work stops here (see the alignment route).
+
 ### Source replay on the GPU: facts only READ are now stored (cg27a_replay, seed 4, interim visits 1-6; 12 November)
 
 cg27a_align + inf_distill_replay 4 (4 stored source sentences of pool AND control facts per question-row step; the control is never
@@ -658,7 +673,7 @@ never planted); sleep 3 - four true paraphrase merges (+ partners with = is a pa
 child -> grandchild 11 of 11; overseen 2 sleeps running), 0 false, 5 more written (11 in all, precision 1.00, 8 never planted; 8 taught,
 3 held back). **FROM THE TRUNK (store and memory off), written at sleep 2 and taught for one visit: 0.75 (3 of 4) vs held back 0.00 (0 of
 2); composites NEVER PLANTED anywhere: taught 1.00 (2 of 2) vs held back 0.00 (0 of 1).** Ordinary facts taught one visit: 0.33,
-control 0.00. Tiny n - the first sign that facts the model inferred itself, never stated in its text, consolidate into its weights.
+control 0.00. Tiny n. **Not supported as n grew** (cg27a_replay sleep 6: taught 0.69 (13) vs held back 0.60 (5), edits in place; never planted 0.64 (11) vs 0.75 (4)): the trunk answers held-back rule-world composites about as often as taught ones - teaching the module's writes is not shown to be the cause; why held-back composites are known (guessing hub names in small families?) is open.
 
 ### A fast sequence channel as the reader (tools/chunk_reader.py, 11 November, local)
 
