@@ -177,6 +177,47 @@ Conclusions 0.00 (4). Facts are not touched by the closed-form edits, so this is
 weights 0.25 and 0.1 next (recall gained per unit of BPC). Earlier fix: a forward between the real forward and its backward changed a
 tensor in place (autograd error); the question rows now run after the real backward.
 
+### Real-text replay, false memories, the trunk's confidence and the alignment control (cg27a_rtx, cg27a_rtx16, cg27a_replaynoal; seed 4; 12 November evening)
+
+All three = cg27a_replay (source replay of planted facts) plus: `cg27a_rtx` - the sentences of HALF the benchmark documents read replayed as
+plain text, 4 per question-row step (the other half read once: the control), no real-text view alignment; `cg27a_rtx16` - the same, 16 per
+step; `cg27a_replaynoal` - no real-text replay and NO view alignment (inf_distill_align 0; the alignment control). cg27a_rtx16 and
+cg27a_replaynoal were stopped at visit 4 (the author: enough to choose the next runs).
+
+REAL-TEXT RECALL from the weights (true object among up to 10 same-type names; 'prior' = the same question with a fresh subject):
+
+| visit | rtx: replayed / prior | rtx: control / prior | rtx16: replayed / prior | rtx16 DIAGNOSTICS, replayed named (48): storage / own-frame / template / prior | rtx16 control named: own-frame / prior |
+|---|---|---|---|---|---|
+| 2 | 0.12 / 0.12 | 0.05 / 0.03 | 0.19 / 0.19 | 0.00 / 0.12 / 0.06 / 0.08 | 0.15 / 0.08 |
+| 3 | 0.14 / 0.14 | 0.14 / 0.12 | 0.17 / 0.16 | 0.02 / 0.12 / 0.08 / 0.06 | 0.08 / 0.08 |
+| 4 | 0.27 / 0.27 | 0.12 / 0.09 | 0.30 / 0.27 | **0.06 / 0.23 / 0.08 / 0.08** | 0.04 / 0.04 |
+| 7 | 0.19 / 0.14 | 0.08 / 0.06 | - | - | - |
+
+**First sign of storage of real sentences (rtx16, visit 4): replayed documents asked in their own sentence's wording 0.23 vs 0.08 (about
+11 of 48 vs 4), never-replayed documents at their prior; not in another wording (0.08).** One visit. cg27a_rtx's gap over the prior
+(+0.05 at visit 7) is within noise: cg27a_replaynoal, which replays no real text, moved +0.05 at visit 3. Real-text replay loss after ~15
+readings a sentence: 0.97 (rtx16) vs 0.95 (rtx); planted source sentences 0.4-0.6. Cost: BPC within 0.006 of cg27a_rtx, under a minute a
+visit for 4x the replay. Local safety (short run, 4x replay): final BPC 2.996 / forgetting -0.158 vs 3.003 / -0.149.
+
+FALSE MEMORY PROBE (from the trunk; (a) a fresh name with a known relation, (b) a known subject with a relation it has no fact for;
+greedy answer is a STORED name) and the trunk's confidence (first answer byte) on known facts it answers right vs never-read questions:
+
+| visit | (a) rtx / rtx16 / replaynoal | (b) rtx / rtx16 / replaynoal | AUC known-right vs never-read: rtx16 / replaynoal |
+|---|---|---|---|
+| 2 | 0.09 / 0.12 / 0.16 | 0.19 / 0.19 / 0.22 | 0.70 / 0.59 |
+| 3 | 0.61 / 0.61 / 0.71 | 0.58 / 0.61 / 0.65 | 0.71 / 0.73 |
+| 4 | 0.69 / 0.83 / 0.83 | 0.47 / 0.56 / 0.59 | **0.84 / 0.82** |
+| 7 | 0.93 / - / - | 0.47 / - / - | - |
+
+**The trunk learns to answer any question in the taught form with a stored name** - in every build, with or without real-text replay, so
+the question rows (or planted replay) cause it, not real text; leakage of a subject's other-relation object 0.00. **Its confidence
+separates what it knows from what it never read better as training goes on** (AUC 0.59-0.73 -> 0.82-0.84); not enough to abstain on (the
+store stays the gatekeeper). Tested next: refusal rows (cg27a_refuse) and the ABSTENTION readout.
+
+ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 / 0.03 / 0.06 at visits 2-4 without alignment
+(replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
+difference through visit 4; the decisive visits were not run.
+
 ### Dose curve, full runs (11 November 2026, 02:20, local; both runs stopped by a container restart during visit 9 of 10)
 
 Seed 0, carry 0.1 in all three; reference CR1 = carry 0.1 without distillation. Recall from the trunk in the test wordings after each
