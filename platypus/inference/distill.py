@@ -9,6 +9,7 @@ the visited domain's and the old domains' BPC before and after and rolls the who
 inf_distill_brake. CONTROL: a fixed fifth of the facts (by a hash of the fact) is never taught. READOUT: recall from the trunk (every
 memory off) in the TEST wordings for a sample of the taught facts and of the never-taught control, before and after; across sleeps, [FROM THE WEIGHTS, FIXED SET] (with and without the closed-form edits) is the consolidation measure."""
 import time
+import re
 import collections
 import numpy as np
 import torch
@@ -114,6 +115,90 @@ def _dt_recall_para(model, S_slot, es):
         top = lg[ps].argmax(-1); tr = torch.tensor(list(tb), device=lg.device)
         ok.append(bool((top[:-1] == tr[:-1]).all()) and not isl(int(top[-1])))
     return (float(np.mean(ok)) if ok else float('nan')), len(ok)
+
+
+_BR_T = {'P19': "{h} was born in ", 'P20': "{h} died in ", 'P27': "{h} is a citizen of ", 'P69': "{h} was educated at ", 'P54': "{h} played for ",
+         'P463': "{h} is a member of ", 'P50': "{h} was written by ", 'P57': "{h} was directed by ", 'P175': "{h} was performed by ",
+         'P264': "{h} was released on the label ", 'P571': "{h} was founded in ", 'P577': "{h} was first published in ", 'P569': "{h} was born on ",
+         'P570': "{h} died on ", 'P131': "{h} is located in ", 'P17': "{h} is in the country ", 'P150': "{h} contains ", 'P36': "The capital of {h} is ",
+         'P102': "{h} is a member of the party ", 'P108': "{h} worked for ", 'P26': "{h} was married to ", 'P40': "A child of {h} is ",
+         'P22': "The father of {h} is ", 'P3373': "A sibling of {h} is ", 'P1344': "{h} took part in ", 'P361': "{h} is part of ",
+         'P527': "{h} includes ", 'P159': "The headquarters of {h} are in ", 'P740': "{h} was formed in ", 'P276': "{h} took place in "}
+
+
+@torch.no_grad()
+def _dw_cand_mc(model, sl, prompt, cands):
+    """index of the candidate with the best MEAN log-probability per byte after PROMPT (store and memory off)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    pb = prompt.encode('latin-1', 'replace'); cb = [(c + '.').encode('latin-1', 'replace') for c in cands]
+    X, _ = _ws_batch(model, [pb + c for c in cb]); lp = F.log_softmax(_ws_run(model, X, sl).float(), -1); sc = []
+    for j, c in enumerate(cb):
+        p0 = len(pb) - 1; n_ = min(len(c), lp.shape[1] - p0)
+        sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else -1e9)
+    return int(np.argmax(sc))
+
+
+def _dw_bench_recall(model, cfg, S_slot, vis):
+    """12 Nov READOUT: REAL-TEXT RECALL FROM THE WEIGHTS - Re-DocRED gold relations of the benchmark documents the model has READ (planted
+    once in pass 1, in visited domains), whose two names stand in one sentence, asked in a templated test wording per relation type
+    ('X was born in'); the true object against up to 9 other entity names of the same type from the same domain's documents (mean
+    log-prob per byte; chance ~0.1-0.2), and the same question with the subject replaced by a fresh name (the relation prior alone)."""
+    from platypus.inference.probes import _bench
+    G = _bench(cfg); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); rs = np.random.RandomState(int(cfg.seed) + 4242 + vis)
+    nm = G['ent_name']; ty = G.get('ent_type', {}); items = []
+    for d in sorted(seen):
+        dl = G['docs'].get(str(d), [])
+        if not dl: continue
+        sents = [s for t in dl for s in re.split(r'(?<=[.!?])\s+', t)]; inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        for h, t, fl, ps in G['rel']:
+            if str(h) not in inD or str(t) not in inD: continue
+            pc = next((p for p in ps if p in _BR_T), None)
+            if pc is None: continue
+            H, T = nm[str(h)], nm[str(t)]
+            if len(H) < 3 or len(T) < 3 or not any(H in s and T in s for s in sents): continue
+            same = [nm[e] for e in inD if e not in (str(h), str(t)) and ty.get(e) == ty.get(str(t)) and len(nm[e]) >= 3]
+            if len(same) >= 3: items.append((d, pc, H, T, same))
+    if not items: print(f"  [REAL-TEXT RECALL | visit {vis + 1}] no readable benchmark relations in the visited domains yet", flush=True); return
+    items = [items[int(i)] for i in rs.permutation(len(items))[:64]]; ok = []; pri = []; pcs = collections.Counter()
+    fresh = lambda: ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel'], 3)).capitalize()
+    for d, pc, H, T, same in items:
+        oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = int(S_slot(d))
+        ok.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0); pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0); pcs[pc] += 1
+    ch = np.mean([1.0 / (1 + min(9, len(x[4]))) for x in items])
+    print(f"  [REAL-TEXT RECALL | visit {vis + 1}] benchmark relations in documents READ (two names in one sentence, {len(items)} asked, commonest {pcs.most_common(4)}): "
+          f"FROM THE WEIGHTS, the true object among up to 10 same-type names {np.mean(ok):.2f} | the same with a FRESH subject (relation prior alone) {np.mean(pri):.2f} | chance {ch:.2f}", flush=True)
+
+
+def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
+    """12 Nov READOUT: FALSE MEMORIES - questions about facts NEVER read: (a) a FRESH name with a known relation ('It is on record that
+    Kamisen works with'), (b) a KNOWN subject with a relation it has no fact for. Greedy answer from the trunk (store and memory off): the
+    share that is a STORED name (a confabulation drawn from memory), for (b) also the share that is the subject's object for ANOTHER
+    relation (leakage across relations), and the mean probability of the answer's first byte (confidence)."""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    rs = np.random.RandomState(int(cfg.seed) + 4343 + vis); fs = [e for e in ents + held if e['key'][0] == 'fact']
+    if len(fs) < 8: return
+    known = set(e['A'] for e in fs) | set(e['ans'] for e in fs); rels = sorted(set(e['r'] for e in fs)); bysub = collections.defaultdict(dict)
+    for e in fs: bysub[e['A']][e['r']] = e['ans']
+    def ask(A, r, d):
+        sl = int(S_slot(d)); pb = f"It is on record that {A} {r} ".encode('latin-1', 'replace'); a = _dw_greedy(model, pb, sl, 20)
+        X, _ = _ws_batch(model, [pb + b'x'])
+        with torch.no_grad(): lg = _ws_run(model, X, sl)[0, len(pb) - 1].float()
+        return a, float(F.softmax(lg, -1).max())
+    A_ = []
+    for _ in range(32):
+        e = fs[rs.randint(len(fs))]; nm = ''.join(rs.choice(['ka', 'to', 'mi', 'ra', 've', 'lo', 'du', 'sen', 'tar', 'bel', 'nor', 'qui'], rs.randint(2, 4))).capitalize()
+        if nm in known: continue
+        a, c = ask(nm, e['r'], e['d']); A_.append((a in known, c))
+    B_ = []
+    subs = [s for s in bysub if len(set(rels) - set(bysub[s]))]
+    for i in rs.permutation(len(subs))[:32]:
+        A = subs[int(i)]; r = rels[rs.randint(len(rels))]
+        if r in bysub[A]: continue
+        d = next(e['d'] for e in fs if e['A'] == A); a, c = ask(A, r, d); B_.append((a in known, a in bysub[A].values(), c))
+    f = lambda L, k: f"{np.mean([x[k] for x in L]):.2f}" if L else "nan"
+    print(f"  [DISTILLATION, FALSE MEMORY PROBE | visit {vis + 1}] questions about facts NEVER read, from the trunk: (a) FRESH name, known relation ({len(A_)}): answer is a "
+          f"STORED name {f(A_, 0)}, confidence {f(A_, 1)} || (b) KNOWN subject, a relation it has no fact for ({len(B_)}): answer is a STORED name {f(B_, 0)}, "
+          f"its object for ANOTHER relation {f(B_, 1)}, confidence {f(B_, 2)}", flush=True)
 
 
 def _dt_items(ents, rs, n):
@@ -1381,6 +1466,12 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if vslot is not None: _dw_repair(model, cfg, D, int(vslot), [int(s) for s in oslots], vis)
         _dw_ever(model, cfg, S_slot, ents, held, D, vis)
         if int(getattr(cfg, 'inf_distill_conc22', 1)): _dw_conc22(model, cfg, S_, S_slot, ents, held, vis)
+        if int(getattr(cfg, 'inf_distill_false_probe', 1)):
+            try: _dw_false_probe(model, cfg, S_slot, ents, held, vis)
+            except Exception as e9: _fail('inference.distill:false_probe'); print(f"  [DISTILLATION, FALSE MEMORY PROBE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_distill_bench_recall', 1)) and str(getattr(cfg, 'inf_bench', '') or ''):
+            try: _dw_bench_recall(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.distill:bench_recall'); print(f"  [REAL-TEXT RECALL] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);
@@ -1438,7 +1529,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         lfrows9 = {}; pararows9 = {}; para9 = aw9 > 0 and int(getattr(cfg, 'inf_distill_align_para', 0))
         for e in held_lf9:
             for fm in FORMS9: lfrows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), repr(e['key'])))
-        if aw9 > 0:                                                            # 12 Nov VIEW ALIGNMENT: each TAUGHT fact's declaration (control never aligned)
+        if aw9 > 0 or int(getattr(cfg, 'inf_distill_replay', 0)) > 0:          # 12 Nov VIEW ALIGNMENT (readout also for replay without alignment): each TAUGHT fact's declaration (control never aligned)
             A9 = (D or {}).get('al') or []
             try: ct9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('probe') or [], asrc9); ch9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('hprobe') or [], asrc9)
             except Exception: _fail('inference.distill:align_probe'); ct9 = ch9 = 'unavailable'

@@ -588,6 +588,8 @@ class Config:
                                     #     ALIGNED too (question -> declaration, no answer label); the other half stays the pure control
     inf_distill_align_para=0        #   12 Nov PARAPHRASE ALIGNMENT (toy: never-taught facts asked in a paraphrase 0.61 -> 0.82): 1 = taught facts also asked with
                                     #     each paraphrase of their relation the relational module merged from the text, aligned to the stored declaration (no labels)
+    inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
+    inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
     inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
                                     #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk
