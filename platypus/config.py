@@ -559,6 +559,7 @@ class Config:
     inf_reader_chunk_cap=1000000    #   bound on each count table and on the record's keys
     inf_reader_gold=1               # 11 Nov READOUT (with inf_bench): the evidence record(s) scored against the benchmark's gold relations each sleep
     inf_rw_nosleep=0                # 12 Nov: 1 = the sleep layer never concludes the rule world's two-hop pairs (held out like inf_kgx_hold): composites reach the trunk only via step 4
+    inf_distill_relmod_write_ctl=0.0  # 12 Nov POWERED STEP 4: > 0 = this share of the relational module's written facts held back (own hash) instead of the general fifth
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each

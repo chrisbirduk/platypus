@@ -1229,6 +1229,7 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     keeps them apart (hops for later chains, never evidence for a rule), and a fact the reader later records itself replaces the written
     one. READOUT: how many written, their precision against the rule world's truth, and RECALL FROM THE TRUNK (test wording, store and
     memory off) of facts written at an earlier sleep - taught vs held back, all and the composites that were NEVER PLANTED anywhere."""
+    import zlib
     from platypus.inference.probes import inf_rule_world
     from platypus.inference.namemem import _nm_layer
     WR = model.__dict__.get('_rm_written') or {}
@@ -1245,7 +1246,9 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     for (r, A, C), w in WR.items():
         e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=w['d'], pfs=[f"{A} {r} "], seen=2, src=w['src'], rm=w['vis'])
         if repr(e['key']) in have or (A, r) in haveAr: rep += 1; continue    # recorded by the reader meanwhile: the observation wins
-        (H_ if ctl(e) else T_).append(e)
+        wc9 = float(getattr(cfg, 'inf_distill_relmod_write_ctl', 0.0))        # 12 Nov POWERED STEP 4: a separate, larger held-back share for written facts
+        held9 = (zlib.crc32((repr(e['key']) + '|w').encode()) % 1000 < wc9 * 1000) if wc9 > 0 else ctl(e)
+        (H_ if held9 else T_).append(e)
     kn = [(k, truth(k[1], k[0])) for k in WR]; kn = [(k, t) for k, t in kn if t is not None]
     prec = sum(1 for k, t in kn if k[2] == t) / len(kn) if kn else float('nan')
     old = lambda L: [e for e in L if e['rm'] < vis]; nv = lambda L: [e for e in L if (e['A'], e['r']) in never]

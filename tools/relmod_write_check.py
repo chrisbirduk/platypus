@@ -1,6 +1,6 @@
 """Unit check of step 4 (inf_distill_relmod_write): two sleeps of the relational module on the rule world (+ 20 arbitrary relations),
 recall from the trunk stubbed (no model); checks the writes, their precision, the taught / held-back split and provenance at sleep 2.
-Usage: python3 tools/relmod_write_check.py [steps]"""
+Usage: python3 tools/relmod_write_check.py [steps]   (env RW_N families per kind, default 12; WCTL held-back share of written facts)"""
 import os
 import sys
 import types
@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 torch.set_num_threads(1)
 import platypus.config as C  # noqa: E402
 from platypus.inference import probes, distill  # noqa: E402
-cfg = C.Config(); cfg.seed = 0; cfg.inf_rule_world = 12; cfg.inf_distill_relmod = int(sys.argv[1]) if len(sys.argv) > 1 else 1500
+cfg = C.Config(); cfg.seed = 0; cfg.inf_rule_world = int(os.environ.get('RW_N', 12)); cfg.inf_distill_relmod_write_ctl = float(os.environ.get('WCTL', 0)); cfg.inf_rw_nosleep = 1; cfg.inf_distill_relmod = int(sys.argv[1]) if len(sys.argv) > 1 else 1500
 cfg.inf_distill_relmod_write = 1
 W = probes.inf_rule_world(cfg); doms = sorted({r[0] for r in W['planted']})
 model = types.SimpleNamespace(); model.__dict__['_t2s'] = {d: 1 for d in doms}

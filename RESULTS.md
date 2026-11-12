@@ -464,6 +464,15 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Reference ceiling on real text (tools/reference_ceiling.py, 12 November; Re-DocRED benchmark documents, names = fast-channel fillers)
+
+Gold relations whose two names are found in ONE sentence: no reference 435 (9.2%); + the title in sentences with a third-person pronoun or
+opening with frame material **614 (13.0%)**; + the title in every sentence 622 (13.2%); + the previous sentence's subject 537 (11.4%); both
+618. Upper bound - both names found anywhere in the document: **857 (18.1%)**, 41% of them with the title as one argument. Reference by
+the title lifts the one-sentence ceiling by 40% (9 -> 13%); cross-sentence pairs beyond it add at most 5 points; **the larger limit is
+recognising the names at all** (82% of gold relations have a name the fast channel never isolates as a filler: common-noun entities,
+dates and numbers, lower-case names).
+
 ### Toy: paraphrase alignment closes the paraphrase gap (tools/toy_para_align.py, seed 0, 6,000 steps)
 
 3 relations x 2 phrasings; every fact declared in phrasing a, 20% also in phrasing b; 420 of 600 taught as questions in phrasing a only.
