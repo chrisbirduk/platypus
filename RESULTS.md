@@ -527,6 +527,24 @@ Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations cover
 Constraints help only at heavy filtering (+0.05 at a quarter of the records); completion beats chance but adds <10 relations; real text
 still yields no rules at this scale. The name-fragment filter is the one free gain. Reader work stops here (see the alignment route).
 
+### POWERED STEP 4: inferred facts become the trunk's own knowledge when taught (cg27a_step4p, seed 4, visits 1-7; 12 November)
+
+cg27a_replay + the rule world x4 (48 families, 48 org charts) and HALF the relational module's written facts held back. Written facts: 120
+by visit 7, **precision 1.00, 117 of them composites never planted anywhere**. From the trunk (store and memory off), test wording, facts
+written at an earlier sleep, **closed-form edits SUBTRACTED**:
+
+| visit | TAUGHT | HELD BACK | trunk's answers to held-back facts (right / middle hop / other; family size 6, chance ~0.17) |
+|---|---|---|---|
+| 4 | **0.61** (18) | 0.12 (25) | 4 / 1 / 20 of 25 |
+| 5 | **0.50** (28) | 0.13 (30) | 6 / 0 / 24 of 30 |
+| 6 | **0.56** (32) | 0.18 (34) | 8 / 0 / 26 of 34 |
+| 7 | **0.44** (45) | 0.14 (50) | 5 / 0 / 45 of 50 |
+
+**Facts the system INFERRED, never stated in its text, are recalled from its weights when taught (0.44-0.61), and held-back ones stay at
+the guessing level (0.12-0.18, chance ~0.17)** - visit 7: 20 of 45 vs 7 of 50 (edits subtracted), a gap the small runs could not show
+(withdrawn above at n 2-6). The held-back answers are wrong names, not the middle hop: no sign of the trunk composing on its own (as
+before). Taught recall dips at visit 7 as the pool grows (45 new facts). One seed; no false writes.
+
 ### Seed 5 REPLICATES learning from reading (cg27a_replay_s5, visits 1-10; 12 November)
 
 The same build as cg27a_replay on seed 5 (no model change). Never-asked facts (read only, replayed, never questioned), from the weights:
