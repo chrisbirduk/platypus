@@ -464,6 +464,22 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Toy: paraphrase alignment closes the paraphrase gap (tools/toy_para_align.py, seed 0, 6,000 steps)
+
+3 relations x 2 phrasings; every fact declared in phrasing a, 20% also in phrasing b; 420 of 600 taught as questions in phrasing a only.
+Unseen question prefixes:
+
+| alignment | taught: phrasing a / PARAPHRASE b | never taught: phrasing a / PARAPHRASE b |
+|---|---|---|
+| off | 0.92 / 0.76 | 0.67 / 0.41 |
+| as built (question a -> declaration a, taught) | 0.92 / 0.83 | 0.82 / 0.61 |
+| **+ paraphrase (question b -> declaration a, taught)** | 0.93 / **0.93** | 0.82 / **0.82** |
+| + paraphrase, never-asked facts too (label-free) | 0.92 / 0.91 | 0.80 / 0.80 |
+
+Aligning the paraphrased question of TAUGHT facts with the stored wording's declaration removes the paraphrase gap for facts never taught
+(0.61 -> 0.82, equal to the stored wording): the paraphrase is learned as a relation-level mapping, not per fact. Aligning the never-asked
+facts as well adds nothing here. For Platypus: the relational module's paraphrase merges (always correct on the GPU) give the pairs.
+
 ### Real-text views for label-free alignment (tools/realtext_views.py, 12 November; Re-DocRED benchmark documents)
 
 A view = (question, declaration) cut from one sentence by the fast channel: subject (the title supplied for pronoun- or frame-led
