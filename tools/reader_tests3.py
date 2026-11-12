@@ -10,7 +10,7 @@
                           frames: the same pairs), and with frames TIED to their pooled cluster (M6). Baselines: random drop / random filler
   M6 RULE POOLING         frames pooled into clusters (frame words + filler-type pairs + shared filler pairs, k-means 40); rules mined
                           (_rm_mine, every guard) on the anchored frames as read, on the pooled clusters, and on cluster x type pair
-Usage: python3 tools/reader_tests3.py"""
+Usage: python3 tools/reader_tests3.py   (env RT_M4=1,2 selects the factorisation fits; about 2.5 GB)"""
 import os
 import sys
 import time
@@ -152,7 +152,8 @@ def fit(steps, seed, D=64, cons=False, tie=False, w=0.5):
 DOCF = {(s, di): [Ni[x] for x in fl_ if x in Ni] for s, di, r, fl_, tt in DOCS}
 rB = [(rid(f), Ni[a], Ni[b], pv) for a, f, b, pv, k in BREC]
 GBR = gold_of([(a, f, b) for a, f, b, pv, k in BREC])
-for tag, cons, tie in (('no constraints', False, False), ('+ RULE CONSTRAINTS (inverse, paraphrase)', True, False), ('+ constraints + TIED TO CLUSTERS', True, True)):
+VAR4 = (('no constraints', False, False), ('+ RULE CONSTRAINTS (inverse, paraphrase)', True, False), ('+ constraints + TIED TO CLUSTERS', True, True))
+for tag, cons, tie in [VAR4[int(i)] for i in os.environ.get('RT_M4', '0,1,2').split(',') if i != '']:   # RT_M4=1,2 runs only those fits
     t1 = time.time(); P(f"M4 fit, {tag}:"); Z, PM = fit(int(os.environ.get('RT_STEPS', 2000)), 0, cons=cons, tie=tie)
     # filter: rank of the record's object among its document's fillers
     rk = []
