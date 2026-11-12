@@ -507,6 +507,31 @@ Reference (M2 + M3, benchmark records): gold rate 0.43, 342 gold relations cover
 Constraints help only at heavy filtering (+0.05 at a quarter of the records); completion beats chance but adds <10 relations; real text
 still yields no rules at this scale. The name-fragment filter is the one free gain. Reader work stops here (see the alignment route).
 
+### Label-free alignment and the two diagnostics (cg27a_alignlf, seed 4, interim visits 1-7; 12 November)
+
+cg27a_replay + half the never-asked facts aligned (question -> stored declaration, no labels), the other half the pure control.
+
+| visit | ALIGNED, never asked: questions | PURE CONTROL: questions | aligned / pure: own sentence | ledger, all never-asked |
+|---|---|---|---|---|
+| 3 | 0.08 (24) | 0.00 (21) | 0.18 / 0.06 | - |
+| 4 | 0.09 (43) | 0.03 (35) | 0.39 / 0.33 | - |
+| 5 | 0.13 (45) | 0.05 (40) | 0.31 / 0.31 | 0.09 (77) |
+| 6 | 0.05 (43) | 0.12 (42) | 0.31 / 0.28 | 0.07 (74) |
+| 7 | 0.17 (42) | 0.16 (44) | 0.47 / 0.75 | 0.14 (72) |
+
+**No per-fact benefit of label-free alignment**: the aligned half led at visits 3-5 by 0.05-0.08 and the halves are level by visit 7
+(0.17 / 0.16) - within the noise of ~40 facts. Both halves rise with replay as in cg27a_replay (0.11 at visit 7). Plain 'A r' completion
+tracks own-sentence completion (0.44 / 0.47 aligned; 0.69 / 0.75 pure). Gutenberg's private-parts reliance here 0.21 / 0.22 / 0.19 at
+visits 5-7 vs 0.26 / 0.31 / 0.30 in cg27a_replay - the same replay, so the erosion seen there is not simply replay's doing (run-to-run
+variation or the alignment rows; not separable on one seed).
+
+DIAGNOSTICS: (1) **the closed-form edit's lift on unedited conclusions is shared names**: control sharing a subject or answer with an
+edited conclusion 0.00 -> 0.60 (5) and 0.57 -> 0.86 (7) when the edit lands; with no shared name 0.18 -> 0.18 (11), 0.00 -> 0.00 (2) - no
+generalisation to unrelated conclusions. (2) **What the trunk answers for written rule-world facts** (test wording, edits in place, family
+size 6, chance ~0.17): taught 16 of 17 right at visit 7 (2 of 4 at visit 3); held back 3 of 6 right (0 of 2 at visit 3, 0 of 3 at 4), the
+wrong ones a consistent other name ('is overseen by -> Edgalzo' for two held-back subjects whose truth is Orgalqui), never the middle hop.
+Taught 0.94 vs held back 0.50 - a gap again, but n 6.
+
 ### Source replay on the GPU: facts only READ are now stored (cg27a_replay, seed 4, interim visits 1-6; 12 November)
 
 cg27a_align + inf_distill_replay 4 (4 stored source sentences of pool AND control facts per question-row step; the control is never
