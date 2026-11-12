@@ -464,6 +464,39 @@ untrained; linear probe 0.54 against 0.56). v1 (a free code per filler span) sta
 partner filler's identity is predicted mostly by topic / co-occurrence, not by the relation (the latent judge's failure again); the
 capitalised-run scaffold splits names, so many training frames are name-internal ('Church' of 'Scientology'); 10 MB on two CPUs.
 
+### Reader tests 2 and the toy transformer (tools/reader_tests2.py, tools/toy_compose_rows.py; 12 November)
+
+READER (offline, Re-DocRED gold; gold rate of records between benchmark entities / gold relations covered):
+
+| reader | gold rate | covered |
+|---|---|---|
+| baseline: adjacent + pronoun-centre records | 0.34 | 338 |
+| **M2 subject-anchored records** (every sentence about the title: title, frame, each of its first 3 fillers) | **0.46** | 223 |
+| baseline + subject-anchored | 0.38 | **373** |
+| M3 lists (3+ fillers joined by one frame) and neighbour dates dropped | 0.39 | 293 |
+| **M2 + M3** | **0.41** | 342 |
+
+The anchored records' gold frames are relational ('was born in', 'was elected as a', 'was married to', 'was the flag bearer for').
+M1 INFORMATIVE FRAMES (selectional preference strength over the co-clustered types): the top frames are units, dates and name fragments
+('metres (', 'km h (', 'Summer', 'Film'; 'was born in' 1.44 vs 'and' 1.11) - the types are too weak; rules among them: 995 candidates, 879
+with no chains, 0 rules (best 'May' o ', and' -> 'October'). The anchored reader's frames are the better input for rule mining.
+
+TOY TRANSFORMER (2 layers, 128 wide, from scratch on synthetic facts; seed 0, 6,000 steps):
+- TWO-HOP CURSE: held-out chains (never asked) answered **0.00** whether their premises were taught SEPARATELY or also CO-LOCATED in one
+  training sequence - though every first hop (1.00) and every trained two-hop question (1.00) is right. Co-location in training is not
+  enough at this scale; composition belongs at question time (chained retrieval) or outside the weights (the relational module).
+- WORDING DIVERSITY and VIEW ALIGNMENT (recall in UNSEEN question wordings; facts declared 'A r B .', 70% also taught as questions):
+
+| training wordings | alignment | taught facts | facts only read (never taught) |
+|---|---|---|---|
+| 2 | off / on | 0.20 / 0.20 | 0.19 / 0.19 |
+| 7 | off / **on** | 0.93 / **0.95** | 0.64 / **0.88** |
+| 20 | off | **0.96** | 0.55 |
+
+With 2 wordings, teaching adds nothing in a new wording; with 7+ the taught facts carry over (0.93-0.96). Aligning the question's state
+with the declaration's state after 'A r' (after LLM-JEPA) then lets the model answer questions about facts it only READ at 0.88 (0.64
+without). For Platypus: many more question wordings, and an alignment term between a fact sentence and its question.
+
 ### Matching the Blanks on the fast channel (tools/mtb_probe.py, 12 November)
 
 A frame encoder (BiGRU over '[A] frame words [B]') trained with no labels to bring together frames that link the SAME filler pair in
