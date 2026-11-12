@@ -78,7 +78,7 @@ def _dw_align_probe(model, S_, S_slot, es, src):
     sentence's prefix) - whether reading put the fact in the weights at all, which alignment can only route to, not create"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
     from platypus.inference.jepa import cfg_seq_
-    L0 = int(cfg_seq_(model)); c1, c2, rd, c0 = [], [], [], []; prev = None   # c0: the 'on record' question vs ANOTHER fact's declaration
+    L0 = int(cfg_seq_(model)); c1, c2, rd, c0, pl = [], [], [], [], []; prev = None   # c0: the 'on record' question vs ANOTHER fact's declaration
     for e in es:
         if e['key'][0] == 'conclusion': continue
         sl = int(S_slot(e['d'])); d, pos, _ = _dw_decl(S_, e, L0, src); ab = e['ans'].encode('latin-1', 'replace')
@@ -86,6 +86,8 @@ def _dw_align_probe(model, S_, S_slot, es, src):
         if hd is None or pos >= hd.shape[1]: continue
         n_ = min(len(ab), lg.shape[1] - pos)
         if n_ == len(ab): rd.append(bool((lg[0, pos:pos + n_].argmax(-1) == torch.tensor(list(ab), device=lg.device)).all()))
+        pp = f"{e['A']} {e['r']} ".encode('latin-1', 'replace'); Xp, _ = _ws_batch(model, [pp + ab + b'.']); lp = _ws_run(model, Xp, sl)   # PLAIN 'A r ' (no sentence context)
+        if len(pp) - 1 + len(ab) <= lp.shape[1]: pl.append(bool((lp[0, len(pp) - 1:len(pp) - 1 + len(ab)].argmax(-1) == torch.tensor(list(ab), device=lp.device)).all()))
         qs = [(c1, f"It is on record that {e['A']} {e['r']} ")] + ([(c2, f"{e['A']} {_DT_PARA[e['r']]} ")] if e['r'] in _DT_PARA else [])
         for acc, q in qs:
             pb = q.encode('latin-1', 'replace'); Xq, _ = _ws_batch(model, [pb + ab + b'.']); _, hq = _ws_hidden(model, lambda: _ws_run(model, Xq, sl))
@@ -95,7 +97,7 @@ def _dw_align_probe(model, S_, S_slot, es, src):
         prev = hd[0, pos].float()
     m = lambda v: f"{np.mean(v):.3f} ({len(v)})" if v else "nan (0)"
     return (f"cosine, 'on record' wording {m(c1)} (vs ANOTHER fact's declaration {m(c0)}), PARAPHRASED relation {m(c2)}; "
-            f"recall completing its own declaration {m(rd)}")
+            f"recall completing its own declaration {m(rd)}, completing plain 'A r' {m(pl)}")
 
 
 def _dt_items(ents, rs, n):
@@ -1341,12 +1343,28 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         from platypus.inference.jepa import cfg_seq_
         L09 = int(cfg_seq_(model)); FORMS9 = _dt_forms(cfg)
         aw9 = float(getattr(cfg, 'inf_distill_align', 0.0)); decl9 = {}; asrc9 = int(getattr(cfg, 'inf_distill_align_src', 1))
+        lf9 = aw9 > 0 and int(getattr(cfg, 'inf_distill_align_lf', 0))
+        held_lf9 = [e for e in held if e['key'][0] == 'fact' and zlib.crc32((repr(e['key']) + '|lf').encode()) % 2 == 0] if lf9 else []
+        lfrows9 = {}
+        for e in held_lf9:
+            for fm in FORMS9: lfrows9.setdefault(int(S_slot(e['d'])), []).append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), repr(e['key'])))
         if aw9 > 0:                                                            # 12 Nov VIEW ALIGNMENT: each TAUGHT fact's declaration (control never aligned)
             A9 = (D or {}).get('al') or []
             try: ct9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('probe') or [], asrc9); ch9 = _dw_align_probe(model, S_, S_slot, (D or {}).get('hprobe') or [], asrc9)
             except Exception: _fail('inference.distill:align_probe'); ct9 = ch9 = 'unavailable'
             for e in ents:
                 if e['key'][0] == 'fact': decl9[repr(e['key'])] = _dw_decl(S_, e, L09, asrc9)
+            if lf9:                                                            # 12 Nov LABEL-FREE ALIGNMENT: half the never-asked facts (by a second hash)
+                L1 = (D or {}).get('al_lf') or []                              #   are aligned (question -> declaration, no answer label); the other half
+                try:                                                           #   is the pure control (never asked, never aligned)
+                    rl1 = _dt_recall(model, S_slot, (D or {}).get('lfp') or []); rp1 = _dt_recall(model, S_slot, (D or {}).get('pcp') or [])
+                    al1 = _dw_align_probe(model, S_, S_slot, (D or {}).get('lfp') or [], asrc9); ap1 = _dw_align_probe(model, S_, S_slot, (D or {}).get('pcp') or [], asrc9)
+                except Exception: _fail('inference.distill:align_lf_probe'); rl1 = rp1 = {}; al1 = ap1 = 'unavailable'
+                ff = lambda x: " | ".join(f"{k} {v[0]:.2f} ({v[1]})" for k, v in x.items()) if x else "none"
+                for e in held_lf9: decl9[repr(e['key'])] = _dw_decl(S_, e, L09, asrc9)
+                print(f"  [DISTILLATION, LABEL-FREE ALIGNMENT | visit {vis + 1}] last visit: alignment loss on never-asked facts {np.mean(L1[:20]) if L1 else float('nan'):.3f} (first 20) -> "
+                      f"{np.mean(L1[-20:]) if L1 else float('nan'):.3f} (last 20) | FROM THE TRUNK, test wordings: ALIGNED, NEVER ASKED {ff(rl1)} || PURE CONTROL, never asked or aligned "
+                      f"{ff(rp1)} || states: aligned {al1} || pure control {ap1} | next visit: {len(held_lf9)} never-asked facts aligned, {len(held) - len(held_lf9)} pure control", flush=True)
             print(f"  [DISTILLATION, VIEW ALIGNMENT | visit {vis + 1}] last visit: alignment loss (1 - cosine, weight {aw9:g}, "
                   f"{'declaration a stop-gradient target' if int(getattr(cfg, 'inf_distill_align_detach', 1)) else 'both sides trained'}) {np.mean(A9[:20]) if A9 else float('nan'):.3f} (first 20) -> "
                   f"{np.mean(A9[-20:]) if A9 else float('nan'):.3f} (last 20) | NOW, a TEST-wording question's state vs the declaration's: TAUGHT facts {ct9} | "
@@ -1416,7 +1434,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             print(f"  [DISTILLATION, SOURCE REPLAY | visit {vis + 1}] last visit: {len(R9)} steps x {rp9} stored source sentences, next-byte loss "
                   f"{np.mean(R9[:20]) if R9 else float('nan'):.3f} (first 20) -> {np.mean(R9[-20:]) if R9 else float('nan'):.3f} (last 20) | next visit: sentences of "
                   f"{nt9} taught facts and {nc9} CONTROL facts (read, never asked), {sum(len(v) for v in rpl9.values())} sentences", flush=True)
-        model.__dict__['_dtw'] = dict(rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
+        lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
+        pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
+        model.__dict__['_dtw'] = dict(lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -1483,6 +1504,18 @@ def distill_wake_loss(model, cfg):
                 if ok:
                     hq = torch.stack([Hq[j, len(items[j][0]) - 1] for j, n in ok]).float(); hd = torch.stack([Hd[n, dec[j][1]] for j, n in ok]).float()
                     al = (1 - F.cosine_similarity(hq, hd, dim=-1)).mean(); loss = loss + aw * al; D['al'].append(float(al.detach()))
+        lfp_ = (D.get('lf') or {}).get(sl) if aw > 0 else None
+        if lfp_:                                                               # LABEL-FREE ALIGNMENT: never-asked facts' questions (no answer bytes, no
+            qs = [lfp_[int(i)] for i in rs.choice(len(lfp_), min(k, len(lfp_)), replace=False)]   #   cross-entropy) -> their declarations' states
+            dq = [(q, D['decl'].get(k9)) for q, k9 in qs if D['decl'].get(k9) is not None]
+            if dq:
+                Xq2, _ = _ws_batch(model, [q for q, d_ in dq]); Xd2, _ = _ws_batch(model, [d_[0] for q, d_ in dq])
+                _, Hq2 = _ws_hidden(model, lambda: _ws_run(model, Xq2, sl, grad_=True))
+                with torch.no_grad(): _, Hd2 = _ws_hidden(model, lambda: _ws_run(model, Xd2, sl))
+                ok2 = [j for j, (q, d_) in enumerate(dq) if Hq2 is not None and Hd2 is not None and len(q) - 1 < Hq2.shape[1] and d_[1] < Hd2.shape[1]]
+                if ok2:
+                    hq2 = torch.stack([Hq2[j, len(dq[j][0]) - 1] for j in ok2]).float(); hd2 = torch.stack([Hd2[j, dq[j][1][1]] for j in ok2]).float()
+                    a2 = (1 - F.cosine_similarity(hq2, hd2, dim=-1)).mean(); loss = loss + aw * a2; D['al_lf'].append(float(a2.detach()))
         return loss
     except Exception as e:
         _fail('inference.distill:wake')
