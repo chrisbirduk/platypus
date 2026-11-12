@@ -491,7 +491,7 @@ TOY TRANSFORMER (2 layers, 128 wide, from scratch on synthetic facts; seed 0, 6,
 |---|---|---|---|
 | 2 | off / on | 0.20 / 0.20 | 0.19 / 0.19 |
 | 7 | off / **on** | 0.93 / **0.95** | 0.64 / **0.88** |
-| 20 | off | **0.96** | 0.55 |
+| 20 | off / on | **0.96** / 0.96 | 0.55 / 0.87 |
 
 With 2 wordings, teaching adds nothing in a new wording; with 7+ the taught facts carry over (0.93-0.96). Aligning the question's state
 with the declaration's state after 'A r' (after LLM-JEPA) then lets the model answer questions about facts it only READ at 0.88 (0.64
