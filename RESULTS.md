@@ -505,6 +505,20 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
+### Rules from real text with today's reading pieces - and the oracle (tools/realtext_mine.py, 13 November)
+
+262 benchmark + 630 local Wikipedia documents, 181,872 records; the relational module (_rm_mine, every guard) over the 60 commonest frames.
+| variant | facts mined | testable candidate chains | rules |
+|---|---|---|---|
+| R0 the reader as it stands (title rule for pronouns included) | 12,333 | 91 (best: glue words, 'from' o 'and' -> 's' 0.25 of 4) | 0 |
+| R1 + linking mentions (3,678 short mentions joined to an earlier full name; errors like 'London' -> 'College London') | 12,103 | 45 | 0 |
+| R2 + merging wordings that connect the same name pairs | - | **0 merges** (no two frames share 2+ pairs at Jaccard >= 0.15) | 0 |
+| **ORACLE: gold relation types as frames** | **678** (records on gold pairs; 54 types: P131 148, P19 57, P27 56, ...) | **0** (no chain with 3+ observed composite facts) | **0** |
+
+**Even with relation identity solved, this much text gives no rule**: the reader puts only 678 records on gold pairs, too few for any chain
+to be observed three times. The blocker on real text is the NUMBER of facts read - reader recall (5.5% of gold relations) times corpus size
+- before relation identity. Merging wordings by shared pairs found nothing for the same reason (pairs rarely recur across documents).
+
 ### cg27a_rtxt local safety (13 November): title for pronoun in real-text replay (inf_distill_rtx_title 1)
 
 Short local run (RTXTL2; the first, RTXTL, was cut at visit 10 by a container restart - visits 1-9 within 0.001 BPC of RTX16L): final BPC
