@@ -597,6 +597,48 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
   triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
 
+### How good must premises be? Record-level compression into types (13 November, evening)
+
+**Premise threshold** (tools/premise_threshold.py; the store's precision SET by keeping half the related records plus unrelated ones; A-C
+proposed through a shared name from another document, as tools/integrate_test.py; checked where Re-DocRED annotates the pair; base 0.09):
+
+| premise precision | A-C proposals | gold | with 2+ bridges | gold |
+|---|---|---|---|---|
+| 0.24 (store as is) | 39,241 | 0.10 | 11,300 | 0.08 |
+| 0.38 | 20,911 | 0.13 | 3,930 | 0.11 |
+| 0.50 | 13,369 | 0.18 | 1,831 | 0.18 |
+| 0.60 | 8,709 | 0.23 | 790 | 0.28 |
+| 0.70 | 6,011 | 0.31 | 359 | 0.43 |
+| 0.80 | 4,628 | 0.35 | 251 | 0.52 |
+| 0.90 | 3,446 | 0.42 | 180 | 0.64 |
+| 1.00 | 2,796 | 0.51 | 130 | 0.75 |
+
+- Inference precision rises smoothly with premise precision; corroboration (2+ bridges) helps only above about 0.5 and amplifies noise below.
+- A store chosen by QUALITY does better than random premises of the same precision: the consistency-teacher learner's top 5% of records
+  (premise precision 0.55-0.56) gives A-C gold **0.33-0.34** (480-510 proposals; 3.7x base), against 0.18-0.23 for random premises at 0.5-0.6;
+  top 10% (0.46): 0.28 (about 2,500 proposals); top 25% (0.36): 0.165. Recall claim only (proposals checked against gold; nothing written).
+
+**Record-level MDL co-clustering** (tools/record_mdl.py; the 78,784 store records as (name, wording, name); a three-way block model, names
+into K classes and wordings into M classes by information-theoretic co-clustering; MDL over data + block table + assignments; no labels):
+
+| variant | MDL choice | bits a record (none: 33.6) | name classes: purity / NMI (best K) | relation cue AUC (gold type pair 0.80) | block score premise precision top 10% (learner 0.45) |
+|---|---|---|---|---|---|
+| random starts | K 4, M 32 | 33.46 | 0.43-0.50 / 0.02-0.18 | 0.56-0.61 | 0.27-0.35 |
+| split warm starts | K 4, M 32 | 33.43 | 0.43-0.50 / 0.11-0.16 | 0.59-0.61 | 0.29-0.31 |
+| started from context types (tools/name_types.py) | K 6, M 32 | 33.46 | 0.48-**0.60** / 0.15-**0.25** | **0.64** (K 6 M 32 pair + wording class) | 0.27-0.29 |
+| fitted on the learner's top 10% (cleaner store, 0.46), split | K 4, M 8 | 25.75 (none 25.4) | 0.43-0.48 / 0.11-0.16 | 0.53-0.59 | 0.27-0.39 |
+| fitted on the top 10%, from context types | K 6, M 8 | 26.51 (none 25.3) | 0.43-0.51 / 0.13-0.21 | 0.55-0.60 | 0.18-0.40 |
+
+- **Not positive.** Classes save 0.1-0.2 bits a record at best on the whole store and none on the clean store once the table is paid for.
+  The best relation cue (0.64) is level with words + context types (0.62-0.67) and far from the gold type pair (0.80). Block scores do not
+  raise premise precision, and combined with the learner they do not help it (top 5%: 0.38-0.56 against the learner's 0.54). A-C from
+  block-scored stores: gold 0.02-0.10 (one set of 267 at 0.20).
+- **Why: data per name** (tools/record_mdl_freq.py). 56% of names have 1-2 records, 40% have 3-9, 5% have 10+ (43% of records). Names
+  with 10+ records get purity **0.58-0.64, NMI 0.30-0.36** (context-type start); names with 3-9 get 0.37-0.51 / 0.07-0.16; names with 1-2
+  are near chance (0.28-0.39 / 0.02-0.07). Compression finds types where each name has enough records, so the limit is the amount of text
+  per name, not the compression principle. The Re-DocRED store is too small for most names, matching tools/name_types.py (T2a, 10 MB too few
+  contexts).
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
