@@ -295,7 +295,7 @@ def _typed_readout(cfg, RD, RB, a, b, w, NN, NW, NAMES, WK, gn, y, rs, vis):
     rkn = lambda x: (lambda z: np.argsort(np.argsort(z, kind='stable'), kind='stable') / max(1, len(z) - 1))(np.where(np.isnan(x), np.nanmedian(x) if np.isfinite(x).any() else 0.0, x))
     teach = rkn(t2) + rkn(t3) + 2 * t1
     HV = HashingVectorizer(n_features=2 ** 16, ngram_range=(1, 2), alternate_sign=False, token_pattern=r"[A-Za-z]+|[^\sA-Za-z]", norm='l2')
-    txt = lambda i: mid[i] + ' FIRST_' + (mid[i].split()[0] if mid[i] else 'none') + ' LAST_' + (mid[i].split()[-1] if mid[i] else 'none') + ' SA_' + _shape(An[i]) + ' SB_' + _shape(Bn[i])
+    txt = lambda i: mid[i] + ' FIRST_' + (mid[i].split() or ['none'])[0] + ' LAST_' + (mid[i].split() or ['none'])[-1] + ' SA_' + _shape(An[i]) + ' SB_' + _shape(Bn[i])
     trs = ra.permutation(NR)[:int(getattr(cfg, 'inf_premises_typed_train', 200000))]
     lr = LogisticRegression(C=1.0, max_iter=1000).fit(HV.transform([txt(i) for i in trs]), teach[trs] >= np.percentile(teach[trs], 75))
     srel = np.concatenate([lr.decision_function(HV.transform([txt(i) for i in range(s0, min(NR, s0 + 200000))])) for s0 in range(0, NR, 200000)])
