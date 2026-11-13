@@ -131,7 +131,40 @@ if CKP:
     for tag, m in (('trunk congruence (top 3)', cg >= -2), ('composability top 25% AND trunk congruence (two keys)', (cp >= np.quantile(cp, 0.75)) & (cg >= -2)),
                    ('2+ bridges AND trunk congruence', nb2 & (cg >= -2)), ('2+ bridges AND composability top 25% AND congruence', nb2 & (cp >= np.quantile(cp, 0.75)) & (cg >= -2))):
         P(f"   {tag:62s} {int(m.sum()):6d} inferences, gold {yy[m].mean() if m.any() else float('nan'):.3f}")
-if os.environ.get('CB_HOP2', '1') == '0': P(f"DONE ({time.time() - T0:.0f}s)"); sys.exit(0)
+# ---- BOOTSTRAPPING ROUNDS (CB_ROUNDS; 13 Nov late): grow the confirmed set from the most composable kinds, re-learn, re-score
+RND = int(os.environ.get('CB_ROUNDS', 0)); GROW = float(os.environ.get('CB_GROW', 0.02))
+if RND:
+    S_ = conf & tr; vtr = np.array([k in ANN for k in keys]); gtr = np.array([k in GOLDP for k in keys])
+    P(f"BOOTSTRAPPING: seeds = train proposals confirmed in a relational wording {int(S_.sum())} (gold where checkable {gtr[S_ & vtr].mean():.3f}); each round the "
+      f"{GROW:.0%} of train proposals with the most composable type triple join the confirmed set")
+    for r in range(RND + 1):
+        tc2 = collections.Counter(); tn2 = collections.Counter()
+        for i in np.where(tr)[0]:
+            for kt in PR[keys[i]]['kt']: tn2[kt] += 1; tc2[kt] += int(S_[i])
+        K2 = {kt: wilson(tc2[kt], tn2[kt]) for kt in tn2}; sc2 = np.array([max((K2.get(kt, 0.0) for kt in PR[k]['kt']), default=0.0) for k in keys])
+        s_t = sc2[TE]; o = np.argsort(-s_t + 1e-9 * rq.rand(len(s_t))); g10 = yte[o[:len(o) // 10]].mean(); g25 = yte[o[:len(o) // 4]].mean()
+        P(f"   round {r}: confirmed set {int(S_.sum())} (gold where checkable {gtr[S_ & vtr].mean():.3f}) | TEST composability top 10% gold {g10:.3f}, top 25% {g25:.3f}")
+        if r == RND: break
+        cand = np.where(tr & ~S_)[0]; add = cand[np.argsort(-sc2[cand])[:int(tr.sum() * GROW)]]
+        P(f"      added {len(add)}: gold where checkable {gtr[add][vtr[add]].mean() if vtr[add].any() else float('nan'):.3f} ({int(vtr[add].sum())} checkable)")
+        S_ = S_.copy(); S_[add] = True
+# ---- HOP 2, memory-light (CB_HOP2=lite): a sample of accepted inferences as premises; only verifiable pairs kept
+if os.environ.get('CB_HOP2', '1') == 'lite':
+    for tag, acc in (('confirmed in a relational wording', np.where(confr)[0]), ('type-triple composability top 10%', np.where(compt >= np.quantile(compt, 0.90))[0]),
+                     ('all proposals (sample)', np.arange(len(keys)))):
+        smp = acc[rq.permutation(len(acc))[:3000]]; g1 = np.array([keys[i] in GOLDP for i in smp if keys[i] in ANN]); H2 = collections.Counter(); seen2 = set(keys[i] for i in smp)
+        for i in smp:
+            X_, Y_ = tuple(keys[i])
+            for a_, b_ in ((X_, Y_), (Y_, X_)):
+                if dfreq[b_] > 200: continue
+                for D_, dD, j in nb[b_]:
+                    if D_ == a_: continue
+                    k2 = frozenset((a_, D_))
+                    if k2 in ANN and k2 not in seen2: H2[k2] += 1
+        k2s = list(H2); g2 = np.array([k in GOLDP for k in k2s]); m2 = np.array([H2[k] >= 2 for k in k2s])
+        P(f"HOP 2 from {len(smp)} accepted inferences ({tag}; hop-1 gold {g1.mean() if len(g1) else float('nan'):.3f} of {len(g1)} checkable): {len(k2s)} verifiable hop-2 "
+          f"inferences, gold {g2.mean() if len(g2) else float('nan'):.3f}" + (f" | 2+ routes {int(m2.sum())}, gold {g2[m2].mean():.3f}" if m2.any() else '') + f"  ({time.time() - T0:.0f}s)")
+if os.environ.get('CB_HOP2', '1') in ('0', 'lite'): P(f"DONE ({time.time() - T0:.0f}s)"); sys.exit(0)
 # ---- BUILT ON INFERENCE: accepted inferences as premises (hop 2)
 ACC = [keys[i] for i in np.where((nbr >= 2) & (comp >= np.quantile(comp[nbr >= 2], 0.75)))[0]]
 P(f"BUILT ON INFERENCE: {len(ACC)} accepted inferences (2+ bridges, composability top 25%; gold where checkable "
