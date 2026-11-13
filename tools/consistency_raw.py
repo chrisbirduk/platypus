@@ -7,6 +7,8 @@ mentions in training: AUC 0.63, top 25% 0.37 related, base 0.24).
   NAMES     runs of capitalised words (a single sentence-initial word only if it is mostly capitalised mid-sentence elsewhere); digits kept as names
   RECORDS   two names in one sentence, 1-12 words apart and <= 60 characters (the words between may be empty: 'Dresden Saxony' is skipped)
   TEACHER   T1 corroboration (same names + wording in another document), T2 functional wording, T3 selective wording (as consistency_teacher.py)
+CR_PERDOM=1 (13 Nov 14:50): the teacher's statistics counted separately per source domain (a wording is judged only by its own domain's records);
+one learner on all records. CR_LEARN=<domains>: train the learner only on records of those domains.
 Usage: python3 tools/consistency_raw.py [sources: redocred,wiki (default) | +law,pubmed,arxiv,prose]"""
 import os
 import re
@@ -61,6 +63,9 @@ for d_, s in sents:
             R.append(dict(di=d_, A=A, B=B, mid=s[a1:b0], cA=' '.join(A), cB=' '.join(B), f=' '.join(s[a1:b0]).lower()))
 P(f"RAW TEXT ({'+'.join(SRC)}): {len(texts)} documents, {len(sents)} sentences, {sum(len(s) for _, s in sents)} words | names by capitalisation | "
   f"records {len(R)} (gold-mention training candidates: {len(TR)})  ({time.time() - T0:.0f}s)")
+PERDOM = int(os.environ.get('CR_PERDOM', 0))                                  # 13 Nov: count the teacher's statistics PER SOURCE DOMAIN
+dom = lambda d_: re.match(r'[a-z]+', d_).group(0)
+for r in R: r['f0'] = r['f']; r['f'] = (dom(r['di']) + '|' + r['f']) if PERDOM else r['f']
 trip = collections.defaultdict(set); rps = collections.defaultdict(lambda: collections.defaultdict(list))
 shA = collections.defaultdict(collections.Counter); shB = collections.defaultdict(collections.Counter); fc_ = collections.Counter()
 for r in R:
@@ -75,7 +80,7 @@ t1 = np.array([float(len(trip[(r['cA'], r['f'], r['cB'])] - {r['di']}) > 0) for 
 t2 = np.array([FUNC.get(r['f'], np.nan) for r in R]); t3 = np.array([SEL.get(r['f'], np.nan) for r in R])
 rk = lambda x: (lambda z: (np.argsort(np.argsort(z)) / len(z)))(np.where(np.isnan(x), np.nanmedian(x) if np.isfinite(x).any() else 0, x))
 lab = rk(t2) + rk(t3) + 2 * t1
-fq = collections.Counter([c['f'] for c in C] + [r['f'] for r in R])
+fq = collections.Counter([c['f'] for c in C] + [r['f0'] for r in R])
 HV = HashingVectorizer(n_features=2 ** 16, ngram_range=(1, 2), alternate_sign=False, token_pattern=r"[A-Za-z]+|[^\sA-Za-z]", norm='l2')
 def feats(items):
     W = HV.transform([' '.join(c['mid']) for c in items])
@@ -94,9 +99,14 @@ def rep(tag, sc):
     o = np.argsort(-sc + 1e-9 * np.random.RandomState(5).rand(len(sc))); k1, k2 = len(sc) // 10, len(sc) // 4
     P(f"   {tag:62s} AUC {auc(sc[yt], sc[~yt]):.3f} | top 10%: precision {yt[o[:k1]].mean():.3f}, recall {yt[o[:k1]].sum() / yt.sum():.3f} | "
       f"top 25%: precision {yt[o[:k2]].mean():.3f}, recall {yt[o[:k2]].sum() / yt.sum():.3f}")
+LD = os.environ.get('CR_LEARN', '')
+if LD:
+    ok = np.array([dom(r['di']) in LD.split(',') for r in R]); Xr = Xr[np.where(ok)[0]]; lab = lab[ok]
+    P(f"learner trained on records of {LD} only: {int(ok.sum())}")
 for q in (75, 90):
     hi = lab >= np.percentile(lab, q)
     rep(f"LEARNER from the RAW-TEXT teacher (top {100 - q}% as positives)", LogisticRegression(C=1.0, max_iter=3000).fit(Xr, hi).decision_function(Xe))
-fsc = np.array([FUNC.get(C[i]['f'], np.nan) for i in TE]); ssc = np.array([SEL.get(C[i]['f'], np.nan) for i in TE])
+pk = (lambda f: ('r|' + f) if PERDOM else f)
+fsc = np.array([FUNC.get(pk(C[i]['f']), np.nan) for i in TE]); ssc = np.array([SEL.get(pk(C[i]['f']), np.nan) for i in TE])
 rep("raw-text teachers applied directly (functional + selective)", rk(fsc) + rk(ssc))
 P(f"DONE ({time.time() - T0:.0f}s)")

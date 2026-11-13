@@ -597,6 +597,23 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
   triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
 
+### cg27a_xgain: extraction gain from the model's trunk (GPU, seed 4, 13 November; visits 2-6)
+
+cg27a_rtxw + inf_extract_gain 1 (readout only). Candidate records = gold-mention name pairs in one sentence of the benchmark documents read;
+gain = bits a record saves the trunk where its names meet again, beyond the names alone. Closeness column from the pre-fix (tie-biased) AUC.
+
+| Visit | records (related) | words between AUC | other-document targets | whole record | names only | top quarter related |
+|---|---|---|---|---|---|---|
+| 2 | 119 (0.31) | 0.48 | 0.58 (64) | 0.43 | 0.43 | 0.28 |
+| 4 | 301 (0.32) | 0.48 | 0.50 (210) | 0.50 | 0.50 | 0.29 |
+| 6 | 444 (0.32) | 0.54 | 0.55 (315) | 0.50 | 0.47 | 0.35 |
+
+- The model's trunk saves 1.2-1.7 bits per record, equally for related and unrelated pairs; what the relating words add is at most weakly
+  related to relations (0.54 at visit 6, about one standard error above chance) - the stand-in trunk's level (0.54). Not a usable teacher alone.
+- Safe: BPC within 0.011 of cg27a_rtxt at visits 1-6; the gate cuts never-read false answers 0.60 -> 0.29 and 0.64 -> 0.20 (visits 5, 6).
+- Domain-specific counting for the consistency teacher (tools/consistency_raw.py CR_PERDOM=1): Re-DocRED + WikiText 0.547 -> 0.563; all
+  domains still chance (0.49); WikiText alone 0.53. The teacher works when it counts over text very like the target (Re-DocRED itself: 0.59).
+
 ### The store teaching itself what to extract: consistency teachers (tools/consistency_teacher.py, 13 November; no trunk)
 
 Same candidates and held-out documents as tools/extract_learn.py (15,609 held-out candidates, 24.2% related). Label-free teachers counted on the
