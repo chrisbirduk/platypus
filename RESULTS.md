@@ -630,6 +630,21 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
   read-only people in new question forms, 0.14 (step 2,000: 0.15) are the commonest value - about 2.7x an even spread over the 19 wrong
   values (0.05), about half of a pure frequency guess (~0.3). A real but partial pull towards the prototype (Spens & Burgess): some false
   answers are typical values, which the gate must catch.
+- **Usefulness as the teacher** (tools/usefulness.py; held-out records whose names meet again in another document, 1,370, related 0.304; LATER
+  BENEFIT = bits the record saves the stand-in trunk on the second name there). Each policy keeps a quarter:
+
+  | Policy | kept related | later benefit, raw | beyond the names alone |
+  |---|---|---|---|
+  | random | 0.313 | +0.089 | -0.021 |
+  | closeness | 0.371 | +0.102 | -0.008 |
+  | consistency-teacher learner | 0.576 | +0.057 | +0.006 |
+  | trunk-feedback learner | 0.585 | +0.052 | +0.013 |
+  | both (rank sum) | 0.596 | +0.046 | +0.006 |
+  | **learned from raw later benefit** | **0.067** | **+0.160** | -0.035 |
+
+  Optimising raw later benefit keeps almost no real relations (0.067): what saves the most bits later is names that merely co-occur. Usefulness
+  must be measured beyond co-occurrence (there the relation-keeping policies lead, weakly). On records whose names recur, both label-free
+  learners keep 0.58-0.60 related, about twice the base rate.
 
 ### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
 
