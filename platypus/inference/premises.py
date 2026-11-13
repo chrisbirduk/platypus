@@ -213,10 +213,11 @@ def premises_readout(model, cfg, S_slot, vis):
         try:
             dn = collections.defaultdict(set)
             for i in range(nD): dn[RD[i][1]].add(RD[i][0]); dn[RD[i][2]].add(RD[i][0])
-            LAB = _PM['LAB']; res = []
-            for k in ('random', 'trunk surprise', 'block association', 'surprise + association'):
+            LAB = _PM['LAB']; res = []; amax = int(getattr(cfg, 'inf_premises_ac_max', 600000))
+            sub = np.sort(np.random.RandomState(int(cfg.seed) + 4242).permutation(len(ixd))[:amax])   # a fixed sample of the scored store (time)
+            for k in ('random', 'trunk surprise', 'block association'):
                 for frac in (0.25, 0.10):
-                    keep = ixd[np.argsort(-scd[k])[:int(len(ixd) * frac)]]; nb = collections.defaultdict(list); PR = collections.defaultdict(set); np_ = 0
+                    keep = ixd[sub][np.argsort(-scd[k][sub])[:int(len(sub) * frac)]]; nb = collections.defaultdict(list); PR = collections.defaultdict(set); np_ = 0
                     for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0])); nb[RD[i][2]].append((RD[i][1], RD[i][0]))
                     for i in keep:
                         if np_ > 3000000: break

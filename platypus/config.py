@@ -619,6 +619,7 @@ class Config:
     inf_premises_k='4,16'           #     name classes of the block models fitted (wording classes inf_premises_m)
     inf_premises_m=128
     inf_premises_score_max=400000   #     new distant records scored by the trunk per readout at most (sampled)
+    inf_premises_ac_max=600000      #     A-C inference over a fixed sample of at most this many scored records (time)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
