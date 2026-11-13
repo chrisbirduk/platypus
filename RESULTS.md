@@ -525,6 +525,24 @@ entities (He 55, It 36, She 15, ...; chance 0.205). TITLE (the document's first 
 most recent 0.148; substitution with the trained trunk 0.197, untrained 0.213 (He 0.11, She 0.07, It 0.25). **The stand-in trunk cannot
 resolve pronouns; the title heuristic resolves more than half** (Wikipedia openings are about their title).
 
+**Refusal: shortcut or transfer? (tools/toy_refuse.py, toy byte transformer, 3,000 steps, seed 0):** facts about invented people, question
+rows for 3/4 of them (the rest only read), refusal rows about fresh names answered 'unknown'. Greedy answers; refusal rates on fresh names
+from the stored names' syllables / from a third syllable set / on KNOWN facts; known right; only-read right:
+
+| condition | TAUGHT wording: refuse fresh (stored syl.) / fresh (third) / known | known right | ONLY-READ right | HELD-OUT wording: refuse fresh (stored) / (third) / known |
+|---|---|---|---|---|
+| none | 0.00 / 0.00 / 0.00 | 1.00 | **0.62** | 0.00 / 0.00 / 0.00 |
+| distinct syllables (as cg27a_refuse) | **0.03** / 0.50 / 0.00 | 0.99 | 0.55 | 0.15 / 0.55 / 0.16 |
+| same syllables | **0.85** / 0.87 / 0.01 | 0.97 | **0.15** | 0.73 / 0.90 / 0.60 |
+| same + 12 wordings | 0.87 / 0.95 / 0.01 | 0.99 | **0.05** | 0.87 / 0.83 / 0.60 |
+
+**The shortcut is real**: with refusal names from their own syllables, the model refuses names that SOUND unfamiliar (third set 0.50) but
+almost never a never-read name that sounds like a stored one (0.03) - what cg27a_refuse showed (3-5%). With names from the same generator,
+refusal becomes genuine (0.85 on never-read names, 0.01 on known facts). **But it then refuses facts it only READ: only-read recall
+0.62 -> 0.15 (0.05 with more wordings)** - the rows teach 'a name I was not ASKED about -> unknown', not 'a name I never READ'. In the
+held-out wording it also refuses known facts it cannot answer there (0.60; known right there only 0.06-0.30). Explicit refusal rows
+therefore conflict with learning from reading; the confidence threshold (no training change) does not teach this confusion.
+
 **Local check of the new default readouts (GATEL = the 4x real-text run + compression gain every 2nd visit, probe 64, gated answers):**
 final BPC 2.996 / forgetting -0.158 - identical to the run without them (readouts only); no errors, FAILURES none. GATED ANSWERS (threshold
 calibrated at the previous sleep, applied to the new questions) at visits 8-10: never-read questions given a stored name 0.35 / 0.28 / 0.31
