@@ -129,6 +129,9 @@ def premises_readout(model, cfg, S_slot, vis):
     if not seen: seen = sorted(set(int(d) for d in range(int(vis) + 1)))
     nv = max(1, int(getattr(cfg, 'inf_premises_visits', 10))); ndv = int(round(_PM.get('ND', 0) * min(1.0, (vis + 1) / nv)))
     RD = [r for r in _PM.get('R', []) if r[0] < ndv]; RB = _bench_records(cfg, seen); nD = len(RD)
+    bd_ = collections.defaultdict(set)
+    for r in RB: bd_[r[0]].update((r[1], r[2]))
+    _PM['bench_co'] = {frozenset((x, z)) for ns in bd_.values() for x in ns for z in ns if x != z}
     # ---- the store's records: names, wordings (backed off below 3 occurrences: last word, then length), documents
     ALL = [(r[1], r[3], r[4], r[5], r[2]) for r in RD] + [(r[1], r[3], r[4], r[5], r[2]) for r in RB]
     fc = collections.Counter(x[1] for x in ALL); lc = collections.Counter('~' + x[2] for x in ALL)
@@ -388,16 +391,21 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     sc = {'surprise': rk(scd['trunk surprise']), 'both': rk(scd['trunk surprise']) + rk(scd['block association']),   #   right vs 0.13 (surprise), 0.18 (random)
           'random': scd['random']}.get(pol_, rk(scd['trunk surprise']))
     keep = ixd[np.argsort(-sc)[:int(len(ixd) * float(getattr(cfg, 'inf_rti_keep', 0.1)))]]
-    nb = collections.defaultdict(list); PR = collections.defaultdict(set)
-    for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0])); nb[RD[i][2]].append((RD[i][1], RD[i][0]))
+    nb = collections.defaultdict(list); PR = collections.defaultdict(set); PRR = collections.defaultdict(set)
+    for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0], i)); nb[RD[i][2]].append((RD[i][1], RD[i][0], i))
     for i in keep:
         for B_, C_ in ((RD[i][1], RD[i][2]), (RD[i][2], RD[i][1])):
             if len(dn[B_]) > 200: continue
-            for A_, dA in nb[B_]:
-                if dA != RD[i][0] and A_ != C_: PR[(A_, C_)].add(B_)
+            for A_, dA, j in nb[B_]:
+                if dA != RD[i][0] and A_ != C_: PR[(A_, C_)].add(B_); PRR[(A_, C_)].update((i, j))
     W = _PM.setdefault('rti', {}); done = {frozenset(k) for k in W}
     nbm = int(getattr(cfg, 'inf_rti_bridges', 2))
-    P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI]
+    nov = int(getattr(cfg, 'inf_rti_novel', 0)); bco = _PM.get('bench_co', set())
+    def novel(k):                                                             # 13 Nov NOVELTY: A and C never together in anything the trunk reads - not in a
+        if not nov: return True                                               #   premise document (whose records it replays) nor in a benchmark document
+        pd_ = {RD[i][0] for i in PRR[k]}
+        return not (dn[k[0]] & dn[k[1]] & pd_) and frozenset(k) not in bco
+    P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI and novel(k)]
     P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
     if not P2:
         print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] no new proposals with {nbm}+ bridges ({len(PR)} proposals from {len(keep)} premises)", flush=True); return
@@ -424,7 +432,8 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
         chk = bool(dn[A_] & dn[C_]); tr = (frozenset((A_, C_)) in LAB) if chk else None
         rows.append((A_, C_, nbr, rank, tr))
     ok = [r for r in rows if r[3] < rmax]; ok.sort(key=lambda r: (r[3], -r[2])); wr = ok[:nmax]
-    for A_, C_, nbr, rank, tr in wr: W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=tr, bridges=nbr, rank=rank)
+    for A_, C_, nbr, rank, tr in wr: W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=tr, bridges=nbr, rank=rank,
+                                                         ev=[RD[i][7] for i in sorted(PRR[(A_, C_)])[:6]])   # the premise statements (evidence replay)
     f = lambda L: (f"{np.mean([r[4] for r in L if r[4] is not None]):.3f} of {sum(r[4] is not None for r in L)} checkable" if any(r[4] is not None for r in L) else "none checkable")
     ra = np.array([r[3] for r in rows if r[4] is not None], float); ta = np.array([r[4] for r in rows if r[4] is not None], bool)
     au = _cg_auc(-ra[ta], -ra[~ta]) if ta.any() and (~ta).any() else float('nan')
@@ -434,11 +443,25 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
           f"-> WROTE {len(wr)} (right {f(wr)}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
+def rti_evidence(cfg, S_slot, seen):
+    """13 Nov EVIDENCE REPLAY (inf_rti_evidence; THE ONE MODEL CHANGE of cg27a_rti2): the premise statements of every written inference
+    (taught and held back alike) join the real-text replay pool of the inference's slot, so the trunk reads the evidence behind what it is
+    taught (tools/false_fade.py: right inferences keep their taught gain only when later reading supports them; wrong ones fade either way)"""
+    from platypus.inference.distill import _rtx_slot                          # the slot real text is replayed through (cg27a_rti: Wikipedia's, inf_distill_rtx_slot 1)
+    out = {}
+    for k, w_ in (_PM.get('rti') or {}).items():
+        sl_ = _rtx_slot(cfg, S_slot, w_['d'], seen)
+        if sl_ is None: continue
+        for sp in w_.get('ev', ()): out.setdefault(int(sl_), []).append(sp.encode('utf-8', 'replace'))
+    return out
+
+
 def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     """THE ONE MODEL CHANGE of cg27a_rti (inf_rti_write 1): real-text inferences that passed the check join the question pool as facts
     'A is connected to C', taught by the interleaved rows like any fact; a fifth is held back by the pool's own hash (control). READOUT: recall
     from the trunk (test wording 'It is on record that A is connected to ', store and memory off) of inferences written at an earlier readout,
     taught vs held back, split by whether the inference is RIGHT, WRONG (a false memory if recalled) or unknown."""
+    import zlib
     from platypus.inference.distill import _dt_recall
     W = _PM.get('rti') or {}
     if not W:
@@ -447,11 +470,19 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     for (A_, C_), w in W.items():
         e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'])
         if repr(e['key']) in have: continue
-        (H_ if ctl(e) else T_).append(e)
+        hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
+        held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)
+        (H_ if held_ else T_).append(e)
     old = lambda L, t: [e for e in L if e['rm'] < vis and e['truth'] is t]
     g = lambda d: f"{d['facts'][0]:.2f} ({d['facts'][1]})"
     rec = {t: (_dt_recall(model, S_slot, old(T_, t)), _dt_recall(model, S_slot, old(H_, t))) for t in (True, False, None)}
     print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] {len(W)} inferences written ({sum(1 for w in W.values() if w['vis'] == vis)} this readout) -> question pool: {len(T_)} taught, "
           f"{len(H_)} held back || FROM THE TRUNK, written at an earlier readout, TAUGHT vs HELD BACK: RIGHT inferences {g(rec[True][0])} vs {g(rec[True][1])} | WRONG ones "
           f"(false memories if recalled) {g(rec[False][0])} vs {g(rec[False][1])} | not checkable {g(rec[None][0])} vs {g(rec[None][1])}", flush=True)
+    coh = sorted({e['rm'] for e in T_ + H_ if e['rm'] < vis})                 # 13 Nov: by WHEN the inference was written (fresh ones may be recalled, then fade)
+    if coh:
+        by = lambda L, t, v: [e for e in L if e['truth'] is t and e['rm'] == v]
+        print(f"  [REAL-TEXT INFERENCE WRITES BY AGE | visit {vis + 1}] TAUGHT vs HELD BACK, right / wrong: " + " | ".join(
+            f"written at visit {v + 1}: right {g(_dt_recall(model, S_slot, by(T_, True, v)))} vs {g(_dt_recall(model, S_slot, by(H_, True, v)))}, wrong "
+            f"{g(_dt_recall(model, S_slot, by(T_, False, v)))} vs {g(_dt_recall(model, S_slot, by(H_, False, v)))}" for v in coh), flush=True)
     return ents + T_, held + H_

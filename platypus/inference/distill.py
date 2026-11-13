@@ -1936,6 +1936,12 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                       f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
                       f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views"
                       + (f", {nt9} pronoun-led sentences replayed with the document's title for the pronoun" if ttl9 else ''), flush=True)
+                if int(getattr(cfg, 'inf_rti_evidence', 0)):                  # 13 Nov EVIDENCE REPLAY (inference.premises; cg27a_rti2's one model change)
+                    from platypus.inference.premises import rti_evidence
+                    ev9 = rti_evidence(cfg, S_slot, vis9_)
+                    for sl9_, v9_ in ev9.items(): rtx9.setdefault(sl9_, []).extend(x[:L09 - 1] for x in v9_)
+                    print(f"  [REAL-TEXT INFERENCE EVIDENCE | visit {vis + 1}] {sum(len(v) for v in ev9.values())} premise statements of written inferences join the "
+                          f"real-text replay pool (slots {sorted(ev9)})", flush=True)
                 spx9 = float(getattr(cfg, 'inf_distill_rtx_space', 0.0))
                 if spx9 > 0 and rtx9:                                          # 12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space = alpha): before each
                     rtw9 = _rtx_weights(model, rtx9, spx9, vis)                #   visit the trunk reads every replayed sentence; sentences it already predicts

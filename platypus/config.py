@@ -634,6 +634,9 @@ class Config:
     inf_rti_max=200                 #     inferences written per readout at most
     inf_rti_bridges=2               #     distinct bridge names an A-C proposal needs
     inf_rti_policy='surprise'       #     premise choice: surprise (trunk), both (surprise + block association), random
+    inf_rti_evidence=0              #   13 Nov EVIDENCE REPLAY (MODEL CHANGE when on): the premise statements of written inferences join the real-text replay pool
+    inf_rti_novel=0                 #     write only inferences whose A and C never appear together in a premise document or a benchmark document
+    inf_rti_ctl=0.0                 #     held-back share of written inferences by their own hash (0 = the question pool's fifth)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
