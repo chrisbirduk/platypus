@@ -277,15 +277,17 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
         near = [n for n in nms_[max(0, j0 - 16):j0 + 16] if n not in (A_, C_)]            #   favours familiar names, which is not the check
         if len(near) < 9: continue
         cands = [C_] + [near[j] for j in rs.choice(len(near), 9, replace=False)]; q = f"{A_} {_RTI_R} ".encode('utf-8', 'replace')
+        q0 = f"Someone {_RTI_R} ".encode('utf-8', 'replace')                      # each name's cost without A: the check is the GAIN from A
         for c in cands:
-            cb = c.encode('utf-8', 'replace'); seqs.append((q + cb + b'.', len(q), len(q) + len(cb)))
+            cb = c.encode('utf-8', 'replace'); seqs.append((q + cb + b'.', len(q), len(q) + len(cb))); seqs.append((q0 + cb + b'.', len(q0), len(q0) + len(cb)))
         meta.append((A_, C_, nbr, [len(c.encode('utf-8', 'replace')) for c in cands]))
     dsl = 1 if 1 in seen else seen[-1]; was = model.training; model.eval()
     try: bt = _cg_bits(model, int(S_slot(dsl)), seqs, bs=256) if seqs else np.zeros(0)
     finally: model.train(was)
     rows = []; nmax = int(getattr(cfg, 'inf_rti_max', 200)); rmax = int(getattr(cfg, 'inf_rti_rank', 3))
     for k, (A_, C_, nbr, ls) in enumerate(meta):
-        v = bt[10 * k:10 * k + 10] / np.array(ls); rank = int((v < v[0]).sum())   # bits per byte; 0 = C is the trunk's first choice
+        b2 = bt[20 * k:20 * k + 20]; v = (b2[1::2] - b2[0::2]) / np.array(ls)     # bits per byte saved by A (neutral minus with A)
+        rank = int((v > v[0]).sum())                                            # 0 = A helps C more than any of the 9 other names
         chk = bool(dn[A_] & dn[C_]); tr = (frozenset((A_, C_)) in LAB) if chk else None
         rows.append((A_, C_, nbr, rank, tr))
     ok = [r for r in rows if r[3] < rmax]; ok.sort(key=lambda r: (r[3], -r[2])); wr = ok[:nmax]
@@ -294,8 +296,8 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     ra = np.array([r[3] for r in rows if r[4] is not None], float); ta = np.array([r[4] for r in rows if r[4] is not None], bool)
     au = _cg_auc(-ra[ta], -ra[~ta]) if ta.any() and (~ta).any() else float('nan')
     print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] READ {nD} distant records -> CHOSE {len(keep)} premises (top {float(getattr(cfg, 'inf_rti_keep', 0.1)):.0%} by {pol_}) "
-          f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= nbm)} with {nbm}+ bridges, {len(rows)} new ones checked -> CHECK (the trunk ranks C in its top {rmax} of 10 "
-          f"after 'A {_RTI_R}'): passed {len(ok)}, right {f(ok)}; failed {len(rows) - len(ok)}, right {f([r for r in rows if r[3] >= rmax])} | the check tells right from wrong: AUC {au:.3f} "
+          f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= nbm)} with {nbm}+ bridges, {len(rows)} new ones checked -> CHECK (A helps the trunk predict C more than all but {rmax - 1} of 9 same-class names; "
+          f"'A {_RTI_R}' vs 'Someone {_RTI_R}'): passed {len(ok)}, right {f(ok)}; failed {len(rows) - len(ok)}, right {f([r for r in rows if r[3] >= rmax])} | the check tells right from wrong: AUC {au:.3f} "
           f"-> WROTE {len(wr)} (right {f(wr)}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
