@@ -53,8 +53,19 @@ for d in bdocs + wdocs:
 P(f"records: R0 {len(R0)} | R1 {len(R1)} ({nlink} mentions linked to an earlier longer name; e.g. "
   + ", ".join(f"{' '.join(k)} -> {' '.join(v)}" for d in bdocs[:40] for k, v in list(canon_map(d).items())[:1])[:400] + ")")
 fc0 = collections.Counter(f for a, f, b in R0); fc1 = collections.Counter(f for a, f, b in R1)
-mine_report(R0, set(f for f, _ in fc0.most_common(60)), "R0 the reader as it stands, 60 commonest frames")
-mine_report(R1, set(f for f, _ in fc1.most_common(60)), "R1 + linking mentions, 60 commonest frames")
+ONLY = os.environ.get('RTM_ONLY', 'R0,R1,R2,ORACLE').split(',')                # 13 Nov: choose variants (the oracle runs first: it decides the question)
+# ---- ORACLE: gold relation types as frames
+RO = []
+for a, f, b in R1:
+    g = gp(a, b)
+    if g:
+        ps = gold.get(g[0]); code = sorted(ps)[0] if ps else None
+        if code: RO.append((a, code, b))
+fco = collections.Counter(f for a, f, b in RO)
+P(f"ORACLE: {len(RO)} R1 records on gold pairs, {len(fco)} gold relation types; commonest {fco.most_common(8)}")
+if "ORACLE" in ONLY: mine_report(RO, set(fco), "ORACLE gold relation types as frames (relation identity solved)")
+if "R0" in ONLY: mine_report(R0, set(f for f, _ in fc0.most_common(60)), "R0 the reader as it stands, 60 commonest frames")
+if "R1" in ONLY: mine_report(R1, set(f for f, _ in fc1.most_common(60)), "R1 + linking mentions, 60 commonest frames")
 # ---- R2: merge frames that connect the same name pairs
 pairs = collections.defaultdict(set)
 for a, f, b in R1: pairs[f].add((a, b))
@@ -83,15 +94,5 @@ for r, fs in groups.items():
 multi = sorted([fs for fs in groups.values() if len(fs) > 1], key=lambda fs: -sum(fc1[f] for f in fs))
 P(f"R2 merges: {nm} joins, {len(multi)} merged groups of frames | largest: " + " || ".join(" | ".join(sorted(fs, key=lambda f: -fc1[f])[:6]) for fs in multi[:5]))
 R2 = [(a, lab.get(f, f), b) for a, f, b in R1]; fc2 = collections.Counter(f for a, f, b in R2)
-mine_report(R2, set(f for f, _ in fc2.most_common(60)), "R2 + merged wordings (shared name pairs), 60 commonest frames")
-# ---- ORACLE: gold relation types as frames
-RO = []
-for a, f, b in R1:
-    g = gp(a, b)
-    if g:
-        ps = gold.get(g[0]); code = sorted(ps)[0] if ps else None
-        if code: RO.append((a, code, b))
-fco = collections.Counter(f for a, f, b in RO)
-P(f"ORACLE: {len(RO)} R1 records on gold pairs, {len(fco)} gold relation types; commonest {fco.most_common(8)}")
-mine_report(RO, set(fco), "ORACLE gold relation types as frames (relation identity solved)")
+if "R2" in ONLY: mine_report(R2, set(f for f, _ in fc2.most_common(60)), "R2 + merged wordings (shared name pairs), 60 commonest frames")
 P(f"DONE in {time.time() - T0:.0f}s")
