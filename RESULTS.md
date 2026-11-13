@@ -597,6 +597,42 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
   triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
 
+### Brain-inspired tests: relation identity from name-free codes; inference at reading time (13 November)
+
+**Relation identity** (tools/relation_free.py): records with both names masked ('[X] , the capital of [Y]', plus 3 words each side), Re-DocRED
+held-out documents, 600 queries x 30 candidates from other documents, 187 gold relation types.
+
+| Cue | nearest candidate same relation (chance 0.08) | AUC same vs not |
+|---|---|---|
+| frame words (tf-idf) | 0.16-0.19 | 0.63-0.64 |
+| word + character n-grams of the masked record, untrained | 0.20-0.23 | 0.65-0.67 |
+| label-free encoder (InfoNCE: same two names in another document = positive) | 0.16 | 0.54-0.56 |
+| stand-in trunk's state over the masked record | 0.17 | 0.58 |
+| (earlier) trunk substitution, tools/relsub.py | - | 0.58-0.60 |
+| name SHAPE pair alone (digits / capitalised) | 0.16 | 0.67 |
+| frame words + shape pair | 0.21 | 0.73 |
+| **GOLD entity-type pair alone** (PER-LOC, ORG-TIME ...) | **0.38** | **0.83** |
+| frame words + gold type pair | 0.37 | 0.85 |
+
+- **The types of the two names carry most of relation identity** (0.83 alone), as unsupervised relation extraction found (Tran, Le &
+  Ananiadou 2020). Learning name types without labels is the most promising route to relation identity.
+- Same-name pairs as label-free positives teach the wrong thing (0.54): only 29% of such pairs share a relation.
+
+**Inference at reading time** (tools/integrate_test.py): every name pair in a sentence is a stored record; a record B-C recalls the A-B records
+of other documents and proposes A-C (hub names in 200+ documents skipped). 2.2M proposals, 80,185 verifiable (A and C named in one document).
+
+| Proposals | gold-related |
+|---|---|
+| base rate: name pairs in one document | 0.092 |
+| all verifiable proposals | 0.108 |
+| top 10% by the rarest bridge | 0.211 |
+| top 10% by the learned extractor (both records) | 0.186 |
+| 2+ / 3+ / 5+ distinct bridges | 0.081 / 0.067 / 0.062 (more bridges = hub-like names, worse) |
+| **ceiling: both premise records truly related** | **0.480** (6,856 proposals; neither related: 0.073) |
+
+- **Integration without rules is sound when the premises are true**: two true records sharing a name give a true A-C relation half the time,
+  5x the base rate, with no rule and no relation label. The bottleneck is premise quality (extraction), not the inference step.
+
 ### cg27a_xgain: extraction gain from the model's trunk (GPU, seed 4, 13 November; visits 2-6)
 
 cg27a_rtxw + inf_extract_gain 1 (readout only). Candidate records = gold-mention name pairs in one sentence of the benchmark documents read;
