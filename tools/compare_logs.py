@@ -11,6 +11,7 @@ Groups (a group is printed only if some log has it):
   gate  [GATED ANSWERS] the trunk answers only above last sleep's calibrated confidence: known answered / right, never-read false vs ungated
   sc    [REPLAY BY STORAGE CHECK] the trunk's loss on replayed sentences, replay share to the hardest quarter, last hardest quarter's change
   cg    [COMPRESSION GAIN] units (binding gain vs surprise) and links (mutual compression gain vs letter triples)
+  preq  [PREQUENTIAL BITS] held-out text of the domains read and of the next domain: all bytes, known names, unknown names
   link  [STORE LINKING] letter and compression links, their precision on benchmark entities, records added
   gates [GATED ANSWERS SMOOTHED] the gate with a threshold averaged across sleeps
   s4    [RELATIONAL MODULE WRITES] step 4, edits subtracted: taught vs held back
@@ -85,6 +86,11 @@ def parse(path):
             if m: d['g_ans'], d['g_acc'], d['g_right'], d['g_right0'] = m.groups()
             m = re.search(r'given a stored name ' + NUM + r' \(ungated ' + NUM + r'\), abstained ' + NUM, ln)
             if m: d['g_false'], d['g_false0'], d['g_abst'] = m.groups()
+        elif '[PREQUENTIAL BITS | visit' in ln:
+            m = re.search(r'domains READ \(\d+\): all bytes ' + NUM + r' \| KNOWN names ' + NUM + r' \((\d+) bytes\) \| unknown names ' + NUM, ln)
+            if m: d['pq_all'], d['pq_known'], d['pq_kn'], d['pq_unk'] = m.groups()
+            m = re.search(r'NEXT domain \d+ \(not yet read\): all bytes ' + NUM + r' \| KNOWN names ' + NUM + r' \((\d+) bytes\) \| unknown names ' + NUM, ln)
+            if m: d['pq_nall'], d['pq_nknown'], d['pq_nkn'], d['pq_nunk'] = m.groups()
         elif '[STORE LINKING | visit' in ln:
             m = re.search(r'LETTER links (\d+) \(on benchmark entities (\d+), same entity ' + NUM + r'\) \| COMPRESSION links (\d+) of (\d+) candidate pairs.*?on benchmark entities (\d+), same entity ' + NUM + r'\) \| records ADDED with linked names (\d+)', ln)
             if m: d['lk_l'], d['lk_ln'], d['lk_lp'], d['lk_c'], d['lk_cc'], d['lk_cn'], d['lk_cp'], d['lk_add'] = m.groups()
@@ -124,6 +130,8 @@ GROUPS = {
                                            ('ab_k75', 'known answered @75%'), ('ab_acc75', 'accuracy @75%'), ('ab_leak75', 'false @75%'), ('rf_loss', 'refusal-row loss')]),
     'gate': ('Gated answers (threshold from the previous sleep)', [('g_ans', 'known answered'), ('g_acc', 'right when answered'), ('g_right', 'right overall'),
                                                                   ('g_right0', 'right ungated'), ('g_false', 'never-read: false'), ('g_false0', 'false ungated'), ('g_abst', 'abstained')]),
+    'preq': ('Prequential bits (held-out, weights only)', [('pq_all', 'read: all'), ('pq_known', 'read: known names'), ('pq_unk', 'read: unknown names'),
+                                                           ('pq_nall', 'next: all'), ('pq_nknown', 'next: known names'), ('pq_nkn', 'next: known bytes'), ('pq_nunk', 'next: unknown names')]),
     'link': ('Store linking', [('lk_l', 'letter links'), ('lk_lp', 'letter: same entity'), ('lk_c', 'compression links'), ('lk_cc', 'candidates'),
                                ('lk_cp', 'compression: same entity'), ('lk_add', 'records added')]),
     'gates': ('Gated answers, smoothed threshold', [('gs_right', 'right overall'), ('gs_false', 'never-read: false')]),

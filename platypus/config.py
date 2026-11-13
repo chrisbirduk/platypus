@@ -603,6 +603,8 @@ class Config:
     inf_distill_rtx=0               #   12 Nov REAL-TEXT REPLAY (with inf_bench): N > 0 = N sentences of HALF the benchmark documents read (hash; the other half
                                     #     is the control) replayed with each question-row step; REAL-TEXT RECALL then splits replayed vs control documents
     inf_distill_rtx_align=1         #     1 = + alignment of views cut from those sentences (needs inf_distill_align > 0): no labels, no templates
+    inf_preq=0                      #   13 Nov READOUT: PREQUENTIAL BITS - held-out text of the domains read and of the NEXT domain, weights only: bits on all
+                                    #     bytes, on names the store knows, on names it does not (does sleep's material predict unseen text?)
     inf_store_link=0                #   13 Nov STORE LINKING (ONE MODEL CHANGE): 1 = each sleep, mentions in the sentences stored since the last one are
                                     #     linked to an earlier name in the 5 sentences before (letters: last word(s) or initials; COMPRESSION: the trunk
                                     #     saves >= inf_store_link_bits on the mention given the earlier name's sentence); records ALSO kept with the linked

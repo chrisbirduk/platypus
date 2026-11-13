@@ -261,3 +261,54 @@ def store_link(model, cfg, S_, S_slot, vis):
               f"records ADDED with linked names {nadd} | so far: letter {tot[0]}, compression {tot[1]}, records added {tot[2]}", flush=True)
     except Exception as e:
         _fail('inference.compress:store_link'); print(f"  [STORE LINKING] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+_PQ_NAME = re.compile(rb"(?<![.!?] )(?<!^)\b[A-Z][A-Za-z'\-]{2,}\b")
+
+
+def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
+    """13 Nov READOUT: PREQUENTIAL BITS ON KNOWLEDGE (inf_preq) - does what sleep produced (replay, links, written conclusions) make the
+    model predict text it has NEVER trained on, replayed or dreamed? Each domain's held-out validation text (fixed batches), from the
+    weights alone (store and name memory off): bits per byte on ALL bytes, on the bytes of capitalised names the store ALREADY KNOWS (in its
+    name index) and on names it does not know - knowledge shows as lower bits on known names. For the domains read so far (held out) and
+    for the NEXT domain (in pass 1: text not yet read at all - prediction before learning). Compare runs on the same seed."""
+    try:
+        from platypus.inference.store import _INFM
+        from platypus.capacity import apply_delta, domain_delta
+        idx = set((S_ or {}).get('idx', {}).keys()); Ts = int(model.cfg.seq_len); parts = []
+        doms = [(d, 'read') for d in seen_d] + ([(next_d, 'NEXT, not yet read')] if next_d is not None and next_d not in seen_d else [])
+        had = 'force' in _INFM; sv = _INFM.get('force'); _INFM['force'] = False
+        try:
+            for d, kind in doms:
+                g = vals[d]; sl = int(slot_of(d))
+                if hasattr(g, 'reset'): g.reset()
+                dd = domain_delta(model, sl) if (getattr(model, '_spec', None) and sl != getattr(model, '_live_dom', None)) else {}
+                apply_delta(model, dd, +1); model.eval(); acc = {'all': [0.0, 0], 'known': [0.0, 0], 'unknown': [0.0, 0]}
+                try:
+                    with torch.no_grad():
+                        for _ in range(nb):
+                            x, y = g()
+                            lg = model(x, sl)[:, -Ts:]; yy = y[:, -Ts:]
+                            nl = (F.cross_entropy(lg.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape).cpu().numpy()
+                            yb = yy.cpu().numpy().astype(np.uint8)
+                            for r in range(yb.shape[0]):
+                                row = bytes(yb[r]); acc['all'][0] += float(nl[r].sum()); acc['all'][1] += len(row)
+                                for m in _PQ_NAME.finditer(row):
+                                    k = 'known' if m.group(0) in idx else 'unknown'
+                                    acc[k][0] += float(nl[r, m.start():m.end()].sum()); acc[k][1] += m.end() - m.start()
+                finally:
+                    apply_delta(model, dd, -1); model.train()
+                f = lambda k: acc[k][0] / max(1, acc[k][1])
+                parts.append((d, kind, f('all'), f('known'), acc['known'][1], f('unknown'), acc['unknown'][1]))
+        finally:
+            if had: _INFM['force'] = sv
+            else: _INFM.pop('force', None)
+        rd = [p for p in parts if p[1] == 'read']; nx = [p for p in parts if p[1] != 'read']
+        wavg = lambda L, i, j: sum(p[i] * p[j] for p in L) / max(1, sum(p[j] for p in L))
+        msg = (f"domains READ ({len(rd)}): all bytes {np.mean([p[2] for p in rd]):.4f} | KNOWN names {wavg(rd, 3, 4):.3f} ({sum(p[4] for p in rd)} bytes) | "
+               f"unknown names {wavg(rd, 5, 6):.3f} ({sum(p[6] for p in rd)} bytes)") if rd else "no domain read yet"
+        if nx:
+            p = nx[0]; msg += f" || NEXT domain {p[0]} (not yet read): all bytes {p[2]:.4f} | KNOWN names {p[3]:.3f} ({p[4]} bytes) | unknown names {p[5]:.3f} ({p[6]} bytes)"
+        print(f"  [PREQUENTIAL BITS | {tag}] held-out text never trained on, replayed or dreamed; weights only; bits per byte || {msg} | store knows {len(idx)} names", flush=True)
+    except Exception as e:
+        _fail('inference.compress:preq'); print(f"  [PREQUENTIAL BITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
