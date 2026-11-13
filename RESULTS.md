@@ -713,6 +713,16 @@ built on inference) and, at 30k, before trunk congruence.
   Small but the sign flips: relational wording is the judge that separates relating from co-occurring. As a direct filter it is strong but
   rare: inferences later read together in a relational wording are right **0.359** (487; 3.3x base), with 2+ bridges **0.387** (287) - close
   to direct extraction, so their value is in predicting before the text arrives and in teaching which kinds compose.
+- **Bootstrapping rounds (CB_ROUNDS 4, CB_GROW 2%)**: seeds = 461 train inferences confirmed in a relational wording (gold 0.360); each round
+  the 2% of train proposals (21,969) with the most composable type triple join the confirmed set, composability re-learned. TEST composability
+  top 10%: **0.123 -> 0.135 -> 0.134 -> 0.135 -> 0.141** (base 0.108; 4,001 inferences, about 1.3x base by round 4); the added batches are
+  right 0.116-0.159 (no collapse, so drift is limited, but each batch is far below the seeds; the confirmed set dilutes 0.36 -> 0.15).
+  **Modestly positive**: coverage grows 190-fold while test precision creeps up.
+- **Hop 2 (CB_HOP2 lite; inference built on inference)**: from accepted inferences right 0.360 (relational confirmation, 948), 0.141
+  (composability top 10%) or 0.133 (a random sample), the hop-2 inferences through stored records are right **0.143 / 0.137 / 0.148** (10-26k
+  verifiable; 2+ routes 0.12-0.15). **Not positive: hop-2 precision does not inherit the premise's** - an accurate untyped inference
+  ('A is connected to C') carries no relation, so chaining from it is as good as chaining from any co-occurrence. Building on inference needs
+  typed (relation-identified) inferences.
 - Discrepancy to resolve: on the GPU (distant set, Wikidata labels) 2+ bridges RAISE A-C precision (0.23 vs 0.11-0.13 for all); on
   Re-DocRED gold they lower it. Likely the distant labels reward transitive chains (located in, P131) that Wikidata labels densely.
 
