@@ -662,6 +662,24 @@ documents with no overlap with Re-DocRED, read into store records the same way; 
 - Trend: about +0.03 relation-cue AUC per tripling of text from 10k documents; on that trend the gold type cue (0.80) is several orders of
   magnitude of text away, so types from volume alone close part of the gap, not all of it.
 
+**Keying the compression by a longer-term context** (tools/doc_topics.py: every Re-DocRED and distant document clustered by its words, tf-idf,
+SVD 64, k-means 8 / 32, no labels; record_mdl.py RM_CTX: the block table becomes [document context, A class, wording class, B class] and
+every record is coded GIVEN its document's context; full store, K 4-32, M 32/128, split starts, 2 restarts; one run each):
+
+| full store (2.2M records) | data bits a record given context (best) | name types purity / NMI | relation cue AUC | learner + association, premise precision top 5% / 10% |
+|---|---|---|---|---|
+| unkeyed | 36.7 | **0.72 / 0.37** | 0.68 | 0.60 / 0.52-0.53 |
+| keyed, 8 contexts | 36.7 (table 8x larger) | 0.64 / 0.31 | 0.67 (0.65 without the context cue) | 0.61 / 0.50 |
+| keyed, 32 contexts | 36.6 (table 32x larger) | 0.59 / 0.29 | 0.65 | 0.53 / 0.47 |
+| unkeyed classes + same-context cue (RM_CTXEVAL, 8) | - | 0.72 / 0.37 | **0.70** (top-1 0.23 vs 0.26 without) | 0.60 / 0.51-0.53 |
+
+- **Not positive as a key.** Given the context, records cost at most 0.1-0.4 bits less, less than the larger table costs, so MDL rejects it;
+  the name types loosen (the context absorbs what the classes did: in a sports document who-plays-for-whom is already likely), more with
+  finer context. Relation cue, premise precision and A-C inference (0.27-0.29 at 10% kept, within run noise) do not improve.
+- **Slightly positive as a separate cue:** the document context beside the unkeyed types lifts the relation AUC 0.68 -> 0.70, the best
+  label-free figure so far, though top-1 falls (0.26 -> 0.23). Context is better used next to the types than as the key the types are
+  learned under.
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
