@@ -597,6 +597,21 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
   triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
 
+### Brain-inspired tests, round 2 (13 November, afternoon)
+
+- **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
+  0.45-0.49 (NMI 0.13-0.29); as the relation cue (tools/relation_free.py RF_TYPES) the learned type pair gives AUC 0.50-0.57 alone and
+  0.62-0.67 with the words between (words alone 0.63, name shapes 0.66; gold type pair 0.79-0.83). Not positive: these features do not recover
+  the types that matter.
+- **Spreading activation for inference** (tools/spread_infer.py; 80,185 verifiable A-C): top 10% gold - resource allocation 0.153, Adamic-Adar
+  0.077, RA weighted by the learned extractor 0.218, + rarest bridge 0.221, three-step paths (L3, sample) 0.215 vs sample base 0.115; single
+  rarest bridge 0.211. Not positive: spreading over the name graph adds nothing over the rarest shared name.
+- **Event boundaries from trunk surprise** (tools/event_bounds.py; 400 unseen documents, 16,343 name pairs in one sentence, 22% related):
+  boundaries at surprise peaks above the 75th percentile (22 per 100 words) keep related pairs together more than unrelated ones AT THE SAME
+  DISTANCE (ratio 1.14 / 1.23 / 1.32 for pairs 1-3 / 4-7 / 8-20 words apart; random boundaries 0.94-0.99, fixed spacing 0.97-1.10,
+  punctuation 0.80-0.93); a segment holding a pair is related 0.291 vs base 0.223. **Modestly positive**: the trunk's surprise marks where
+  fact-bearing units start and end, beyond distance and punctuation.
+
 ### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
 
 The stand-in trunk (192 wide, 6,000 steps; never saw these documents) reads 600 Re-DocRED training documents (4,798 sentences, 2.16 bits per
