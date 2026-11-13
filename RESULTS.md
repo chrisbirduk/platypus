@@ -525,6 +525,10 @@ entities (He 55, It 36, She 15, ...; chance 0.205). TITLE (the document's first 
 most recent 0.148; substitution with the trained trunk 0.197, untrained 0.213 (He 0.11, She 0.07, It 0.25). **The stand-in trunk cannot
 resolve pronouns; the title heuristic resolves more than half** (Wikipedia openings are about their title).
 
+**The same two tests on a LARGER stand-in (192 wide, 6,000 steps, 1.91 bits/byte vs 2.10):** relation identity by substitution - AUC 0.578
+(was 0.584), best candidate 0.062 (chance 0.060), untrained 0.512; pronoun reference - substitution 0.238 (was 0.197), untrained 0.238,
+title 0.549. **No gain from the larger stand-in on either.** (Its compression-gain run - stage C - follows.)
+
 **Refusal: shortcut or transfer? (tools/toy_refuse.py, toy byte transformer, 3,000 steps, seed 0):** facts about invented people, question
 rows for 3/4 of them (the rest only read), refusal rows about fresh names answered 'unknown'. Greedy answers; refusal rates on fresh names
 from the stored names' syllables / from a third syllable set / on KNOWN facts; known right; only-read right:
