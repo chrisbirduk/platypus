@@ -58,29 +58,41 @@ def _load_distant(cfg):
 
 def _bench_records(cfg, seen):
     """benchmark records of the domains read (gold mentions): (doc key, A, B, words between, last word, n words, gold-related, text, domain,
-    relation types, type pair)"""
+    relation types, type pair). Mention entity ids are per document: each entity is mapped to the benchmark's global entity by its mention
+    texts (ambiguous names: the candidate with the most gold relations to the document's other entities); unmapped entities have no gold
+    relation in the benchmark (numbers, dates) and count as unrelated"""
     from platypus.inference.probes import _bench
     from platypus.inference.compress import _BENCH_MENT
     import zlib, base64
-    G = _bench(cfg); MT = json.loads(zlib.decompress(base64.b85decode(_BENCH_MENT)).decode('utf-8')); nm = G['ent_name']; tp = G.get('ent_type', {})
-    RT = collections.defaultdict(set)
-    for h, t, fl, ps in G['rel']: RT[(int(h), int(t))] |= set(ps); RT[(int(t), int(h))] |= {p + '^-1' for p in ps}
-    out = []
+    G = _bench(cfg); MT = json.loads(zlib.decompress(base64.b85decode(_BENCH_MENT)).decode('utf-8')); tp = G.get('ent_type', {})
+    RT = collections.defaultdict(set); inv = collections.defaultdict(set); adj = collections.defaultdict(set)
+    for h, t, fl, ps in G['rel']:
+        RT[(int(h), int(t))] |= set(ps); RT[(int(t), int(h))] |= {p + '^-1' for p in ps}; adj[int(h)].add(int(t)); adj[int(t)].add(int(h))
+    for e, n in G['ent_name'].items(): inv[n].add(int(e))
+    out = []; nmap = [0, 0]
     for d in seen:
         for di, t in enumerate(G['docs'].get(str(d), [])):
-            ms = sorted(MT.get(str(d), [])[di] if di < len(MT.get(str(d), [])) else [])
+            ms = sorted(MT.get(str(d), [])[di] if di < len(MT.get(str(d), [])) else []); tx = collections.defaultdict(list)
+            for ma, mb, mv in ms: tx[mv].append(t[ma:mb])
+            cn = {v: collections.Counter(xs).most_common(1)[0][0] for v, xs in tx.items()}
+            cand = {v: set().union(*[inv.get(x, set()) for x in set(xs)]) for v, xs in tx.items()}
+            allc = set().union(*cand.values()) if cand else set(); gid = {}
+            for v, cs in cand.items():
+                if cs: gid[v] = max(sorted(cs), key=lambda g: len(adj[g] & (allc - {g})))
+            nmap[0] += len(gid); nmap[1] += len(cand)
             for sa, sb in [(m.start(), m.end()) for m in _SENT.finditer(t)]:
                 mm = [m for m in ms if sa <= m[0] and m[1] <= sb]
                 for x in range(len(mm)):
                     for y in range(x + 1, len(mm)):
                         (ia, ib, iv), (ja, jb, jv) = mm[x], mm[y]
-                        A, B = nm.get(str(iv), ''), nm.get(str(jv), '')
-                        if iv == jv or ib > ja or not A or not B or A == B or ja - ia > 60: continue
+                        A, B = cn[iv], cn[jv]
+                        if iv == jv or ib > ja or A == B or ja - ia > 60: continue
                         mid = t[ib:ja].split()
                         if len(mid) > 12: continue
-                        rs = RT.get((int(iv), int(jv)), set())
+                        rs = RT.get((gid[iv], gid[jv]), set()) if (iv in gid and jv in gid) else set()
                         out.append((f'b{d}.{di}', A, B, ' '.join(mid).lower(), mid[-1].lower() if mid else '', len(mid), bool(rs), t[ia:jb], int(d), rs,
-                                    (tp.get(str(iv), 'X'), tp.get(str(jv), 'X'))))
+                                    (tp.get(str(gid.get(iv, -1)), 'X'), tp.get(str(gid.get(jv, -1)), 'X')), gid.get(iv, -1), gid.get(jv, -1)))
+    _PM['bmap'] = nmap
     return out
 
 
@@ -126,11 +138,14 @@ def premises_readout(model, cfg, S_slot, vis):
     NN, NW = len(NI), len(WI); NAMES = list(NI); WK = list(WI); y = np.array([bool(r[6]) for r in RD] + [bool(r[6]) for r in RB])
     from platypus.inference.probes import _bench
     G = _bench(cfg); bty = {}
-    for e, n in G['ent_name'].items(): bty[n] = G.get('ent_type', {}).get(e, 'X')
+    for r in RB:
+        if r[11] >= 0: bty[r[1]] = r[10][0]
+        if r[12] >= 0: bty[r[2]] = r[10][1]
     GTB = np.array([bty.get(n, '') for n in NAMES]); GTD = np.array([_PM['TY'].get(n, '') for n in NAMES])
     occB = np.bincount(a[nD:], minlength=NN) + np.bincount(b[nD:], minlength=NN); occD = np.bincount(a[:nD], minlength=NN) + np.bincount(b[:nD], minlength=NN)
     nall = occB + occD
-    msg = [f"store: {ndv} distant documents ({nD} records) + {len(RB)} benchmark records of {len(seen)} domains; {NN} names, {NW} wordings"]
+    msg = [f"store: {ndv} distant documents ({nD} records) + {len(RB)} benchmark records of {len(seen)} domains (entities mapped to the gold {_PM['bmap'][0]} of {_PM['bmap'][1]}; "
+           f"records gold-related {np.mean([r[6] for r in RB]) if RB else float('nan'):.3f}); {NN} names, {NW} wordings"]
     # ---- TYPES (warm-started from the last readout: the store keeps learning)
     FIT = {}
     for K in [int(k) for k in str(getattr(cfg, 'inf_premises_k', '4,16')).split(',') if k.strip()]:

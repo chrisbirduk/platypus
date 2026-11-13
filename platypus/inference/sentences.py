@@ -91,8 +91,10 @@ def _sstore_gate(model,cfg,S_,cd_,dom):
     """13 Nov SURPRISE-GATED STORE (inf_sstore): which candidate real-text sentences enter the store - those the trunk finds surprising (bits per
     byte at or above the domain's running (1 - q) quantile). Up to inf_sstore_n are scored per call; the rest are admitted at rate q at random.
     Each decision is logged per visit (with whether the sentence joins two benchmark entities and whether that pair is gold-related)."""
-    q_=float(getattr(cfg,'inf_sstore_q',0.5)); n_=int(getattr(cfg,'inf_sstore_n',64)); G_=S_.setdefault('sgate',{}); rv_=G_.setdefault('ring',{}).setdefault(dom,[])
-    vis_=int(model.__dict__.get('_visit',0)); st_=G_.setdefault('vis',{}).setdefault(vis_,dict(n=0,scored=0,kept=0,bn=0,bk=0,rn=0,rk=0,bpk=0.0,bpd=0.0,nk=0,nd=0,sec=0.0))
+    q_=float(getattr(cfg,'inf_sstore_q',0.5)); n_=int(getattr(cfg,'inf_sstore_n',64)); G_=S_.setdefault('sgate',{}); vis_=int(model.__dict__.get('_visit',0))
+    rv_=G_.setdefault('ring',{}).setdefault((vis_,dom),[])                       # the running quantile restarts each visit: the trunk's surprise falls as it learns
+    for k_ in [k_ for k_ in G_['ring'] if k_[0]<vis_]: del G_['ring'][k_]
+    st_=G_.setdefault('vis',{}).setdefault(vis_,dict(n=0,scored=0,kept=0,bn=0,bk=0,rn=0,rk=0,bpk=0.0,bpd=0.0,nk=0,nd=0,sec=0.0))
     ix_=list(range(len(cd_))); rs_=np.random.RandomState((int(cfg.seed)*7919+S_.get('nwin',0))%(2**31)); rs_.shuffle(ix_); sc_=ix_[:n_]; ok_=[rs_.rand()<q_ for _ in cd_]
     try:
         import time as _t9
@@ -106,7 +108,7 @@ def _sstore_gate(model,cfg,S_,cd_,dom):
             ok_[i]=v_>=thr_; rv_.append(v_); st_['scored']+=1
             if ok_[i]: st_['bpk']+=v_; st_['nk']+=1
             else: st_['bpd']+=v_; st_['nd']+=1
-        del rv_[:-2000]
+        del rv_[:-500]
     except Exception as e_:
         _fail('inference.sstore'); ok_=[True]*len(cd_)
         if not G_.get('err'): G_['err']=1; print(f"  [SURPRISE GATE] scoring unavailable ({type(e_).__name__}: {e_}); admitting all"[:240],flush=True)
