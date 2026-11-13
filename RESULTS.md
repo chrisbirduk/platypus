@@ -726,6 +726,30 @@ built on inference) and, at 30k, before trunk congruence.
 - Discrepancy to resolve: on the GPU (distant set, Wikidata labels) 2+ bridges RAISE A-C precision (0.23 vs 0.11-0.13 for all); on
   Re-DocRED gold they lower it. Likely the distant labels reward transitive chains (located in, P131) that Wikidata labels densely.
 
+### Universal schema and typed, coupled inference (tools/typed_infer.py, 13 November, late; Re-DocRED + 30k distant documents)
+
+UNIVERSAL SCHEMA (Riedel et al. 2013): PPMI over 15,285 wordings x 609,864 ordered pairs (32,662 seen 2+ times), SVD 64, 64 latent
+relations (k-means). RELATION IDENTITY on held-out gold-related records (18,000 pairs): wording class (record compression) AUC 0.561;
+**universal-schema wording vector 0.658, + compressed name-type pair 0.669**; latent relation (equal) 0.562; gold type pair 0.803. As good
+as the best label-free cue so far at this volume (record compression at 101k documents 0.68) - pairs recur too rarely for the factorisation
+to do more here; it should gain with volume.
+
+TYPED, COUPLED INFERENCE: each premise typed by its latent relation and the bridge's side; a COMPOSITION TABLE (premise relations -> the
+relation A and C are later read in, in a relational wording) learned on train pairs (462 confirmed); TYPE COUPLING (NELL): the predicted
+relation must have been seen with A's and C's name types. Test pairs (40,013 verifiable, gold 0.108):
+
+| policy | inferences | gold | TYPED right (relation too) |
+|---|---|---|---|
+| all proposals | 40,013 | 0.108 | 0.045 |
+| typed composability top 25% / 10% | 10,028 / 4,277 | 0.132 / 0.148 | 0.084 / 0.098 |
+| type coupling only | 14,550 | 0.104 | 0.058 |
+| **typed composability top 10% AND type coupling** | **2,257** | **0.160** | **0.116** |
+
+**TYPED HOP 2** (3,000 accepted typed inferences, hop-1 gold 0.160, + stored records, composition-gated again): **0.196** (896; ungated
+0.121) - against untyped hop 2 at 0.14 whatever the premise. **Positive: typed inferences compose** - hop 2 precision now exceeds hop 1, the
+first time inference built on inference has gained rather than lost. Typed composability is the best label-free premise policy so far
+(0.160, 1.5x base; untyped bootstrapped 0.141, untyped type triples 0.124). Small absolute numbers; one run.
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
