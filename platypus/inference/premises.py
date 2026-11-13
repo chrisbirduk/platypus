@@ -265,14 +265,15 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
     if not P2:
         print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] no new proposals with {nbm}+ bridges ({len(PR)} proposals from {len(keep)} premises)", flush=True); return
-    byc = collections.defaultdict(list)                                       # distractors: names of C's class seen 3+ times in the store
-    for n, i in NI.items():
-        if nall[i] >= 3: byc[int(gn[i])].append(n)
+    byc = collections.defaultdict(list)                                       # distractors: names of C's class, sorted by how often the store
+    for n, i in NI.items(): byc[int(gn[i])].append((int(nall[i]), n))          #   has seen them (matched to C's familiarity below)
+    for c_ in byc: byc[c_].sort(); byc[c_] = (np.array([x[0] for x in byc[c_]]), [x[1] for x in byc[c_]])
     seqs, meta = [], []
     for (A_, C_), nbr in P2:
-        pool = [n for n in byc[int(gn[NI[C_]])] if n not in (A_, C_)]
-        if len(pool) < 9: continue
-        cands = [C_] + [pool[j] for j in rs.choice(len(pool), 9, replace=False)]; q = f"{A_} {_RTI_R} ".encode('utf-8', 'replace')
+        cnt_, nms_ = byc[int(gn[NI[C_]])]; j0 = int(np.searchsorted(cnt_, nall[NI[C_]]))   # the 30 names nearest C in familiarity: the trunk
+        near = [n for n in nms_[max(0, j0 - 16):j0 + 16] if n not in (A_, C_)]            #   favours familiar names, which is not the check
+        if len(near) < 9: continue
+        cands = [C_] + [near[j] for j in rs.choice(len(near), 9, replace=False)]; q = f"{A_} {_RTI_R} ".encode('utf-8', 'replace')
         for c in cands:
             cb = c.encode('utf-8', 'replace'); seqs.append((q + cb + b'.', len(q), len(q) + len(cb)))
         meta.append((A_, C_, nbr, [len(c.encode('utf-8', 'replace')) for c in cands]))
