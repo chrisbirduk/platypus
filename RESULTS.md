@@ -707,6 +707,12 @@ built on inference) and, at 30k, before trunk congruence.
   wrong inferences. cg27a_rti uses this check to choose writes; cg27a_rtiw (check as a readout only, every 2+ bridge inference written) is the
   fallback if the GPU trunk's AUC is at or below 0.5 at visit 2.
 - **Positive, modest: waiting for the text helps** - inferences later read together in a sentence are right 0.14-0.17 (1.3-1.6x base).
+- **Confirmation in a RELATIONAL wording fixes the direction (CB_CONF=rel; the later sentence's record among the consistency learner's top
+  quarter, label-free; Re-DocRED only):** composability learned from it now selects ABOVE base - wording kinds 0.113 / 0.115 (top 25% / 10%),
+  name-type triples **0.115 / 0.124** (4,001 inferences; about 3 standard errors over 0.108) - where co-occurrence confirmation gave 0.029-0.073.
+  Small but the sign flips: relational wording is the judge that separates relating from co-occurring. As a direct filter it is strong but
+  rare: inferences later read together in a relational wording are right **0.359** (487; 3.3x base), with 2+ bridges **0.387** (287) - close
+  to direct extraction, so their value is in predicting before the text arrives and in teaching which kinds compose.
 - Discrepancy to resolve: on the GPU (distant set, Wikidata labels) 2+ bridges RAISE A-C precision (0.23 vs 0.11-0.13 for all); on
   Re-DocRED gold they lower it. Likely the distant labels reward transitive chains (located in, P131) that Wikidata labels densely.
 
