@@ -619,6 +619,11 @@ wording (the shapes of the names it joins); T4 records in a chain of a rule the 
 - Self-training helps once (+0.01 AUC) and then plateaus.
 - Roughly: keeping the top quarter captures ~40% of the within-sentence related pairs (~8% of all gold facts) at 0.38-0.39 precision,
   against the current reader's ~3% at ~0.23.
+- **More text, better teacher** (CT_FRAC: share of the training documents read; same held-out test): learner AUC 0.49 / 0.56 / 0.60 / 0.63,
+  top 25% 0.24 / 0.31 / 0.33 / 0.37 at 10% / 25% / 50% / 100% (6,500 / 16,000 / 32,000 / 63,000 training candidates); functional-scored
+  wordings 8 / 17 / 20 / 43. About +0.03-0.04 AUC per doubling, not levelling off.
+- **The trunk's feedback adds nothing to consistency** (tools/extract_combo.py): consistency alone AUC 0.628 / top 25% 0.375; + trunk
+  feedback at weight 1 / 2 / 4: 0.622 / 0.595 / 0.577 (top 25% 0.363 / 0.352 / 0.338).
 
 ### Several wordings: does a read-only fact become answerable? (tools/paraphrase_test.py, 13 November; byte LM 128 wide, 3 layers)
 

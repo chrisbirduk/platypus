@@ -53,6 +53,10 @@ for di, d in enumerate(docs):
                     C.append(dict(di=di, gold=(ea, eb) in gold, mid=toks[a1:b0], A=toks[a0:a1], B=toks[b0:b1], cA=cn[ea], cB=cn[eb], test=di in TEST,
                                   f=' '.join(toks[a1:b0]).lower()))
 y = np.array([c['gold'] for c in C]); te = np.array([c['test'] for c in C]); TR = np.where(~te)[0]; TE = np.where(te)[0]; yt = y[TE]
+FRAC = float(os.environ.get('CT_FRAC', 1.0))                                   # 13 Nov: share of the TRAINING documents read (volume curve)
+if FRAC < 1.0:
+    trd = sorted({C[i]['di'] for i in TR}); kd = set(np.random.RandomState(7).permutation(trd)[:int(len(trd) * FRAC)].tolist())
+    TR = np.array([i for i in TR if C[i]['di'] in kd])
 P(f"candidates {len(C)} (related {y.mean():.3f}); training {len(TR)}, held-out {len(TE)} (related {yt.mean():.3f})  ({time.time() - T0:.0f}s)")
 
 
