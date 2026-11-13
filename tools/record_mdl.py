@@ -19,7 +19,9 @@ RM_SUB=<fraction>: the block model is fitted on the consistency-teacher learner'
 wording is then classed by all its records under the fitted table (the extractor cleans the store, compression finds classes on it).
 RM_EXTRA=<documents>: the store also holds the records of the first documents of DocRED's distant training set (tools/distant_records.py,
 RM_DIST); more records per name. Evaluation stays on Re-DocRED (types: names that occur in Re-DocRED).
-Usage: python3 tools/record_mdl.py   env RM_EXTRA, RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
+RM_CTX=<topics.npz>:<k>: KEYED compression - every record coded given its document's label-free topic (tools/doc_topics.py); the block
+table becomes [context, A class, wording class, B class].
+Usage: python3 tools/record_mdl.py   env RM_CTX, RM_EXTRA, RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
 import os
 import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,6 +39,7 @@ if EXTRA:
     import pickle
     _dr = pickle.load(open(os.environ.get('RM_DIST', SCR + '/distant/records.pkl'), 'rb')); XTY = _dr['types']
     RX = [r for r in _dr['rec'] if r[0] < EXTRA]; del _dr
+XD = np.array([r[0] for r in RX], int)                                          # distant document of each extra record
 # ---- records: name ids, wording ids (wordings seen < 3 times in the whole store backed off to their last word, then to their length)
 RA = [(c['cA'], c['f'], '~' + (c['mid'][-1].lower() if c['mid'] else ''), len(c['mid']), c['cB']) for c in C] + [(r[1], r[3], '~' + r[4], r[5], r[2]) for r in RX]
 del RX
@@ -61,52 +64,65 @@ for d in docs:
         for m in vs: gtc[cn_][m.get('type', 'X')] += 1
 GT = np.array([gtc[n].most_common(1)[0][0] if gtc[n] else XTY.get(n, 'X') for n in NAMES])
 INR = np.arange(NN) < NR
+CTX = os.environ.get('RM_CTX', '')                                              # 13 Nov 18:50: KEYED compression - every record coded GIVEN
+if CTX:                                                                         #   its document's context (tools/doc_topics.py, label-free topics)
+    _p, _k = CTX.rsplit(':', 1); _tp = np.load(_p); KD = int(_k)
+    Df = np.concatenate([_tp[f'redoc_{_k}'][[c['di'] for c in C]], _tp[f'dist_{_k}'][XD]]).astype(int)
+else:
+    KD = 1; Df = np.zeros(len(Af), int)
+td = Df[:N]
 SUB = float(os.environ.get('RM_SUB', 0))                                        # 13 Nov 18:30: fit on the extractor's top records only
 lr_ = LogisticRegression(C=1.0, max_iter=2000).fit(Xtr, teacher_tr >= np.percentile(teacher_tr, 75))
 XA = feats(np.arange(N)); s_all = lr_.decision_function(XA)
 FI = np.argsort(-s_all)[:int(N * SUB)] if SUB else np.arange(len(Af))
-fa, fb, fw = Af[FI], Bf[FI], Wf[FI]; NF = len(FI); one = np.ones(NF)
+fa, fb, fw, fd = Af[FI], Bf[FI], Wf[FI], Df[FI]; NF = len(FI); one = np.ones(NF)
+if CTX: _h = np.bincount(fd, minlength=KD) / NF; P(f"KEYED by document context: {KD} label-free topics, context entropy {-(_h[_h > 0] * np.log2(_h[_h > 0])).sum():.2f} bits a record")
 if SUB: P(f"FITTED ON the consistency-teacher learner's top {SUB:.0%} of records: {NF}, related {y[FI].mean():.3f}")
 
 
 def table(gn, gw, K, M, al=0.0):
-    T = np.zeros((K, M, K)); np.add.at(T, (gn[fa], gw[fw], gn[fb]), 1); return T + al
+    T = np.zeros((KD, K, M, K)); np.add.at(T, (fd, gn[fa], gw[fw], gn[fb]), 1); return T + al    # [context, A class, wording class, B class]
+
+
+def cond(T, K, M):
+    """log conditional tables: names left (p(w cl, B cl | A cl, ctx)), names right (p(A cl, w cl | B cl, ctx)), wordings (p(A cl, B cl | w cl, ctx))"""
+    PL = np.log(T / T.sum((2, 3), keepdims=True)).transpose(1, 0, 2, 3).reshape(K, KD * M * K)
+    PR = np.log(T / T.sum((1, 2), keepdims=True)).transpose(3, 0, 1, 2).reshape(K, KD * K * M)
+    PW = np.log(T / T.sum((1, 3), keepdims=True)).transpose(2, 0, 1, 3).reshape(M, KD * K * K)
+    return PL, PR, PW
 
 
 def fit(K, M, seed, iters=30, al=0.1, init=None):
     r = np.random.RandomState(seed); gn = r.randint(K, size=NN); gw = r.randint(M, size=NW)
     if init is not None: gn, gw = init(r)
     for it in range(iters):
-        T = table(gn, gw, K, M, al)
-        PL = np.log(T / T.sum((1, 2), keepdims=True)).reshape(K, M * K)                       # p(wording class, B class | A class)
-        PR = np.log(T / T.sum((0, 1), keepdims=True)).transpose(2, 0, 1).reshape(K, K * M)     # p(A class, wording class | B class)
-        Lm = csr_matrix((one, (fa, gw[fw] * K + gn[fb])), shape=(NN, M * K)); Rm = csr_matrix((one, (fb, gn[fa] * M + gw[fw])), shape=(NN, K * M))
+        PL, PR, _ = cond(table(gn, gw, K, M, al), K, M)
+        Lm = csr_matrix((one, (fa, fd * M * K + gw[fw] * K + gn[fb])), shape=(NN, KD * M * K)); Rm = csr_matrix((one, (fb, fd * K * M + gn[fa] * M + gw[fw])), shape=(NN, KD * K * M))
         g2 = np.asarray(Lm @ PL.T + Rm @ PR.T).argmax(1)
         for e in set(range(K)) - set(g2.tolist()): g2[r.randint(NN)] = e                     # no empty class
         ch = (g2 != gn).mean(); gn = g2
-        T = table(gn, gw, K, M, al); PW = np.log(T / T.sum((0, 2), keepdims=True)).transpose(1, 0, 2).reshape(M, K * K)   # p(A cl, B cl | w cl)
-        Wm = csr_matrix((one, (fw, gn[fa] * K + gn[fb])), shape=(NW, K * K)); h2 = np.asarray(Wm @ PW.T).argmax(1)
+        _, _, PW = cond(table(gn, gw, K, M, al), K, M)
+        Wm = csr_matrix((one, (fw, fd * K * K + gn[fa] * K + gn[fb])), shape=(NW, KD * K * K)); h2 = np.asarray(Wm @ PW.T).argmax(1)
         for e in set(range(M)) - set(h2.tolist()): h2[r.randint(NW)] = e
         ch2 = (h2 != gw).mean(); gw = h2
         if ch < 0.002 and ch2 < 0.002: break
     if SUB:                                                                     # names / wordings outside the fitted records: classed by all
-        T = table(gn, gw, K, M, al); o1 = np.ones(N)                            #   their records under the fitted block table
-        PL = np.log(T / T.sum((1, 2), keepdims=True)).reshape(K, M * K); PR = np.log(T / T.sum((0, 1), keepdims=True)).transpose(2, 0, 1).reshape(K, K * M)
-        Lm = csr_matrix((o1, (a, gw[w] * K + gn[b])), shape=(NN, M * K)); Rm = csr_matrix((o1, (b, gn[a] * M + gw[w])), shape=(NN, K * M))
+        PL, PR, PW = cond(table(gn, gw, K, M, al), K, M); o1 = np.ones(N)      #   their records under the fitted block table
+        Lm = csr_matrix((o1, (a, td * M * K + gw[w] * K + gn[b])), shape=(NN, KD * M * K)); Rm = csr_matrix((o1, (b, td * K * M + gn[a] * M + gw[w])), shape=(NN, KD * K * M))
         out = np.ones(NN, bool); out[fa] = False; out[fb] = False; gn = gn.copy(); gn[out] = np.asarray(Lm @ PL.T + Rm @ PR.T)[out].argmax(1)
-        PW = np.log(T / T.sum((0, 2), keepdims=True)).transpose(1, 0, 2).reshape(M, K * K)
-        Wm = csr_matrix((o1, (w, gn[a] * K + gn[b])), shape=(NW, K * K)); out = np.ones(NW, bool); out[fw] = False; gw = gw.copy()
+        Wm = csr_matrix((o1, (w, td * K * K + gn[a] * K + gn[b])), shape=(NW, KD * K * K)); out = np.ones(NW, bool); out[fw] = False; gw = gw.copy()
         gw[out] = np.asarray(Wm @ PW.T)[out].argmax(1)
     return gn, gw
 
 
 def dl(gn, gw, K, M):
     """total description length in bits: records given the classes + block table + class assignments"""
-    T = table(gn, gw, K, M); d = -np.log2(T[gn[fa], gw[fw], gn[fb]] / NF).sum()
+    T = table(gn, gw, K, M); Nd = T.sum((1, 2, 3)); d = -np.log2(T[fd, gn[fa], gw[fw], gn[fb]] / Nd[fd]).sum()   # given the context
     for ids, g in ((fa, gn[fa]), (fb, gn[fb]), (fw, gw[fw])):
         ni = np.bincount(ids)[ids]; ng = np.bincount(g)[g]; d += -np.log2(ni / ng).sum()
-    model = 0.5 * K * M * K * np.log2(NF) + len(np.union1d(fa, fb)) * np.log2(max(K, 1)) + len(np.unique(fw)) * np.log2(max(M, 1))
-    tc = (T / NF * np.log2(np.where(T > 0, T * NF * NF / (T.sum((1, 2), keepdims=True) * T.sum((0, 2), keepdims=True) * T.sum((0, 1), keepdims=True)), 1))).sum()
+    model = 0.5 * KD * K * M * K * np.log2(NF) + len(np.union1d(fa, fb)) * np.log2(max(K, 1)) + len(np.unique(fw)) * np.log2(max(M, 1))
+    Nk = Nd[:, None, None, None]
+    tc = (T / NF * np.log2(np.where(T > 0, T * Nk * Nk / np.maximum(T.sum((2, 3), keepdims=True) * T.sum((1, 3), keepdims=True) * T.sum((1, 2), keepdims=True), 1e-300), 1))).sum()
     return d + model, d, model, tc
 
 
@@ -187,6 +203,9 @@ for km, (gn, gw) in FITS.items():
     ncp = eq(lambda i: (gn[a[HR[i]]], gn[b[HR[i]]])); wcl = eq(lambda i: gw[w[HR[i]]])
     report(f'K {km[0]} M {km[1]}: name-class pair', ncp); report(f'K {km[0]} M {km[1]}: wording class', wcl)
     report(f'K {km[0]} M {km[1]}: name-class pair + wording class', ncp + wcl)
+    if CTX:
+        sct = eq(lambda i: td[HR[i]]); report(f'K {km[0]} M {km[1]}: name-class pair + wording class + same context', ncp + wcl + sct)
+        report(f'K {km[0]} M {km[1]}: name-class pair, same context', ncp * sct + ncp)
 # ---- PREMISES: label-free record scores on held-out records
 rk = lambda x: np.argsort(np.argsort(x)) / len(x)
 def prec(tag, sc, ix=TE):
@@ -197,10 +216,10 @@ P(f"PREMISES (held-out records {len(TE)}, related {yt.mean():.3f}; target precis
 prec('consistency-teacher learner (label-free, before)', s_all)
 SC = {}
 for km, (gn, gw) in FITS.items():
-    K, M = km; T = table(gn, gw, K, M, 0.1); pg = T.sum((0, 2)) / T.sum()
-    s_pmi = np.log(T[gn[a], gw[w], gn[b]] / T[gn[a], :, gn[b]].sum(-1)) - np.log(pg[gw[w]])           # log p(w cl | A cl, B cl) / p(w cl)
-    Hc = T / T.sum((0, 2), keepdims=True); Hw = -(Hc * np.log(Hc)).sum((0, 2))                          # how selective the wording class is
-    s_sel = -Hw[gw[w]]
+    K, M = km; T = table(gn, gw, K, M, 0.1); pg = T.sum((1, 3)) / T.sum((1, 2, 3))[:, None]                # p(w cl | ctx)
+    s_pmi = np.log(T[td, gn[a], gw[w], gn[b]] / T[td, gn[a], :, gn[b]].sum(-1)) - np.log(pg[td, gw[w]])  # log p(w cl | A cl, B cl, ctx) / p(w cl | ctx)
+    Hc = T / T.sum((1, 3), keepdims=True); Hw = -(Hc * np.log(Hc)).sum((1, 3))                          # how selective the wording class is
+    s_sel = -Hw[td, gw[w]]
     SC[km] = (s_pmi, s_sel)
     if km == KBEST or km == (max(KS), max(MS)):
         prec(f'K {K} M {M}: block association p(w cl | name classes) / p(w cl)', s_pmi); prec(f'K {K} M {M}: wording-class selectivity', s_sel)
