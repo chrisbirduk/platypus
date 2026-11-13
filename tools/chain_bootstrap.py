@@ -33,6 +33,7 @@ for di, d in enumerate(docs):
     for n in ns: dfreq[n] += 1
 SENT = {}
 for i, c in enumerate(C): SENT.setdefault(frozenset((c['cA'], c['cB'])), set()).add(c['di'])
+for i in range(N, len(Af)): SENT.setdefault(frozenset((NAMES[Af[i]], NAMES[Bf[i]])), set()).add(('d', int(XD[i - N])))   # + the distant set's sentences
 # ---- proposals A-C through a shared name from another document, with their kinds
 kind1 = lambda i, B: (int(gw[w[i]]), 0 if C[i]['cB'] == B else 1)               # the record's wording class, and which side the bridge is on
 nb = collections.defaultdict(list)
@@ -44,7 +45,8 @@ for i, c in enumerate(C):
         for A, dA, j in nb[B]:
             if dA == c['di'] or A == Cn: continue
             k1, k2 = kind1(j, B), kind1(i, B); kd = (k1, k2) if k1 <= k2 else (k2, k1)
-            p = PR[frozenset((A, Cn))]; p['br'].add(B); p['kinds'].append(kd); p['docs'] |= {dA, c['di']}
+            ta, tb, tc = int(gn[NI[A]]), int(gn[NI[B]]), int(gn[NI[Cn]]); kt = ('T', min(ta, tc), tb, max(ta, tc))   # coarser kind: the name-type triple
+            p = PR[frozenset((A, Cn))]; p['br'].add(B); p['kinds'].append(kd); p['kt'] = p.get('kt', set()) | {kt}; p['docs'] |= {dA, c['di']}
 keys = list(PR); P(f"proposals {len(keys)} | verifiable {sum(k in ANN for k in keys)} | gold among verifiable {np.mean([k in GOLDP for k in keys if k in ANN]):.3f}  ({time.time() - T0:.0f}s)")
 conf = np.array([bool(SENT.get(k, set()) - PR[k]['docs']) for k in keys])        # read together in a sentence of a document the premises are not from
 tr = np.array([zlib.crc32(repr(sorted(k)).encode()) % 2 == 0 for k in keys])
@@ -60,6 +62,13 @@ def wilson(s, n, z=1.64):
     p = s / n; return (p + z * z / (2 * n) - z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n)
 KC = {kd: wilson(kc[kd], kn[kd]) for kd in kn}
 comp = np.array([max((KC.get(kd, 0.0) for kd in set(PR[k]['kinds'])), default=0.0) for k in keys])
+tc_ = collections.Counter(); tn_ = collections.Counter()                         # composability by the name-type triple (coarser, more examples)
+for k, t, cf in zip(keys, tr, conf):
+    if t:
+        for kt in PR[k]['kt']: tn_[kt] += 1; tc_[kt] += int(cf)
+KT = {kt: wilson(tc_[kt], tn_[kt]) for kt in tn_}
+compt = np.array([max((KT.get(kt, 0.0) for kt in PR[k]['kt']), default=0.0) for k in keys])
+P(f"type-triple kinds {len(tn_)}; top: " + ", ".join(f"{kt[1:]} {tc_[kt]}/{tn_[kt]}" for kt in sorted(KT, key=lambda q: -KT[q])[:6]))
 nbr = np.array([len(PR[k]['br']) for k in keys])
 P(f"kinds {len(kn)} learned on train pairs (base confirmed {base:.3f}); top kinds: " + ", ".join(f"{kd} {kc[kd]}/{kn[kd]}" for kd in sorted(KC, key=lambda q: -KC[q])[:6]))
 TE = np.where(~tr & np.array([k in ANN for k in keys]))[0]; yte = np.array([keys[i] in GOLDP for i in TE])
@@ -76,6 +85,8 @@ pol('all proposals'); pol('2+ bridges', nbr >= 2); pol('3+ bridges (seeds)', nbr
 pol('composability, top 25%', None, comp, 0.25); pol('composability, top 10%', None, comp, 0.10)
 pol('composability top 25% AND 2+ bridges', (comp >= np.quantile(comp[TE], 0.75)) & (nbr >= 2))
 pol('composability top 25% among 2+ bridges', nbr >= 2, comp, 0.25)
+pol('type-triple composability, top 25%', None, compt, 0.25); pol('type-triple composability, top 10%', None, compt, 0.10)
+pol('type-triple composability top 25% AND 2+ bridges', (compt >= np.quantile(compt[TE], 0.75)) & (nbr >= 2))
 pol('confirmed by later reading (waits for the text)', conf)
 # ---- the stand-in trunk's congruence: the gain from A (as cg27a_rti), on a sample of test proposals
 CKP = os.environ.get('TG_CKPT', '')
