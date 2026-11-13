@@ -523,6 +523,13 @@ cg27a_rtx16 throughout; peak GPU memory 55.5 GB; the only errors the old NAME ME
 facts do not reach other wordings (+0.02 at most). Pronoun-led facts replayed with the title DO: above their prior in another wording at
 visits 6-10 (+0.09, +0.04, +0.04, +0.06, +0.15; 48 sentences each).** One run.
 
+**END OF RUN - A REAL COST: forgetting +0.077, final BPC 1.807 (weights only), against cg27a_replay seed 4 +0.026 / 1.767 (same seed, no
+real-text replay; seed 5 +0.034 / 1.775).** Per domain: Gutenberg +0.224 (vs +0.009), StackExchange +0.312 (vs +0.083); the rest within
+about 0.03. The benchmark documents (Wikipedia text) are split across domains 0-4 and replayed through THOSE domains' slots, 16 sentences a
+step at every later visit - Gutenberg's slot replays 53 Wikipedia documents. The 16-per-step real-text replay was never run to the end
+before (cg27a_rtx / rtx16 stopped at visits 7 / 4) and the local safety runs cannot show it (local replay starts at visit 6, tiny text).
+Not attributable to the title change itself (it only rewrites pronoun-led sentences); a cg27a_rtx16 run to visit 10 would separate them.
+
 GATED ANSWERS (threshold from the previous sleep, out of sample): never-read given a stored name ungated -> gated 0.54 -> 0.45, 0.65 -> 0.25,
 0.55 -> 0.39, 0.59 -> 0.24, 0.65 -> 0.34, 0.58 -> 0.14, 0.64 -> 0.15, **0.57 -> 0.12** (visits 3-10); known right overall 0.36 -> 0.36, 0.39 ->
 0.22, 0.52 -> 0.47, 0.58 -> 0.47, 0.59 -> 0.52, 0.53 -> 0.44, 0.62 -> 0.41, **0.64 -> 0.52**; the threshold climbed 0.14 -> 0.53 with the
