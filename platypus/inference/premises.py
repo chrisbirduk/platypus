@@ -260,10 +260,11 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
             for A_, dA in nb[B_]:
                 if dA != RD[i][0] and A_ != C_: PR[(A_, C_)].add(B_)
     W = _PM.setdefault('rti', {}); done = {frozenset(k) for k in W}
-    P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= 2 and frozenset(k) not in done and k[0] in NI and k[1] in NI]
+    nbm = int(getattr(cfg, 'inf_rti_bridges', 2))
+    P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI]
     P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
     if not P2:
-        print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] no new proposals with 2+ bridges ({len(PR)} proposals from {len(keep)} premises)", flush=True); return
+        print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] no new proposals with {nbm}+ bridges ({len(PR)} proposals from {len(keep)} premises)", flush=True); return
     byc = collections.defaultdict(list)                                       # distractors: names of C's class seen 3+ times in the store
     for n, i in NI.items():
         if nall[i] >= 3: byc[int(gn[i])].append(n)
@@ -289,7 +290,7 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     ra = np.array([r[3] for r in rows if r[4] is not None], float); ta = np.array([r[4] for r in rows if r[4] is not None], bool)
     au = _cg_auc(-ra[ta], -ra[~ta]) if ta.any() and (~ta).any() else float('nan')
     print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] READ {nD} distant records -> CHOSE {len(keep)} premises (top {float(getattr(cfg, 'inf_rti_keep', 0.1)):.0%} by surprise + association) "
-          f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= 2)} with 2+ bridges, {len(rows)} new ones checked -> CHECK (the trunk ranks C in its top {rmax} of 10 "
+          f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= nbm)} with {nbm}+ bridges, {len(rows)} new ones checked -> CHECK (the trunk ranks C in its top {rmax} of 10 "
           f"after 'A {_RTI_R}'): passed {len(ok)}, right {f(ok)}; failed {len(rows) - len(ok)}, right {f([r for r in rows if r[3] >= rmax])} | the check tells right from wrong: AUC {au:.3f} "
           f"-> WROTE {len(wr)} (right {f(wr)}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
