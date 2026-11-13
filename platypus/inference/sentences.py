@@ -104,11 +104,11 @@ def _sstore_gate(model,cfg,S_,cd_,dom):
         finally: model.train(was_)
         st_['sec']+=_t9.time()-t0_
         for i,b_ in zip(sc_,bt_):
-            v_=float(b_)/max(1,len(cd_[i][0])-1); thr_=float(np.quantile(rv_,1-q_)) if len(rv_)>=int(getattr(cfg,'inf_sstore_warm',200)) else -1.0
+            v_=float(b_)/max(1,len(cd_[i][0])-1); thr_=float(np.quantile(rv_[-int(getattr(cfg,'inf_sstore_win',100)):],1-q_)) if len(rv_)>=int(getattr(cfg,'inf_sstore_warm',50)) else -1.0
             ok_[i]=v_>=thr_; rv_.append(v_); st_['scored']+=1
             if ok_[i]: st_['bpk']+=v_; st_['nk']+=1
             else: st_['bpd']+=v_; st_['nd']+=1
-        del rv_[:-500]
+        del rv_[:-int(getattr(cfg,'inf_sstore_win',100))]
     except Exception as e_:
         _fail('inference.sstore'); ok_=[True]*len(cd_)
         if not G_.get('err'): G_['err']=1; print(f"  [SURPRISE GATE] scoring unavailable ({type(e_).__name__}: {e_}); admitting all"[:240],flush=True)

@@ -606,7 +606,8 @@ class Config:
                                     #     27.0 new true facts per 100 records kept vs 21.6 at random)
     inf_sstore_q=0.5                #     share of scored sentences admitted
     inf_sstore_n=64                 #     sentences scored per store call at most (the rest admitted at rate inf_sstore_q at random)
-    inf_sstore_warm=50              #     sentences per visit admitted ungated while the visit's running quantile (last 500) warms up
+    inf_sstore_warm=50              #     sentences per visit admitted ungated while the visit's running quantile warms up
+    inf_sstore_win=100              #     the running quantile is over the visit's last N scored sentences (the trunk's surprise falls as it learns)
     inf_premises=0                  #   13 Nov READOUT: PREMISES AT SCALE (inference.premises) every inf_premises_every visits: a SEPARATE record store reads
                                     #     DocRED's distant Wikipedia set (inf_premises_path, 101,873 documents, a 1/inf_premises_visits share more per visit) plus
                                     #     the benchmark documents read; TYPES by record-level compression (three-way block model, warm-started visit to visit),
