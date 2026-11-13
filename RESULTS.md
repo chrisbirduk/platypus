@@ -618,6 +618,14 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
   name the same entity, vs random pairs): relation identity from the trunk's state 0.581 (overlap) vs 0.578 (random) vs 0.582 (start); held-out
   bits per byte 2.444 (overlap) vs 2.256 (random) vs 2.192 (start). Not positive: replaying overlaps side by side taught no relational
   structure here and fitted the repeated names (held-out worse).
+- **Schema-congruent consolidation** (tools/schema_consol.py; 100 new facts '<invented person> was born in <place>' mixed into ordinary text;
+  recall = true object first of 10 objects of its arm): congruent (real places that follow 'born in') vs incongruent (organisations / works)
+  at steps 50 / 100 / 200 / 400 - seed 0: 0.23 / 0.24 / 0.10 / 0.06 vs 0.05 / 0.05 / 0.05 / 0.09; seed 1: 0.14 / 0.19 / 0.29 / 0.35 vs
+  0.07 / 0.10 / 0.05 / 0.16; held-out bits per byte the same in both arms (+0.05). Weakly positive and unstable (seed 0 collapses after
+  step 100); the arms' distractor sets differ (places vs organisations), so difficulty may account for part of it.
+- **Replay by need** (tools/paraphrase_test.py PT_NEED; 4 extra biography copies for the half of the read-only people who will be asked vs 2
+  for every read-only person, same total), at step 4,000: the asked people in NEW question forms 0.33 vs 0.22; in the taught forms 0.55 vs
+  0.61 (150 items each, about +-0.04). Need-weighted replay helps where generalisation is needed, at a small cost in the familiar form.
 
 ### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
 
