@@ -8,6 +8,7 @@ names' frequency). Label-free: no gold is used to compute it. Scored against Re-
 document): AUC gold vs not; precision of the records the gain would keep (top 10% / 25%); against the PAIR-ONLY record ('Dresden Saxony',
 names without the words between) and the plain distance between the names (closer pairs are more often related).
 If the gain separates related pairs, the trunk can supervise extraction: keep what compresses other text, and it gets better as the trunk does.
+Rows added 13 Nov 14:00: the LIST-STYLE record ('A , B') measures what plain co-occurrence is worth; the record's gain beyond it.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/extract_gain.py [max candidates, default 6000]   (the stand-in trunk of tools/trunk_guides.py)"""
 import os
 import sys
@@ -73,18 +74,20 @@ P(f"candidate records (name pairs within 12 words and 60 bytes, one sentence): {
 def txt(toks): return ' '.join(toks).encode('utf-8', 'replace')
 
 
-W, O, PW, PO = [], [], [], []
+W, O, PW, PO, LW, LO = [], [], [], [], [], []
 for c in usable:
     d = docs[c['di']]; toks = d['sents'][c['si']]; (a0, a1), (b0, b1) = c['a'], c['b']
     rec = txt(toks[a0:b1]) + b' .'; rec0 = TH + b' ' + txt(toks[a1:b1]) + b' .'
     pr = txt(toks[a0:a1]) + b' ' + txt(toks[b0:b1]) + b' .'; pr0 = TH + b' ' + txt(toks[b0:b1]) + b' .'
     di2, si2, x0, x1, y0, y1, ex, ey = c['tgt']; t2 = docs[di2]['sents'][si2]
     pre = txt(t2[max(0, y0 - 6):y0])[-36:] + b' '; tgt = txt(t2[y0:y1])[:24]   # record + prefix + target fit the trunk's 128-byte window
-    for lst, r in ((W, rec), (O, rec0), (PW, pr), (PO, pr0)):
+    lw = txt(toks[a0:a1]) + b' , ' + txt(toks[b0:b1]) + b' .'; lo = TH + b' , ' + txt(toks[b0:b1]) + b' .'   # LIST-STYLE record: co-occurrence alone
+    for lst, r in ((W, rec), (O, rec0), (PW, pr), (PO, pr0), (LW, lw), (LO, lo)):
         s_ = r + b' ' + pre; lst.append((s_ + tgt, (len(s_), len(s_) + len(tgt))))
 t1 = time.time()
 bw = bits(lm, [s for s, _ in W], [p for _, p in W]); bo = bits(lm, [s for s, _ in O], [p for _, p in O])
 pw = bits(lm, [s for s, _ in PW], [p for _, p in PW]); po = bits(lm, [s for s, _ in PO], [p for _, p in PO])
+lw_ = bits(lm, [s for s, _ in LW], [p for _, p in LW]); lo_ = bits(lm, [s for s, _ in LO], [p for _, p in LO])
 P(f"bits computed ({time.time() - t1:.0f}s)")
 y = np.array([c['gold'] for c in usable]); gain = bo - bw; pgain = po - pw; dist = -np.array([c['dist'] for c in usable], float)
 
@@ -99,6 +102,9 @@ rep('EXTRACTION GAIN (record with the words between)', gain)
 rep('pair-only gain (names, no words between)', pgain)
 rep('words between minus pair-only', gain - pgain)
 rep('closeness of the names (no trunk)', dist)
+lg = lo_ - lw_
+rep('list-style gain ("A , B": co-occurrence alone)', lg)
+rep('WORDS BETWEEN beyond the LIST record', gain - lg)
 rk = lambda x: np.argsort(np.argsort(x)).astype(float)
 rep('gain + closeness (rank average)', (rk(gain) + rk(dist)) / 2)
 P(f"DONE ({time.time() - T0:.0f}s)")
