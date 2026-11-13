@@ -600,6 +600,24 @@ class Config:
     inf_extract_gain=0              #   13 Nov READOUT: EXTRACTION GAIN inside the compression-gain readout (inference.compress): does a candidate record (two names in one
                                     #     sentence and the words between) save the trunk bits where the names meet again, more for related pairs? (needs inf_compress_gain)
     inf_extract_n=1500              #     candidate records sampled
+    inf_sstore=0                    #   13 Nov SURPRISE-GATED STORE (MODEL CHANGE when on): real-text sentences enter the fast store only if the trunk finds
+                                    #     them surprising - bits per byte under the current model (the visit's slot) at or above the domain's running
+                                    #     (1 - inf_sstore_q) quantile; SLIMM: what the cortex already predicts is not stored as an episode (offline:
+                                    #     27.0 new true facts per 100 records kept vs 21.6 at random)
+    inf_sstore_q=0.5                #     share of scored sentences admitted
+    inf_sstore_n=64                 #     sentences scored per store call at most (the rest admitted at rate inf_sstore_q at random)
+    inf_sstore_warm=200             #     sentences per domain admitted ungated while the running quantile warms up
+    inf_premises=0                  #   13 Nov READOUT: PREMISES AT SCALE (inference.premises) every inf_premises_every visits: a SEPARATE record store reads
+                                    #     DocRED's distant Wikipedia set (inf_premises_path, 101,873 documents, a 1/inf_premises_visits share more per visit) plus
+                                    #     the benchmark documents read; TYPES by record-level compression (three-way block model, warm-started visit to visit),
+                                    #     RELATION cue, the TRUNK's surprise per record, PREMISE precision by policy and A-C INFERENCE through a shared name by
+                                    #     policy (offline: types purity 0.50 -> 0.72 with 28x the records; premise precision 0.60 at 5%)
+    inf_premises_path=''            #     train_distant.json(.gz) (the notebook downloads it); empty = benchmark documents only
+    inf_premises_every=2            #     visits between readouts
+    inf_premises_visits=10          #     the distant set is spread over this many visits
+    inf_premises_k='4,16'           #     name classes of the block models fitted (wording classes inf_premises_m)
+    inf_premises_m=128
+    inf_premises_score_max=400000   #     new distant records scored by the trunk per readout at most (sampled)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read

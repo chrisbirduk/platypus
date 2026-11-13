@@ -1685,6 +1685,18 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
             from platypus.inference.compress import compress_gain
             compress_gain(model, cfg, S_slot, vis, S_)
+        if int(getattr(cfg, 'inf_sstore', 0)):                                 # 13 Nov SURPRISE-GATED STORE (one model change): what it admitted
+            try:
+                from platypus.inference.sentences import sstore_report
+                sstore_report(model, cfg, vis)
+            except Exception as e9: _fail('inference.sstore:report'); print(f"  [SURPRISE GATE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        pm9 = int(getattr(cfg, 'inf_premises', 0))
+        if pm9 and (vis + 1) % max(1, int(getattr(cfg, 'inf_premises_every', 2))) == 0:   # 13 Nov PREMISES AT SCALE readout (inference.premises)
+            try:
+                from platypus.inference.premises import premises_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9): premises_readout(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.premises'); print(f"  [PREMISES AT SCALE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_store_link', 0)):                             # 13 Nov STORE LINKING (inference.compress; one model change)
             from platypus.inference.compress import store_link
             store_link(model, cfg, S_, S_slot, vis)
