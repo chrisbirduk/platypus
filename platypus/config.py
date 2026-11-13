@@ -603,6 +603,9 @@ class Config:
     inf_distill_rtx=0               #   12 Nov REAL-TEXT REPLAY (with inf_bench): N > 0 = N sentences of HALF the benchmark documents read (hash; the other half
                                     #     is the control) replayed with each question-row step; REAL-TEXT RECALL then splits replayed vs control documents
     inf_distill_rtx_align=1         #     1 = + alignment of views cut from those sentences (needs inf_distill_align > 0): no labels, no templates
+    inf_distill_rtx_title=0         #   13 Nov TITLE FOR PRONOUN: 1 = replayed real sentences opening with He/She/It/They (His/Her/Its/Their) are replayed
+                                    #     with the document's title in place of the pronoun ('Title's' for possessives); fair tests: TEMPLATE recall and
+                                    #     STORAGE of the original sentence in [REAL-TEXT RECALL, DIAGNOSTICS], pronoun-led group (own-frame asks the replayed form)
     inf_distill_rtx_space=0.0       #   12 Nov REPLAY BY STORAGE CHECK: alpha > 0 = replay probability ~ the trunk's own loss on each replayed sentence
                                     #     (clipped to q10-q90) ** alpha, re-measured before each visit: sentences already predicted are replayed less
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)

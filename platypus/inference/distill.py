@@ -1669,7 +1669,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         cgn9 = int(getattr(cfg, 'inf_compress_gain', 0))
         if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
             from platypus.inference.compress import compress_gain
-            compress_gain(model, cfg, S_slot, vis)
+            compress_gain(model, cfg, S_slot, vis, S_)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);
@@ -1874,7 +1874,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if rtxN9 > 0 and str(getattr(cfg, 'inf_bench', '') or ''):          #   hash; the other half is the control) replayed as plain text, and alignment
             try:                                                               #   views cut from them (question: lead-in + subject + words up to an object;
                 from platypus.inference.probes import _bench                   #   declaration: the sentence up to that object) - no labels, no templates
-                Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = 0
+                Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = nt9 = 0
+                ttl9 = int(getattr(cfg, 'inf_distill_rtx_title', 0))
                 for d9 in sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())):
                     sl9 = int(S_slot(d9))
                     for di9, doc9 in enumerate(Gb['docs'].get(str(d9), [])):
@@ -1882,6 +1883,13 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                         ss9 = [x for x in re.split(r'(?<=[.!?])\s+', doc9) if len(x) >= 20]
                         if not ss9: continue
                         m9 = re.match(r"(?:[A-Z][\w'\-]*)(?:\s+(?:of|de|the|and)?\s*[A-Z][\w'\-]*)*", ss9[0]); tt9 = m9.group(0) if m9 else None
+                        if ttl9 and tt9:                                       # 13 Nov TITLE FOR PRONOUN (inf_distill_rtx_title): a replayed sentence that opens
+                            ss9b = []                                          #   with He / She / It / They (His / Her / Its / Their) is replayed with the
+                            for x in ss9:                                      #   document's title in its place ('Title's' for the possessives) - Wikipedia
+                                p9 = next((p for p in _RTX_PRON[:8] if x.startswith(p)), None)   # openings are about their title (offline: the title is
+                                if p9 is None or x is ss9[0]: ss9b.append(x); continue           # the pronoun's antecedent 0.55, chance 0.21)
+                                ss9b.append(tt9 + ("'s " if p9 in ('His ', 'Her ', 'Its ', 'Their ') else ' ') + x[len(p9):]); nt9 += 1
+                            ss9 = ss9b
                         rtx9.setdefault(sl9, []).extend(x.encode('latin-1', 'replace')[:L09 - 1] for x in ss9); nd9 += 1
                         if int(getattr(cfg, 'inf_distill_rtx_align', 1)) and aw9 > 0:
                             for x in ss9:
@@ -1889,7 +1897,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 print(f"  [DISTILLATION, REAL-TEXT REPLAY | visit {vis + 1}] last visit: {len(R1)} steps x {rtxN9} benchmark sentences, next-byte loss "
                       f"{np.mean(R1[:20]) if R1 else float('nan'):.3f} (first 20) -> {np.mean(R1[-20:]) if R1 else float('nan'):.3f} (last 20); alignment on real-text views "
                       f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
-                      f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views", flush=True)
+                      f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views"
+                      + (f", {nt9} pronoun-led sentences replayed with the document's title for the pronoun" if ttl9 else ''), flush=True)
                 spx9 = float(getattr(cfg, 'inf_distill_rtx_space', 0.0))
                 if spx9 > 0 and rtx9:                                          # 12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space = alpha): before each
                     rtw9 = _rtx_weights(model, rtx9, spx9, vis)                #   visit the trunk reads every replayed sentence; sentences it already predicts

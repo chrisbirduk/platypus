@@ -52,12 +52,12 @@ def _c3(s):
     t = ' ' + re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip() + ' '; return {t[i:i + 3] for i in range(len(t) - 2)}
 
 
-def compress_gain(model, cfg, S_slot, vis):
+def compress_gain(model, cfg, S_slot, vis, S_=None):
     try:
         from platypus.inference.probes import _bench
         G = _bench(cfg); MT = json.loads(zlib.decompress(base64.b85decode(_BENCH_MENT)).decode('utf-8'))
         seen = sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())); TH = b'Thing'; rs = np.random.RandomState(int(cfg.seed) + 5151 + vis)
-        nmax = int(getattr(cfg, 'inf_compress_n', 600)); JA, JB = [], []; PA, PB, PL = [], [], []
+        nmax = int(getattr(cfg, 'inf_compress_n', 600)); JA, JB = [], []; PA, PB, PL = [], [], []; JW = []
         cap = lambda w: w[:1].isupper() or w[:1].isdigit()
         for d in seen:
             sl = int(S_slot(d)); docs = G['docs'].get(str(d), []); ments = MT.get(str(d), [])
@@ -76,7 +76,7 @@ def compress_gain(model, cfg, S_slot, vis):
                     if not (cap(w0) and cap(w1)) or t[b0:a1] != ' ' or sid(a0) != sid(a1) or len(JA) >= nmax: continue
                     c0 = max(sents[sid(a0)][0], a0 - 60); pre = tb[c0:a0]
                     same = k in inm and (k - 1) in inm and inm[k] == inm[k - 1] and k not in starts
-                    JA.append((sl, pre + tb[a0:b1], len(pre) + (b0 - a0) + 1, len(pre) + (b1 - a0)))
+                    JA.append((sl, pre + tb[a0:b1], len(pre) + (b0 - a0) + 1, len(pre) + (b1 - a0))); JW.append((w0, w1, same))
                     JB.append((sl, pre + TH + b' ' + tb[a1:b1], len(pre) + len(TH) + 1, len(pre) + len(TH) + 1 + (b1 - a1), same))
                 for j in range(len(ms)):                                      # (b) pairs: each mention with its 8 nearest earlier mentions
                     if len(PL) >= 10 * nmax: break
@@ -99,6 +99,20 @@ def compress_gain(model, cfg, S_slot, vis):
                 for n, b in zip(ix, v): out[n] = b
             return out
         msg = []
+        if JW:                                                                # 13 Nov (c) UNITS FROM COUNTS: pointwise mutual information of the two words,
+            import collections                                                 #   counted over what the system holds - the store's sentences and the
+            uni, big = collections.Counter(), collections.Counter()            #   benchmark documents of the domains read (offline: PMI 0.73 vs the trunk 0.42-0.59)
+            txts = [t for d in seen for t in G['docs'].get(str(d), [])]
+            for it in ((S_ or {}).get('it') or []):
+                try: txts.append(it['s'].decode('latin-1') if isinstance(it['s'], (bytes, bytearray)) else str(it['s']))
+                except Exception: pass
+            for t in txts:
+                ws = _CG_TOK.findall(t)
+                for i, w in enumerate(ws):
+                    uni[w] += 1
+                    if i: big[(ws[i - 1], w)] += 1
+            N = max(1, sum(uni.values())); pm = np.array([np.log2((big[(a, b)] + 0.1) * N / (uni[a] * uni[b] + 1e-9)) for a, b, sm in JW]); yy = np.array([sm for a, b, sm in JW])
+            msg.append(f"(c) UNITS FROM COUNTS over {len(txts)} texts the system holds ({N} words): PMI AUC same mention vs boundary {_cg_auc(pm[yy], pm[~yy]):.3f}")
         if JA:
             bw = run(JA); bo = run([x[:4] for x in JB]); g = bo - bw; y = np.array([x[4] for x in JB])
             msg.append(f"(a) UNITS, {len(y)} joins of capitalised words ({int(y.sum())} inside one mention): AUC same mention vs boundary - BINDING GAIN {_cg_auc(g[y], g[~y]):.3f} "

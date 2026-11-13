@@ -84,6 +84,8 @@ def parse(path):
             m = re.search(r'given a stored name ' + NUM + r' \(ungated ' + NUM + r'\), abstained ' + NUM, ln)
             if m: d['g_false'], d['g_false0'], d['g_abst'] = m.groups()
         elif '[COMPRESSION GAIN | visit' in ln:
+            m = re.search(r'PMI AUC same mention vs boundary ' + NUM, ln)
+            if m: d['cg_pmi'] = m.group(1)
             m = re.search(r'BINDING GAIN ' + NUM, ln)
             if m: d['cg_unit'] = m.group(1)
             m = re.search(r'plain surprise of the second word ' + NUM, ln)
@@ -113,7 +115,7 @@ GROUPS = {
     'gate': ('Gated answers (threshold from the previous sleep)', [('g_ans', 'known answered'), ('g_acc', 'right when answered'), ('g_right', 'right overall'),
                                                                   ('g_right0', 'right ungated'), ('g_false', 'never-read: false'), ('g_false0', 'false ungated'), ('g_abst', 'abstained')]),
     'sc': ('Replay by storage check', [('sc_med', 'median loss'), ('sc_hard', 'share to hardest quarter'), ('sc_mv', 'hardest quarter change')]),
-    'cg': ('Compression gain (AUC)', [('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
+    'cg': ('Compression gain (AUC)', [('cg_pmi', 'units: PMI (counts)'), ('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
                                        ('cg_vh', 'links: gain VERY HARD'), ('cg_str', 'links: letter triples'), ('cg_strh', 'letter triples HARD')]),
     's4': ('Step 4, edits subtracted', [('s4_t', 'taught'), ('s4_tn', 'n'), ('s4_h', 'held back'), ('s4_hn', 'n')]),
 }
