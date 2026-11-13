@@ -750,6 +750,16 @@ relation must have been seen with A's and C's name types. Test pairs (40,013 ver
 first time inference built on inference has gained rather than lost. Typed composability is the best label-free premise policy so far
 (0.160, 1.5x base; untyped bootstrapped 0.141, untyped type triples 0.124). Small absolute numbers; one run.
 
+**Replication at full scale (101,873 distant documents; same test pairs, Re-DocRED gold), 23:30:** universal schema 0.654, + name-type pair
+0.665 (no gain over 30k: 0.658 / 0.669; recurring pairs 118,900); typed composability top 25% / 10% **0.129 / 0.138**, + type coupling
+0.123 / **0.140**; typed hop 2 composability-gated **0.149** (909; hop-1 0.144). **Robust part: typed composability selects about 1.3x
+base (0.13-0.16 in both runs). Not robust: type coupling (adds 0-0.01) and the typed hop-2 gain (0.196 at 30k, 0.149 at full - about level
+with untyped hop 2).** Single runs; treat the 30k figures as the upper end.
+
+Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, base 0.242): the package's in-store scorer top 5% 0.497
+(AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
+mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
