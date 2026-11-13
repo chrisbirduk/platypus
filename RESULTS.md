@@ -726,6 +726,31 @@ built on inference) and, at 30k, before trunk congruence.
 - Discrepancy to resolve: on the GPU (distant set, Wikidata labels) 2+ bridges RAISE A-C precision (0.23 vs 0.11-0.13 for all); on
   Re-DocRED gold they lower it. Likely the distant labels reward transitive chains (located in, P131) that Wikidata labels densely.
 
+### GPU, 13 November night: cg27a_prem (surprise-gated store + premises at scale, visits 1-6) and cg27a_rti (end-to-end inference, visits 1-4); seed 4
+
+cg27a_prem - SURPRISE GATE (the model change): admits 0.49-0.50 of real-text sentences each visit (about 45 s); among sentences joining two
+benchmark entities, gold-related pairs admitted vs other co-occurrences: 0.88 vs 0.51 (1.71; 65 related), 0.53 vs 0.46 (1.16; 141),
+0.97 vs 0.80 (1.21; 71), 0.97 vs 0.77 (1.26; 59), 0.85 vs 0.53 (1.60; 53) at visits 1-5 (visit 6, Github: no benchmark text). **Positive,
+5 of 5 visits above 1** (confound not excluded: related sentences may be more surprising for other reasons). Real-text recall at the
+relation prior every visit, as earlier builds; gated answers right when answered 0.63 -> 0.88 (visits 3-6).
+PREMISES AT SCALE (readout; Wikidata labels for the distant set):
+
+| visit | store (distant docs) | name types purity K16 / NMI K4 | relation cue (gold types) | A-C 2+ bridges right: random / trunk surprise / type association | trunk surprise AUC |
+|---|---|---|---|---|---|
+| 2 | 20k | 0.60 / 0.20 | 0.57 (0.73) | 0.18 / 0.13 / 0.06 | 0.52 |
+| 4 | 41k | 0.65 / 0.28 | 0.59 (0.75) | 0.19 / 0.12 / 0.08 | 0.51 |
+| 6 | 61k | 0.66 / 0.33 | 0.63 (0.78) | 0.23 / 0.13 / 0.16 | 0.51 |
+
+Types and the relation cue rise with reading as offline (positive); the trunk's surprise on single records carries no signal; no
+label-free single-premise policy beats random premises for inference (type association improves as types improve).
+
+cg27a_rti - END-TO-END REAL-TEXT INFERENCE (premises at random, 2+ bridges, the trunk's check, write 'A is connected to C'): the CHECK is
+at chance (AUC 0.512 visit 2, 0.491 visit 4; passed right 0.374 / 0.319 vs failed 0.364 / 0.335 - the 600 best-bridged inferences are right
+about 0.33-0.37 by Wikidata labels). WRITES: 181 at visit 2, 370 by visit 4 (a fifth held back). RECALL FROM THE TRUNK of the visit-2
+writes (store off), taught vs held back: visit 3 RIGHT 0.07 (96 questions) vs 0.03 (32), WRONG 0.13 (172) vs 0.07 (42); **visit 4 RIGHT
+0.09 vs 0.03, WRONG 0.02 vs 0.00** - right inferences retained, wrong ones fading (about 2.5 standard errors; visit 3 showed the opposite).
+Provisional until visits 6-10.
+
 ### Universal schema and typed, coupled inference (tools/typed_infer.py, 13 November, late; Re-DocRED + 30k distant documents)
 
 UNIVERSAL SCHEMA (Riedel et al. 2013): PPMI over 15,285 wordings x 609,864 ordered pairs (32,662 seen 2+ times), SVD 64, 64 latent

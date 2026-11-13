@@ -629,7 +629,8 @@ class Config:
                                     #     after 'A is connected to '), the passing ones WRITTEN into the question pool as facts (a fifth held back)
     inf_rti_keep=0.1                #     share of scored records kept as premises (by trunk surprise + block association)
     inf_rti_n=600                   #     new 2+ bridge proposals checked per readout (most bridges first)
-    inf_rti_rank=3                  #     the check: C ranked in the trunk's top N of C and 9 names of its class
+    inf_rti_rank=10                 #     the check: C ranked in the trunk's top N of C and 9 names of its class; 10 = readout only (13 Nov: the trunk's check is at
+                                    #     chance on the GPU, AUC 0.512 / 0.491 at cg27a_rti visits 2 / 4, and backwards offline, 0.445; cg27a_rti itself uses 3)
     inf_rti_max=200                 #     inferences written per readout at most
     inf_rti_bridges=2               #     distinct bridge names an A-C proposal needs
     inf_rti_policy='surprise'       #     premise choice: surprise (trunk), both (surprise + block association), random
