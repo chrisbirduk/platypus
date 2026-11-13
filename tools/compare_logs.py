@@ -8,8 +8,12 @@ Groups (a group is printed only if some log has it):
   rpl   replay losses (last 20 steps): source sentences, real-text sentences
   ctl   [EVER TAUGHT] never-asked CONTROL facts from the trunk (learning from reading)
   ab    [ABSTENTION] explicit refusals, false answers with no threshold and at the threshold keeping 75% of known-right; refusal-row loss
+  gate  [GATED ANSWERS] the trunk answers only above last sleep's calibrated confidence: known answered / right, never-read false vs ungated
   sc    [REPLAY BY STORAGE CHECK] the trunk's loss on replayed sentences, replay share to the hardest quarter, last hardest quarter's change
   cg    [COMPRESSION GAIN] units (binding gain vs surprise) and links (mutual compression gain vs letter triples)
+  preq  [PREQUENTIAL BITS] held-out text of the domains read and of the next domain: all bytes, known names, unknown names
+  link  [STORE LINKING] letter and compression links, their precision on benchmark entities, records added
+  gates [GATED ANSWERS SMOOTHED] the gate with a threshold averaged across sleeps
   s4    [RELATIONAL MODULE WRITES] step 4, edits subtracted: taught vs held back
 Missing values print as '-'. Reads plain text only."""
 import os
@@ -77,7 +81,27 @@ def parse(path):
         elif '[DISTILLATION, REPLAY BY STORAGE CHECK | visit' in ln:
             m = re.search(r'median ' + NUM + r'.*?HARDEST quarter ' + NUM + r'.*?loss change ([-+]?[0-9.]+|[-+]?nan)', ln)
             if m: d['sc_med'], d['sc_hard'], d['sc_mv'] = m.groups()
+        elif '[DISTILLATION, GATED ANSWERS | visit' in ln:
+            m = re.search(r'answered ' + NUM + r', right when answered ' + NUM + r', right overall ' + NUM + r' \(ungated ' + NUM + r'\)', ln)
+            if m: d['g_ans'], d['g_acc'], d['g_right'], d['g_right0'] = m.groups()
+            m = re.search(r'given a stored name ' + NUM + r' \(ungated ' + NUM + r'\), abstained ' + NUM, ln)
+            if m: d['g_false'], d['g_false0'], d['g_abst'] = m.groups()
+        elif '[PREQUENTIAL BITS | visit' in ln:
+            m = re.search(r'domains READ \(\d+\): all bytes ' + NUM + r' \| KNOWN names ' + NUM + r' \((\d+) bytes\) \| unknown names ' + NUM, ln)
+            if m: d['pq_all'], d['pq_known'], d['pq_kn'], d['pq_unk'] = m.groups()
+            m = re.search(r'NEXT domain \d+ \(not yet read\): all bytes ' + NUM + r' \| KNOWN names ' + NUM + r' \((\d+) bytes\) \| unknown names ' + NUM, ln)
+            if m: d['pq_nall'], d['pq_nknown'], d['pq_nkn'], d['pq_nunk'] = m.groups()
+        elif '[STORE LINKING | visit' in ln:
+            m = re.search(r'LETTER links (\d+) \(on benchmark entities (\d+), same entity ' + NUM + r'\) \| COMPRESSION links (\d+) of (\d+) candidate pairs.*?on benchmark entities (\d+), same entity ' + NUM + r'\) \| records ADDED with linked names (\d+)', ln)
+            if m: d['lk_l'], d['lk_ln'], d['lk_lp'], d['lk_c'], d['lk_cc'], d['lk_cn'], d['lk_cp'], d['lk_add'] = m.groups()
+        elif '[DISTILLATION, GATED ANSWERS SMOOTHED | visit' in ln:
+            m = re.search(r'right overall ' + NUM + r' \| NEVER READ given a stored name ' + NUM, ln)
+            if m: d['gs_right'], d['gs_false'] = m.groups()
         elif '[COMPRESSION GAIN | visit' in ln:
+            m = re.search(r'RELATIONS by substitution.*?AUC same gold type vs not ' + NUM + r' \| best candidate of the same type ' + NUM + r' \(chance ' + NUM, ln)
+            if m: d['cg_rel'], d['cg_reltop'], d['cg_relch'] = m.groups()
+            m = re.search(r'PMI AUC same mention vs boundary ' + NUM, ln)
+            if m: d['cg_pmi'] = m.group(1)
             m = re.search(r'BINDING GAIN ' + NUM, ln)
             if m: d['cg_unit'] = m.group(1)
             m = re.search(r'plain surprise of the second word ' + NUM, ln)
@@ -104,8 +128,15 @@ GROUPS = {
     'ctl': ('Learning from reading (ledger, from the trunk)', [('taught', 'taught'), ('ctl', 'never asked')]),
     'ab': ('Abstention (from the trunk)', [('ab_rk', 'refuse known'), ('ab_ra', 'refuse (a) fresh'), ('ab_rb', 'refuse (b) missing rel'), ('ab_leak0', 'false, no threshold'),
                                            ('ab_k75', 'known answered @75%'), ('ab_acc75', 'accuracy @75%'), ('ab_leak75', 'false @75%'), ('rf_loss', 'refusal-row loss')]),
+    'gate': ('Gated answers (threshold from the previous sleep)', [('g_ans', 'known answered'), ('g_acc', 'right when answered'), ('g_right', 'right overall'),
+                                                                  ('g_right0', 'right ungated'), ('g_false', 'never-read: false'), ('g_false0', 'false ungated'), ('g_abst', 'abstained')]),
+    'preq': ('Prequential bits (held-out, weights only)', [('pq_all', 'read: all'), ('pq_known', 'read: known names'), ('pq_unk', 'read: unknown names'),
+                                                           ('pq_nall', 'next: all'), ('pq_nknown', 'next: known names'), ('pq_nkn', 'next: known bytes'), ('pq_nunk', 'next: unknown names')]),
+    'link': ('Store linking', [('lk_l', 'letter links'), ('lk_lp', 'letter: same entity'), ('lk_c', 'compression links'), ('lk_cc', 'candidates'),
+                               ('lk_cp', 'compression: same entity'), ('lk_add', 'records added')]),
+    'gates': ('Gated answers, smoothed threshold', [('gs_right', 'right overall'), ('gs_false', 'never-read: false')]),
     'sc': ('Replay by storage check', [('sc_med', 'median loss'), ('sc_hard', 'share to hardest quarter'), ('sc_mv', 'hardest quarter change')]),
-    'cg': ('Compression gain (AUC)', [('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
+    'cg': ('Compression gain (AUC)', [('cg_rel', 'relations: substitution AUC'), ('cg_reltop', 'relations: best'), ('cg_relch', 'relations: chance'), ('cg_pmi', 'units: PMI (counts)'), ('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
                                        ('cg_vh', 'links: gain VERY HARD'), ('cg_str', 'links: letter triples'), ('cg_strh', 'letter triples HARD')]),
     's4': ('Step 4, edits subtracted', [('s4_t', 'taught'), ('s4_tn', 'n'), ('s4_h', 'held back'), ('s4_hn', 'n')]),
 }

@@ -146,6 +146,15 @@ def _rtx_rep(d, di):
     return zlib.crc32(f"rtx|{int(d)}|{int(di)}".encode()) % 2 == 0
 
 
+def _rtx_slot(cfg, S_slot, d, seen, ask=False):
+    """13 Nov (inf_distill_rtx_slot): the slot benchmark documents are replayed through AND asked through. -1 = the slot of the domain the
+    document was assigned to (the benchmark's documents are Wikipedia text split across domains 0-4; cg27a_rtxt: Gutenberg's slot replayed 53 of
+    them, Gutenberg forgetting +0.224); k >= 0 = always domain k's slot (1 = Wikipedia), None while k is not yet visited (no replay then)"""
+    k = int(getattr(cfg, 'inf_distill_rtx_slot', -1))
+    if k < 0 or (ask and k not in seen): return int(S_slot(d))              #   (questions fall back to the document's own slot until k is visited)
+    return int(S_slot(k)) if k in seen else None
+
+
 def _dw_bench_recall(model, cfg, S_slot, vis):
     """12 Nov READOUT: REAL-TEXT RECALL FROM THE WEIGHTS - Re-DocRED gold relations of the benchmark documents the model has READ (planted
     once in pass 1, in visited domains), whose two names stand in one sentence, asked in a templated test wording per relation type
@@ -175,7 +184,7 @@ def _dw_bench_recall(model, cfg, S_slot, vis):
     def score(L):
         L = [L[int(i)] for i in rs.permutation(len(L))[:64]]; ok = []; pri = []
         for d, pc, H, T, same, rp in L:
-            oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = int(S_slot(d))
+            oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = _rtx_slot(cfg, S_slot, d, seen, ask=True)
             ok.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0); pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0)
         ch = np.mean([1.0 / (1 + min(9, len(x[4]))) for x in L]) if L else float('nan')
         return (f"the true object among up to 10 same-type names {np.mean(ok) if ok else float('nan'):.2f} | with a FRESH subject (relation prior alone) "
@@ -236,7 +245,7 @@ def _dw_bench_diag(model, cfg, S_slot, vis):
     def score(L):
         L = [L[int(i)] for i in rs.permutation(len(L))[:48]]; st, own, tpl, pri = [], [], [], []
         for d, pc, H, T, same, rp, kd, pre, oq in L:
-            sl = int(S_slot(d)); oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth
+            sl = _rtx_slot(cfg, S_slot, d, seen, ask=True); oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth
             pb = pre.encode('latin-1', 'replace')[-(L0 - 2 - len(T)):]; tb = T.encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb + b' '])
             with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
             p0 = len(pb) - 1
@@ -375,6 +384,28 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
                   f"{np.mean([ok_ for ok_, c, rf in kr]):.2f} || CONFIDENCE THRESHOLD: " + " | ".join(parts), flush=True)
         except Exception as e9:
             _fail('inference.distill:abstain'); print(f"  [DISTILLATION, ABSTENTION] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        try:                                                                  # 12 Nov GATED ANSWERS (readout of a decision rule; no training change): the trunk
+            gq = float(getattr(cfg, 'inf_distill_gate_q', 0.75))              #   answers only when its first-byte confidence >= t, else it abstains (defers to
+            kr2 = [(ok_, c, ref(a)) for (ok_, c), a in zip(K_, Ka)]          #   the store). t is CALIBRATED at the previous sleep (the threshold that kept a
+            un2 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share gq of the known facts it answered
+            kc2 = np.array([c for ok_, c, rf in kr2 if ok_ and not rf])       #   right) and APPLIED to this sleep's new questions: out of sample
+            tp = model.__dict__.get('_gate_t'); tn = float(np.quantile(kc2, 1 - gq)) if len(kc2) >= 4 else tp
+            if tp is not None and kr2 and un2:
+                ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
+                print(f"  [DISTILLATION, GATED ANSWERS | visit {vis + 1}] rule: the trunk answers only when its confidence >= t = {tp:.2f} (calibrated at the previous sleep to keep "
+                      f"{gq:.0%} of its right answers), else abstains; on THIS sleep's new questions: KNOWN facts ({len(kr2)}): answered {len(ak) / len(kr2):.2f}, right when answered "
+                      f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} (ungated {np.mean([ok_ for ok_, c, rf in kr2]):.2f}) | "
+                      f"NEVER READ ({len(un2)}): given a stored name {sum(ru) / len(un2):.2f} (ungated {np.mean([bool(st) and not rf for st, c, rf in un2]):.2f}), abstained "
+                      f"{1 - len(ru) / len(un2):.2f} | next t {tn if tn is not None else float('nan'):.2f}", flush=True)
+            te = model.__dict__.get('_gate_te')                                 # 13 Nov SMOOTHED: the threshold averaged across sleeps (half last smoothed,
+            if te is not None and kr2 and un2:                                  #   half this sleep's calibration) - the raw one swung 0.14 -> 0.53
+                ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= te]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= te]
+                print(f"  [DISTILLATION, GATED ANSWERS SMOOTHED | visit {vis + 1}] t = {te:.2f} (averaged across sleeps): KNOWN answered {len(ak) / len(kr2):.2f}, right when answered "
+                      f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} | NEVER READ given a stored name "
+                      f"{sum(ru) / len(un2):.2f}", flush=True)
+            if tn is not None: model.__dict__['_gate_t'] = tn; model.__dict__['_gate_te'] = tn if te is None else 0.5 * te + 0.5 * tn
+        except Exception as e9:
+            _fail('inference.distill:gate'); print(f"  [DISTILLATION, GATED ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
 
 def _dt_items(ents, rs, n):
@@ -1653,7 +1684,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         cgn9 = int(getattr(cfg, 'inf_compress_gain', 0))
         if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
             from platypus.inference.compress import compress_gain
-            compress_gain(model, cfg, S_slot, vis)
+            compress_gain(model, cfg, S_slot, vis, S_)
+        if int(getattr(cfg, 'inf_store_link', 0)):                             # 13 Nov STORE LINKING (inference.compress; one model change)
+            from platypus.inference.compress import store_link
+            store_link(model, cfg, S_, S_slot, vis)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);
@@ -1858,14 +1892,24 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if rtxN9 > 0 and str(getattr(cfg, 'inf_bench', '') or ''):          #   hash; the other half is the control) replayed as plain text, and alignment
             try:                                                               #   views cut from them (question: lead-in + subject + words up to an object;
                 from platypus.inference.probes import _bench                   #   declaration: the sentence up to that object) - no labels, no templates
-                Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = 0
-                for d9 in sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())):
-                    sl9 = int(S_slot(d9))
+                Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = nt9 = 0
+                ttl9 = int(getattr(cfg, 'inf_distill_rtx_title', 0))
+                vis9_ = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+                for d9 in sorted(vis9_):
+                    sl9 = _rtx_slot(cfg, S_slot, d9, vis9_)
+                    if sl9 is None: continue
                     for di9, doc9 in enumerate(Gb['docs'].get(str(d9), [])):
                         if not _rtx_rep(d9, di9): continue
                         ss9 = [x for x in re.split(r'(?<=[.!?])\s+', doc9) if len(x) >= 20]
                         if not ss9: continue
                         m9 = re.match(r"(?:[A-Z][\w'\-]*)(?:\s+(?:of|de|the|and)?\s*[A-Z][\w'\-]*)*", ss9[0]); tt9 = m9.group(0) if m9 else None
+                        if ttl9 and tt9:                                       # 13 Nov TITLE FOR PRONOUN (inf_distill_rtx_title): a replayed sentence that opens
+                            ss9b = []                                          #   with He / She / It / They (His / Her / Its / Their) is replayed with the
+                            for x in ss9:                                      #   document's title in its place ('Title's' for the possessives) - Wikipedia
+                                p9 = next((p for p in _RTX_PRON[:8] if x.startswith(p)), None)   # openings are about their title (offline: the title is
+                                if p9 is None or x is ss9[0]: ss9b.append(x); continue           # the pronoun's antecedent 0.55, chance 0.21)
+                                ss9b.append(tt9 + ("'s " if p9 in ('His ', 'Her ', 'Its ', 'Their ') else ' ') + x[len(p9):]); nt9 += 1
+                            ss9 = ss9b
                         rtx9.setdefault(sl9, []).extend(x.encode('latin-1', 'replace')[:L09 - 1] for x in ss9); nd9 += 1
                         if int(getattr(cfg, 'inf_distill_rtx_align', 1)) and aw9 > 0:
                             for x in ss9:
@@ -1873,7 +1917,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 print(f"  [DISTILLATION, REAL-TEXT REPLAY | visit {vis + 1}] last visit: {len(R1)} steps x {rtxN9} benchmark sentences, next-byte loss "
                       f"{np.mean(R1[:20]) if R1 else float('nan'):.3f} (first 20) -> {np.mean(R1[-20:]) if R1 else float('nan'):.3f} (last 20); alignment on real-text views "
                       f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
-                      f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views", flush=True)
+                      f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views"
+                      + (f", {nt9} pronoun-led sentences replayed with the document's title for the pronoun" if ttl9 else ''), flush=True)
                 spx9 = float(getattr(cfg, 'inf_distill_rtx_space', 0.0))
                 if spx9 > 0 and rtx9:                                          # 12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space = alpha): before each
                     rtw9 = _rtx_weights(model, rtx9, spx9, vis)                #   visit the trunk reads every replayed sentence; sentences it already predicts

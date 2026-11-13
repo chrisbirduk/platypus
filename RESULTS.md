@@ -505,6 +505,217 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
+### cg27a_link: store linking and prequential bits (GPU, seed 4, 13 November; complete, 10 visits)
+
+cg27a_rtx16 + inf_store_link 1 + inf_preq 1. BPC within seed noise of cg27a_rtxt at every visit (largest +0.016 at visit 6); local safety
+identical to the baseline (-0.158 / 2.996). Linking feeds only S_['relc'] (readouts), so nothing in training changes.
+- **Letter links: the 1.00 'same entity' printed at every visit is an artefact.** The check counted a link right when the two names
+  shared ANY distinctive benchmark word - true of every tail link by construction ('Smith' / 'John Smith'). Strict check (both names gold
+  mentions of one entity; added 13 November, compress.py): **0.58 (31)** on 50 benchmark documents locally against 1.00 (18) lenient;
+  offline on the 500 dev documents the same letter rule is 0.51 (964 pairs). Letter links are roughly half right, not all right.
+- **Compression links: 0 of 6** on benchmark entities (lenient check), 565 links by visit 5; median gain 4-5 bits.
+- Relation substitution AUC 0.598 / 0.642 / 0.606 at visits 2 / 4 / 6 (best same-type candidate 0.153 vs chance 0.086 at visit 6): weak
+  and flat, not rising.
+- Prequential bits on held-out text of the domains read: all bytes 2.023 -> 1.881 (visits 1-5); known names 2.2-2.3 vs unknown 3.5-5.1
+  bits per byte. NEXT-domain figures are invalid in this run (read through an untrained slot; fixed for cg27a_rtxw).
+- Gate (threshold from the previous sleep), never-read false vs ungated: 0.40 / 0.35 / 0.27 / 0.10 vs 0.63 / 0.65 / 0.55 / 0.56 at visits
+  3-6; right overall 0.41 / 0.33 / 0.50 / 0.34 vs ungated 0.44 / 0.39 / 0.53 / 0.53. Smoothed threshold: false 0.40 / 0.43 / 0.33 / 0.16,
+  right 0.41 / 0.36 / 0.52 / 0.39 - steadier.
+- **Visits 7-10.** Smoothed gate right / never-read false: 0.61 / 0.24, 0.61 / 0.19, 0.67 / 0.23, **0.67 / 0.12** (ungated 0.73 / 0.64,
+  0.69 / 0.58, 0.78 / 0.66, 0.73 / 0.58): at visit 10 the trunk keeps 92% of its right answers and drops 79% of its false ones. Known-fact
+  confidence AUC 0.87 / 0.90 / 0.88 / **0.94**; known right 0.73 / 0.69 / 0.78 / 0.73 (cg27a_rtxt 0.59 / 0.53 / 0.62 / 0.64). Relation
+  substitution 0.616 at visit 8. Prequential bits on read domains 1.80 at visit 10, known names 1.94 vs unknown 3.36.
+- **End of run: forgetting +0.088, mean final BPC 1.818** (cg27a_rtxt +0.077 / 1.808; without real-text replay +0.026 / 1.767);
+  Gutenberg +0.238, StackExchange +0.336. Linking cannot touch training, so the +0.01 against cg27a_rtxt is GPU run-to-run variation; the
+  real-text replay cost stands (cg27a_rtxw tests the fix).
+
+### Rules from real facts: the miner, not the amount of text (tools/dataset_volume.py, tools/count_miner.py, tools/count_miner_reader.py; 13 November)
+
+Re-DocRED train + dev (3,553 documents, 93,278 gold facts, local copy); 20% of facts held out; proposals checked against all gold facts on
+pairs Re-DocRED annotates (both entities in one document).
+
+| Documents | _rm_mine (learned snap): rules / proposals gold / writes | COUNTING miner (n >= 20, Wilson z 4 >= 0.7): rules / proposals gold | held-out recovered |
+|---|---|---|---|
+| 262 | 3 / 0.18 / 0 | 1 / 0.42 | 15 |
+| 800 | 2 (both spurious) / 0.00 / **9, all wrong** | 4 / 0.35 | 83 |
+| 1,600 | 1 / 0.04 / 0 | 16 / 0.34 | 219 |
+| 3,553 | out of memory (8 GB) | **36** / 0.33 | 603 |
+
+- **_rm_mine does not scale to real facts** (thousands of names): fewer rules with more text, and at 800 documents a spurious rule passed on
+  4 of 4 and would have written 9 wrong facts. Its n >= 3 at z 1.96 is far too lenient against thousands of candidates. Rule world only.
+- **Exact chain counts find real rules, more with more text**: a region's country from the places in it (0.88 of 992), siblings share a
+  father (0.93 of 119), a track's label and performer from its album (0.91-0.92 of 158-177). 40 s, little memory.
+- **But proposals are 0.33 gold** (0.49 when 3+ rules agree, 0.41 when every chain ends on the same name): rules that hold 0.88-0.96 on
+  subjects with a known answer are far weaker on subjects without one. Proposals are hypotheses, never writes.
+- **Through the reader: no rules at all.** The reader's records on the 3,053 train documents cover 2,903 of 85,932 gold facts (**3.4%**);
+  with gold relation types on those records 0 rules; on its 65,153 raw records (300 frames) 0; on 181,872 benchmark + Wikipedia records,
+  looser bound, 4 punctuation 'rules'. **The reader's fact recall is the blocker for real-text inference.**
+
+### Rescuing compression linking (tools/link_rescue.py, 13 November; Re-DocRED dev 500 documents, stand-in trunk 192 wide, 6,000 steps)
+
+The stand-in's link AUC is 0.56 (the model's 0.74-0.84): compare rows with each other. Candidates: the 12 nearest earlier mentions; pairs
+letters do not link (118,346; 3.3% the same entity).
+
+| Policy | Links | Same entity | Right, of them HARD (no shared word) |
+|---|---|---|---|
+| chance | 118,346 | 0.033 | 3,952 / 727 |
+| top 1.5% by gain (the GPU's link rate) | 1,776 | 0.075 | 133 / 83 |
+| calibrated on letter links (50th-90th percentile) | 8,571-52,090 | 0.040-0.049 | - |
+| one earlier mention per later mention, margin >= 2 bits, capitalised | 509 | 0.191 | 97 / 62 |
+| the same + top 1.5% | 182 | **0.264** | 48 / 35 |
+
+- Calibration on letter links fails here: letter links are only 0.51 right offline, so they are poor positives.
+- **Competition (each later mention picks one earlier mention, by a clear margin) lifts precision 3.5x over the fixed-rate policy and 8x
+  over chance**, and most of what it finds are hard pairs letters can never find. Still far from writable: a vote, or a hypothesis.
+
+### cg27a_rtxt: title for pronoun in real-text replay, to visit 10 (GPU, seed 4, 13 November)
+
+cg27a_rtx16 + inf_distill_rtx_title 1 (pronoun-led replayed sentences replayed with the document's title for the pronoun). BPC within 0.006 of
+cg27a_rtx16 throughout; peak GPU memory 55.5 GB; the only errors the old NAME MEMORY READOUT 'stale' (caught; also in earlier runs).
+
+| visit | named: storage / own / another wording / prior | PRONOUN-LED: storage / own / ANOTHER wording / prior | control named: own / prior |
+|---|---|---|---|
+| 5 | 0.02 / 0.27 / 0.21 / 0.17 | 0.02 / 0.15 / 0.15 / 0.15 | 0.10 / 0.04 |
+| 6 | 0.12 / 0.33 / 0.21 / 0.21 | 0.02 / 0.19 / **0.17 / 0.08** | 0.06 / 0.10 |
+| 7 | 0.08 / 0.27 / 0.15 / 0.17 | 0.04 / 0.31 / **0.23 / 0.19** | 0.08 / 0.08 |
+| 8 | 0.06 / 0.35 / 0.12 / 0.17 | 0.06 / 0.29 / **0.21 / 0.17** | 0.08 / 0.04 |
+| 9 | 0.10 / 0.46 / 0.33 / 0.31 | 0.08 / 0.38 / **0.21 / 0.15** | 0.08 / 0.12 |
+| 10 | 0.08 / 0.27 / 0.19 / 0.17 | 0.04 / 0.44 / **0.25 / 0.10** | 0.12 / 0.15 |
+
+**Real sentences stored (named storage 0.06-0.12 from visit 6, control 0; replicates cg27a_refuse) and known in their own wording; named
+facts do not reach other wordings (+0.02 at most). Pronoun-led facts replayed with the title DO: above their prior in another wording at
+visits 6-10 (+0.09, +0.04, +0.04, +0.06, +0.15; 48 sentences each).** One run.
+
+**END OF RUN - A REAL COST: forgetting +0.077, final BPC 1.807 (weights only), against cg27a_replay seed 4 +0.026 / 1.767 (same seed, no
+real-text replay; seed 5 +0.034 / 1.775).** Per domain: Gutenberg +0.224 (vs +0.009), StackExchange +0.312 (vs +0.083); the rest within
+about 0.03. The benchmark documents (Wikipedia text) are split across domains 0-4 and replayed through THOSE domains' slots, 16 sentences a
+step at every later visit - Gutenberg's slot replays 53 Wikipedia documents. The 16-per-step real-text replay was never run to the end
+before (cg27a_rtx / rtx16 stopped at visits 7 / 4) and the local safety runs cannot show it (local replay starts at visit 6, tiny text).
+Not attributable to the title change itself (it only rewrites pronoun-led sentences); a cg27a_rtx16 run to visit 10 would separate them.
+
+GATED ANSWERS (threshold from the previous sleep, out of sample): never-read given a stored name ungated -> gated 0.54 -> 0.45, 0.65 -> 0.25,
+0.55 -> 0.39, 0.59 -> 0.24, 0.65 -> 0.34, 0.58 -> 0.14, 0.64 -> 0.15, **0.57 -> 0.12** (visits 3-10); known right overall 0.36 -> 0.36, 0.39 ->
+0.22, 0.52 -> 0.47, 0.58 -> 0.47, 0.59 -> 0.52, 0.53 -> 0.44, 0.62 -> 0.41, **0.64 -> 0.52**; the threshold climbed 0.14 -> 0.53 with the
+trunk's confidence. Confidence AUC known-right vs never-read 0.68 -> **0.90** (visit 10). Learning from reading: never asked 0.16 at visit 10.
+COMPRESSION GAIN, links: 0.770 / 0.782 / 0.796 / 0.839 / 0.823 (visits 2-10; same entity 3.9 vs 0.3 bits at visit 8); units: PMI 0.59-0.64,
+binding gain 0.41-0.47 (none). Real-text relational module: 19,390 facts, 0 rules.
+
+### Rules from real text with today's reading pieces - and the oracle (tools/realtext_mine.py, 13 November)
+
+262 benchmark + 630 local Wikipedia documents, 181,872 records; the relational module (_rm_mine, every guard) over the 60 commonest frames.
+| variant | facts mined | testable candidate chains | rules |
+|---|---|---|---|
+| R0 the reader as it stands (title rule for pronouns included) | 12,333 | 91 (best: glue words, 'from' o 'and' -> 's' 0.25 of 4) | 0 |
+| R1 + linking mentions (3,678 short mentions joined to an earlier full name; errors like 'London' -> 'College London') | 12,103 | 45 | 0 |
+| R2 + merging wordings that connect the same name pairs | - | **0 merges** (no two frames share 2+ pairs at Jaccard >= 0.15) | 0 |
+| **ORACLE: gold relation types as frames** | **678** (records on gold pairs; 54 types: P131 148, P19 57, P27 56, ...) | **0** (no chain with 3+ observed composite facts) | **0** |
+
+**Even with relation identity solved, this much text gives no rule**: the reader puts only 678 records on gold pairs, too few for any chain
+to be observed three times. The blocker on real text is the NUMBER of facts read - reader recall (5.5% of gold relations) times corpus size
+- before relation identity. Merging wordings by shared pairs found nothing for the same reason (pairs rarely recur across documents).
+
+### cg27a_rtxt local safety (13 November): title for pronoun in real-text replay (inf_distill_rtx_title 1)
+
+Short local run (RTXTL2; the first, RTXTL, was cut at visit 10 by a container restart - visits 1-9 within 0.001 BPC of RTX16L): final BPC
+**2.998 / forgetting -0.156** vs RTX16L 2.996 / -0.158 (seed noise ~0.017); FAILURES none, no errors; 221 pronoun-led sentences replayed with
+the title at the last visit. Safe.
+
+### Overnight offline tests (12-13 November; tools/overnight/; Re-DocRED dev, 500 documents; stand-in byte LM 128 wide, 4,000 steps, 2.10 bits/byte, and the same network untrained)
+
+**Compression gain, stand-in trunk (tools/compress_gain.py):** units - binding gain at joins inside capitalised runs AUC 0.437 (untrained
+0.501, surprise 0.513; 8,702 joins), spans unchanged (F1 0.696 vs 0.698). Links - 119,310 candidate pairs (12 nearest earlier mentions),
+4,439 same entity: raw gain AUC **0.533** (HARD 0.485, VERY HARD 0.477) vs untrained 0.514 / 0.524 / 0.553; string features 0.895
+(HARD 0.446); string + gain 0.941 vs string + untrained gain 0.946. **At this size the trunk's compression gain carries no linking signal
+- unlike the GPU trunk (0.756 all, 0.61 -> 0.68 on pairs sharing no word, visits 2 -> 4).** The linking signal appears with a stronger
+trunk; the larger stand-in (stage C) tests the trend.
+
+**One relation, many wordings - by substitution (tools/relsub.py):** 3,262 one-sentence gold-relation records (90 types); 600 queries
+against 30 random candidates each. Best candidate of the same gold type: frame words 0.125, substitution with the trained trunk 0.050,
+untrained 0.060 (chance 0.060). AUC same type vs not: substitution trained **0.584**, untrained 0.503, frame words 0.368 (tf-idf cosine is
+mostly 0, so its ranking is ties), words + trained 0.609. **A weak signal at this size: the trained trunk ranks same-relation frames a little
+higher overall but never picks the right one first; frame words still pick better.**
+
+**Pronoun reference by substitution (tools/pronoun_ref.py):** 122 pronoun-led sentences with a single proxy-gold antecedent among 2-8 earlier
+entities (He 55, It 36, She 15, ...; chance 0.205). TITLE (the document's first entity) **0.549**, most mentioned 0.369, type rule 0.410,
+most recent 0.148; substitution with the trained trunk 0.197, untrained 0.213 (He 0.11, She 0.07, It 0.25). **The stand-in trunk cannot
+resolve pronouns; the title heuristic resolves more than half** (Wikipedia openings are about their title).
+
+**The same two tests on a LARGER stand-in (192 wide, 6,000 steps, 1.91 bits/byte vs 2.10):** relation identity by substitution - AUC 0.578
+(was 0.584), best candidate 0.062 (chance 0.060), untrained 0.512; pronoun reference - substitution 0.238 (was 0.197), untrained 0.238,
+title 0.549. **No gain from the larger stand-in on either.** Its trunk-guidance and compression runs: boundaries unchanged (surprise 0.559; sentence-initial
+0.862 vs the corpus statistic 0.978); linking by states still no better than untrained (0.930 vs 0.934; HARD 0.682 vs 0.702); units by
+binding gain 0.423 (no signal); **links by compression gain 0.564 (HARD 0.574, VERY HARD 0.583) vs the small stand-in's 0.533 / 0.485 /
+0.477 and untrained 0.501 / 0.530 / 0.543.** Across three trunks the linking signal from compression gain rises with the trunk: 2.10 bits/byte
+0.53 -> 1.91 bits/byte 0.56 -> the GPU trunk 0.76 (pairs sharing no word 0.49 -> 0.57 -> 0.61-0.68). Nothing else does.
+
+**Overnight summary.** (1) Compression gain is the one trunk signal that improves with the trunk, and only for linking mentions; not for
+units, relations or pronouns. (2) Name units: counts (PMI 0.73) beat every trunk measure (0.42-0.59), but capitalised runs are already
+right where it matters (span F1 unchanged). (3) Relation identity by substitution: weak (AUC 0.58), not improved by a larger stand-in.
+(4) Pronouns: the stand-ins are at chance; the document's title resolves 0.55. (5) Refusal rows: the syllable shortcut explains cg27a_refuse;
+same-generator names make refusal real but suppress facts only read (0.62 -> 0.15), so the confidence threshold is the safer route to
+abstention. (6) The default readouts (compression gain, probe 64, gated answers) are safe: identical BPC locally.
+
+**Refusal: shortcut or transfer? (tools/toy_refuse.py, toy byte transformer, 3,000 steps, seed 0):** facts about invented people, question
+rows for 3/4 of them (the rest only read), refusal rows about fresh names answered 'unknown'. Greedy answers; refusal rates on fresh names
+from the stored names' syllables / from a third syllable set / on KNOWN facts; known right; only-read right:
+
+| condition | TAUGHT wording: refuse fresh (stored syl.) / fresh (third) / known | known right | ONLY-READ right | HELD-OUT wording: refuse fresh (stored) / (third) / known |
+|---|---|---|---|---|
+| none | 0.00 / 0.00 / 0.00 | 1.00 | **0.62** | 0.00 / 0.00 / 0.00 |
+| distinct syllables (as cg27a_refuse) | **0.03** / 0.50 / 0.00 | 0.99 | 0.55 | 0.15 / 0.55 / 0.16 |
+| same syllables | **0.85** / 0.87 / 0.01 | 0.97 | **0.15** | 0.73 / 0.90 / 0.60 |
+| same + 12 wordings | 0.87 / 0.95 / 0.01 | 0.99 | **0.05** | 0.87 / 0.83 / 0.60 |
+
+**The shortcut is real**: with refusal names from their own syllables, the model refuses names that SOUND unfamiliar (third set 0.50) but
+almost never a never-read name that sounds like a stored one (0.03) - what cg27a_refuse showed (3-5%). With names from the same generator,
+refusal becomes genuine (0.85 on never-read names, 0.01 on known facts). **But it then refuses facts it only READ: only-read recall
+0.62 -> 0.15 (0.05 with more wordings)** - the rows teach 'a name I was not ASKED about -> unknown', not 'a name I never READ'. In the
+held-out wording it also refuses known facts it cannot answer there (0.60; known right there only 0.06-0.30). Explicit refusal rows
+therefore conflict with learning from reading; the confidence threshold (no training change) does not teach this confusion.
+
+**Local check of the new default readouts (GATEL = the 4x real-text run + compression gain every 2nd visit, probe 64, gated answers):**
+final BPC 2.996 / forgetting -0.158 - identical to the run without them (readouts only); no errors, FAILURES none. GATED ANSWERS (threshold
+calibrated at the previous sleep, applied to the new questions) at visits 8-10: never-read questions given a stored name 0.35 / 0.28 / 0.31
+ungated -> **0.17 / 0.15 / 0.15** gated; known facts right overall 0.18 / 0.16 / 0.14 ungated -> 0.05 / 0.11 / 0.08 gated (the small local
+model knows few facts, so the gate costs much of what it knows; the GPU, where known-right confidence is 0.59-0.66, is the real test).
+
+### Refusal rows, replay by storage check, abstention, compression gain on the real trunk (cg27a_refuse to visit 6, cg27a_rtxsp to visit 4; seed 4; 12 November, night; both stopped by the author)
+
+Both = cg27a_rtx16 + ONE change: `cg27a_refuse` - a fifth of the question rows ask about FRESH names never read (taught wordings), answered
+'unknown' (inf_distill_refuse 0.2); `cg27a_rtxsp` - real-text replay probability ~ the trunk's own loss on each sentence squared
+(inf_distill_rtx_space 2), with the COMPRESSION GAIN readout. Local safety (short runs): final BPC 3.000 / forgetting -0.154 (refuse) and
+3.000 / -0.153 (rtxsp, alpha 1) vs 2.996 / -0.158; GPU BPC within 0.006 of cg27a_rtx16; no errors.
+
+REAL TEXT, replayed documents, named sentences (48): storage / own wording / ANOTHER wording (template) / fresh-subject prior
+
+| visit | cg27a_refuse | cg27a_rtxsp | cg27a_rtx16 | control documents (refuse): own wording / template / prior |
+|---|---|---|---|---|
+| 3 | 0.02 / 0.19 / - / 0.06 | 0.02 / 0.12 / - / 0.10 | 0.02 / 0.12 / 0.08 / 0.06 | 0.06 / - / - |
+| 4 | 0.04 / 0.27 / - / 0.12 | 0.08 / 0.35 / 0.23 / 0.23 | 0.06 / 0.23 / 0.08 / 0.08 | 0.06 / - / - |
+| 5 | 0.02 / 0.27 / - / 0.17 | - | - | 0.06 / - / - |
+| 6 | **0.19 / 0.33 / 0.17 / 0.10** | - | - | 0.10 / 0.08 / 0.06 |
+
+**At visit 6 real sentences are STORED (9 of 48 completed; control 0) and answered in a wording they never used above the prior (0.17
+vs 0.10; pronoun-led 0.12 vs 0.06; control at its prior)** - the planted world's order (storage, own wording, new wording) on real text,
+one visit, small numbers. Replay weighted by the trunk's loss lowered that loss fast (median 1.89 -> 1.06 by visit 4, hardest quarter
+-1.4 then -0.5 nats; ~0.33 of replay to the hardest quarter) but did not store faster by visit 4: loss-hard sentences are not the
+unstored ones.
+
+FALSE MEMORIES AND ABSTENTION (from the trunk; 64 questions per group): fresh name answered with a stored name - refuse 0.56 / 0.71 /
+0.56 / **0.69** at visits 3-6 vs cg27a_rtx 0.61 / 0.69 / 0.60 / **0.87**; known subject, missing relation 0.47 / 0.58 / 0.34 / **0.33**
+vs 0.58 / 0.47 / 0.48 / 0.44. Explicit 'unknown' in the untaught test wording only 0.03-0.05 (refusal-row loss 0.26 -> 0.05): refusal
+does not transfer as a word, but false answers fall. **A confidence threshold keeping 75% of the known facts answered right leaves 0.12-0.18
+false answers (0.45-0.64 without; refuse, visits 4-6) and 0.23-0.25 without refusal rows (rtxsp)**; confidence AUC known-right vs
+never-read 0.86-0.88 (refuse), 0.80-0.84 (rtxsp). Over-refusal of known facts 0.00-0.02. No cost to learning: taught 0.57-0.60, never
+asked 0.09-0.12 vs cg27a_rtx 0.57-0.60 / 0.05-0.09.
+
+COMPRESSION GAIN ON THE REAL TRUNK (rtxsp; Re-DocRED gold mentions of the domains read): links - an earlier mention saves bits on a later
+one of the same entity (1.88 vs 0.53 bits), AUC all pairs 0.756 / 0.758 at visits 2 / 4; pairs sharing NO word **0.611 -> 0.684**, very
+hard 0.622 -> 0.657, where letter overlap is 0.17-0.22; combined with letters 0.897 (visit 2) vs letters alone 0.862; antecedent choice
+worse than letters (0.59 vs 0.88). Units - binding gain at joins of capitalised words 0.492 / 0.516 (surprise 0.571 / 0.591): no signal.
+Offline, counts: PMI separates a name's continuation from a boundary at 0.730 (strict MDL with a spelling cost 0.496), but splitting
+capitalised runs by it does not change exact-span F1 (0.698; tools/mdl_units.py).
+
 ### Finding names: a text JEPA vs byte surprise (tools/toy_jname.py, tools/realtext_names.py; 12 November)
 
 TOY (synthetic documents, unseen test names; EMA-target JEPA; AUC name vs other words): training wordings, first mention - byte surprise

@@ -52,12 +52,12 @@ def _c3(s):
     t = ' ' + re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip() + ' '; return {t[i:i + 3] for i in range(len(t) - 2)}
 
 
-def compress_gain(model, cfg, S_slot, vis):
+def compress_gain(model, cfg, S_slot, vis, S_=None):
     try:
         from platypus.inference.probes import _bench
         G = _bench(cfg); MT = json.loads(zlib.decompress(base64.b85decode(_BENCH_MENT)).decode('utf-8'))
         seen = sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())); TH = b'Thing'; rs = np.random.RandomState(int(cfg.seed) + 5151 + vis)
-        nmax = int(getattr(cfg, 'inf_compress_n', 600)); JA, JB = [], []; PA, PB, PL = [], [], []
+        nmax = int(getattr(cfg, 'inf_compress_n', 600)); JA, JB = [], []; PA, PB, PL = [], [], []; JW = []
         cap = lambda w: w[:1].isupper() or w[:1].isdigit()
         for d in seen:
             sl = int(S_slot(d)); docs = G['docs'].get(str(d), []); ments = MT.get(str(d), [])
@@ -76,7 +76,7 @@ def compress_gain(model, cfg, S_slot, vis):
                     if not (cap(w0) and cap(w1)) or t[b0:a1] != ' ' or sid(a0) != sid(a1) or len(JA) >= nmax: continue
                     c0 = max(sents[sid(a0)][0], a0 - 60); pre = tb[c0:a0]
                     same = k in inm and (k - 1) in inm and inm[k] == inm[k - 1] and k not in starts
-                    JA.append((sl, pre + tb[a0:b1], len(pre) + (b0 - a0) + 1, len(pre) + (b1 - a0)))
+                    JA.append((sl, pre + tb[a0:b1], len(pre) + (b0 - a0) + 1, len(pre) + (b1 - a0))); JW.append((w0, w1, same))
                     JB.append((sl, pre + TH + b' ' + tb[a1:b1], len(pre) + len(TH) + 1, len(pre) + len(TH) + 1 + (b1 - a1), same))
                 for j in range(len(ms)):                                      # (b) pairs: each mention with its 8 nearest earlier mentions
                     if len(PL) >= 10 * nmax: break
@@ -99,6 +99,20 @@ def compress_gain(model, cfg, S_slot, vis):
                 for n, b in zip(ix, v): out[n] = b
             return out
         msg = []
+        if JW:                                                                # 13 Nov (c) UNITS FROM COUNTS: pointwise mutual information of the two words,
+            import collections                                                 #   counted over what the system holds - the store's sentences and the
+            uni, big = collections.Counter(), collections.Counter()            #   benchmark documents of the domains read (offline: PMI 0.73 vs the trunk 0.42-0.59)
+            txts = [t for d in seen for t in G['docs'].get(str(d), [])]
+            for it in ((S_ or {}).get('it') or []):
+                try: txts.append(it['s'].decode('latin-1') if isinstance(it['s'], (bytes, bytearray)) else str(it['s']))
+                except Exception: pass
+            for t in txts:
+                ws = _CG_TOK.findall(t)
+                for i, w in enumerate(ws):
+                    uni[w] += 1
+                    if i: big[(ws[i - 1], w)] += 1
+            N = max(1, sum(uni.values())); pm = np.array([np.log2((big[(a, b)] + 0.1) * N / (uni[a] * uni[b] + 1e-9)) for a, b, sm in JW]); yy = np.array([sm for a, b, sm in JW])
+            msg.append(f"(c) UNITS FROM COUNTS over {len(txts)} texts the system holds ({N} words): PMI AUC same mention vs boundary {_cg_auc(pm[yy], pm[~yy]):.3f}")
         if JA:
             bw = run(JA); bo = run([x[:4] for x in JB]); g = bo - bw; y = np.array([x[4] for x in JB])
             msg.append(f"(a) UNITS, {len(y)} joins of capitalised words ({int(y.sum())} inside one mention): AUC same mention vs boundary - BINDING GAIN {_cg_auc(g[y], g[~y]):.3f} "
@@ -115,7 +129,199 @@ def compress_gain(model, cfg, S_slot, vis):
                        f"COMPRESSION GAIN all {_cg_auc(g[y], g[~y]):.3f}, HARD {_cg_auc(g[y & hd], g[~y & hd]):.3f}, VERY HARD {_cg_auc(g[y & vh], g[~y & vh]):.3f} "
                        f"(mean {g[y].mean() if y.any() else float('nan'):.2f} vs {g[~y].mean():.2f} bits) | letter triples all {_cg_auc(c3[y], c3[~y]):.3f}, HARD {_cg_auc(c3[y & hd], c3[~y & hd]):.3f} | "
                        f"rank average all {_cg_auc(ra[y], ra[~y]):.3f}, HARD {_cg_auc(ra[y & hd], ra[~y & hd]):.3f} | antecedent right: gain {ante(g):.2f}, letter triples {ante(c3):.2f}, both {ante(ra):.2f}")
+        try:                                                                  # 13 Nov (d) ONE RELATION, MANY WORDINGS - SUBSTITUTION: gold relations with
+            nm = G['ent_name']; REC = []                                       #   both names in one sentence (subject first, frame <= 12 words); swapping
+            for d in seen:                                                     #   frame j into record i: extra bits on i's object (symmetric); same gold
+                sl = int(S_slot(d))                                            #   relation type should cost fewer (offline stand-in: AUC 0.58)
+                for t in G['docs'].get(str(d), []):
+                    for h, tt, fl, ps in G['rel']:
+                        H, T = nm.get(str(h), ''), nm.get(str(tt), '')
+                        if len(H) < 3 or len(T) < 3 or H not in t or T not in t: continue
+                        for s_ in re.split(r'(?<=[.!?])\s+', t):
+                            if H in s_ and T in s_ and s_.index(H) + len(H) < s_.index(T):
+                                mid = s_[s_.index(H) + len(H):s_.index(T)]
+                                if 0 < len(mid.split()) <= 12:
+                                    left = s_[max(0, s_.index(H) - 30):s_.index(H)]
+                                    REC.append((sl, left.encode('latin-1', 'replace'), H.encode('latin-1', 'replace'), mid.encode('latin-1', 'replace'),
+                                                T.encode('latin-1', 'replace')[:30], set(ps), d)); break
+            REC = list({(r[1], r[2], r[3], r[4]): r for r in REC}.values())
+            if len(REC) >= 20:
+                Q = [int(i) for i in rs.permutation(len(REC))[:150]]; PR = []
+                for qi in Q:
+                    for cj in [int(c) for c in rs.permutation(len(REC))[:16] if int(c) != qi and REC[int(c)][3] != REC[qi][3]][:15]: PR.append((qi, cj))
+                base = {}
+                for i in {x for p in PR for x in p}: base[i] = None
+                bl = list(base); bseq = [(REC[i][0], REC[i][1] + REC[i][2] + REC[i][3] + REC[i][4], len(REC[i][1] + REC[i][2] + REC[i][3]), len(REC[i][1] + REC[i][2] + REC[i][3] + REC[i][4])) for i in bl]
+                bb = dict(zip(bl, run(bseq)))
+                sw = []
+                for i, j in PR:
+                    for x, y in ((i, j), (j, i)):
+                        pre = REC[x][1] + REC[x][2] + REC[y][3]; sw.append((REC[x][0], pre + REC[x][4], len(pre), len(pre) + len(REC[x][4])))
+                v = run(sw); sc = np.array([-((v[2 * n] - bb[i]) + (v[2 * n + 1] - bb[j])) / 2 for n, (i, j) in enumerate(PR)])
+                yy = np.array([bool(REC[i][5] & REC[j][5]) for i, j in PR]); top = []; chn = []
+                for qi in Q:
+                    ix = [n for n, (i, j) in enumerate(PR) if i == qi]
+                    if ix: top.append(yy[max(ix, key=lambda n: sc[n])]); chn.append(np.mean(yy[ix]))
+                msg.append(f"(d) RELATIONS by substitution, {len(REC)} one-sentence gold-relation records, {len(Q)} queries x up to 15 candidates: AUC same gold type vs not "
+                           f"{_cg_auc(sc[yy], sc[~yy]):.3f} | best candidate of the same type {np.mean(top) if top else float('nan'):.3f} (chance {np.mean(chn) if chn else float('nan'):.3f})")
+        except Exception as e8:
+            msg.append(f"(d) RELATIONS unavailable ({type(e8).__name__}: {e8})"[:160])
         print(f"  [COMPRESSION GAIN | visit {vis + 1}] from the trunk (store off), Re-DocRED documents of the {len(seen)} domains visited, gold mentions || "
               + (" || ".join(msg) if msg else "no mentions yet"), flush=True)
     except Exception as e:
         _fail('inference.compress'); print(f"  [COMPRESSION GAIN] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _sl_initials(y):
+    return b''.join(w[:1] for w in y.split() if w[:1].isupper())
+
+
+def store_link(model, cfg, S_, S_slot, vis):
+    """13 Nov STORE LINKING (inf_store_link; ONE MODEL CHANGE - it changes the store's real-text evidence record S_['relc'], which feeds the
+    reader-vs-gold and real-text relational-module readouts; the trunk's training is untouched). Each sleep, over the sentences stored since
+    the last one, a mention (a filler of the fast channel's records) is linked to an earlier, different name among the fillers of the 5
+    sentences stored before it (same domain):
+      LETTERS      it is the earlier name's last word(s) ('Thatcher' -> 'Margaret Thatcher') or its initials ('AGF' -> 'Asian Games Federation')
+      COMPRESSION  where letters cannot decide (a capitalised mention sharing no word with the earlier name): the trunk saves at least
+                   inf_store_link_bits bits on the mention when the earlier name's sentence precedes it, against the same sentence with the
+                   name replaced by 'Thing' (GPU readout: same entity 3.9 bits, others 0.3); the best such earlier name
+    GUIDANCE ONLY ADDS: each record of the sentence is ALSO recorded with its linked names (the originals stay). Readout: links of each kind,
+    their precision where both names belong to benchmark entities, records added."""
+    try:
+        from platypus.inference.units import _chk_records
+        RC = S_.get('relc')
+        if RC is None: return
+        it = S_['it']; st = int(model.__dict__.get('_link_from', 0)); end = len(it); model.__dict__['_link_from'] = end
+        bits_min = float(getattr(cfg, 'inf_store_link_bits', 3.0)); nmax = int(getattr(cfg, 'inf_store_link_n', 4000))
+        TH = b'Thing'; win = []; jobs = []; links = {}; nlet = 0; seen_s = 0
+        for i in range(st, end):
+            x_ = it[i]
+            if x_.get('gone') or not isinstance(x_.get('s'), (bytes, bytearray)): continue
+            s = bytes(x_['s']); d = int(x_.get('d', 0)); recs = _chk_records(cfg, S_, s); seen_s += 1
+            win = [w for w in win if w[0] == d and i - w[1] <= 5]
+            fil = {f for a, r, b in recs for f in (a, b)}
+            for xf in fil:
+                if not xf[:1].isupper(): continue
+                xs = xf.split(); hit = None
+                for wd, wi, ws, wf in reversed(win):
+                    for y in wf:
+                        if y == xf or len(y) <= len(xf): continue
+                        ys = y.split()
+                        if ys[-len(xs):] == xs or (len(xs) == 1 and len(xf) >= 2 and xf.isupper() and _sl_initials(y) == xf): hit = y; break
+                    if hit: break
+                if hit is not None: links[(i, xf)] = (hit, 'L'); nlet += 1; continue
+                if len(jobs) >= 2 * nmax or len(xs) > 3: continue
+                px = s.find(xf)
+                if px < 0: continue
+                cands = []
+                for wd, wi, ws, wf in reversed(win):
+                    for y in wf:
+                        if y != xf and y[:1].isupper() and not (set(y.split()) & set(xs)) and len(cands) < 4: cands.append((y, ws))
+                for y, ws in cands:
+                    py = ws.find(y)
+                    if py < 0: continue
+                    snip_w = ws[max(0, py - 24):py + len(y) + 24]; snip_o = ws[max(0, py - 24):py] + TH + ws[py + len(y):py + len(y) + 24]
+                    pre = s[max(0, px - 48):px]; sl = int(S_slot(d))
+                    jobs.append((i, xf, y, sl, snip_w + b' ' + pre + xf, len(snip_w) + 1 + len(pre), snip_o + b' ' + pre + xf, len(snip_o) + 1 + len(pre)))
+            win.append((d, i, s, fil))
+        ncmp = 0; gains = []
+        if jobs:
+            bysl = {}
+            for n, j in enumerate(jobs): bysl.setdefault(j[3], []).append(n)
+            gw = np.zeros(len(jobs)); go = np.zeros(len(jobs))
+            for sl, ix in bysl.items():
+                gw[ix] = _cg_bits(model, sl, [(jobs[n][4], jobs[n][5], len(jobs[n][4])) for n in ix])
+                go[ix] = _cg_bits(model, sl, [(jobs[n][6], jobs[n][7], len(jobs[n][6])) for n in ix])
+            best = {}
+            for n, j in enumerate(jobs):
+                g = go[n] - gw[n]
+                if g >= bits_min and (j[0], j[1]) not in links and g > best.get((j[0], j[1]), (-1e9, None))[0]: best[(j[0], j[1])] = (g, j[2])
+            for k, (g, y) in best.items(): links[k] = (y, 'C'); gains.append(g); ncmp += 1
+        nadd = 0; byi = {}
+        for (i, xf), (y, kd) in links.items(): byi.setdefault(i, {})[xf] = y
+        for i, mp in byi.items():
+            for a, r, b in _chk_records(cfg, S_, bytes(it[i]['s'])):
+                a2, b2 = mp.get(a, a), mp.get(b, b)
+                if (a2, b2) != (a, b) and a2 != b2: RC.setdefault((a2, r), {}).setdefault(b2, []).append(i); nadd += 1
+        prec = {'L': [], 'C': []}; prl = {'L': [], 'C': []}                 # STRICT (13 Nov): both names are gold MENTIONS of one entity;
+        if str(getattr(cfg, 'inf_bench', '') or ''):                          #   the earlier check (any distinctive word shared) passed every
+            from platypus.inference.probes import _bench                      #   tail link by construction ('Smith' / 'John Smith'): lenient, kept
+            G = _bench(cfg); t2e = G['_t2e']
+            n2e = model.__dict__.get('_sl_n2e')
+            if n2e is None:
+                n2e = {}; MT = json.loads(zlib.decompress(base64.b85decode(_BENCH_MENT)).decode('utf-8'))
+                for d_, docs_ in G['docs'].items():
+                    for di_, t_ in enumerate(docs_):
+                        for ma, mb, mv in (MT.get(str(d_), []) or [])[di_] if di_ < len(MT.get(str(d_), [])) else []:
+                            n2e.setdefault(t_[ma:mb].strip().encode('latin-1', 'replace'), set()).add((str(d_), di_, mv))
+                model.__dict__['_sl_n2e'] = n2e
+            def ents(x):
+                es = set()
+                for w in x.decode('latin-1').split(): es |= t2e.get(w, set())
+                return es
+            for (i, xf), (y, kd) in links.items():
+                ex, ey = ents(xf), ents(y)
+                if ex and ey: prl[kd].append(bool(ex & ey))
+                sx, sy = n2e.get(xf.strip()), n2e.get(y.strip())
+                if sx and sy: prec[kd].append(bool(sx & sy))
+        tot = model.__dict__.setdefault('_link_tot', [0, 0, 0]); tot[0] += nlet; tot[1] += ncmp; tot[2] += nadd
+        print(f"  [STORE LINKING | visit {vis + 1}] {seen_s} sentences stored since the last sleep | LETTER links {nlet} (on benchmark entities {len(prec['L'])}, "
+              f"same entity {np.mean(prec['L']) if prec['L'] else float('nan'):.2f}) | COMPRESSION links {ncmp} of {len(jobs)} candidate pairs (gain >= {bits_min:g} bits; "
+              f"median {np.median(gains) if gains else float('nan'):.1f}; on benchmark entities {len(prec['C'])}, same entity {np.mean(prec['C']) if prec['C'] else float('nan'):.2f}) | "
+              f"records ADDED with linked names {nadd} | so far: letter {tot[0]}, compression {tot[1]}, records added {tot[2]} || same entity checked STRICTLY "
+              f"(both names gold mentions of one entity); LENIENT (any distinctive word shared, as before 13 Nov): letter "
+              f"{np.mean(prl['L']) if prl['L'] else float('nan'):.2f} ({len(prl['L'])}), compression {np.mean(prl['C']) if prl['C'] else float('nan'):.2f} ({len(prl['C'])})", flush=True)
+    except Exception as e:
+        _fail('inference.compress:store_link'); print(f"  [STORE LINKING] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+_PQ_NAME = re.compile(rb"(?<![.!?] )(?<!^)\b[A-Z][A-Za-z'\-]{2,}\b")
+
+
+def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
+    """13 Nov READOUT: PREQUENTIAL BITS ON KNOWLEDGE (inf_preq) - does what sleep produced (replay, links, written conclusions) make the
+    model predict text it has NEVER trained on, replayed or dreamed? Each domain's held-out validation text (fixed batches), from the
+    weights alone (store and name memory off): bits per byte on ALL bytes, on the bytes of capitalised names the store ALREADY KNOWS (in its
+    name index) and on names it does not know - knowledge shows as lower bits on known names. For the domains read so far (held out) and
+    for the NEXT domain (in pass 1: text not yet read at all - prediction before learning). Compare runs on the same seed."""
+    try:
+        from platypus.inference.store import _INFM
+        from platypus.capacity import apply_delta, domain_delta
+        idx = set((S_ or {}).get('idx', {}).keys()); Ts = int(model.cfg.seq_len); parts = []
+        doms = [(d, 'read') for d in seen_d] + ([(next_d, 'NEXT, not yet read')] if next_d is not None and next_d not in seen_d else [])
+        had = 'force' in _INFM; sv = _INFM.get('force'); _INFM['force'] = False
+        try:
+            for d, kind in doms:
+                g = vals[d]; cur = model.__dict__.get('_cur_dom')                # the NEXT domain has no trained slot yet: read it through the slot
+                sl = int(slot_of(d)) if kind == 'read' or cur is None else int(slot_of(int(cur)))   #   of the domain just visited (13 Nov fix)
+                if hasattr(g, 'reset'): g.reset()
+                dd = domain_delta(model, sl) if (getattr(model, '_spec', None) and sl != getattr(model, '_live_dom', None)) else {}
+                apply_delta(model, dd, +1); model.eval(); acc = {'all': [0.0, 0], 'known': [0.0, 0], 'unknown': [0.0, 0]}
+                try:
+                    with torch.no_grad():
+                        for _ in range(nb):
+                            x, y = g()
+                            lg = model(x, sl)[:, -Ts:]; yy = y[:, -Ts:]
+                            nl = (F.cross_entropy(lg.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape).cpu().numpy()
+                            yb = yy.cpu().numpy().astype(np.uint8)
+                            for r in range(yb.shape[0]):
+                                row = bytes(yb[r]); acc['all'][0] += float(nl[r].sum()); acc['all'][1] += len(row)
+                                for m in _PQ_NAME.finditer(row):
+                                    k = 'known' if m.group(0) in idx else 'unknown'
+                                    acc[k][0] += float(nl[r, m.start():m.end()].sum()); acc[k][1] += m.end() - m.start()
+                finally:
+                    apply_delta(model, dd, -1); model.train()
+                f = lambda k: acc[k][0] / max(1, acc[k][1])
+                parts.append((d, kind, f('all'), f('known'), acc['known'][1], f('unknown'), acc['unknown'][1]))
+        finally:
+            if had: _INFM['force'] = sv
+            else: _INFM.pop('force', None)
+        rd = [p for p in parts if p[1] == 'read']; nx = [p for p in parts if p[1] != 'read']
+        wavg = lambda L, i, j: sum(p[i] * p[j] for p in L) / max(1, sum(p[j] for p in L))
+        msg = (f"domains READ ({len(rd)}): all bytes {np.mean([p[2] for p in rd]):.4f} | KNOWN names {wavg(rd, 3, 4):.3f} ({sum(p[4] for p in rd)} bytes) | "
+               f"unknown names {wavg(rd, 5, 6):.3f} ({sum(p[6] for p in rd)} bytes)") if rd else "no domain read yet"
+        if nx:
+            p = nx[0]; msg += f" || NEXT domain {p[0]} (not yet read): all bytes {p[2]:.4f} | KNOWN names {p[3]:.3f} ({p[4]} bytes) | unknown names {p[5]:.3f} ({p[6]} bytes)"
+        print(f"  [PREQUENTIAL BITS | {tag}] held-out text never trained on, replayed or dreamed; weights only; bits per byte || {msg} | store knows {len(idx)} names", flush=True)
+    except Exception as e:
+        _fail('inference.compress:preq'); print(f"  [PREQUENTIAL BITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

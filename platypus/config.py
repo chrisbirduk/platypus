@@ -589,9 +589,11 @@ class Config:
     inf_distill_align_para=0        #   12 Nov PARAPHRASE ALIGNMENT (toy: never-taught facts asked in a paraphrase 0.61 -> 0.82): 1 = taught facts also asked with
                                     #     each paraphrase of their relation the relational module merged from the text, aligned to the stored declaration (no labels)
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
-    inf_distill_false_probe_n=32    #     questions per group (fresh names / missing relations / known facts); + the ABSTENTION readout (risk-coverage of the
-                                    #     trunk's confidence, explicit refusals)
-    inf_compress_gain=0             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits: does the trunk compress text better once a
+    inf_distill_false_probe_n=64    #     questions per group (fresh names / missing relations / known facts; 32 before 12 Nov, 23:00); + the ABSTENTION readout
+                                    #     (risk-coverage of the trunk's confidence, explicit refusals)
+    inf_distill_gate_q=0.75         #     GATED ANSWERS readout: the trunk answers only above the confidence threshold that kept this share of its right answers
+                                    #     at the PREVIOUS sleep (calibrated there, applied to the new questions: out of sample); a decision rule, no training change
+    inf_compress_gain=2             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits (default 2 from 12 Nov, 23:00; 0 = off): does the trunk compress text better once a
                                     #     pattern is in place - binding gain at joins of capitalised words (units) and mutual compression gain between
                                     #     mentions (links), against the Re-DocRED gold mentions of the embedded documents read (needs inf_bench)
     inf_compress_n=600              #     joins sampled (pairs: up to 10x as many)
@@ -601,6 +603,19 @@ class Config:
     inf_distill_rtx=0               #   12 Nov REAL-TEXT REPLAY (with inf_bench): N > 0 = N sentences of HALF the benchmark documents read (hash; the other half
                                     #     is the control) replayed with each question-row step; REAL-TEXT RECALL then splits replayed vs control documents
     inf_distill_rtx_align=1         #     1 = + alignment of views cut from those sentences (needs inf_distill_align > 0): no labels, no templates
+    inf_preq=0                      #   13 Nov READOUT: PREQUENTIAL BITS - held-out text of the domains read and of the NEXT domain, weights only: bits on all
+                                    #     bytes, on names the store knows, on names it does not (does sleep's material predict unseen text?)
+    inf_store_link=0                #   13 Nov STORE LINKING (ONE MODEL CHANGE): 1 = each sleep, mentions in the sentences stored since the last one are
+                                    #     linked to an earlier name in the 5 sentences before (letters: last word(s) or initials; COMPRESSION: the trunk
+                                    #     saves >= inf_store_link_bits on the mention given the earlier name's sentence); records ALSO kept with the linked
+                                    #     names in the fast channel's evidence record (originals stay)
+    inf_store_link_bits=3.0         #     minimum compression gain (bits) for a link where letters cannot decide
+    inf_store_link_n=4000           #     compression candidate pairs per sleep (x2 sequences)
+    inf_distill_rtx_slot=-1         #   13 Nov: the slot benchmark sentences are replayed AND asked through: -1 = the document's assigned domain (cg27a_rtxt:
+                                    #     Gutenberg's slot replayed 53 Wikipedia documents, forgetting +0.224); k = always domain k's slot (1 = Wikipedia)
+    inf_distill_rtx_title=0         #   13 Nov TITLE FOR PRONOUN: 1 = replayed real sentences opening with He/She/It/They (His/Her/Its/Their) are replayed
+                                    #     with the document's title in place of the pronoun ('Title's' for possessives); fair tests: TEMPLATE recall and
+                                    #     STORAGE of the original sentence in [REAL-TEXT RECALL, DIAGNOSTICS], pronoun-led group (own-frame asks the replayed form)
     inf_distill_rtx_space=0.0       #   12 Nov REPLAY BY STORAGE CHECK: alpha > 0 = replay probability ~ the trunk's own loss on each replayed sentence
                                     #     (clipped to q10-q90) ** alpha, re-measured before each visit: sentences already predicted are replayed less
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
