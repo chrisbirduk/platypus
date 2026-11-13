@@ -280,7 +280,8 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
         had = 'force' in _INFM; sv = _INFM.get('force'); _INFM['force'] = False
         try:
             for d, kind in doms:
-                g = vals[d]; sl = int(slot_of(d))
+                g = vals[d]; cur = model.__dict__.get('_cur_dom')                # the NEXT domain has no trained slot yet: read it through the slot
+                sl = int(slot_of(d)) if kind == 'read' or cur is None else int(slot_of(int(cur)))   #   of the domain just visited (13 Nov fix)
                 if hasattr(g, 'reset'): g.reset()
                 dd = domain_delta(model, sl) if (getattr(model, '_spec', None) and sl != getattr(model, '_live_dom', None)) else {}
                 apply_delta(model, dd, +1); model.eval(); acc = {'all': [0.0, 0], 'known': [0.0, 0], 'unknown': [0.0, 0]}

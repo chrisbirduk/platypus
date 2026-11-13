@@ -146,6 +146,15 @@ def _rtx_rep(d, di):
     return zlib.crc32(f"rtx|{int(d)}|{int(di)}".encode()) % 2 == 0
 
 
+def _rtx_slot(cfg, S_slot, d, seen, ask=False):
+    """13 Nov (inf_distill_rtx_slot): the slot benchmark documents are replayed through AND asked through. -1 = the slot of the domain the
+    document was assigned to (the benchmark's documents are Wikipedia text split across domains 0-4; cg27a_rtxt: Gutenberg's slot replayed 53 of
+    them, Gutenberg forgetting +0.224); k >= 0 = always domain k's slot (1 = Wikipedia), None while k is not yet visited (no replay then)"""
+    k = int(getattr(cfg, 'inf_distill_rtx_slot', -1))
+    if k < 0 or (ask and k not in seen): return int(S_slot(d))              #   (questions fall back to the document's own slot until k is visited)
+    return int(S_slot(k)) if k in seen else None
+
+
 def _dw_bench_recall(model, cfg, S_slot, vis):
     """12 Nov READOUT: REAL-TEXT RECALL FROM THE WEIGHTS - Re-DocRED gold relations of the benchmark documents the model has READ (planted
     once in pass 1, in visited domains), whose two names stand in one sentence, asked in a templated test wording per relation type
@@ -175,7 +184,7 @@ def _dw_bench_recall(model, cfg, S_slot, vis):
     def score(L):
         L = [L[int(i)] for i in rs.permutation(len(L))[:64]]; ok = []; pri = []
         for d, pc, H, T, same, rp in L:
-            oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = int(S_slot(d))
+            oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth; sl = _rtx_slot(cfg, S_slot, d, seen, ask=True)
             ok.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=H), cands) == 0); pri.append(_dw_cand_mc(model, sl, _BR_T[pc].format(h=fresh()), cands) == 0)
         ch = np.mean([1.0 / (1 + min(9, len(x[4]))) for x in L]) if L else float('nan')
         return (f"the true object among up to 10 same-type names {np.mean(ok) if ok else float('nan'):.2f} | with a FRESH subject (relation prior alone) "
@@ -236,7 +245,7 @@ def _dw_bench_diag(model, cfg, S_slot, vis):
     def score(L):
         L = [L[int(i)] for i in rs.permutation(len(L))[:48]]; st, own, tpl, pri = [], [], [], []
         for d, pc, H, T, same, rp, kd, pre, oq in L:
-            sl = int(S_slot(d)); oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth
+            sl = _rtx_slot(cfg, S_slot, d, seen, ask=True); oth = [same[int(i)] for i in rs.permutation(len(same))[:9]]; cands = [T] + oth
             pb = pre.encode('latin-1', 'replace')[-(L0 - 2 - len(T)):]; tb = T.encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + tb + b' '])
             with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
             p0 = len(pb) - 1
@@ -1885,8 +1894,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 from platypus.inference.probes import _bench                   #   declaration: the sentence up to that object) - no labels, no templates
                 Gb = _bench(cfg); R1 = (D or {}).get('rtxl') or []; A1 = (D or {}).get('rtxa') or []; nd9 = nv9 = nt9 = 0
                 ttl9 = int(getattr(cfg, 'inf_distill_rtx_title', 0))
-                for d9 in sorted(set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())):
-                    sl9 = int(S_slot(d9))
+                vis9_ = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+                for d9 in sorted(vis9_):
+                    sl9 = _rtx_slot(cfg, S_slot, d9, vis9_)
+                    if sl9 is None: continue
                     for di9, doc9 in enumerate(Gb['docs'].get(str(d9), [])):
                         if not _rtx_rep(d9, di9): continue
                         ss9 = [x for x in re.split(r'(?<=[.!?])\s+', doc9) if len(x) >= 20]

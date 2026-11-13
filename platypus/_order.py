@@ -732,6 +732,7 @@ ORDER = (
     ('inference.distill', '_BR_T'),
     ('inference.distill', '_dw_cand_mc'),
     ('inference.distill', '_rtx_rep'),
+    ('inference.distill', '_rtx_slot'),
     ('inference.distill', '_dw_bench_recall'),
     ('inference.distill', '_RTX_PRON'),
     ('inference.distill', '_dw_bench_diag'),
