@@ -613,6 +613,10 @@ gain = bits a record saves the trunk where its names meet again, beyond the name
 - Safe: BPC within 0.011 of cg27a_rtxt at visits 1-6; the gate cuts never-read false answers 0.60 -> 0.29 and 0.64 -> 0.20 (visits 5, 6).
 - Domain-specific counting for the consistency teacher (tools/consistency_raw.py CR_PERDOM=1): Re-DocRED + WikiText 0.547 -> 0.563; all
   domains still chance (0.49); WikiText alone 0.53. The teacher works when it counts over text very like the target (Re-DocRED itself: 0.59).
+- ENTITY NEIGHBOURHOOD (CR_NEIGH=K: count only over the K pool documents sharing the most distinctive names with each held-out document,
+  names by capitalisation; pool = every domain): K 5 / 20 / 50 -> AUC 0.51-0.54, top 10% 0.31-0.35 (all domains unselected 0.49 / 0.29;
+  Re-DocRED alone 0.59 / 0.45); without the Re-DocRED training documents in the pool, K 20: 0.53-0.54. Neighbourhoods pull in PubMed and law
+  documents through shared capitalised words. A small gain over mixing, far short of a matched collection.
 
 ### The store teaching itself what to extract: consistency teachers (tools/consistency_teacher.py, 13 November; no trunk)
 

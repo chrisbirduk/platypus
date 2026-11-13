@@ -7,6 +7,7 @@ mentions in training: AUC 0.63, top 25% 0.37 related, base 0.24).
   NAMES     runs of capitalised words (a single sentence-initial word only if it is mostly capitalised mid-sentence elsewhere); digits kept as names
   RECORDS   two names in one sentence, 1-12 words apart and <= 60 characters (the words between may be empty: 'Dresden Saxony' is skipped)
   TEACHER   T1 corroboration (same names + wording in another document), T2 functional wording, T3 selective wording (as consistency_teacher.py)
+CR_NEIGH=K (13 Nov 15:00): count only over the K pool documents sharing the most distinctive names with each held-out document (union).
 CR_PERDOM=1 (13 Nov 14:50): the teacher's statistics counted separately per source domain (a wording is judged only by its own domain's records);
 one learner on all records. CR_LEARN=<domains>: train the learner only on records of those domains.
 Usage: python3 tools/consistency_raw.py [sources: redocred,wiki (default) | +law,pubmed,arxiv,prose]"""
@@ -63,6 +64,25 @@ for d_, s in sents:
             R.append(dict(di=d_, A=A, B=B, mid=s[a1:b0], cA=' '.join(A), cB=' '.join(B), f=' '.join(s[a1:b0]).lower()))
 P(f"RAW TEXT ({'+'.join(SRC)}): {len(texts)} documents, {len(sents)} sentences, {sum(len(s) for _, s in sents)} words | names by capitalisation | "
   f"records {len(R)} (gold-mention training candidates: {len(TR)})  ({time.time() - T0:.0f}s)")
+NEIGH = int(os.environ.get('CR_NEIGH', 0))                                    # 13 Nov: ENTITY NEIGHBOURHOOD - count only over the K pool documents that
+if NEIGH:                                                                       #   share the most distinctive names with each document to be read
+    dnames = collections.defaultdict(set)
+    for d_, s in sents:
+        for a0, a1 in runs(s): dnames[d_].add(' '.join(s[a0:a1]))
+    ndoc = collections.Counter(n for ns in dnames.values() for n in ns); maxdf = max(5, int(0.01 * len(dnames)))
+    inv = collections.defaultdict(set)
+    for d_, ns in dnames.items():
+        for n in ns:
+            if 1 <= ndoc[n] <= maxdf and not n[:1].isdigit(): inv[n].add(d_)
+    sel = set(); tdn = []
+    for di in sorted({C[i]['di'] for i in TE}):                                # the held-out documents' own names, found the same way (no gold)
+        ns = {' '.join(t[a0:a1]) for s_ in docs[di]['sents'] for t in [TOK.findall(' '.join(s_))] for a0, a1 in runs(t)}
+        sc = collections.Counter(d_ for n in ns if n in inv for d_ in inv[n]); tdn.append(len(sc))
+        sel |= {d_ for d_, _ in sc.most_common(NEIGH)}
+    nb = len(R); R = [r for r in R if r['di'] in sel]
+    P(f"ENTITY NEIGHBOURHOOD: the {NEIGH} pool documents sharing the most distinctive names (in <= {maxdf} documents) with each of the "
+      f"{len(tdn)} held-out documents -> {len(sel)} documents selected ({', '.join(f'{k} {v}' for k, v in collections.Counter(re.match(r'[a-z]+', d_).group(0) for d_ in sel).most_common())}); "
+      f"records {nb} -> {len(R)} | held-out documents with any neighbour {np.mean([x > 0 for x in tdn]):.2f}")
 PERDOM = int(os.environ.get('CR_PERDOM', 0))                                  # 13 Nov: count the teacher's statistics PER SOURCE DOMAIN
 dom = lambda d_: re.match(r'[a-z]+', d_).group(0)
 for r in R: r['f0'] = r['f']; r['f'] = (dom(r['di']) + '|' + r['f']) if PERDOM else r['f']
