@@ -568,6 +568,23 @@ letters do not link (118,346; 3.3% the same entity).
 - **Competition (each later mention picks one earlier mention, by a clear margin) lifts precision 3.5x over the fixed-rate policy and 8x
   over chance**, and most of what it finds are hard pairs letters can never find. Still far from writable: a vote, or a hypothesis.
 
+### Several wordings: does a read-only fact become answerable? (tools/paraphrase_test.py, 13 November; byte LM 128 wide, 3 layers)
+
+200 invented people (birth city, university, employer; 20 values each, chance 0.05), each biography read 5 times; questions taught about half
+(A), the other half (B) only read. Multiple choice by bits. SINGLE: one fixed wording; MULTI: 5 wordings per attribute, shuffled order.
+
+| After 10,000 steps | SINGLE | MULTI |
+|---|---|---|
+| storage (biography wording), B | 1.00 | 0.93 |
+| B, read only, the taught question forms | 0.64 | 0.60 |
+| A, question forms never trained | 0.47 | 0.58 |
+| **B, read only, question forms never trained** | **0.30** | **0.39** |
+
+- A trunk-sized byte LM taught questions about some people answers about people it only READ (0.60-0.64): learning from reading is not an
+  architectural limit; the model's 0.12-0.19 never-asked recall reflects how real facts are seen (once or twice, long sentences, pronouns).
+- The weak cell is NEW QUESTION FORMS (0.30-0.47): the model binds question shapes to stored facts. Several fact wordings lift it modestly
+  (+0.09-0.11) and leave read-only extraction in the taught forms unchanged; plateau by step 4,000 in both.
+
 ### cg27a_rtxt: title for pronoun in real-text replay, to visit 10 (GPU, seed 4, 13 November)
 
 cg27a_rtx16 + inf_distill_rtx_title 1 (pronoun-led replayed sentences replayed with the document's title for the pronoun). BPC within 0.006 of
