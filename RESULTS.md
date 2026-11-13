@@ -611,6 +611,9 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
   DISTANCE (ratio 1.14 / 1.23 / 1.32 for pairs 1-3 / 4-7 / 8-20 words apart; random boundaries 0.94-0.99, fixed spacing 0.97-1.10,
   punctuation 0.80-0.93); a segment holding a pair is related 0.291 vs base 0.223. **Modestly positive**: the trunk's surprise marks where
   fact-bearing units start and end, beyond distance and punctuation.
+- **JEPA codes on name-masked records** (tools/relation_free.py RF_JEPA=3000: a 2-layer encoder, 40% of the words masked, predictor to an EMA
+  target encoder's states, L1, no negatives): relation identity AUC 0.568, nearest same relation 0.152 (chance 0.083); + name shape 0.677.
+  Below plain n-grams of the same masked record (0.665). The L1 rose during training (0.85 -> 0.95): the target drifted; not positive here.
 
 ### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
 
