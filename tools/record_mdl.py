@@ -13,7 +13,11 @@ class) profile best predicts theirs, wordings likewise, alternating; 3 random re
              tools/premise_threshold.py is premise precision 0.6-0.7
   INFERENCE  A-C proposals (tools/integrate_test.py) from the store kept by the best label-free score: gold rate
 Writes the name classes to RM_OUT ({k: [...], types: {name: [class per configuration]}}) for tools/relation_free.py RF_TYPES.
-Usage: python3 tools/record_mdl.py   env RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
+RM_INIT=split grows each configuration from the largest smaller one (classes split at random); nt:<json>:<column> starts name classes
+from tools/name_types.py context types.
+RM_SUB=<fraction>: the block model is fitted on the consistency-teacher learner's top records only (a cleaner store); every other name and
+wording is then classed by all its records under the fitted table (the extractor cleans the store, compression finds classes on it).
+Usage: python3 tools/record_mdl.py   env RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
 import os
 import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,38 +46,52 @@ for d in docs:
         cn_ = collections.Counter(m['name'] for m in vs).most_common(1)[0][0]
         for m in vs: gtc[cn_][m.get('type', 'X')] += 1
 GT = np.array([gtc[n].most_common(1)[0][0] if gtc[n] else 'X' for n in NAMES])
-one = np.ones(N)
+SUB = float(os.environ.get('RM_SUB', 0))                                        # 13 Nov 18:30: fit on the extractor's top records only
+lr_ = LogisticRegression(C=1.0, max_iter=2000).fit(Xtr, teacher_tr >= np.percentile(teacher_tr, 75))
+XA = feats(np.arange(N)); s_all = lr_.decision_function(XA)
+FI = np.argsort(-s_all)[:int(N * SUB)] if SUB else np.arange(N)
+fa, fb, fw = a[FI], b[FI], w[FI]; NF = len(FI); one = np.ones(NF)
+if SUB: P(f"FITTED ON the consistency-teacher learner's top {SUB:.0%} of records: {NF}, related {y[FI].mean():.3f}")
 
 
 def table(gn, gw, K, M, al=0.0):
-    T = np.zeros((K, M, K)); np.add.at(T, (gn[a], gw[w], gn[b]), 1); return T + al
+    T = np.zeros((K, M, K)); np.add.at(T, (gn[fa], gw[fw], gn[fb]), 1); return T + al
 
 
-def fit(K, M, seed, iters=30, al=0.1):
+def fit(K, M, seed, iters=30, al=0.1, init=None):
     r = np.random.RandomState(seed); gn = r.randint(K, size=NN); gw = r.randint(M, size=NW)
+    if init is not None: gn, gw = init(r)
     for it in range(iters):
         T = table(gn, gw, K, M, al)
         PL = np.log(T / T.sum((1, 2), keepdims=True)).reshape(K, M * K)                       # p(wording class, B class | A class)
         PR = np.log(T / T.sum((0, 1), keepdims=True)).transpose(2, 0, 1).reshape(K, K * M)     # p(A class, wording class | B class)
-        Lm = csr_matrix((one, (a, gw[w] * K + gn[b])), shape=(NN, M * K)); Rm = csr_matrix((one, (b, gn[a] * M + gw[w])), shape=(NN, K * M))
+        Lm = csr_matrix((one, (fa, gw[fw] * K + gn[fb])), shape=(NN, M * K)); Rm = csr_matrix((one, (fb, gn[fa] * M + gw[fw])), shape=(NN, K * M))
         g2 = np.asarray(Lm @ PL.T + Rm @ PR.T).argmax(1)
         for e in set(range(K)) - set(g2.tolist()): g2[r.randint(NN)] = e                     # no empty class
         ch = (g2 != gn).mean(); gn = g2
         T = table(gn, gw, K, M, al); PW = np.log(T / T.sum((0, 2), keepdims=True)).transpose(1, 0, 2).reshape(M, K * K)   # p(A cl, B cl | w cl)
-        Wm = csr_matrix((one, (w, gn[a] * K + gn[b])), shape=(NW, K * K)); h2 = np.asarray(Wm @ PW.T).argmax(1)
+        Wm = csr_matrix((one, (fw, gn[fa] * K + gn[fb])), shape=(NW, K * K)); h2 = np.asarray(Wm @ PW.T).argmax(1)
         for e in set(range(M)) - set(h2.tolist()): h2[r.randint(NW)] = e
         ch2 = (h2 != gw).mean(); gw = h2
         if ch < 0.002 and ch2 < 0.002: break
+    if SUB:                                                                     # names / wordings outside the fitted records: classed by all
+        T = table(gn, gw, K, M, al); o1 = np.ones(N)                            #   their records under the fitted block table
+        PL = np.log(T / T.sum((1, 2), keepdims=True)).reshape(K, M * K); PR = np.log(T / T.sum((0, 1), keepdims=True)).transpose(2, 0, 1).reshape(K, K * M)
+        Lm = csr_matrix((o1, (a, gw[w] * K + gn[b])), shape=(NN, M * K)); Rm = csr_matrix((o1, (b, gn[a] * M + gw[w])), shape=(NN, K * M))
+        out = np.ones(NN, bool); out[fa] = False; out[fb] = False; gn = gn.copy(); gn[out] = np.asarray(Lm @ PL.T + Rm @ PR.T)[out].argmax(1)
+        PW = np.log(T / T.sum((0, 2), keepdims=True)).transpose(1, 0, 2).reshape(M, K * K)
+        Wm = csr_matrix((o1, (w, gn[a] * K + gn[b])), shape=(NW, K * K)); out = np.ones(NW, bool); out[fw] = False; gw = gw.copy()
+        gw[out] = np.asarray(Wm @ PW.T)[out].argmax(1)
     return gn, gw
 
 
 def dl(gn, gw, K, M):
     """total description length in bits: records given the classes + block table + class assignments"""
-    T = table(gn, gw, K, M); d = -np.log2(T[gn[a], gw[w], gn[b]] / N).sum()
-    for ids, g in ((a, gn[a]), (b, gn[b]), (w, gw[w])):
+    T = table(gn, gw, K, M); d = -np.log2(T[gn[fa], gw[fw], gn[fb]] / NF).sum()
+    for ids, g in ((fa, gn[fa]), (fb, gn[fb]), (fw, gw[fw])):
         ni = np.bincount(ids)[ids]; ng = np.bincount(g)[g]; d += -np.log2(ni / ng).sum()
-    model = 0.5 * K * M * K * np.log2(N) + NN * np.log2(max(K, 1)) + NW * np.log2(max(M, 1))
-    tc = (T / N * np.log2(np.where(T > 0, T * N * N / (T.sum((1, 2), keepdims=True) * T.sum((0, 2), keepdims=True) * T.sum((0, 1), keepdims=True)), 1))).sum()
+    model = 0.5 * K * M * K * np.log2(NF) + len(set(fa) | set(fb)) * np.log2(max(K, 1)) + len(set(fw)) * np.log2(max(M, 1))
+    tc = (T / NF * np.log2(np.where(T > 0, T * NF * NF / (T.sum((1, 2), keepdims=True) * T.sum((0, 2), keepdims=True) * T.sum((0, 1), keepdims=True)), 1))).sum()
     return d + model, d, model, tc
 
 
@@ -86,17 +104,26 @@ def purity(gn, wts):
 
 nocc = np.bincount(a, minlength=NN) + np.bincount(b, minlength=NN)
 d0 = dl(np.zeros(NN, int), np.zeros(NW, int), 1, 1)
-P(f"NO CLASSES: {d0[0] / N:.2f} bits a record  ({time.time() - T0:.0f}s)")
+P(f"NO CLASSES: {d0[0] / NF:.2f} bits a record  ({time.time() - T0:.0f}s)")
 P(f"gold types by records: " + ", ".join(f"{t} {nocc[GT == t].sum() / nocc.sum():.2f}" for t in np.unique(GT)))
 FITS = {}
+INIT = os.environ.get('RM_INIT', 'random')                                      # 13 Nov 18:20: random | split | nt:<json>:<column>
+if INIT.startswith('nt:'):                                                      #   name classes started from context types (tools/name_types.py)
+    _p, _c = INIT[3:].rsplit(':', 1); _nt = json.load(open(_p))['types']; NT0 = np.array([_nt.get(n, [0] * 9)[int(_c)] for n in NAMES])
 for K in KS:
     for M in MS:
-        best = None
+        best = None; prev = [km for km in FITS if km[0] <= K and km[1] <= M]
         for s in range(3):
-            gn, gw = fit(K, M, s); D = dl(gn, gw, K, M)
+            ini = None
+            if INIT == 'split' and prev:                                       # grow from the largest smaller fit: each class split at random
+                K0, M0 = max(prev, key=lambda km: km[0] * km[1]); g0, h0 = FITS[K0, M0]
+                ini = lambda r, g0=g0, h0=h0, K0=K0, M0=M0: (g0 + K0 * r.randint(K // K0, size=NN), h0 + M0 * r.randint(M // M0, size=NW))
+            elif INIT.startswith('nt:'):
+                ini = lambda r: (NT0 % K, r.randint(M, size=NW))
+            gn, gw = fit(K, M, s, init=ini); D = dl(gn, gw, K, M)
             if best is None or D[0] < best[2][0]: best = (gn, gw, D)
         gn, gw, D = best; FITS[(K, M)] = (gn, gw)
-        P(f"   K {K:2d} name classes, M {M:3d} wording classes: total {D[0] / N:.2f} bits a record (data {D[1] / N:.2f} + model {D[2] / N:.2f}) | "
+        P(f"   K {K:2d} name classes, M {M:3d} wording classes: total {D[0] / NF:.2f} bits a record (data {D[1] / NF:.2f} + model {D[2] / NF:.2f}) | "
           f"class triple shares {D[3]:.3f} bits | name classes vs gold types: purity {purity(gn, nocc):.3f}, NMI "
           f"{normalized_mutual_info_score(np.repeat(GT, nocc), np.repeat(gn, nocc)):.3f}  ({time.time() - T0:.0f}s)")
 KBEST = min(FITS, key=lambda km: dl(*FITS[km], *km)[0]); P(f"MDL choice: K {KBEST[0]}, M {KBEST[1]}")
@@ -136,8 +163,6 @@ for km, (gn, gw) in FITS.items():
     report(f'K {km[0]} M {km[1]}: name-class pair + wording class', ncp + wcl)
 # ---- PREMISES: label-free record scores on held-out records
 rk = lambda x: np.argsort(np.argsort(x)) / len(x)
-lr_ = LogisticRegression(C=1.0, max_iter=2000).fit(Xtr, teacher_tr >= np.percentile(teacher_tr, 75))
-XA = feats(np.arange(N)); s_all = lr_.decision_function(XA)
 def prec(tag, sc, ix=TE):
     yy = y[ix]; s = sc[ix]; o = np.argsort(-s + 1e-9 * rq.rand(len(s)))
     P(f"   {tag:60s} AUC {auc(s[yy], s[~yy]):.3f} | precision top 5% {yy[o[:len(s) // 20]].mean():.3f}, 10% {yy[o[:len(s) // 10]].mean():.3f}, "
@@ -180,7 +205,7 @@ def infer(tag, sc, frac):
       f"gold {g[b2].mean() if b2.any() else float('nan'):.3f}")
 P("INFERENCE (A-C through a shared name, store kept by a label-free score; all records):")
 sb = SC[KBEST]
-for frac in (0.25, 0.10):
+for frac in (0.25, 0.10, 0.05):
     infer('consistency-teacher learner', s_all, frac); infer(f'block association (K {KBEST[0]} M {KBEST[1]})', sb[0], frac)
     infer('learner + association', rk(s_all) + rk(sb[0]), frac)
     if len(sb) > 2: infer('learner from teachers + block scores', sb[2], frac)
