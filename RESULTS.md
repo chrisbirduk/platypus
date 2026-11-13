@@ -622,6 +622,15 @@ wording (the shapes of the names it joins); T4 records in a chain of a rule the 
 - **More text, better teacher** (CT_FRAC: share of the training documents read; same held-out test): learner AUC 0.49 / 0.56 / 0.60 / 0.63,
   top 25% 0.24 / 0.31 / 0.33 / 0.37 at 10% / 25% / 50% / 100% (6,500 / 16,000 / 32,000 / 63,000 training candidates); functional-scored
   wordings 8 / 17 / 20 / 43. About +0.03-0.04 AUC per doubling, not levelling off.
+- **On raw text, as the store sees it** (tools/consistency_raw.py: names by capitalisation, no gold mentions; same held-out test): counted over
+  the Re-DocRED documents alone AUC 0.59, top 25% 0.35 (gold mentions 0.63 / 0.37); **adding other text makes it worse** - + WikiText 0.55 /
+  0.29; + every domain the model reads (10.5M words) 0.49 / 0.25. The volume gain holds for more of the SAME kind of text only; counted over
+  everything the model reads, this teacher is near chance unless it counts per domain.
+- **Do rules come out of what it keeps?** (tools/kept_rules.py; counting miner, n >= 20, Wilson z 4 >= 0.7) Top 10% / 25% / 50% kept: 3,208 /
+  6,407 / 10,685 of 93,331 gold facts covered (precision 0.45 / 0.36 / 0.30). With GOLD relation types on the kept related records: 0 / 0 /
+  **1 rule** (a region's country from the places in it, 0.90 of 102; its proposals 0.74 gold - facts the extractor missed). With the
+  WORDING as the relation (what the store has): 0 rules at every share. All gold facts: 136 rules. Inference by counting needs both several
+  times this coverage and relation identity; relation identity is the larger gap.
 - **The trunk's feedback adds nothing to consistency** (tools/extract_combo.py): consistency alone AUC 0.628 / top 25% 0.375; + trunk
   feedback at weight 1 / 2 / 4: 0.622 / 0.595 / 0.577 (top 25% 0.363 / 0.352 / 0.338).
 
