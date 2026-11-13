@@ -514,6 +514,17 @@ difference through visit 4; the decisive visits were not run.
 - unlike the GPU trunk (0.756 all, 0.61 -> 0.68 on pairs sharing no word, visits 2 -> 4).** The linking signal appears with a stronger
 trunk; the larger stand-in (stage C) tests the trend.
 
+**One relation, many wordings - by substitution (tools/relsub.py):** 3,262 one-sentence gold-relation records (90 types); 600 queries
+against 30 random candidates each. Best candidate of the same gold type: frame words 0.125, substitution with the trained trunk 0.050,
+untrained 0.060 (chance 0.060). AUC same type vs not: substitution trained **0.584**, untrained 0.503, frame words 0.368 (tf-idf cosine is
+mostly 0, so its ranking is ties), words + trained 0.609. **A weak signal at this size: the trained trunk ranks same-relation frames a little
+higher overall but never picks the right one first; frame words still pick better.**
+
+**Pronoun reference by substitution (tools/pronoun_ref.py):** 122 pronoun-led sentences with a single proxy-gold antecedent among 2-8 earlier
+entities (He 55, It 36, She 15, ...; chance 0.205). TITLE (the document's first entity) **0.549**, most mentioned 0.369, type rule 0.410,
+most recent 0.148; substitution with the trained trunk 0.197, untrained 0.213 (He 0.11, She 0.07, It 0.25). **The stand-in trunk cannot
+resolve pronouns; the title heuristic resolves more than half** (Wikipedia openings are about their title).
+
 ### Refusal rows, replay by storage check, abstention, compression gain on the real trunk (cg27a_refuse to visit 6, cg27a_rtxsp to visit 4; seed 4; 12 November, night; both stopped by the author)
 
 Both = cg27a_rtx16 + ONE change: `cg27a_refuse` - a fifth of the question rows ask about FRESH names never read (taught wordings), answered
