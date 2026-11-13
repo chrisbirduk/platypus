@@ -597,6 +597,29 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
   triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
 
+### The store teaching itself what to extract: consistency teachers (tools/consistency_teacher.py, 13 November; no trunk)
+
+Same candidates and held-out documents as tools/extract_learn.py (15,609 held-out candidates, 24.2% related). Label-free teachers counted on the
+training documents: T1 the same names and wording in another document; T2 FUNCTIONAL wording (a subject joined to one object); T3 SELECTIVE
+wording (the shapes of the names it joins); T4 records in a chain of a rule the counting miner verifies over the candidates themselves.
+
+| Extractor (held-out documents) | AUC | top 10%: precision / recall | top 25%: precision / recall |
+|---|---|---|---|
+| random | 0.50 | 0.25 / 0.10 | 0.24 / 0.24 |
+| learner from TRUNK feedback (tools/extract_learn.py) | 0.55-0.56 | 0.33-0.35 / 0.14 | 0.31 / 0.32 |
+| T2 + T3 applied directly (wordings seen in training) | 0.54 | 0.41 / 0.17 | 0.30 / 0.31 |
+| **learner from the combined consistency teacher** | **0.63** | **0.45 / 0.19** | **0.38 / 0.39** |
+| + self-training (the learner's kept records recount T2 / T3), round 1 | **0.64** | 0.46 / 0.19 | 0.39 / 0.40 |
+| rounds 2-3 | 0.63 | 0.45 / 0.18 | 0.38 / 0.39 |
+| ceiling: same learner, gold labels, all training candidates | 0.81 | 0.71 / 0.29 | 0.55 / 0.57 |
+
+- **Consistency is a better teacher than the trunk's prediction**: AUC 0.63 vs 0.55; top quarter 0.38 related vs 0.31 (base 0.24). On
+  training records the strongest single teacher is FUNCTIONAL wording (top quarter 0.42); corroboration (0.26) and rule chains (0.26; the
+  counting miner finds 1 rule, punctuation, over candidate records) add little.
+- Self-training helps once (+0.01 AUC) and then plateaus.
+- Roughly: keeping the top quarter captures ~40% of the within-sentence related pairs (~8% of all gold facts) at 0.38-0.39 precision,
+  against the current reader's ~3% at ~0.23.
+
 ### Several wordings: does a read-only fact become answerable? (tools/paraphrase_test.py, 13 November; byte LM 128 wide, 3 layers)
 
 200 invented people (birth city, university, employer; 20 values each, chance 0.05), each biography read 5 times; questions taught about half
