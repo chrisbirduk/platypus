@@ -750,6 +750,12 @@ about 0.33-0.37 by Wikidata labels). WRITES: 181 at visit 2, 370 by visit 4 (a f
 writes (store off), taught vs held back: visit 3 RIGHT 0.07 (96 questions) vs 0.03 (32), WRONG 0.13 (172) vs 0.07 (42); **visit 4 RIGHT
 0.09 vs 0.03, WRONG 0.02 vs 0.00** - right inferences retained, wrong ones fading (about 2.5 standard errors; visit 3 showed the opposite).
 Provisional until visits 6-10.
+**Visits 5-6 (writes of visits 2 + 4):** check AUC 0.478 at visit 6 (third time at chance; passed and failed both right 0.37). Recall, taught
+vs held back: visit 5 RIGHT 0.04 (194) vs 0.06 (52), WRONG 0.06 (360) vs 0.00 (106); **visit 6 RIGHT 0.09 vs 0.02, WRONG 0.06 vs 0.01**.
+Written inferences reach the weights (taught above held back for both), but right is not reliably above wrong (0.09 vs 0.06, about 1.3
+standard errors; the order changes between visits) - the visit-4 'fading' does not repeat. Consistent with tools/false_fade.py: right
+inferences are kept only when later reading supports them, and here the trunk never reads the documents they came from. Next build: the
+trunk reads the source documents, recall split by write age, a third held back.
 
 ### Do wrong inferences fade while right ones stay? (tools/false_fade.py, 13 November, late; stand-in trunk, two seeds)
 
