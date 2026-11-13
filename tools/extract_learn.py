@@ -10,6 +10,8 @@ little but consistently ('X , the capital of Y', 'X was born in Y') can be learn
   TEST        documents held out (a fifth, never used for feedback): score EVERY candidate there; against gold - AUC related vs not,
               precision and recall of the top 10% / 25% kept. Baselines: closeness, the wording's frequency, random; CEILING: the same
               learner and features trained on the GOLD labels (what these features allow at best). The current reader: ~3% recall, ~0.23 precision.
+EL_TARGET=frame (13 Nov 14:20): feedback on the TARGET's relating words (the words between the names where they meet again, same order)
+against another record's relating words - relation wording predicting relation wording, not the second name.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/extract_learn.py [max feedback records, default 8000]"""
 import os
 import sys
@@ -64,33 +66,48 @@ for di, d in enumerate(docs):
             for y in range(x + 1, len(ms)):
                 (a0, a1), (b0, b1) = ms[x][:2], ms[y][:2]; ea, eb = ms[x][2], ms[y][2]
                 if ea == eb or a1 > b0 or cn[ea] == cn[eb]: continue
-                key = tuple(sorted((cn[ea], cn[eb]))); occ[key].append((di, si, b0, b1))
+                key = tuple(sorted((cn[ea], cn[eb]))); occ[key].append((di, si, b0, b1, a0, a1, cn[ea]))
                 if b0 - a1 <= 12 and len(' '.join(toks[a0:b1])) <= 60:
                     C.append(dict(di=di, si=si, a=(a0, a1), b=(b0, b1), key=key, gold=(ea, eb) in gold, mid=toks[a1:b0],
-                                  A=toks[a0:a1], B=toks[b0:b1], test=di in TEST))
+                                  A=toks[a0:a1], B=toks[b0:b1], test=di in TEST, cA=cn[ea]))
 fcount = collections.Counter(' '.join(c['mid']).lower() for c in C)
 y_all = np.array([c['gold'] for c in C]); te = np.array([c['test'] for c in C])
 P(f"candidates {len(C)} in {len(docs)} documents (related {y_all.mean():.3f}) | held-out documents {len(TEST)}: {int(te.sum())} candidates "
   f"(related {y_all[te].mean():.3f})")
 
 # ---- trunk feedback on training documents (where the names meet again in ANOTHER training document)
+MODE = os.environ.get('EL_TARGET', 'name')                                  # 'frame': feedback on the TARGET's relating words
 rq = np.random.RandomState(1); FB = []
 for n, c in enumerate(C):
     if c['test']: continue
     oth = [o for o in occ[c['key']] if o[0] != c['di'] and o[0] not in TEST]
+    if MODE == 'frame':                                                         # the names meet again in the SAME order, 1-12 words apart
+        oth = [o for o in oth if 1 <= o[2] - o[5] <= 12 and o[6] == c['cA']]
     if oth: c['tgt'] = oth[rq.randint(len(oth))]; FB.append(n)
 rq.shuffle(FB); FB = FB[:NMAX]
 SEQ = {k: [] for k in ('w', 'o', 'lw', 'lo', 'pw', 'po')}
-for n in FB:
-    c = C[n]; di2, si2, y0, y1 = c['tgt']; t2 = docs[di2]['sents'][si2]
+if MODE == 'frame':
+    SEQ = {k: [] for k in ('w', 'o')}; pr_ = np.random.RandomState(4).permutation(len(FB))
+    for k_, n in enumerate(FB):
+        c = C[n]; di2, si2, y0, y1, x0, x1, _ = c['tgt']; t2 = docs[di2]['sents'][si2]; r_ = C[FB[int(pr_[k_])]]
+        A, B, M, Mn = txt(c['A']), txt(c['B']), txt(c['mid']), txt(r_['mid'])
+        pre = txt(t2[x0:x1]) + b' '; tg = txt(t2[x1:y0])[:40]                    # target: the words between the names where they meet again
+        for k, rec in (('w', A + b' ' + M + b' ' + B), ('o', A + b' ' + Mn + b' ' + B)):
+            q = rec.replace(b'  ', b' ') + b' . ' + pre; SEQ[k].append((q + tg, (len(q), len(q) + len(tg))))
+    t1 = time.time(); Bt = {k: bits(v) for k, v in SEQ.items()}; g = Bt['o'] - Bt['w']; fb_list = fb_pair = g; yf = y_all[FB]
+    P(f"FRAME FEEDBACK on {len(FB)} training records ({time.time() - t1:.0f}s), related {yf.mean():.3f}: bits the record's own relating words save on the "
+      f"relating words where its names meet again, against another record's words - per-record AUC related vs not {auc(g[yf], g[~yf]):.3f}")
+for n in (FB if MODE != 'frame' else []):
+    c = C[n]; di2, si2, y0, y1 = c['tgt'][:4]; t2 = docs[di2]['sents'][si2]
     pre = txt(t2[max(0, y0 - 6):y0])[-36:] + b' '; tg = txt(t2[y0:y1])[:24]; A, B, M = txt(c['A']), txt(c['B']), txt(c['mid'])
     for k, rec in (('w', A + b' ' + M + b' ' + B), ('o', TH + b' ' + M + b' ' + B), ('lw', A + b' , ' + B), ('lo', TH + b' , ' + B),
                    ('pw', A + b' ' + B), ('po', TH + b' ' + B)):
         q = rec.replace(b'  ', b' ') + b' . ' + pre; SEQ[k].append((q + tg, (len(q), len(q) + len(tg))))
-t1 = time.time(); Bt = {k: bits(v) for k, v in SEQ.items()}
-g = Bt['o'] - Bt['w']; fb_list = g - (Bt['lo'] - Bt['lw']); fb_pair = g - (Bt['po'] - Bt['pw'])
-yf = y_all[FB]
-P(f"trunk feedback on {len(FB)} training records ({time.time() - t1:.0f}s), related {yf.mean():.3f} | per-record AUC related vs not: record gain "
+if MODE != 'frame':
+  t1 = time.time(); Bt = {k: bits(v) for k, v in SEQ.items()}
+  g = Bt['o'] - Bt['w']; fb_list = g - (Bt['lo'] - Bt['lw']); fb_pair = g - (Bt['po'] - Bt['pw'])
+  yf = y_all[FB]
+  P(f"trunk feedback on {len(FB)} training records ({time.time() - t1:.0f}s), related {yf.mean():.3f} | per-record AUC related vs not: record gain "
   f"{auc(g[yf], g[~yf]):.3f}, beyond the LIST record {auc(fb_list[yf], fb_list[~yf]):.3f}, beyond the names alone {auc(fb_pair[yf], fb_pair[~yf]):.3f}")
 
 # ---- features (no gold)
