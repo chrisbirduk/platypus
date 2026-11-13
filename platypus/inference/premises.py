@@ -232,12 +232,145 @@ def premises_readout(model, cfg, S_slot, vis):
             msg.append("INFERENCE A-C (distant labels; offline threshold: 0.13 at premises 0.38, 0.31 at 0.70): " + " | ".join(res))
         except Exception as e: _fail('inference.premises:infer'); msg.append(f"INFERENCE unavailable ({type(e).__name__}: {e})"[:160])
     print(f"  [PREMISES AT SCALE | visit {vis + 1}] " + " || ".join(msg) + f"  (trunk scoring {len(newd) + len(newb)} records {tsc:.0f} s; total {time.time() - t0:.0f} s)", flush=True)
+    if int(getattr(cfg, 'inf_premises_typed', 0)):
+        try: _typed_readout(cfg, RD, RB, a, b, w, NN, NW, NAMES, WK, gn, y, rs, vis)
+        except Exception as e: _fail('inference.premises:typed'); print(f"  [TYPED INFERENCE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
     if int(getattr(cfg, 'inf_rti_write', 0)) and scd is not None:
         try: _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vis)
         except Exception as e: _fail('inference.premises:rti'); print(f"  [REAL-TEXT INFERENCE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
 
 _RTI_R = 'is connected to'
+
+
+def _shape(n):
+    if any(ch.isdigit() for ch in n): return 'num'
+    c = sum(t[:1].isupper() for t in n.split()); return f"cap{min(c, 3)}" if c else 'low'
+
+
+def _typed_readout(cfg, RD, RB, a, b, w, NN, NW, NAMES, WK, gn, y, rs, vis):
+    """13 Nov TYPED INFERENCE readout (inf_premises_typed; nothing written): tools/typed_infer.py + tools/chain_bootstrap.py inside the model.
+    UNIVERSAL SCHEMA (PPMI + SVD over the store's wordings x ordered name pairs, k-means -> latent relations) -> RELATION IDENTITY on the
+    benchmark's gold-related records; a RELATIONAL-WORDING SCORER (label-free teachers: corroboration, functional and selective wordings ->
+    a learner on hashed features of the words between) -> premise precision; TYPED, COUPLED INFERENCE on a sample of the store (premise
+    relations -> the relation A and C are later read in, in a relational wording; learned on half the pairs, scored on the other half;
+    type coupling on the compressed name types) and TYPED HOP 2; checked against the distant labels (offline, Re-DocRED gold: typed
+    composability + coupling 0.160 vs 0.108 for all, typed hop 2 0.196 vs untyped 0.14)."""
+    import zlib, math as _m
+    from sklearn.decomposition import TruncatedSVD
+    from sklearn.cluster import MiniBatchKMeans
+    from sklearn.preprocessing import normalize
+    from sklearn.feature_extraction.text import HashingVectorizer
+    from sklearn.linear_model import LogisticRegression
+    t0 = time.time(); nD = len(RD); NR = nD + len(RB); msg = []
+    dk = np.array([r[0] for r in RD] + [-1 - i for i in range(len(RB))], np.int64)   # document per record (benchmark documents: one key each record's doc)
+    bd = {}; dk[nD:] = [-1 - bd.setdefault(r[0], len(bd)) for r in RB]
+    # ---- universal schema
+    PI = {}; pid = np.array([PI.setdefault((int(x), int(z)), len(PI)) for x, z in zip(a, b)])
+    M_ = csr_matrix((np.ones(NR), (w, pid)), shape=(NW, len(PI))); M_.sum_duplicates(); M_.data[:] = 1.0
+    rsum = np.asarray(M_.sum(1)).ravel(); csum = np.asarray(M_.sum(0)).ravel(); Mc = M_.tocoo(); pm = np.log(M_.sum() / (rsum[Mc.row] * csum[Mc.col]) + 1e-12); kp = pm > 0
+    E = normalize(TruncatedSVD(64, random_state=0).fit_transform(csr_matrix((pm[kp], (Mc.row[kp], Mc.col[kp])), shape=M_.shape)))
+    rel = MiniBatchKMeans(64, random_state=0, batch_size=4096, n_init=3).fit_predict(E)
+    HR = [nD + i for i, r in enumerate(RB) if r[9]]; ra = np.random.RandomState(int(cfg.seed) + 31 + vis)
+    if len(HR) >= 60:
+        PA = []
+        for q in ra.choice(len(HR), min(300, len(HR)), replace=False):
+            PA += [(int(q), int(c)) for c in ra.choice(len(HR), 40, replace=False) if RB[HR[int(c)] - nD][0] != RB[HR[int(q)] - nD][0]][:30]
+        same = np.array([bool(RB[HR[i] - nD][9] & RB[HR[j] - nD][9]) for i, j in PA])
+        cosw = np.array([float(E[w[HR[i]]] @ E[w[HR[j]]]) for i, j in PA]); tpr = np.array([float((gn[a[HR[i]]], gn[b[HR[i]]]) == (gn[a[HR[j]]], gn[b[HR[j]]])) for i, j in PA])
+        msg.append(f"UNIVERSAL SCHEMA ({NW} wordings x {len(PI)} pairs, recurring {int((csum >= 2).sum())}): RELATION IDENTITY (benchmark gold, {len(PA)} pairs) wording vector "
+                   f"{_cg_auc(cosw[same], cosw[~same]):.3f}, + name-type pair {_cg_auc((cosw + tpr)[same], (cosw + tpr)[~same]):.3f} (offline 0.658 / 0.669 at 30k)")
+    # ---- relational-wording scorer (label-free teachers -> learner)
+    mid = [r[3] for r in RD] + [r[3] for r in RB]; An = [NAMES[i] for i in a]; Bn = [NAMES[i] for i in b]
+    trip = collections.defaultdict(set); fsub = collections.defaultdict(lambda: collections.defaultdict(set)); fA = collections.defaultdict(collections.Counter); fB = collections.defaultdict(collections.Counter)
+    for i in range(NR): trip[(a[i], mid[i], b[i])].add(int(dk[i])); fsub[mid[i]][a[i]].add(b[i]); fA[mid[i]][_shape(An[i])] += 1; fB[mid[i]][_shape(Bn[i])] += 1
+    FUN = {}
+    for f_, d_ in fsub.items():
+        ss = [v for v in d_.values() if len(v) >= 1]
+        if sum(1 for v in ss if len(v) >= 1) >= 3: FUN[f_] = float(np.mean([len(v) == 1 for v in ss]))
+    ent = lambda c_: -sum(v / sum(c_.values()) * _m.log2(v / sum(c_.values())) for v in c_.values())
+    SEL = {f_: -(ent(fA[f_]) + ent(fB[f_])) for f_ in fA if sum(fA[f_].values()) >= 5}
+    t1 = np.array([float(len(trip[(a[i], mid[i], b[i])] - {int(dk[i])}) > 0) for i in range(NR)])
+    t2 = np.array([FUN.get(mid[i], np.nan) for i in range(NR)]); t3 = np.array([SEL.get(mid[i], np.nan) for i in range(NR)])
+    rkn = lambda x: (lambda z: np.argsort(np.argsort(z, kind='stable'), kind='stable') / max(1, len(z) - 1))(np.where(np.isnan(x), np.nanmedian(x) if np.isfinite(x).any() else 0.0, x))
+    teach = rkn(t2) + rkn(t3) + 2 * t1
+    HV = HashingVectorizer(n_features=2 ** 16, ngram_range=(1, 2), alternate_sign=False, token_pattern=r"[A-Za-z]+|[^\sA-Za-z]", norm='l2')
+    txt = lambda i: mid[i] + ' FIRST_' + (mid[i].split()[0] if mid[i] else 'none') + ' LAST_' + (mid[i].split()[-1] if mid[i] else 'none') + ' SA_' + _shape(An[i]) + ' SB_' + _shape(Bn[i])
+    trs = ra.permutation(NR)[:int(getattr(cfg, 'inf_premises_typed_train', 200000))]
+    lr = LogisticRegression(C=1.0, max_iter=1000).fit(HV.transform([txt(i) for i in trs]), teach[trs] >= np.percentile(teach[trs], 75))
+    srel = np.concatenate([lr.decision_function(HV.transform([txt(i) for i in range(s0, min(NR, s0 + 200000))])) for s0 in range(0, NR, 200000)])
+    def topk(sc, yy):
+        o = np.argsort(-sc + 1e-9 * ra.rand(len(sc))); return '/'.join(f"{yy[o[:max(1, len(o) * k // 100)]].mean():.2f}" for k in (5, 10, 25))
+    yb = y[nD:]; yd = y[:nD]
+    msg.append(f"RELATIONAL WORDING (label-free learner): benchmark gold AUC {_cg_auc(srel[nD:][yb], srel[nD:][~yb]):.3f}, top 5/10/25% {topk(srel[nD:], yb)} (base {yb.mean():.2f}) | "
+               f"distant labels AUC {_cg_auc(srel[:nD][yd], srel[:nD][~yd]):.3f}, {topk(srel[:nD], yd)} (base {yd.mean():.2f}) (offline 0.55-0.60 at top 5%)")
+    # ---- typed, coupled inference on a sample of the store
+    nk = np.unique(np.concatenate([a, b]).astype(np.int64) * (1 << 30) + np.concatenate([dk, dk]) + (1 << 29)) >> 30; dfr = np.bincount(nk, minlength=NN)
+    smp = np.concatenate([ra.permutation(nD)[:int(getattr(cfg, 'inf_premises_typed_n', 80000))], np.arange(nD, NR)]); smp.sort()
+    thr = np.quantile(srel, 0.75); SREL = collections.defaultdict(list)
+    for i in np.where(srel >= thr)[0]: SREL[(min(a[i], b[i]), max(a[i], b[i]))].append((int(rel[w[i]]), int(dk[i])))
+    LAB = _PM.get('LAB', set()); RBG = {}
+    for r in RB:
+        if r[6]: RBG[frozenset((r[1], r[2]))] = True
+    nb = collections.defaultdict(list)
+    for i in smp: nb[a[i]].append((b[i], int(dk[i]), i)); nb[b[i]].append((a[i], int(dk[i]), i))
+    side = lambda i, B: 0 if b[i] == B else 1
+    PR = {}
+    for i in smp:
+        for B, Cn in ((a[i], b[i]), (b[i], a[i])):
+            if dfr[B] > 200: continue
+            for A, dA, j in nb[B]:
+                if dA == int(dk[i]) or A == Cn: continue
+                k1, k2 = (int(rel[w[j]]), side(j, B)), (int(rel[w[i]]), side(i, B)); kd = (k1, k2) if k1 <= k2 else (k2, k1)
+                key = (min(A, Cn), max(A, Cn)); p = PR.get(key)
+                if p is None: p = PR[key] = [set(), set(), set()]
+                p[0].add(kd); p[1].update((dA, int(dk[i]))); p[2].add(B)
+    keys = list(PR); trm = np.array([zlib.crc32(repr(k).encode()) % 2 == 0 for k in keys])
+    cf = [[r for r, d_ in SREL.get(k, ()) if d_ not in PR[k][1]] for k in keys]
+    CT = collections.defaultdict(collections.Counter); KN = collections.Counter()
+    for k, t_, c_ in zip(keys, trm, cf):
+        if t_:
+            for kd in PR[k][0]:
+                KN[kd] += 1
+                for r_ in set(c_): CT[kd][r_] += 1
+    def wil(s_, n_, z=1.64):
+        if n_ == 0: return 0.0
+        p_ = s_ / n_; return (p_ + z * z / (2 * n_) - z * _m.sqrt(p_ * (1 - p_) / n_ + z * z / (4 * n_ * n_))) / (1 + z * z / n_)
+    def typ(k):
+        best = (0.0, -1)
+        for kd in PR[k][0]:
+            if CT[kd]: r_, n_ = CT[kd].most_common(1)[0]; best = max(best, (wil(n_, KN[kd]), r_))
+        return best
+    TY = [typ(k) for k in keys]; comp = np.array([t[0] for t in TY]); prel = np.array([t[1] for t in TY])
+    ARG = collections.defaultdict(collections.Counter)
+    for i in np.where(srel >= np.quantile(srel, 0.5))[0]: ARG[int(rel[w[i]])][tuple(sorted((int(gn[a[i]]), int(gn[b[i]]))))] += 1
+    cpl = np.array([r_ >= 0 and sum(ARG[r_].values()) > 0 and ARG[r_][tuple(sorted((int(gn[k[0]]), int(gn[k[1]]))))] / sum(ARG[r_].values()) >= 0.01 for k, r_ in zip(keys, prel)])
+    dn = collections.defaultdict(set)
+    for i in range(NR): dn[a[i]].add(int(dk[i])); dn[b[i]].add(int(dk[i]))
+    chk = np.array([bool(dn[k[0]] & dn[k[1]]) for k in keys]); tru = np.array([frozenset((NAMES[k[0]], NAMES[k[1]])) in LAB or frozenset((NAMES[k[0]], NAMES[k[1]])) in RBG for k in keys])
+    TEv = np.where(~trm & chk)[0]; nbr = np.array([len(PR[k][2]) for k in keys]); conf = np.array([bool(c_) for c_ in cf])
+    pol = lambda tag, m: f"{tag} {int(m[TEv].sum())} right {tru[TEv][m[TEv]].mean() if m[TEv].any() else float('nan'):.3f}"
+    q90 = np.quantile(comp[TEv], 0.90) if len(TEv) else 1.0
+    res = [pol('all', np.ones(len(keys), bool)), pol('2+ bridges', nbr >= 2), pol('typed composability top 10%', comp >= q90), pol('+ type coupling', (comp >= q90) & cpl),
+           pol('confirmed in a relational wording', conf), pol('relational confirmation + 2+ bridges', conf & (nbr >= 2))]
+    msg.append(f"TYPED INFERENCE ({len(smp)} premises, {len(keys)} proposals, {sum(1 for t_, c_ in zip(trm, cf) if t_ and c_)} train pairs confirmed; test checkable {len(TEv)}, distant labels / "
+               f"benchmark gold): " + " | ".join(res))
+    acc = np.where((comp >= q90) & cpl)[0]; acc = acc[ra.permutation(len(acc))[:3000]]; H2 = {}
+    for i in acc:
+        X_, Y_ = keys[i]; r3 = int(prel[i])
+        for a_, b_ in ((X_, Y_), (Y_, X_)):
+            if dfr[b_] > 200: continue
+            for D_, dD, j in nb[b_]:
+                if D_ == a_: continue
+                k2 = (min(a_, D_), max(a_, D_))
+                if k2 in PR or not (dn[a_] & dn[D_]): continue
+                k1, kk = (r3, 0), (int(rel[w[j]]), side(j, b_)); kd = (k1, kk) if k1 <= kk else (kk, k1)
+                H2[k2] = max(H2.get(k2, 0.0), wil(CT[kd].most_common(1)[0][1], KN[kd]) if CT[kd] else 0.0)
+    if H2:
+        k2s = list(H2); g2 = np.array([frozenset((NAMES[k[0]], NAMES[k[1]])) in LAB for k in k2s]); c2 = np.array([H2[k] for k in k2s])
+        m2 = c2 >= (np.quantile(c2[c2 > 0], 0.75) if (c2 > 0).any() else 1.0)
+        msg.append(f"TYPED HOP 2 (from {len(acc)} accepted): {len(k2s)} checkable, right {g2.mean():.3f} | composability-gated {int(m2.sum())}, right {g2[m2].mean() if m2.any() else float('nan'):.3f}")
+    print(f"  [TYPED INFERENCE | visit {vis + 1}] " + " || ".join(msg) + f"  ({time.time() - t0:.0f} s)", flush=True)
 
 
 def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vis):

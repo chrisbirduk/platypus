@@ -620,6 +620,10 @@ class Config:
     inf_premises_m=128
     inf_premises_score_max=400000   #     new distant records scored by the trunk per readout at most (sampled)
     inf_premises_ac_max=600000      #     A-C inference over a fixed sample of at most this many scored records (time)
+    inf_premises_typed=0            #   13 Nov READOUT (with inf_premises): TYPED INFERENCE - universal schema relations, a relational-wording scorer, typed coupled
+                                    #     inference and typed hop 2 on the premises store (tools/typed_infer.py offline: 0.160 vs 0.108; hop 2 0.196 vs 0.14)
+    inf_premises_typed_n=80000      #     distant records sampled as premises for typed inference (time)
+    inf_premises_typed_train=200000 #     records the relational-wording learner trains on
     inf_rti_write=0                 #   13 Nov END-TO-END REAL-TEXT INFERENCE (MODEL CHANGE when on; needs inf_premises): premises chosen label-free from the
                                     #     premises store, A-C inferred through a shared name (2+ bridges), CHECKED by the trunk (C in its top inf_rti_rank of 10
                                     #     after 'A is connected to '), the passing ones WRITTEN into the question pool as facts (a fifth held back)
