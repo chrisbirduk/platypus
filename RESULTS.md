@@ -680,6 +680,36 @@ every record is coded GIVEN its document's context; full store, K 4-32, M 32/128
   label-free figure so far, though top-1 falls (0.26 -> 0.23). Context is better used next to the types than as the key the types are
   learned under.
 
+### Premises that chain: composability learned from later confirmation (tools/chain_bootstrap.py, 13 November, late)
+
+Re-DocRED store (78,784 records), A-C proposed through a shared name from another document (2.2M proposals; 80,185 verifiable, gold
+0.108); half the pairs (by hash) learn which premise KINDS compose - kinds = (wording class, bridge side) pairs from record-level compression
+(K 16, M 128), or the name-type triple - from label-free CONFIRMATION (A and C later read together in one sentence of another document);
+policies applied to the other half (40,013 verifiable, gold 0.108). Both runs were stopped by the machine's memory before hop 2 (inference
+built on inference) and, at 30k, before trunk congruence.
+
+| policy (test pairs) | Re-DocRED only | + 30k distant documents (confirmations 0.2% -> 1.7%) |
+|---|---|---|
+| all proposals | 0.108 | 0.108 |
+| 2+ / 3+ bridges | 0.082 / 0.069 | 0.082 / 0.069 |
+| composability (wording kinds), top 25% / 10% | 0.073 / 0.061 | 0.072 / 0.067 |
+| composability (name-type triple), top 25% / 10% | - | 0.053 / 0.029 |
+| **confirmed by later reading** (the inference waits for the text) | **0.170** (2,304) | **0.143** (9,022) |
+| stand-in trunk congruence (gain from A, top 3 of 10; cg27a_rti's check) | **AUC 0.445**: passed 0.078 vs failed 0.124 | (not reached) |
+| two keys (composability AND congruence) | 0.035 | - |
+
+- **Not positive: composability learned from confirmation selects WORSE than taking every proposal**, more so with the coarser type-triple
+  kinds. A sentence that names A and C together is mostly co-occurrence (lists of places, people of one team), so the kinds that get
+  'confirmed' are the kinds that co-occur, not the kinds that relate - the co-occurrence trap again (compression gain, usefulness, record
+  surprise). Bridges also lower the rate here (0.082 / 0.069): with premise precision about 0.24, corroboration amplifies co-occurrence (as
+  tools/premise_threshold.py: bridges help only above about 0.5).
+- **The stand-in trunk's check points the wrong way** (AUC 0.445, about 3.4 standard errors below 0.5): 'A helps the trunk predict C' favours
+  wrong inferences. cg27a_rti uses this check to choose writes; cg27a_rtiw (check as a readout only, every 2+ bridge inference written) is the
+  fallback if the GPU trunk's AUC is at or below 0.5 at visit 2.
+- **Positive, modest: waiting for the text helps** - inferences later read together in a sentence are right 0.14-0.17 (1.3-1.6x base).
+- Discrepancy to resolve: on the GPU (distant set, Wikidata labels) 2+ bridges RAISE A-C precision (0.23 vs 0.11-0.13 for all); on
+  Re-DocRED gold they lower it. Likely the distant labels reward transitive chains (located in, P131) that Wikidata labels densely.
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
