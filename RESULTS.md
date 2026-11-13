@@ -505,6 +505,31 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
+### cg27a_rtxt: title for pronoun in real-text replay, to visit 10 (GPU, seed 4, 13 November)
+
+cg27a_rtx16 + inf_distill_rtx_title 1 (pronoun-led replayed sentences replayed with the document's title for the pronoun). BPC within 0.006 of
+cg27a_rtx16 throughout; peak GPU memory 55.5 GB; the only errors the old NAME MEMORY READOUT 'stale' (caught; also in earlier runs).
+
+| visit | named: storage / own / another wording / prior | PRONOUN-LED: storage / own / ANOTHER wording / prior | control named: own / prior |
+|---|---|---|---|
+| 5 | 0.02 / 0.27 / 0.21 / 0.17 | 0.02 / 0.15 / 0.15 / 0.15 | 0.10 / 0.04 |
+| 6 | 0.12 / 0.33 / 0.21 / 0.21 | 0.02 / 0.19 / **0.17 / 0.08** | 0.06 / 0.10 |
+| 7 | 0.08 / 0.27 / 0.15 / 0.17 | 0.04 / 0.31 / **0.23 / 0.19** | 0.08 / 0.08 |
+| 8 | 0.06 / 0.35 / 0.12 / 0.17 | 0.06 / 0.29 / **0.21 / 0.17** | 0.08 / 0.04 |
+| 9 | 0.10 / 0.46 / 0.33 / 0.31 | 0.08 / 0.38 / **0.21 / 0.15** | 0.08 / 0.12 |
+| 10 | 0.08 / 0.27 / 0.19 / 0.17 | 0.04 / 0.44 / **0.25 / 0.10** | 0.12 / 0.15 |
+
+**Real sentences stored (named storage 0.06-0.12 from visit 6, control 0; replicates cg27a_refuse) and known in their own wording; named
+facts do not reach other wordings (+0.02 at most). Pronoun-led facts replayed with the title DO: above their prior in another wording at
+visits 6-10 (+0.09, +0.04, +0.04, +0.06, +0.15; 48 sentences each).** One run.
+
+GATED ANSWERS (threshold from the previous sleep, out of sample): never-read given a stored name ungated -> gated 0.54 -> 0.45, 0.65 -> 0.25,
+0.55 -> 0.39, 0.59 -> 0.24, 0.65 -> 0.34, 0.58 -> 0.14, 0.64 -> 0.15, **0.57 -> 0.12** (visits 3-10); known right overall 0.36 -> 0.36, 0.39 ->
+0.22, 0.52 -> 0.47, 0.58 -> 0.47, 0.59 -> 0.52, 0.53 -> 0.44, 0.62 -> 0.41, **0.64 -> 0.52**; the threshold climbed 0.14 -> 0.53 with the
+trunk's confidence. Confidence AUC known-right vs never-read 0.68 -> **0.90** (visit 10). Learning from reading: never asked 0.16 at visit 10.
+COMPRESSION GAIN, links: 0.770 / 0.782 / 0.796 / 0.839 / 0.823 (visits 2-10; same entity 3.9 vs 0.3 bits at visit 8); units: PMI 0.59-0.64,
+binding gain 0.41-0.47 (none). Real-text relational module: 19,390 facts, 0 rules.
+
 ### Rules from real text with today's reading pieces - and the oracle (tools/realtext_mine.py, 13 November)
 
 262 benchmark + 630 local Wikipedia documents, 181,872 records; the relational module (_rm_mine, every guard) over the 60 commonest frames.
