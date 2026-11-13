@@ -626,6 +626,10 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - **Replay by need** (tools/paraphrase_test.py PT_NEED; 4 extra biography copies for the half of the read-only people who will be asked vs 2
   for every read-only person, same total), at step 4,000: the asked people in NEW question forms 0.33 vs 0.22; in the taught forms 0.55 vs
   0.61 (150 items each, about +-0.04). Need-weighted replay helps where generalisation is needed, at a small cost in the familiar form.
+- **Prototype errors** (tools/paraphrase_test.py PT_ZIPF; values Zipf-skewed, the commonest 29% of facts): of the model's wrong answers about
+  read-only people in new question forms, 0.14 (step 2,000: 0.15) are the commonest value - about 2.7x an even spread over the 19 wrong
+  values (0.05), about half of a pure frequency guess (~0.3). A real but partial pull towards the prototype (Spens & Burgess): some false
+  answers are typical values, which the gate must catch.
 
 ### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
 
