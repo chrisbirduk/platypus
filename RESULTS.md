@@ -505,6 +505,15 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
+### Overnight offline tests (12-13 November; tools/overnight/; Re-DocRED dev, 500 documents; stand-in byte LM 128 wide, 4,000 steps, 2.10 bits/byte, and the same network untrained)
+
+**Compression gain, stand-in trunk (tools/compress_gain.py):** units - binding gain at joins inside capitalised runs AUC 0.437 (untrained
+0.501, surprise 0.513; 8,702 joins), spans unchanged (F1 0.696 vs 0.698). Links - 119,310 candidate pairs (12 nearest earlier mentions),
+4,439 same entity: raw gain AUC **0.533** (HARD 0.485, VERY HARD 0.477) vs untrained 0.514 / 0.524 / 0.553; string features 0.895
+(HARD 0.446); string + gain 0.941 vs string + untrained gain 0.946. **At this size the trunk's compression gain carries no linking signal
+- unlike the GPU trunk (0.756 all, 0.61 -> 0.68 on pairs sharing no word, visits 2 -> 4).** The linking signal appears with a stronger
+trunk; the larger stand-in (stage C) tests the trend.
+
 ### Refusal rows, replay by storage check, abstention, compression gain on the real trunk (cg27a_refuse to visit 6, cg27a_rtxsp to visit 4; seed 4; 12 November, night; both stopped by the author)
 
 Both = cg27a_rtx16 + ONE change: `cg27a_refuse` - a fifth of the question rows ask about FRESH names never read (taught wordings), answered
