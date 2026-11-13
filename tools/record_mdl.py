@@ -21,7 +21,8 @@ RM_EXTRA=<documents>: the store also holds the records of the first documents of
 RM_DIST); more records per name. Evaluation stays on Re-DocRED (types: names that occur in Re-DocRED).
 RM_CTX=<topics.npz>:<k>: KEYED compression - every record coded given its document's label-free topic (tools/doc_topics.py); the block
 table becomes [context, A class, wording class, B class].
-Usage: python3 tools/record_mdl.py   env RM_CTX, RM_EXTRA, RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
+RM_CTXEVAL=<topics.npz>:<k>: the same-context relation cue on unkeyed classes (evaluation only).
+Usage: python3 tools/record_mdl.py   env RM_CTX, RM_CTXEVAL, RM_EXTRA, RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
 import os
 import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -71,6 +72,8 @@ if CTX:                                                                         
 else:
     KD = 1; Df = np.zeros(len(Af), int)
 td = Df[:N]
+CEV = os.environ.get('RM_CTXEVAL', '')                                          # context used only as an extra relation cue (classes unkeyed)
+tde = td if not CEV else np.load(CEV.rsplit(':', 1)[0])[f"redoc_{CEV.rsplit(':', 1)[1]}"][[c['di'] for c in C]].astype(int)
 SUB = float(os.environ.get('RM_SUB', 0))                                        # 13 Nov 18:30: fit on the extractor's top records only
 lr_ = LogisticRegression(C=1.0, max_iter=2000).fit(Xtr, teacher_tr >= np.percentile(teacher_tr, 75))
 XA = feats(np.arange(N)); s_all = lr_.decision_function(XA)
@@ -203,8 +206,8 @@ for km, (gn, gw) in FITS.items():
     ncp = eq(lambda i: (gn[a[HR[i]]], gn[b[HR[i]]])); wcl = eq(lambda i: gw[w[HR[i]]])
     report(f'K {km[0]} M {km[1]}: name-class pair', ncp); report(f'K {km[0]} M {km[1]}: wording class', wcl)
     report(f'K {km[0]} M {km[1]}: name-class pair + wording class', ncp + wcl)
-    if CTX:
-        sct = eq(lambda i: td[HR[i]]); report(f'K {km[0]} M {km[1]}: name-class pair + wording class + same context', ncp + wcl + sct)
+    if CTX or CEV:
+        sct = eq(lambda i: tde[HR[i]]); report(f'K {km[0]} M {km[1]}: name-class pair + wording class + same context', ncp + wcl + sct)
         report(f'K {km[0]} M {km[1]}: name-class pair, same context', ncp * sct + ncp)
 # ---- PREMISES: label-free record scores on held-out records
 rk = lambda x: np.argsort(np.argsort(x)) / len(x)
