@@ -18,7 +18,7 @@ NMIN = int(os.environ.get('CM_N', 20)); Z = float(os.environ.get('CM_Z', 4.0)); 
 wil = lambda p, n: (p + Z * Z / (2 * n) - Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n))) / (1 + Z * Z / n) if n else 0.0
 
 
-def count_mine(recs, frames, tag):
+def count_mine(recs, frames, tag, check=None):
     sub = collections.defaultdict(lambda: collections.defaultdict(set))
     for a, f, b in recs:
         if f in frames and a != b: sub[f][a].add(b); sub['~' + str(f)][b].add(a)
@@ -40,13 +40,36 @@ def count_mine(recs, frames, tag):
     for r1, r2, r3, acc, n, ends in rules:
         for a, cs in ends.items():
             if a not in sub[r3]: props.setdefault((a, r3, cs.most_common(1)[0][0]), (r1, r2))
-    g = [x for x in (gp(a, c) for a, r, c in props) if x is not None]; g = [bool(x) for x in g]
+    g = [x for x in ((check or gp)(a, c) for a, r, c in props) if x is not None]; g = [bool(x) for x in g]
     sh = lambda r: (' '.join(r) if isinstance(r, tuple) else str(r))[:40]
     P(f"\n{tag}: {len(recs)} records, {len(sub) // 2} frames | candidates {nc} | RULES {len(rules)}"
       + "".join(f"\n     '{sh(r1)}' o '{sh(r2)}' -> '{sh(r3)}': {acc:.2f} of {n}" for r1, r2, r3, acc, n, _ in sorted(rules, key=lambda x: -x[4])[:12])
       + f"\n   proposals {len(props)}, on benchmark entities {len(g)}, a GOLD PAIR {np.mean(g) if g else float('nan'):.2f}")
 
 
+if os.environ.get('CMR_TRAIN'):                                               # 13 Nov: + Re-DocRED train text (3,053 documents) through the reader
+    import json
+    TD = json.load(open(os.environ.get('DV_DIR', '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpad/bench_dl') + '/train_revised.json'))
+    RT, ROT, GP = [], [], set()
+    for d in TD:
+        cn = [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
+        loc = {}
+        for ei, vs in enumerate(d['vertexSet']):
+            for m in vs: loc.setdefault(tuple(TOK.findall(m['name'])), cn[ei])
+        gr = {}
+        for l in d['labels']: gr.setdefault((cn[l['h']], cn[l['t']]), l['r']); GP.add((cn[l['h']], cn[l['t']])); GP.add((cn[l['t']], cn[l['h']]))
+        AN = set(cn)
+        sents = [TOK.findall(' '.join(s_)) for s_ in d['sents']]; mp = canon_map(sents)
+        for a, f, b in doc_records(sents):
+            a, b = mp.get(a, a), mp.get(b, b); ca, cb = loc.get(a), loc.get(b)
+            RT.append((ca or ' '.join(a), f, cb or ' '.join(b)))
+            if ca and cb and (ca, cb) in gr: ROT.append((ca, gr[(ca, cb)], cb))
+    ANN = {x for d in TD for x in [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]}
+    chk = lambda a, c: ((a, c) in GP) if (a in ANN and c in ANN) else None
+    fct = collections.Counter(f for a, f, b in RT)
+    P(f"TRAIN through the reader: {len(RT)} records, {len(ROT)} on gold pairs (gold facts in train {sum(len(d['labels']) for d in TD)})")
+    count_mine(ROT, set(f for a, f, b in ROT), "TRAIN ORACLE (reader records on gold pairs, gold relation types)", chk)
+    count_mine(RT, set(f for f, _ in fct.most_common(300)), "TRAIN reader records, 300 commonest frames", chk)
 count_mine(RO, set(fco), "ORACLE (gold relation types as frames)")
 count_mine(R1, set(f for f, _ in fc1.most_common(60)), "R1 the reader's records, 60 commonest frames")
 count_mine(R1, set(f for f, _ in fc1.most_common(300)), "R1 the reader's records, 300 commonest frames")
