@@ -49,6 +49,13 @@ for i, c in enumerate(C):
             p = PR[frozenset((A, Cn))]; p['br'].add(B); p['kinds'].append(kd); p['kt'] = p.get('kt', set()) | {kt}; p['docs'] |= {dA, c['di']}
 keys = list(PR); P(f"proposals {len(keys)} | verifiable {sum(k in ANN for k in keys)} | gold among verifiable {np.mean([k in GOLDP for k in keys if k in ANN]):.3f}  ({time.time() - T0:.0f}s)")
 conf = np.array([bool(SENT.get(k, set()) - PR[k]['docs']) for k in keys])        # read together in a sentence of a document the premises are not from
+QR = float(os.environ.get('CB_RELQ', 0.75))                                       # 13 Nov late: CONFIRMED IN A RELATIONAL WORDING - the later sentence's record
+SREL = {}                                                                          #   is among the consistency learner's top (1 - CB_RELQ) (label-free)
+thr_rel = np.quantile(s_all, QR)
+for i, c in enumerate(C):
+    if s_all[i] >= thr_rel: SREL.setdefault(frozenset((c['cA'], c['cB'])), set()).add(c['di'])
+confr = np.array([bool(SREL.get(k, set()) - PR[k]['docs']) for k in keys])
+if os.environ.get('CB_CONF', 'any') == 'rel': conf_any = conf; conf = confr        # composability learned from relational confirmations
 tr = np.array([zlib.crc32(repr(sorted(k)).encode()) % 2 == 0 for k in keys])
 P(f"confirmed by later reading: {conf.mean():.3f} of proposals (train pairs {conf[tr].mean():.3f})")
 # ---- composability per kind, learned on TRAIN pairs only
@@ -88,6 +95,9 @@ pol('composability top 25% among 2+ bridges', nbr >= 2, comp, 0.25)
 pol('type-triple composability, top 25%', None, compt, 0.25); pol('type-triple composability, top 10%', None, compt, 0.10)
 pol('type-triple composability top 25% AND 2+ bridges', (compt >= np.quantile(compt[TE], 0.75)) & (nbr >= 2))
 pol('confirmed by later reading (waits for the text)', conf)
+pol(f'confirmed in a RELATIONAL wording (learner top {1 - QR:.0%})', confr)
+pol('confirmed in a relational wording AND 2+ bridges', confr & (nbr >= 2))
+pol('composability top 25% OR confirmed in a relational wording', (comp >= np.quantile(comp[TE], 0.75)) | confr)
 # ---- the stand-in trunk's congruence: the gain from A (as cg27a_rti), on a sample of test proposals
 CKP = os.environ.get('TG_CKPT', '')
 if CKP:
@@ -121,6 +131,7 @@ if CKP:
     for tag, m in (('trunk congruence (top 3)', cg >= -2), ('composability top 25% AND trunk congruence (two keys)', (cp >= np.quantile(cp, 0.75)) & (cg >= -2)),
                    ('2+ bridges AND trunk congruence', nb2 & (cg >= -2)), ('2+ bridges AND composability top 25% AND congruence', nb2 & (cp >= np.quantile(cp, 0.75)) & (cg >= -2))):
         P(f"   {tag:62s} {int(m.sum()):6d} inferences, gold {yy[m].mean() if m.any() else float('nan'):.3f}")
+if os.environ.get('CB_HOP2', '1') == '0': P(f"DONE ({time.time() - T0:.0f}s)"); sys.exit(0)
 # ---- BUILT ON INFERENCE: accepted inferences as premises (hop 2)
 ACC = [keys[i] for i in np.where((nbr >= 2) & (comp >= np.quantile(comp[nbr >= 2], 0.75)))[0]]
 P(f"BUILT ON INFERENCE: {len(ACC)} accepted inferences (2+ bridges, composability top 25%; gold where checkable "
