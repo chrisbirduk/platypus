@@ -527,7 +527,18 @@ resolve pronouns; the title heuristic resolves more than half** (Wikipedia openi
 
 **The same two tests on a LARGER stand-in (192 wide, 6,000 steps, 1.91 bits/byte vs 2.10):** relation identity by substitution - AUC 0.578
 (was 0.584), best candidate 0.062 (chance 0.060), untrained 0.512; pronoun reference - substitution 0.238 (was 0.197), untrained 0.238,
-title 0.549. **No gain from the larger stand-in on either.** (Its compression-gain run - stage C - follows.)
+title 0.549. **No gain from the larger stand-in on either.** Its trunk-guidance and compression runs: boundaries unchanged (surprise 0.559; sentence-initial
+0.862 vs the corpus statistic 0.978); linking by states still no better than untrained (0.930 vs 0.934; HARD 0.682 vs 0.702); units by
+binding gain 0.423 (no signal); **links by compression gain 0.564 (HARD 0.574, VERY HARD 0.583) vs the small stand-in's 0.533 / 0.485 /
+0.477 and untrained 0.501 / 0.530 / 0.543.** Across three trunks the linking signal from compression gain rises with the trunk: 2.10 bits/byte
+0.53 -> 1.91 bits/byte 0.56 -> the GPU trunk 0.76 (pairs sharing no word 0.49 -> 0.57 -> 0.61-0.68). Nothing else does.
+
+**Overnight summary.** (1) Compression gain is the one trunk signal that improves with the trunk, and only for linking mentions; not for
+units, relations or pronouns. (2) Name units: counts (PMI 0.73) beat every trunk measure (0.42-0.59), but capitalised runs are already
+right where it matters (span F1 unchanged). (3) Relation identity by substitution: weak (AUC 0.58), not improved by a larger stand-in.
+(4) Pronouns: the stand-ins are at chance; the document's title resolves 0.55. (5) Refusal rows: the syllable shortcut explains cg27a_refuse;
+same-generator names make refusal real but suppress facts only read (0.62 -> 0.15), so the confidence threshold is the safer route to
+abstention. (6) The default readouts (compression gain, probe 64, gated answers) are safe: identical BPC locally.
 
 **Refusal: shortcut or transfer? (tools/toy_refuse.py, toy byte transformer, 3,000 steps, seed 0):** facts about invented people, question
 rows for 3/4 of them (the rest only read), refusal rows about fresh names answered 'unknown'. Greedy answers; refusal rates on fresh names
