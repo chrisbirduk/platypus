@@ -628,6 +628,7 @@ class Config:
     inf_rti_rank=3                  #     the check: C ranked in the trunk's top N of C and 9 names of its class
     inf_rti_max=200                 #     inferences written per readout at most
     inf_rti_bridges=2               #     distinct bridge names an A-C proposal needs
+    inf_rti_policy='surprise'       #     premise choice: surprise (trunk), both (surprise + block association), random
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read

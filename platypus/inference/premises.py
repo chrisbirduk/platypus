@@ -251,7 +251,10 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     dn = collections.defaultdict(set)
     for i in range(nD): dn[RD[i][1]].add(RD[i][0]); dn[RD[i][2]].add(RD[i][0])
     LAB = _PM['LAB']; rk = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable') / max(1, len(x) - 1)
-    sc = rk(scd['trunk surprise']) + rk(scd['block association']); keep = ixd[np.argsort(-sc)[:int(len(ixd) * float(getattr(cfg, 'inf_rti_keep', 0.1)))]]
+    pol_ = str(getattr(cfg, 'inf_rti_policy', 'surprise'))                     # 13 Nov GPU cg27a_prem visit 2: A-C from association-kept premises 0.04-0.07
+    sc = {'surprise': rk(scd['trunk surprise']), 'both': rk(scd['trunk surprise']) + rk(scd['block association']),   #   right vs 0.13 (surprise), 0.18 (random)
+          'random': scd['random']}.get(pol_, rk(scd['trunk surprise']))
+    keep = ixd[np.argsort(-sc)[:int(len(ixd) * float(getattr(cfg, 'inf_rti_keep', 0.1)))]]
     nb = collections.defaultdict(list); PR = collections.defaultdict(set)
     for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0])); nb[RD[i][2]].append((RD[i][1], RD[i][0]))
     for i in keep:
@@ -290,7 +293,7 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     f = lambda L: (f"{np.mean([r[4] for r in L if r[4] is not None]):.3f} of {sum(r[4] is not None for r in L)} checkable" if any(r[4] is not None for r in L) else "none checkable")
     ra = np.array([r[3] for r in rows if r[4] is not None], float); ta = np.array([r[4] for r in rows if r[4] is not None], bool)
     au = _cg_auc(-ra[ta], -ra[~ta]) if ta.any() and (~ta).any() else float('nan')
-    print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] READ {nD} distant records -> CHOSE {len(keep)} premises (top {float(getattr(cfg, 'inf_rti_keep', 0.1)):.0%} by surprise + association) "
+    print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] READ {nD} distant records -> CHOSE {len(keep)} premises (top {float(getattr(cfg, 'inf_rti_keep', 0.1)):.0%} by {pol_}) "
           f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= nbm)} with {nbm}+ bridges, {len(rows)} new ones checked -> CHECK (the trunk ranks C in its top {rmax} of 10 "
           f"after 'A {_RTI_R}'): passed {len(ok)}, right {f(ok)}; failed {len(rows) - len(ok)}, right {f([r for r in rows if r[3] >= rmax])} | the check tells right from wrong: AUC {au:.3f} "
           f"-> WROTE {len(wr)} (right {f(wr)}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
