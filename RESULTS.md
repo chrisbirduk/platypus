@@ -614,6 +614,10 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - **JEPA codes on name-masked records** (tools/relation_free.py RF_JEPA=3000: a 2-layer encoder, 40% of the words masked, predictor to an EMA
   target encoder's states, L1, no negatives): relation identity AUC 0.568, nearest same relation 0.152 (chance 0.083); + name shape 0.677.
   Below plain n-grams of the same masked record (0.665). The L1 rose during training (0.85 -> 0.95): the target drifted; not positive here.
+- **Overlapping replay** (tools/overlap_replay.py; the stand-in trained 1,500 more steps on pairs of passages from different documents that
+  name the same entity, vs random pairs): relation identity from the trunk's state 0.581 (overlap) vs 0.578 (random) vs 0.582 (start); held-out
+  bits per byte 2.444 (overlap) vs 2.256 (random) vs 2.192 (start). Not positive: replaying overlaps side by side taught no relational
+  structure here and fitted the repeated names (held-out worse).
 
 ### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
 
