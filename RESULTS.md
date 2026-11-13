@@ -505,7 +505,7 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
-### cg27a_link: store linking and prequential bits (GPU, seed 4, 13 November; visits 1-6 so far)
+### cg27a_link: store linking and prequential bits (GPU, seed 4, 13 November; complete, 10 visits)
 
 cg27a_rtx16 + inf_store_link 1 + inf_preq 1. BPC within seed noise of cg27a_rtxt at every visit (largest +0.016 at visit 6); local safety
 identical to the baseline (-0.158 / 2.996). Linking feeds only S_['relc'] (readouts), so nothing in training changes.
@@ -521,6 +521,13 @@ identical to the baseline (-0.158 / 2.996). Linking feeds only S_['relc'] (reado
 - Gate (threshold from the previous sleep), never-read false vs ungated: 0.40 / 0.35 / 0.27 / 0.10 vs 0.63 / 0.65 / 0.55 / 0.56 at visits
   3-6; right overall 0.41 / 0.33 / 0.50 / 0.34 vs ungated 0.44 / 0.39 / 0.53 / 0.53. Smoothed threshold: false 0.40 / 0.43 / 0.33 / 0.16,
   right 0.41 / 0.36 / 0.52 / 0.39 - steadier.
+- **Visits 7-10.** Smoothed gate right / never-read false: 0.61 / 0.24, 0.61 / 0.19, 0.67 / 0.23, **0.67 / 0.12** (ungated 0.73 / 0.64,
+  0.69 / 0.58, 0.78 / 0.66, 0.73 / 0.58): at visit 10 the trunk keeps 92% of its right answers and drops 79% of its false ones. Known-fact
+  confidence AUC 0.87 / 0.90 / 0.88 / **0.94**; known right 0.73 / 0.69 / 0.78 / 0.73 (cg27a_rtxt 0.59 / 0.53 / 0.62 / 0.64). Relation
+  substitution 0.616 at visit 8. Prequential bits on read domains 1.80 at visit 10, known names 1.94 vs unknown 3.36.
+- **End of run: forgetting +0.088, mean final BPC 1.818** (cg27a_rtxt +0.077 / 1.808; without real-text replay +0.026 / 1.767);
+  Gutenberg +0.238, StackExchange +0.336. Linking cannot touch training, so the +0.01 against cg27a_rtxt is GPU run-to-run variation; the
+  real-text replay cost stands (cg27a_rtxw tests the fix).
 
 ### Rules from real facts: the miner, not the amount of text (tools/dataset_volume.py, tools/count_miner.py, tools/count_miner_reader.py; 13 November)
 
