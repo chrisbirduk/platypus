@@ -28,7 +28,7 @@ _CG_TOK = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\-]*")
 def _cg_auc(p, n):
     p, n = np.asarray(p, float), np.asarray(n, float)
     if len(p) == 0 or len(n) == 0: return float('nan')
-    r = np.concatenate([p, n]).argsort(kind='stable').argsort().astype(float) + 1
+    _u, _i, _c = np.unique(np.concatenate([p, n]), return_inverse=True, return_counts=True); r = (np.cumsum(_c) - (_c - 1) / 2.0)[_i]   # ties share their mean rank (13 Nov fix)
     return (r[:len(p)].sum() - len(p) * (len(p) + 1) / 2) / (len(p) * len(n))
 
 

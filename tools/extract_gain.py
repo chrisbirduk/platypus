@@ -24,7 +24,7 @@ TH = b'Thing'
 def auc(pos, neg):
     pos, neg = np.asarray(pos, float), np.asarray(neg, float)
     if len(pos) == 0 or len(neg) == 0: return float('nan')
-    r = np.concatenate([pos, neg]).argsort(kind='stable').argsort().astype(float) + 1
+    _u, _i, _c = np.unique(np.concatenate([pos, neg]), return_inverse=True, return_counts=True); r = (np.cumsum(_c) - (_c - 1) / 2.0)[_i]   # ties share their mean rank (13 Nov fix)
     return (r[:len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
 DIR = SCR + '/bench_dl'
 docs = json.load(open(DIR + '/train_revised.json')) + json.load(open(DIR + '/dev_revised.json'))

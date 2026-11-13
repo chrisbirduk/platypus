@@ -54,7 +54,7 @@ def runs(toks):
 def auc(p, n):
     p, n = np.asarray(p, float), np.asarray(n, float)
     if not len(p) or not len(n): return float('nan')
-    r = np.concatenate([p, n]).argsort(kind='stable').argsort().astype(float) + 1
+    _u, _i, _c = np.unique(np.concatenate([p, n]), return_inverse=True, return_counts=True); r = (np.cumsum(_c) - (_c - 1) / 2.0)[_i]   # ties share their mean rank (13 Nov fix)
     return (r[:len(p)].sum() - len(p) * (len(p) + 1) / 2) / (len(p) * len(n))
 SAME, BND = [], []; SP, BP = [], []; DOCS = []
 pmi = lambda a, b: math.log2((big[(a, b)] + 0.1) * N / (uni[a] * uni[b] + 1e-9))
