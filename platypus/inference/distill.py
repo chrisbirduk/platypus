@@ -388,7 +388,13 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
                       f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} (ungated {np.mean([ok_ for ok_, c, rf in kr2]):.2f}) | "
                       f"NEVER READ ({len(un2)}): given a stored name {sum(ru) / len(un2):.2f} (ungated {np.mean([bool(st) and not rf for st, c, rf in un2]):.2f}), abstained "
                       f"{1 - len(ru) / len(un2):.2f} | next t {tn if tn is not None else float('nan'):.2f}", flush=True)
-            if tn is not None: model.__dict__['_gate_t'] = tn
+            te = model.__dict__.get('_gate_te')                                 # 13 Nov SMOOTHED: the threshold averaged across sleeps (half last smoothed,
+            if te is not None and kr2 and un2:                                  #   half this sleep's calibration) - the raw one swung 0.14 -> 0.53
+                ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= te]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= te]
+                print(f"  [DISTILLATION, GATED ANSWERS SMOOTHED | visit {vis + 1}] t = {te:.2f} (averaged across sleeps): KNOWN answered {len(ak) / len(kr2):.2f}, right when answered "
+                      f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} | NEVER READ given a stored name "
+                      f"{sum(ru) / len(un2):.2f}", flush=True)
+            if tn is not None: model.__dict__['_gate_t'] = tn; model.__dict__['_gate_te'] = tn if te is None else 0.5 * te + 0.5 * tn
         except Exception as e9:
             _fail('inference.distill:gate'); print(f"  [DISTILLATION, GATED ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
@@ -1670,6 +1676,9 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
             from platypus.inference.compress import compress_gain
             compress_gain(model, cfg, S_slot, vis, S_)
+        if int(getattr(cfg, 'inf_store_link', 0)):                             # 13 Nov STORE LINKING (inference.compress; one model change)
+            from platypus.inference.compress import store_link
+            store_link(model, cfg, S_, S_slot, vis)
         if int(getattr(cfg, 'inf_distill_ns_probe', 0)): _dw_ns_probe(model, cfg, S_, S_slot, ents, vslot, oslots, vis)
         if int(getattr(cfg, 'inf_distill_comp_probe', 0)): _dw_comp_probe(model, cfg, S_, S_slot, ents, held, D, vis)
         dv_ = [torch.cuda.current_device()] if torch.cuda.is_available() else []   # 11 Nov: these readouts build small nets (global-RNG inits);

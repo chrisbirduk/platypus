@@ -11,6 +11,8 @@ Groups (a group is printed only if some log has it):
   gate  [GATED ANSWERS] the trunk answers only above last sleep's calibrated confidence: known answered / right, never-read false vs ungated
   sc    [REPLAY BY STORAGE CHECK] the trunk's loss on replayed sentences, replay share to the hardest quarter, last hardest quarter's change
   cg    [COMPRESSION GAIN] units (binding gain vs surprise) and links (mutual compression gain vs letter triples)
+  link  [STORE LINKING] letter and compression links, their precision on benchmark entities, records added
+  gates [GATED ANSWERS SMOOTHED] the gate with a threshold averaged across sleeps
   s4    [RELATIONAL MODULE WRITES] step 4, edits subtracted: taught vs held back
 Missing values print as '-'. Reads plain text only."""
 import os
@@ -83,7 +85,15 @@ def parse(path):
             if m: d['g_ans'], d['g_acc'], d['g_right'], d['g_right0'] = m.groups()
             m = re.search(r'given a stored name ' + NUM + r' \(ungated ' + NUM + r'\), abstained ' + NUM, ln)
             if m: d['g_false'], d['g_false0'], d['g_abst'] = m.groups()
+        elif '[STORE LINKING | visit' in ln:
+            m = re.search(r'LETTER links (\d+) \(on benchmark entities (\d+), same entity ' + NUM + r'\) \| COMPRESSION links (\d+) of (\d+) candidate pairs.*?on benchmark entities (\d+), same entity ' + NUM + r'\) \| records ADDED with linked names (\d+)', ln)
+            if m: d['lk_l'], d['lk_ln'], d['lk_lp'], d['lk_c'], d['lk_cc'], d['lk_cn'], d['lk_cp'], d['lk_add'] = m.groups()
+        elif '[DISTILLATION, GATED ANSWERS SMOOTHED | visit' in ln:
+            m = re.search(r'right overall ' + NUM + r' \| NEVER READ given a stored name ' + NUM, ln)
+            if m: d['gs_right'], d['gs_false'] = m.groups()
         elif '[COMPRESSION GAIN | visit' in ln:
+            m = re.search(r'RELATIONS by substitution.*?AUC same gold type vs not ' + NUM + r' \| best candidate of the same type ' + NUM + r' \(chance ' + NUM, ln)
+            if m: d['cg_rel'], d['cg_reltop'], d['cg_relch'] = m.groups()
             m = re.search(r'PMI AUC same mention vs boundary ' + NUM, ln)
             if m: d['cg_pmi'] = m.group(1)
             m = re.search(r'BINDING GAIN ' + NUM, ln)
@@ -114,8 +124,11 @@ GROUPS = {
                                            ('ab_k75', 'known answered @75%'), ('ab_acc75', 'accuracy @75%'), ('ab_leak75', 'false @75%'), ('rf_loss', 'refusal-row loss')]),
     'gate': ('Gated answers (threshold from the previous sleep)', [('g_ans', 'known answered'), ('g_acc', 'right when answered'), ('g_right', 'right overall'),
                                                                   ('g_right0', 'right ungated'), ('g_false', 'never-read: false'), ('g_false0', 'false ungated'), ('g_abst', 'abstained')]),
+    'link': ('Store linking', [('lk_l', 'letter links'), ('lk_lp', 'letter: same entity'), ('lk_c', 'compression links'), ('lk_cc', 'candidates'),
+                               ('lk_cp', 'compression: same entity'), ('lk_add', 'records added')]),
+    'gates': ('Gated answers, smoothed threshold', [('gs_right', 'right overall'), ('gs_false', 'never-read: false')]),
     'sc': ('Replay by storage check', [('sc_med', 'median loss'), ('sc_hard', 'share to hardest quarter'), ('sc_mv', 'hardest quarter change')]),
-    'cg': ('Compression gain (AUC)', [('cg_pmi', 'units: PMI (counts)'), ('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
+    'cg': ('Compression gain (AUC)', [('cg_rel', 'relations: substitution AUC'), ('cg_reltop', 'relations: best'), ('cg_relch', 'relations: chance'), ('cg_pmi', 'units: PMI (counts)'), ('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
                                        ('cg_vh', 'links: gain VERY HARD'), ('cg_str', 'links: letter triples'), ('cg_strh', 'letter triples HARD')]),
     's4': ('Step 4, edits subtracted', [('s4_t', 'taught'), ('s4_tn', 'n'), ('s4_h', 'held back'), ('s4_hn', 'n')]),
 }

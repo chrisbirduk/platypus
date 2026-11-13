@@ -129,7 +129,135 @@ def compress_gain(model, cfg, S_slot, vis, S_=None):
                        f"COMPRESSION GAIN all {_cg_auc(g[y], g[~y]):.3f}, HARD {_cg_auc(g[y & hd], g[~y & hd]):.3f}, VERY HARD {_cg_auc(g[y & vh], g[~y & vh]):.3f} "
                        f"(mean {g[y].mean() if y.any() else float('nan'):.2f} vs {g[~y].mean():.2f} bits) | letter triples all {_cg_auc(c3[y], c3[~y]):.3f}, HARD {_cg_auc(c3[y & hd], c3[~y & hd]):.3f} | "
                        f"rank average all {_cg_auc(ra[y], ra[~y]):.3f}, HARD {_cg_auc(ra[y & hd], ra[~y & hd]):.3f} | antecedent right: gain {ante(g):.2f}, letter triples {ante(c3):.2f}, both {ante(ra):.2f}")
+        try:                                                                  # 13 Nov (d) ONE RELATION, MANY WORDINGS - SUBSTITUTION: gold relations with
+            nm = G['ent_name']; REC = []                                       #   both names in one sentence (subject first, frame <= 12 words); swapping
+            for d in seen:                                                     #   frame j into record i: extra bits on i's object (symmetric); same gold
+                sl = int(S_slot(d))                                            #   relation type should cost fewer (offline stand-in: AUC 0.58)
+                for t in G['docs'].get(str(d), []):
+                    for h, tt, fl, ps in G['rel']:
+                        H, T = nm.get(str(h), ''), nm.get(str(tt), '')
+                        if len(H) < 3 or len(T) < 3 or H not in t or T not in t: continue
+                        for s_ in re.split(r'(?<=[.!?])\s+', t):
+                            if H in s_ and T in s_ and s_.index(H) + len(H) < s_.index(T):
+                                mid = s_[s_.index(H) + len(H):s_.index(T)]
+                                if 0 < len(mid.split()) <= 12:
+                                    left = s_[max(0, s_.index(H) - 30):s_.index(H)]
+                                    REC.append((sl, left.encode('latin-1', 'replace'), H.encode('latin-1', 'replace'), mid.encode('latin-1', 'replace'),
+                                                T.encode('latin-1', 'replace')[:30], set(ps), d)); break
+            REC = list({(r[1], r[2], r[3], r[4]): r for r in REC}.values())
+            if len(REC) >= 20:
+                Q = [int(i) for i in rs.permutation(len(REC))[:150]]; PR = []
+                for qi in Q:
+                    for cj in [int(c) for c in rs.permutation(len(REC))[:16] if int(c) != qi and REC[int(c)][3] != REC[qi][3]][:15]: PR.append((qi, cj))
+                base = {}
+                for i in {x for p in PR for x in p}: base[i] = None
+                bl = list(base); bseq = [(REC[i][0], REC[i][1] + REC[i][2] + REC[i][3] + REC[i][4], len(REC[i][1] + REC[i][2] + REC[i][3]), len(REC[i][1] + REC[i][2] + REC[i][3] + REC[i][4])) for i in bl]
+                bb = dict(zip(bl, run(bseq)))
+                sw = []
+                for i, j in PR:
+                    for x, y in ((i, j), (j, i)):
+                        pre = REC[x][1] + REC[x][2] + REC[y][3]; sw.append((REC[x][0], pre + REC[x][4], len(pre), len(pre) + len(REC[x][4])))
+                v = run(sw); sc = np.array([-((v[2 * n] - bb[i]) + (v[2 * n + 1] - bb[j])) / 2 for n, (i, j) in enumerate(PR)])
+                yy = np.array([bool(REC[i][5] & REC[j][5]) for i, j in PR]); top = []; chn = []
+                for qi in Q:
+                    ix = [n for n, (i, j) in enumerate(PR) if i == qi]
+                    if ix: top.append(yy[max(ix, key=lambda n: sc[n])]); chn.append(np.mean(yy[ix]))
+                msg.append(f"(d) RELATIONS by substitution, {len(REC)} one-sentence gold-relation records, {len(Q)} queries x up to 15 candidates: AUC same gold type vs not "
+                           f"{_cg_auc(sc[yy], sc[~yy]):.3f} | best candidate of the same type {np.mean(top) if top else float('nan'):.3f} (chance {np.mean(chn) if chn else float('nan'):.3f})")
+        except Exception as e8:
+            msg.append(f"(d) RELATIONS unavailable ({type(e8).__name__}: {e8})"[:160])
         print(f"  [COMPRESSION GAIN | visit {vis + 1}] from the trunk (store off), Re-DocRED documents of the {len(seen)} domains visited, gold mentions || "
               + (" || ".join(msg) if msg else "no mentions yet"), flush=True)
     except Exception as e:
         _fail('inference.compress'); print(f"  [COMPRESSION GAIN] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _sl_initials(y):
+    return b''.join(w[:1] for w in y.split() if w[:1].isupper())
+
+
+def store_link(model, cfg, S_, S_slot, vis):
+    """13 Nov STORE LINKING (inf_store_link; ONE MODEL CHANGE - it changes the store's real-text evidence record S_['relc'], which feeds the
+    reader-vs-gold and real-text relational-module readouts; the trunk's training is untouched). Each sleep, over the sentences stored since
+    the last one, a mention (a filler of the fast channel's records) is linked to an earlier, different name among the fillers of the 5
+    sentences stored before it (same domain):
+      LETTERS      it is the earlier name's last word(s) ('Thatcher' -> 'Margaret Thatcher') or its initials ('AGF' -> 'Asian Games Federation')
+      COMPRESSION  where letters cannot decide (a capitalised mention sharing no word with the earlier name): the trunk saves at least
+                   inf_store_link_bits bits on the mention when the earlier name's sentence precedes it, against the same sentence with the
+                   name replaced by 'Thing' (GPU readout: same entity 3.9 bits, others 0.3); the best such earlier name
+    GUIDANCE ONLY ADDS: each record of the sentence is ALSO recorded with its linked names (the originals stay). Readout: links of each kind,
+    their precision where both names belong to benchmark entities, records added."""
+    try:
+        from platypus.inference.units import _chk_records
+        RC = S_.get('relc')
+        if RC is None: return
+        it = S_['it']; st = int(model.__dict__.get('_link_from', 0)); end = len(it); model.__dict__['_link_from'] = end
+        bits_min = float(getattr(cfg, 'inf_store_link_bits', 3.0)); nmax = int(getattr(cfg, 'inf_store_link_n', 4000))
+        TH = b'Thing'; win = []; jobs = []; links = {}; nlet = 0; seen_s = 0
+        for i in range(st, end):
+            x_ = it[i]
+            if x_.get('gone') or not isinstance(x_.get('s'), (bytes, bytearray)): continue
+            s = bytes(x_['s']); d = int(x_.get('d', 0)); recs = _chk_records(cfg, S_, s); seen_s += 1
+            win = [w for w in win if w[0] == d and i - w[1] <= 5]
+            fil = {f for a, r, b in recs for f in (a, b)}
+            for xf in fil:
+                if not xf[:1].isupper(): continue
+                xs = xf.split(); hit = None
+                for wd, wi, ws, wf in reversed(win):
+                    for y in wf:
+                        if y == xf or len(y) <= len(xf): continue
+                        ys = y.split()
+                        if ys[-len(xs):] == xs or (len(xs) == 1 and len(xf) >= 2 and xf.isupper() and _sl_initials(y) == xf): hit = y; break
+                    if hit: break
+                if hit is not None: links[(i, xf)] = (hit, 'L'); nlet += 1; continue
+                if len(jobs) >= 2 * nmax or len(xs) > 3: continue
+                px = s.find(xf)
+                if px < 0: continue
+                cands = []
+                for wd, wi, ws, wf in reversed(win):
+                    for y in wf:
+                        if y != xf and y[:1].isupper() and not (set(y.split()) & set(xs)) and len(cands) < 4: cands.append((y, ws))
+                for y, ws in cands:
+                    py = ws.find(y)
+                    if py < 0: continue
+                    snip_w = ws[max(0, py - 24):py + len(y) + 24]; snip_o = ws[max(0, py - 24):py] + TH + ws[py + len(y):py + len(y) + 24]
+                    pre = s[max(0, px - 48):px]; sl = int(S_slot(d))
+                    jobs.append((i, xf, y, sl, snip_w + b' ' + pre + xf, len(snip_w) + 1 + len(pre), snip_o + b' ' + pre + xf, len(snip_o) + 1 + len(pre)))
+            win.append((d, i, s, fil))
+        ncmp = 0; gains = []
+        if jobs:
+            bysl = {}
+            for n, j in enumerate(jobs): bysl.setdefault(j[3], []).append(n)
+            gw = np.zeros(len(jobs)); go = np.zeros(len(jobs))
+            for sl, ix in bysl.items():
+                gw[ix] = _cg_bits(model, sl, [(jobs[n][4], jobs[n][5], len(jobs[n][4])) for n in ix])
+                go[ix] = _cg_bits(model, sl, [(jobs[n][6], jobs[n][7], len(jobs[n][6])) for n in ix])
+            best = {}
+            for n, j in enumerate(jobs):
+                g = go[n] - gw[n]
+                if g >= bits_min and (j[0], j[1]) not in links and g > best.get((j[0], j[1]), (-1e9, None))[0]: best[(j[0], j[1])] = (g, j[2])
+            for k, (g, y) in best.items(): links[k] = (y, 'C'); gains.append(g); ncmp += 1
+        nadd = 0; byi = {}
+        for (i, xf), (y, kd) in links.items(): byi.setdefault(i, {})[xf] = y
+        for i, mp in byi.items():
+            for a, r, b in _chk_records(cfg, S_, bytes(it[i]['s'])):
+                a2, b2 = mp.get(a, a), mp.get(b, b)
+                if (a2, b2) != (a, b) and a2 != b2: RC.setdefault((a2, r), {}).setdefault(b2, []).append(i); nadd += 1
+        prec = {'L': [], 'C': []}
+        if str(getattr(cfg, 'inf_bench', '') or ''):
+            from platypus.inference.probes import _bench
+            t2e = _bench(cfg)['_t2e']
+            def ents(x):
+                es = set()
+                for w in x.decode('latin-1').split(): es |= t2e.get(w, set())
+                return es
+            for (i, xf), (y, kd) in links.items():
+                ex, ey = ents(xf), ents(y)
+                if ex and ey: prec[kd].append(bool(ex & ey))
+        tot = model.__dict__.setdefault('_link_tot', [0, 0, 0]); tot[0] += nlet; tot[1] += ncmp; tot[2] += nadd
+        print(f"  [STORE LINKING | visit {vis + 1}] {seen_s} sentences stored since the last sleep | LETTER links {nlet} (on benchmark entities {len(prec['L'])}, "
+              f"same entity {np.mean(prec['L']) if prec['L'] else float('nan'):.2f}) | COMPRESSION links {ncmp} of {len(jobs)} candidate pairs (gain >= {bits_min:g} bits; "
+              f"median {np.median(gains) if gains else float('nan'):.1f}; on benchmark entities {len(prec['C'])}, same entity {np.mean(prec['C']) if prec['C'] else float('nan'):.2f}) | "
+              f"records ADDED with linked names {nadd} | so far: letter {tot[0]}, compression {tot[1]}, records added {tot[2]}", flush=True)
+    except Exception as e:
+        _fail('inference.compress:store_link'); print(f"  [STORE LINKING] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

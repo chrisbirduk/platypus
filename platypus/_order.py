@@ -785,6 +785,8 @@ ORDER = (
     ('inference.compress', '_cg_bits'),
     ('inference.compress', '_c3'),
     ('inference.compress', 'compress_gain'),
+    ('inference.compress', '_sl_initials'),
+    ('inference.compress', 'store_link'),
     ('inference.gaussdrift', '_bures'),
     ('inference.gaussdrift', '_erank'),
     ('inference.gaussdrift', 'gauss_drift'),

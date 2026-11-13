@@ -603,6 +603,12 @@ class Config:
     inf_distill_rtx=0               #   12 Nov REAL-TEXT REPLAY (with inf_bench): N > 0 = N sentences of HALF the benchmark documents read (hash; the other half
                                     #     is the control) replayed with each question-row step; REAL-TEXT RECALL then splits replayed vs control documents
     inf_distill_rtx_align=1         #     1 = + alignment of views cut from those sentences (needs inf_distill_align > 0): no labels, no templates
+    inf_store_link=0                #   13 Nov STORE LINKING (ONE MODEL CHANGE): 1 = each sleep, mentions in the sentences stored since the last one are
+                                    #     linked to an earlier name in the 5 sentences before (letters: last word(s) or initials; COMPRESSION: the trunk
+                                    #     saves >= inf_store_link_bits on the mention given the earlier name's sentence); records ALSO kept with the linked
+                                    #     names in the fast channel's evidence record (originals stay)
+    inf_store_link_bits=3.0         #     minimum compression gain (bits) for a link where letters cannot decide
+    inf_store_link_n=4000           #     compression candidate pairs per sleep (x2 sequences)
     inf_distill_rtx_title=0         #   13 Nov TITLE FOR PRONOUN: 1 = replayed real sentences opening with He/She/It/They (His/Her/Its/Their) are replayed
                                     #     with the document's title in place of the pronoun ('Title's' for possessives); fair tests: TEMPLATE recall and
                                     #     STORAGE of the original sentence in [REAL-TEXT RECALL, DIAGNOSTICS], pronoun-led group (own-frame asks the replayed form)
