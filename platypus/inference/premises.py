@@ -87,7 +87,7 @@ def _bench_records(cfg, seen):
                         (ia, ib, iv), (ja, jb, jv) = mm[x], mm[y]
                         A, B = cn[iv], cn[jv]
                         if iv == jv or ib > ja or A == B or ja - ia > 60: continue
-                        mid = t[ib:ja].split()
+                        mid = re.findall(r"\w+|[^\w\s]", t[ib:ja])               # punctuation as its own token, as DocRED's records
                         if len(mid) > 12: continue
                         rs = RT.get((gid[iv], gid[jv]), set()) if (iv in gid and jv in gid) else set()
                         out.append((f'b{d}.{di}', A, B, ' '.join(mid).lower(), mid[-1].lower() if mid else '', len(mid), bool(rs), t[ia:jb], int(d), rs,
