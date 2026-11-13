@@ -9,6 +9,7 @@ stays the same when the names change. Here: a record = the words around and betw
                       30 candidates from other documents - is the nearest candidate of the same gold relation type (top-1; chance = the share of
                       the same type), AUC same type vs not. Against: frame words (tf-idf), the same n-grams untrained (cosine), the stand-in
                       trunk's state over the masked record (TG_CKPT; mean of the last layer), and trunk substitution (tools/relsub.py: 0.58-0.60).
+RF_JEPA=<steps> (13 Nov 16:10): a JEPA on the name-masked records (masked span predicted in an EMA target encoder's space), its codes scored too.
 Rows added 13 Nov 15:40 (Tran, Le & Ananiadou 2020: entity types alone are a strong cue): the gold entity-type pair, the name-shape pair, and
 frame words or the encoder plus the type pair.
 Usage: [TG_D=192 TG_CKPT=<model file>] python3 tools/relation_free.py [epochs, default 30]"""
@@ -53,7 +54,7 @@ for di, d in enumerate(docs):
                 left = toks[max(0, a0 - 3):a0]; right = toks[b1:b1 + 3]
                 txt = ' '.join(left + ['[X]'] + toks[a1:b0] + ['[Y]'] + right).lower()
                 tp = lambda e: d['vertexSet'][e][0].get('type', 'X'); sh = lambda t: 'num' if any(ch.isdigit() for ch in ' '.join(t)) else ('cap' if all(w[:1].isupper() for w in t) else 'mix')
-                REC.append(dict(di=di, txt=txt, key=tuple(sorted((cn[ea], cn[eb]))), rs=rel.get((ea, eb), set()), test=di in TEST, gt=(tp(ea), tp(eb)), st=(sh(toks[a0:a1]), sh(toks[b0:b1])),
+                REC.append(dict(di=di, txt=txt, cA=cn[ea], cB=cn[eb], key=tuple(sorted((cn[ea], cn[eb]))), rs=rel.get((ea, eb), set()), test=di in TEST, gt=(tp(ea), tp(eb)), st=(sh(toks[a0:a1]), sh(toks[b0:b1])),
                                 raw=' '.join(toks[max(0, a0 - 3):b1 + 3])))
 tr = [r for r in REC if not r['test']]; te = [r for r in REC if r['test'] and r['rs']]
 bykey = collections.defaultdict(list)
@@ -104,6 +105,54 @@ gtm = np.array([float(te[i]['gt'] == te[j]['gt']) for i, j in PAIRS]); stm = np.
 fw = np.array([float((Tte[i] @ Tte[j].T).toarray()[0, 0]) for i, j in PAIRS])
 report('GOLD entity-type pair alone (PER-LOC ...; upper bound)', gtm); report('name SHAPE pair alone (digits / capitalised)', stm)
 report('frame words + gold type pair', fw + gtm); report('frame words + shape pair', fw + 0.5 * stm)
+JS = int(os.environ.get('RF_JEPA', 0))
+if JS:                                                                          # 13 Nov 16:10: a JEPA on the name-masked records (as arm G of the
+    import torch.nn as nn                                                       #   JEPA index): a random span of the words is masked for the online
+    VJ = 2 ** 15; LJ = 26; MSK = 1; PADJ = 0; XT, YT = 2, 3                     #   encoder; a predictor must give the EMA target encoder's states there
+    def tok(t):                                                                 #   (full record, names still masked); L1, no negatives. The record's
+        out = []                                                                #   code = mean target state; scored like the rows above.
+        for w in t.split()[:LJ]:
+            out.append(XT if w == '[x]' else YT if w == '[y]' else 4 + (hash(w) % (VJ - 4)))
+        return out + [PADJ] * (LJ - len(out))
+    import hashlib
+    hash = lambda w: int(hashlib.md5(w.encode()).hexdigest()[:8], 16)
+    TT = torch.tensor([tok(r['txt']) for r in tr]); TE_ = torch.tensor([tok(r['txt']) for r in te])
+    class Enc(nn.Module):
+        def __init__(s):
+            super().__init__(); s.e = nn.Embedding(VJ, 128); s.p = nn.Parameter(torch.randn(LJ, 128) * 0.02)
+            s.t = nn.TransformerEncoder(nn.TransformerEncoderLayer(128, 4, 256, 0.0, batch_first=True, norm_first=True), 2)
+        def forward(s, X): return s.t(s.e(X) + s.p, src_key_padding_mask=(X == PADJ))
+    torch.manual_seed(0); on = Enc(); tg = Enc(); tg.load_state_dict(on.state_dict()); [q.requires_grad_(False) for q in tg.parameters()]
+    pred = nn.Sequential(nn.Linear(128, 256), nn.GELU(), nn.Linear(256, 128)); opj = torch.optim.AdamW(list(on.parameters()) + list(pred.parameters()), lr=5e-4, weight_decay=0.05)
+    rj = np.random.RandomState(5); lj = []
+    for st in range(JS):
+        ix = torch.tensor(rj.randint(0, len(TT), 256)); X = TT[ix]; Xm = X.clone(); M = torch.zeros_like(X, dtype=torch.bool)
+        for b in range(len(X)):
+            ok = [k for k in range(LJ) if X[b, k] > YT]
+            if len(ok) < 2: continue
+            L_ = max(1, int(0.4 * len(ok))); s0 = rj.randint(0, len(ok) - L_ + 1)
+            for k in ok[s0:s0 + L_]: M[b, k] = True
+        Xm[M] = MSK
+        with torch.no_grad(): T_ = tg(X)
+        H = pred(on(Xm)); l = (H[M] - T_[M]).abs().mean() if M.any() else H.sum() * 0
+        opj.zero_grad(); l.backward(); opj.step(); lj.append(l.item())
+        with torch.no_grad():
+            for a, b in zip(on.parameters(), tg.parameters()): b.mul_(0.996).add_(0.004 * a)
+        if (st + 1) % 500 == 0: P(f"   JEPA step {st + 1}: L1 {np.mean(lj[-200:]):.4f}  ({time.time() - T0:.0f}s)")
+    with torch.no_grad():
+        Z = []
+        for i in range(0, len(TE_), 512):
+            X = TE_[i:i + 512]; H = tg(X); m = (X != PADJ).float()[..., None]; Z.append(F.normalize((H * m).sum(1) / m.sum(1), dim=-1))
+        Z = torch.cat(Z).numpy(); Zc = Z - Z.mean(0); Zc /= np.linalg.norm(Zc, axis=1, keepdims=True) + 1e-9
+    report(f'JEPA name-masked codes ({JS} steps, centred)', np.array([float(Zc[i] @ Zc[j]) for i, j in PAIRS]))
+    report('JEPA codes + shape pair', np.array([float(Zc[i] @ Zc[j]) for i, j in PAIRS]) + 0.5 * stm)
+RT = os.environ.get('RF_TYPES', '')
+if RT:                                                                          # 13 Nov 16:00: LEARNED name types (tools/name_types.py)
+    NT = json.load(open(RT)); ks = NT['k']; TY = NT['types']
+    for ki, k in enumerate(ks):
+        lt = lambda r: (TY.get(r['cA'], [-1] * len(ks))[ki], TY.get(r['cB'], [-1] * len(ks))[ki])
+        ltm = np.array([float(lt(te[i]) == lt(te[j])) for i, j in PAIRS])
+        report(f'LEARNED type pair, k {k}', ltm); report(f'frame words + LEARNED type pair, k {k}', fw + ltm)
 report('LABEL-FREE ENCODER + gold type pair', np.array([float(Zte[i] @ Zte[j]) for i, j in PAIRS]) + gtm)
 CK = os.environ.get('TG_CKPT', '')
 if CK:
