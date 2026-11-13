@@ -568,6 +568,35 @@ letters do not link (118,346; 3.3% the same entity).
 - **Competition (each later mention picks one earlier mention, by a clear margin) lifts precision 3.5x over the fixed-rate policy and 8x
   over chance**, and most of what it finds are hard pairs letters can never find. Still far from writable: a vote, or a hypothesis.
 
+### Learning what to extract from the trunk's feedback (tools/extract_learn.py, tools/extract_gain.py, tools/extract_curve.py; 13 November)
+
+The idea: over-generate structural pieces of wording (every name pair in a sentence with the words between: 78,784 candidates in Re-DocRED
+train + dev, 24% related) and let the trunk's feedback teach a learner which are needed. Feedback (label-free) = bits a record saves the
+stand-in trunk (192 wide, 6,000 steps) where its names meet again in another document, beyond what the names alone save. Learner: ridge
+regression on features any reader has (the words between, hashed; first / last word; length; punctuation; how often the wording recurs).
+Tested on 710 held-out documents (15,609 candidates, 24.2% related).
+
+| Extractor | AUC | top 10%: precision / recall | top 25%: precision / recall |
+|---|---|---|---|
+| random | 0.50 | 0.25 / 0.10 | 0.24 / 0.24 |
+| closeness of the names | 0.54 | 0.24 / 0.10 | 0.27 / 0.28 |
+| **learned from trunk feedback (beyond the names alone; 5,254 records)** | **0.55-0.56** | **0.33-0.35 / 0.14** | **0.31 / 0.32** |
+| pooled per exact wording, same feedback | 0.52 | 0.38 / 0.16 | 0.26 / 0.27 |
+| learned from the RAW record gain | 0.38-0.40 | 0.09-0.11 / 0.04 | 0.14-0.15 / 0.15 |
+| ceiling A: same learner, gold labels, same 5,254 records | 0.74 | 0.50 / 0.21 | 0.45 / 0.47 |
+| ceiling B: same learner, gold labels, all 63,000 training candidates | 0.81 | 0.71 / 0.29 | 0.55 / 0.57 |
+
+- **Trunk feedback pooled by a learner is a real but weak teacher**: top-10% precision 0.33-0.35 against 0.24 base - about 40% of the way
+  to gold labels on the same records. The per-record signal it learns from is AUC 0.54.
+- **The raw gain teaches the wrong thing** (0.38-0.40, below chance): records of names that merely co-occur (lists, repeated sets of
+  names) save the trunk the most bits. Feedback must be taken beyond what the names alone are worth.
+- A LIST-STYLE null ('A , B') removes most of the signal (per record 0.52, top 10% 0.26); dropped.
+- **The per-record signal does not grow with training in a small trunk** (extract_curve, trained on this text: 0.48 / 0.51 / 0.52 / 0.52 at
+  0 / 1,000 / 3,000 / 6,000 steps). Whether a stronger trunk gives a stronger signal is the GPU question (cg27a_xgain; the model's trunk
+  saves 2-3 bits per related mention, the stand-in 0.06-0.12).
+- AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
+  triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
+
 ### Several wordings: does a read-only fact become answerable? (tools/paraphrase_test.py, 13 November; byte LM 128 wide, 3 layers)
 
 200 invented people (birth city, university, employer; 20 values each, chance 0.05), each biography read 5 times; questions taught about half
