@@ -14,6 +14,7 @@ Groups (a group is printed only if some log has it):
   preq  [PREQUENTIAL BITS] held-out text of the domains read and of the next domain: all bytes, known names, unknown names
   link  [STORE LINKING] letter and compression links, their precision on benchmark entities, records added
   gates [GATED ANSWERS SMOOTHED] the gate with a threshold averaged across sleeps
+  xg    [EXTRACTION GAIN] candidate records from real text: what they save the trunk where their names meet again, related vs not
   s4    [RELATIONAL MODULE WRITES] step 4, edits subtracted: taught vs held back
 Missing values print as '-'. Reads plain text only."""
 import os
@@ -110,6 +111,9 @@ def parse(path):
             if m: d['cg_all'], d['cg_hard'], d['cg_vh'] = m.groups()
             m = re.search(r'letter triples all ' + NUM + r', HARD ' + NUM, ln)
             if m: d['cg_str'], d['cg_strh'] = m.groups()
+        elif '[EXTRACTION GAIN | visit' in ln:
+            m = re.search(r'(\d+) candidate records.*?related ' + NUM + r' \|\| AUC related vs not: WORDS BETWEEN beyond the names ' + NUM + r', whole record ' + NUM + r', names only ' + NUM + r', closeness ' + NUM + r' \| top quarter kept, related: words between ' + NUM, ln)
+            if m: d['xg_n'], d['xg_base'], d['xg_wb'], d['xg_all'], d['xg_pair'], d['xg_cl'], d['xg_top'] = m.groups()
         elif '[RELATIONAL MODULE WRITES | visit' in ln:
             m = re.search(r'edits SUBTRACTED: TAUGHT ' + NUM + r' \((\d+)\) vs HELD BACK ' + NUM + r' \((\d+)\)', ln)
             if m: d['s4_t'], d['s4_tn'], d['s4_h'], d['s4_hn'] = m.groups()
@@ -138,6 +142,8 @@ GROUPS = {
     'sc': ('Replay by storage check', [('sc_med', 'median loss'), ('sc_hard', 'share to hardest quarter'), ('sc_mv', 'hardest quarter change')]),
     'cg': ('Compression gain (AUC)', [('cg_rel', 'relations: substitution AUC'), ('cg_reltop', 'relations: best'), ('cg_relch', 'relations: chance'), ('cg_pmi', 'units: PMI (counts)'), ('cg_unit', 'units: binding gain'), ('cg_surp', 'units: surprise'), ('cg_all', 'links: gain'), ('cg_hard', 'links: gain HARD'),
                                        ('cg_vh', 'links: gain VERY HARD'), ('cg_str', 'links: letter triples'), ('cg_strh', 'letter triples HARD')]),
+    'xg': ('Extraction gain (AUC related vs not; top quarter kept by words-between gain)', [('xg_n', 'records'), ('xg_base', 'related (base)'), ('xg_wb', 'words between'), ('xg_all', 'whole record'),
+                                                                                         ('xg_pair', 'names only'), ('xg_cl', 'closeness'), ('xg_top', 'top quarter related')]),
     's4': ('Step 4, edits subtracted', [('s4_t', 'taught'), ('s4_tn', 'n'), ('s4_h', 'held back'), ('s4_hn', 'n')]),
 }
 

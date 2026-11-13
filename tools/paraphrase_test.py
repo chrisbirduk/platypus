@@ -8,11 +8,15 @@ same exposure (each biography 5 times):
   MULTI    5 copies, each attribute in one of 5 wordings at random and the sentences shuffled (paraphrase augmentation)
 Readouts (multiple choice by bits among the 20 values, every 2,000 steps): STORAGE (the biography's own first wording completes the fact),
 taught questions on A, the SAME question forms on B (extraction from reading), and question forms NEVER trained, on A and B.
+PT_ZIPF=1 (13 Nov 16:15): values Zipf-skewed; reports whether wrong answers drift to the commonest value (prototype pull, Spens & Burgess).
+PT_NEED=uniform|need: extra biography copies for B, spread evenly or only to the half of B that will be asked (replay by need, Mattar & Daw).
+PT_CONDS: the conditions to run (default SINGLE,MULTI).
 Usage: python3 tools/paraphrase_test.py [steps, default 8000] [people, default 200]   env PT_D (width 128), PT_NL (layers 3), PT_THREADS"""
 import os
 import sys
 import math
 import time
+import collections
 import numpy as np
 import torch
 import torch.nn as nn
@@ -33,19 +37,24 @@ def uniq(n, f):
 PEOPLE = uniq(N, lambda: word(2) + ' ' + word(2))
 POOL = {'city': uniq(20, lambda: word(3)), 'uni': [w + ' University' for w in uniq(20, lambda: word(2))], 'emp': [w + ' Industries' for w in uniq(20, lambda: word(2))]}
 ATTR = list(POOL)
-FACT = {p: {a: POOL[a][rs.randint(20)] for a in ATTR} for p in PEOPLE}
+ZIPF = int(os.environ.get('PT_ZIPF', 0))                                        # 13 Nov: values drawn Zipf-skewed (a prototype exists)
+zp = (1 / np.arange(1, 21)) / (1 / np.arange(1, 21)).sum()
+FACT = {p: {a: POOL[a][rs.choice(20, p=zp) if ZIPF else rs.randint(20)] for a in ATTR} for p in PEOPLE}
 TPL = {'city': ['{N} was born in {v}.', '{N} came into the world in {v}.', "{N}'s birthplace is {v}.", '{N} is a native of {v}.', 'The birthplace of {N} was {v}.'],
        'uni': ['{N} studied at {v}.', '{N} graduated from {v}.', '{N} attended {v}.', '{N} received a degree from {v}.', "{N}'s alma mater is {v}."],
        'emp': ['{N} worked for {v}.', '{N} was employed by {v}.', '{N} had a job at {v}.', '{N} joined {v}.', "{N}'s employer was {v}."]}
 QTRAIN = {'city': 'Q: Where was {N} born? A:', 'uni': 'Q: Where did {N} study? A:', 'emp': 'Q: Who employed {N}? A:'}
 QNEW = {'city': 'Q: What city is {N} from? A:', 'uni': 'Q: Which university did {N} attend? A:', 'emp': 'Q: Which company did {N} work for? A:'}
 HA, HB = PEOPLE[:N // 2], PEOPLE[N // 2:]
+NEED = os.environ.get('PT_NEED', '')                                            # 13 Nov: replay by need - half of B will be asked (NEEDED);
+NB = HB[:len(HB) // 2]                                                          #   extra biography copies: 'uniform' 2 per B person, 'need' 4 per
+EXTRA = {p: (2 if NEED == 'uniform' else (4 if (NEED == 'need' and p in NB) else 0)) for p in HB} if NEED else {}   # needed person (same total)
 
 
 def corpus(cond):
     r = np.random.RandomState(1); docs = []
     for p in PEOPLE:
-        for c in range(5):
+        for c in range(5 + EXTRA.get(p, 0)):
             if cond == 'SINGLE': ss = [TPL[a][0].format(N=p, v=FACT[p][a]) for a in ATTR]
             else: ss = [TPL[a][r.randint(5)].format(N=p, v=FACT[p][a]) for a in ATTR]; r.shuffle(ss)
             docs.append(' '.join(ss))
@@ -100,14 +109,22 @@ def evaluate(m, tag):
         return float(np.mean([x == y for x, y in zip(choose(m, pr, POOL), truth)]))
     st = {a: TPL[a][0].split('{v}')[0] for a in ATTR}
     r['storage A'] = acc(HA, st); r['storage B'] = acc(HB, st); r['taught Q, A'] = acc(HA, QTRAIN); r['SAME Q forms, B (read only)'] = acc(HB, QTRAIN)
-    r['NEW Q forms, A'] = acc(HA, QNEW); r['NEW Q forms, B'] = acc(HB, QNEW); m.train()
+    r['NEW Q forms, A'] = acc(HA, QNEW); r['NEW Q forms, B'] = acc(HB, QNEW)
+    if NEED: r['NEEDED B, new forms'] = acc(NB, QNEW); r['NEEDED B, same forms'] = acc(NB, QTRAIN)
+    if ZIPF:                                                                    # prototype pull: wrong answers on B that are the commonest value
+        top = {a: collections.Counter(FACT[p][a] for p in PEOPLE).most_common(1)[0][0] for a in ATTR}
+        pr = [(QNEW[a].format(N=p), a) for p in HB for a in ATTR]; ch = choose(m, pr, POOL); tr_ = [FACT[p][a] for p in HB for a in ATTR]
+        wr = [(c, a) for (c, t), (_, a) in zip(zip(ch, tr_), pr) if c != t]
+        r['wrong answers that are the commonest value'] = float(np.mean([c == top[a] for c, a in wr])) if wr else float('nan')
+        r['commonest value share'] = float(np.mean([FACT[p][a] == top[a] for p in PEOPLE for a in ATTR]))
+    m.train()
     P(f"   {tag}: " + " | ".join(f"{k} {v:.2f}" for k, v in r.items()) + f"  ({time.time() - T0:.0f}s)")
     return r
 
 
 P(f"PARAPHRASE TEST: {N} people ({len(HA)} asked, {len(HB)} only read), attributes {ATTR}, 20 values each (chance 0.05); byte LM {DW} wide, {NL} layers, "
   f"{STEPS} steps, batch {B} x {L} bytes | e.g. {PEOPLE[0]}: {FACT[PEOPLE[0]]}")
-for cond in ('SINGLE', 'MULTI'):
+for cond in os.environ.get('PT_CONDS', 'SINGLE,MULTI').split(','):
     C = corpus(cond); torch.manual_seed(0); m = LM(); op = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.01)
     sch = torch.optim.lr_scheduler.OneCycleLR(op, 1e-3, total_steps=STEPS, pct_start=0.05); ls = []; r2 = np.random.RandomState(2)
     P(f"\n== {cond}: corpus {len(C)} bytes, e.g. {bytes(C[:160]).decode()!r}")

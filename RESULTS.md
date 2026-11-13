@@ -568,6 +568,430 @@ letters do not link (118,346; 3.3% the same entity).
 - **Competition (each later mention picks one earlier mention, by a clear margin) lifts precision 3.5x over the fixed-rate policy and 8x
   over chance**, and most of what it finds are hard pairs letters can never find. Still far from writable: a vote, or a hypothesis.
 
+### Learning what to extract from the trunk's feedback (tools/extract_learn.py, tools/extract_gain.py, tools/extract_curve.py; 13 November)
+
+The idea: over-generate structural pieces of wording (every name pair in a sentence with the words between: 78,784 candidates in Re-DocRED
+train + dev, 24% related) and let the trunk's feedback teach a learner which are needed. Feedback (label-free) = bits a record saves the
+stand-in trunk (192 wide, 6,000 steps) where its names meet again in another document, beyond what the names alone save. Learner: ridge
+regression on features any reader has (the words between, hashed; first / last word; length; punctuation; how often the wording recurs).
+Tested on 710 held-out documents (15,609 candidates, 24.2% related).
+
+| Extractor | AUC | top 10%: precision / recall | top 25%: precision / recall |
+|---|---|---|---|
+| random | 0.50 | 0.25 / 0.10 | 0.24 / 0.24 |
+| closeness of the names | 0.54 | 0.24 / 0.10 | 0.27 / 0.28 |
+| **learned from trunk feedback (beyond the names alone; 5,254 records)** | **0.55-0.56** | **0.33-0.35 / 0.14** | **0.31 / 0.32** |
+| pooled per exact wording, same feedback | 0.52 | 0.38 / 0.16 | 0.26 / 0.27 |
+| learned from the RAW record gain | 0.38-0.40 | 0.09-0.11 / 0.04 | 0.14-0.15 / 0.15 |
+| ceiling A: same learner, gold labels, same 5,254 records | 0.74 | 0.50 / 0.21 | 0.45 / 0.47 |
+| ceiling B: same learner, gold labels, all 63,000 training candidates | 0.81 | 0.71 / 0.29 | 0.55 / 0.57 |
+
+- **Trunk feedback pooled by a learner is a real but weak teacher**: top-10% precision 0.33-0.35 against 0.24 base - about 40% of the way
+  to gold labels on the same records. The per-record signal it learns from is AUC 0.54.
+- **The raw gain teaches the wrong thing** (0.38-0.40, below chance): records of names that merely co-occur (lists, repeated sets of
+  names) save the trunk the most bits. Feedback must be taken beyond what the names alone are worth.
+- A LIST-STYLE null ('A , B') removes most of the signal (per record 0.52, top 10% 0.26); dropped.
+- **The per-record signal does not grow with training in a small trunk** (extract_curve, trained on this text: 0.48 / 0.51 / 0.52 / 0.52 at
+  0 / 1,000 / 3,000 / 6,000 steps). Whether a stronger trunk gives a stronger signal is the GPU question (cg27a_xgain; the model's trunk
+  saves 2-3 bits per related mention, the stand-in 0.06-0.12).
+- AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
+  triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
+
+### How good must premises be? Record-level compression into types (13 November, evening)
+
+**Premise threshold** (tools/premise_threshold.py; the store's precision SET by keeping half the related records plus unrelated ones; A-C
+proposed through a shared name from another document, as tools/integrate_test.py; checked where Re-DocRED annotates the pair; base 0.09):
+
+| premise precision | A-C proposals | gold | with 2+ bridges | gold |
+|---|---|---|---|---|
+| 0.24 (store as is) | 39,241 | 0.10 | 11,300 | 0.08 |
+| 0.38 | 20,911 | 0.13 | 3,930 | 0.11 |
+| 0.50 | 13,369 | 0.18 | 1,831 | 0.18 |
+| 0.60 | 8,709 | 0.23 | 790 | 0.28 |
+| 0.70 | 6,011 | 0.31 | 359 | 0.43 |
+| 0.80 | 4,628 | 0.35 | 251 | 0.52 |
+| 0.90 | 3,446 | 0.42 | 180 | 0.64 |
+| 1.00 | 2,796 | 0.51 | 130 | 0.75 |
+
+- Inference precision rises smoothly with premise precision; corroboration (2+ bridges) helps only above about 0.5 and amplifies noise below.
+- A store chosen by QUALITY does better than random premises of the same precision: the consistency-teacher learner's top 5% of records
+  (premise precision 0.55-0.56) gives A-C gold **0.33-0.34** (480-510 proposals; 3.7x base), against 0.18-0.23 for random premises at 0.5-0.6;
+  top 10% (0.46): 0.28 (about 2,500 proposals); top 25% (0.36): 0.165. Recall claim only (proposals checked against gold; nothing written).
+
+**Record-level MDL co-clustering** (tools/record_mdl.py; the 78,784 store records as (name, wording, name); a three-way block model, names
+into K classes and wordings into M classes by information-theoretic co-clustering; MDL over data + block table + assignments; no labels):
+
+| variant | MDL choice | bits a record (none: 33.6) | name classes: purity / NMI (best K) | relation cue AUC (gold type pair 0.80) | block score premise precision top 10% (learner 0.45) |
+|---|---|---|---|---|---|
+| random starts | K 4, M 32 | 33.46 | 0.43-0.50 / 0.02-0.18 | 0.56-0.61 | 0.27-0.35 |
+| split warm starts | K 4, M 32 | 33.43 | 0.43-0.50 / 0.11-0.16 | 0.59-0.61 | 0.29-0.31 |
+| started from context types (tools/name_types.py) | K 6, M 32 | 33.46 | 0.48-**0.60** / 0.15-**0.25** | **0.64** (K 6 M 32 pair + wording class) | 0.27-0.29 |
+| fitted on the learner's top 10% (cleaner store, 0.46), split | K 4, M 8 | 25.75 (none 25.4) | 0.43-0.48 / 0.11-0.16 | 0.53-0.59 | 0.27-0.39 |
+| fitted on the top 10%, from context types | K 6, M 8 | 26.51 (none 25.3) | 0.43-0.51 / 0.13-0.21 | 0.55-0.60 | 0.18-0.40 |
+
+- **Not positive.** Classes save 0.1-0.2 bits a record at best on the whole store and none on the clean store once the table is paid for.
+  The best relation cue (0.64) is level with words + context types (0.62-0.67) and far from the gold type pair (0.80). Block scores do not
+  raise premise precision, and combined with the learner they do not help it (top 5%: 0.38-0.56 against the learner's 0.54). A-C from
+  block-scored stores: gold 0.02-0.10 (one set of 267 at 0.20).
+- **Why: data per name** (tools/record_mdl_freq.py). 56% of names have 1-2 records, 40% have 3-9, 5% have 10+ (43% of records). Names
+  with 10+ records get purity **0.58-0.64, NMI 0.30-0.36** (context-type start); names with 3-9 get 0.37-0.51 / 0.07-0.16; names with 1-2
+  are near chance (0.28-0.39 / 0.02-0.07). Compression finds types where each name has enough records, so the limit is the amount of text
+  per name, not the compression principle. The Re-DocRED store is too small for most names, matching tools/name_types.py (T2a, 10 MB too few
+  contexts).
+
+**More text per name: the volume curve** (tools/distant_records.py, record_mdl.py RM_EXTRA; DocRED's distant training set, 101,873 Wikipedia
+documents with no overlap with Re-DocRED, read into store records the same way; its labels are not used; split warm starts, 2 restarts, K
+4-64, M 32/128; evaluation unchanged, on Re-DocRED gold; one run each):
+
+| store | records | Re-DocRED names with 10+ records | name classes: purity / NMI (best) | relation cue AUC (best; gold types 0.80) | learner + block association, premise precision top 5% / 10% (learner alone 0.54 / 0.45) |
+|---|---|---|---|---|---|
+| Re-DocRED only | 79k | 5% | 0.50 / 0.16 | 0.61 | 0.48-0.53 / 0.42-0.45 |
+| + 10k distant documents | 286k | 12% | 0.56 / 0.20 | 0.61 | 0.46-0.55 / 0.38-0.45 |
+| + 30k | 704k | 21% | 0.67 / 0.32 | 0.65 | 0.50-0.55 / 0.42-0.49 |
+| + 101,873 (all) | 2.2M | **33%** | **0.72 / 0.37** | **0.68** (K 4 M 128 name-class pair + wording class; pair alone 0.66) | **0.60 / 0.52-0.53** |
+
+- **Positive: compression finds types once names have enough records**, and the relation cue improves with text, monotonically from 10k.
+  All-text classes are recognisable: cities, countries, US states, years, nationalities, given names, numbers, software products, works
+  (MDL choice K 16, M 128). By records per name (all text, K 16): 1-2 records purity 0.41 (majority 0.27), 3-9 0.57, 10-49 0.62, 50+ 0.70.
+- **Premise precision:** at full volume the block association adds to the label-free learner for the first time (top 5% 0.54 -> 0.60, top
+  10% 0.45 -> 0.53, held-out documents). Below full volume it does not. One run; the gain is at the target's lower edge (0.6).
+- **But inference from that store gets worse:** keeping the top 10% by learner + association (premise precision 0.53) gives A-C gold 0.20,
+  below the learner's own top 10% (0.46 precision, A-C 0.28). Type association favours records of relations that do not compose through a
+  shared name (e.g. nationality and country pairs), so premise precision alone does not predict inference (as the premise threshold test's
+  quality-vs-random gap also showed, in the other direction).
+- Trend: about +0.03 relation-cue AUC per tripling of text from 10k documents; on that trend the gold type cue (0.80) is several orders of
+  magnitude of text away, so types from volume alone close part of the gap, not all of it.
+
+**Keying the compression by a longer-term context** (tools/doc_topics.py: every Re-DocRED and distant document clustered by its words, tf-idf,
+SVD 64, k-means 8 / 32, no labels; record_mdl.py RM_CTX: the block table becomes [document context, A class, wording class, B class] and
+every record is coded GIVEN its document's context; full store, K 4-32, M 32/128, split starts, 2 restarts; one run each):
+
+| full store (2.2M records) | data bits a record given context (best) | name types purity / NMI | relation cue AUC | learner + association, premise precision top 5% / 10% |
+|---|---|---|---|---|
+| unkeyed | 36.7 | **0.72 / 0.37** | 0.68 | 0.60 / 0.52-0.53 |
+| keyed, 8 contexts | 36.7 (table 8x larger) | 0.64 / 0.31 | 0.67 (0.65 without the context cue) | 0.61 / 0.50 |
+| keyed, 32 contexts | 36.6 (table 32x larger) | 0.59 / 0.29 | 0.65 | 0.53 / 0.47 |
+| unkeyed classes + same-context cue (RM_CTXEVAL, 8) | - | 0.72 / 0.37 | **0.70** (top-1 0.23 vs 0.26 without) | 0.60 / 0.51-0.53 |
+
+- **Not positive as a key.** Given the context, records cost at most 0.1-0.4 bits less, less than the larger table costs, so MDL rejects it;
+  the name types loosen (the context absorbs what the classes did: in a sports document who-plays-for-whom is already likely), more with
+  finer context. Relation cue, premise precision and A-C inference (0.27-0.29 at 10% kept, within run noise) do not improve.
+- **Slightly positive as a separate cue:** the document context beside the unkeyed types lifts the relation AUC 0.68 -> 0.70, the best
+  label-free figure so far, though top-1 falls (0.26 -> 0.23). Context is better used next to the types than as the key the types are
+  learned under.
+
+### Premises that chain: composability learned from later confirmation (tools/chain_bootstrap.py, 13 November, late)
+
+Re-DocRED store (78,784 records), A-C proposed through a shared name from another document (2.2M proposals; 80,185 verifiable, gold
+0.108); half the pairs (by hash) learn which premise KINDS compose - kinds = (wording class, bridge side) pairs from record-level compression
+(K 16, M 128), or the name-type triple - from label-free CONFIRMATION (A and C later read together in one sentence of another document);
+policies applied to the other half (40,013 verifiable, gold 0.108). Both runs were stopped by the machine's memory before hop 2 (inference
+built on inference) and, at 30k, before trunk congruence.
+
+| policy (test pairs) | Re-DocRED only | + 30k distant documents (confirmations 0.2% -> 1.7%) |
+|---|---|---|
+| all proposals | 0.108 | 0.108 |
+| 2+ / 3+ bridges | 0.082 / 0.069 | 0.082 / 0.069 |
+| composability (wording kinds), top 25% / 10% | 0.073 / 0.061 | 0.072 / 0.067 |
+| composability (name-type triple), top 25% / 10% | - | 0.053 / 0.029 |
+| **confirmed by later reading** (the inference waits for the text) | **0.170** (2,304) | **0.143** (9,022) |
+| stand-in trunk congruence (gain from A, top 3 of 10; cg27a_rti's check) | **AUC 0.445**: passed 0.078 vs failed 0.124 | (not reached) |
+| two keys (composability AND congruence) | 0.035 | - |
+
+- **Not positive: composability learned from confirmation selects WORSE than taking every proposal**, more so with the coarser type-triple
+  kinds. A sentence that names A and C together is mostly co-occurrence (lists of places, people of one team), so the kinds that get
+  'confirmed' are the kinds that co-occur, not the kinds that relate - the co-occurrence trap again (compression gain, usefulness, record
+  surprise). Bridges also lower the rate here (0.082 / 0.069): with premise precision about 0.24, corroboration amplifies co-occurrence (as
+  tools/premise_threshold.py: bridges help only above about 0.5).
+- **The stand-in trunk's check points the wrong way** (AUC 0.445, about 3.4 standard errors below 0.5): 'A helps the trunk predict C' favours
+  wrong inferences. cg27a_rti uses this check to choose writes; cg27a_rtiw (check as a readout only, every 2+ bridge inference written) is the
+  fallback if the GPU trunk's AUC is at or below 0.5 at visit 2.
+- **Positive, modest: waiting for the text helps** - inferences later read together in a sentence are right 0.14-0.17 (1.3-1.6x base).
+- **Confirmation in a RELATIONAL wording fixes the direction (CB_CONF=rel; the later sentence's record among the consistency learner's top
+  quarter, label-free; Re-DocRED only):** composability learned from it now selects ABOVE base - wording kinds 0.113 / 0.115 (top 25% / 10%),
+  name-type triples **0.115 / 0.124** (4,001 inferences; about 3 standard errors over 0.108) - where co-occurrence confirmation gave 0.029-0.073.
+  Small but the sign flips: relational wording is the judge that separates relating from co-occurring. As a direct filter it is strong but
+  rare: inferences later read together in a relational wording are right **0.359** (487; 3.3x base), with 2+ bridges **0.387** (287) - close
+  to direct extraction, so their value is in predicting before the text arrives and in teaching which kinds compose.
+- **Bootstrapping rounds (CB_ROUNDS 4, CB_GROW 2%)**: seeds = 461 train inferences confirmed in a relational wording (gold 0.360); each round
+  the 2% of train proposals (21,969) with the most composable type triple join the confirmed set, composability re-learned. TEST composability
+  top 10%: **0.123 -> 0.135 -> 0.134 -> 0.135 -> 0.141** (base 0.108; 4,001 inferences, about 1.3x base by round 4); the added batches are
+  right 0.116-0.159 (no collapse, so drift is limited, but each batch is far below the seeds; the confirmed set dilutes 0.36 -> 0.15).
+  **Modestly positive**: coverage grows 190-fold while test precision creeps up.
+- **Hop 2 (CB_HOP2 lite; inference built on inference)**: from accepted inferences right 0.360 (relational confirmation, 948), 0.141
+  (composability top 10%) or 0.133 (a random sample), the hop-2 inferences through stored records are right **0.143 / 0.137 / 0.148** (10-26k
+  verifiable; 2+ routes 0.12-0.15). **Not positive: hop-2 precision does not inherit the premise's** - an accurate untyped inference
+  ('A is connected to C') carries no relation, so chaining from it is as good as chaining from any co-occurrence. Building on inference needs
+  typed (relation-identified) inferences.
+- Discrepancy to resolve: on the GPU (distant set, Wikidata labels) 2+ bridges RAISE A-C precision (0.23 vs 0.11-0.13 for all); on
+  Re-DocRED gold they lower it. Likely the distant labels reward transitive chains (located in, P131) that Wikidata labels densely.
+
+### GPU, 13 November night: cg27a_prem (surprise-gated store + premises at scale, visits 1-6) and cg27a_rti (end-to-end inference, visits 1-4); seed 4
+
+cg27a_prem - SURPRISE GATE (the model change): admits 0.49-0.50 of real-text sentences each visit (about 45 s); among sentences joining two
+benchmark entities, gold-related pairs admitted vs other co-occurrences: 0.88 vs 0.51 (1.71; 65 related), 0.53 vs 0.46 (1.16; 141),
+0.97 vs 0.80 (1.21; 71), 0.97 vs 0.77 (1.26; 59), 0.85 vs 0.53 (1.60; 53) at visits 1-5 (visit 6, Github: no benchmark text). **Positive,
+5 of 5 visits above 1** (confound not excluded: related sentences may be more surprising for other reasons). Real-text recall at the
+relation prior every visit, as earlier builds; gated answers right when answered 0.63 -> 0.88 (visits 3-6).
+PREMISES AT SCALE (readout; Wikidata labels for the distant set):
+
+| visit | store (distant docs) | name types purity K16 / NMI K4 | relation cue (gold types) | A-C 2+ bridges right: random / trunk surprise / type association | trunk surprise AUC |
+|---|---|---|---|---|---|
+| 2 | 20k | 0.60 / 0.20 | 0.57 (0.73) | 0.18 / 0.13 / 0.06 | 0.52 |
+| 4 | 41k | 0.65 / 0.28 | 0.59 (0.75) | 0.19 / 0.12 / 0.08 | 0.51 |
+| 6 | 61k | 0.66 / 0.33 | 0.63 (0.78) | 0.23 / 0.13 / 0.16 | 0.51 |
+
+Types and the relation cue rise with reading as offline (positive); the trunk's surprise on single records carries no signal; no
+label-free single-premise policy beats random premises for inference (type association improves as types improve).
+
+cg27a_rti - END-TO-END REAL-TEXT INFERENCE (premises at random, 2+ bridges, the trunk's check, write 'A is connected to C'): the CHECK is
+at chance (AUC 0.512 visit 2, 0.491 visit 4; passed right 0.374 / 0.319 vs failed 0.364 / 0.335 - the 600 best-bridged inferences are right
+about 0.33-0.37 by Wikidata labels). WRITES: 181 at visit 2, 370 by visit 4 (a fifth held back). RECALL FROM THE TRUNK of the visit-2
+writes (store off), taught vs held back: visit 3 RIGHT 0.07 (96 questions) vs 0.03 (32), WRONG 0.13 (172) vs 0.07 (42); **visit 4 RIGHT
+0.09 vs 0.03, WRONG 0.02 vs 0.00** - right inferences retained, wrong ones fading (about 2.5 standard errors; visit 3 showed the opposite).
+Provisional until visits 6-10.
+**Visits 5-6 (writes of visits 2 + 4):** check AUC 0.478 at visit 6 (third time at chance; passed and failed both right 0.37). Recall, taught
+vs held back: visit 5 RIGHT 0.04 (194) vs 0.06 (52), WRONG 0.06 (360) vs 0.00 (106); **visit 6 RIGHT 0.09 vs 0.02, WRONG 0.06 vs 0.01**.
+Written inferences reach the weights (taught above held back for both), but right is not reliably above wrong (0.09 vs 0.06, about 1.3
+standard errors; the order changes between visits) - the visit-4 'fading' does not repeat. Consistent with tools/false_fade.py: right
+inferences are kept only when later reading supports them, and here the trunk never reads the documents they came from. Next build: the
+trunk reads the source documents, recall split by write age, a third held back.
+
+### Do wrong inferences fade while right ones stay? (tools/false_fade.py, 13 November, late; stand-in trunk, two seeds)
+
+120 RIGHT inferences (A and C gold-related in a Re-DocRED training document) and 120 WRONG ones (A with a same-type name from another
+document, never related), taught as 'A is connected to C.' (300 steps, 8 fact rows + 24 text windows), then 600 steps of reading in two
+arms. Recall: C first among 10 same-type names after 'It is on record that A is connected to ' (chance 0.10).
+
+| | seed 0 right / wrong | seed 1 right / wrong |
+|---|---|---|
+| before teaching | 0.28 / 0.10 | 0.22 / 0.12 |
+| taught | 0.39 / 0.25 | 0.32 / 0.33 |
+| + reading the EVIDENCE documents (those naming the pairs) | **0.39 / 0.11** | **0.33 / 0.21** |
+| + reading OTHER documents | 0.27 / 0.10 | 0.19 / 0.13 |
+
+**Positive (both seeds): wrong inferences fade whatever is read; right ones keep their taught gain (+0.11 above before-teaching in both
+seeds) only when later reading supports them, and fall back without it.** Continued reading filters written inferences - a plausible
+mechanism for the GPU cg27a_rti visit 4 pattern (right 0.09 vs wrong 0.02). In cg27a_rti the trunk never reads the distant documents the
+inferences come from, which may be why its weights-level signal is faint: the next build should have the trunk read them. Small trunk;
+about 2-3 standard errors per seed.
+
+### Universal schema and typed, coupled inference (tools/typed_infer.py, 13 November, late; Re-DocRED + 30k distant documents)
+
+UNIVERSAL SCHEMA (Riedel et al. 2013): PPMI over 15,285 wordings x 609,864 ordered pairs (32,662 seen 2+ times), SVD 64, 64 latent
+relations (k-means). RELATION IDENTITY on held-out gold-related records (18,000 pairs): wording class (record compression) AUC 0.561;
+**universal-schema wording vector 0.658, + compressed name-type pair 0.669**; latent relation (equal) 0.562; gold type pair 0.803. As good
+as the best label-free cue so far at this volume (record compression at 101k documents 0.68) - pairs recur too rarely for the factorisation
+to do more here; it should gain with volume.
+
+TYPED, COUPLED INFERENCE: each premise typed by its latent relation and the bridge's side; a COMPOSITION TABLE (premise relations -> the
+relation A and C are later read in, in a relational wording) learned on train pairs (462 confirmed); TYPE COUPLING (NELL): the predicted
+relation must have been seen with A's and C's name types. Test pairs (40,013 verifiable, gold 0.108):
+
+| policy | inferences | gold | TYPED right (relation too) |
+|---|---|---|---|
+| all proposals | 40,013 | 0.108 | 0.045 |
+| typed composability top 25% / 10% | 10,028 / 4,277 | 0.132 / 0.148 | 0.084 / 0.098 |
+| type coupling only | 14,550 | 0.104 | 0.058 |
+| **typed composability top 10% AND type coupling** | **2,257** | **0.160** | **0.116** |
+
+**TYPED HOP 2** (3,000 accepted typed inferences, hop-1 gold 0.160, + stored records, composition-gated again): **0.196** (896; ungated
+0.121) - against untyped hop 2 at 0.14 whatever the premise. **Positive: typed inferences compose** - hop 2 precision now exceeds hop 1, the
+first time inference built on inference has gained rather than lost. Typed composability is the best label-free premise policy so far
+(0.160, 1.5x base; untyped bootstrapped 0.141, untyped type triples 0.124). Small absolute numbers; one run.
+
+**Replication at full scale (101,873 distant documents; same test pairs, Re-DocRED gold), 23:30:** universal schema 0.654, + name-type pair
+0.665 (no gain over 30k: 0.658 / 0.669; recurring pairs 118,900); typed composability top 25% / 10% **0.129 / 0.138**, + type coupling
+0.123 / **0.140**; typed hop 2 composability-gated **0.149** (909; hop-1 0.144). **Robust part: typed composability selects about 1.3x
+base (0.13-0.16 in both runs). Not robust: type coupling (adds 0-0.01) and the typed hop-2 gain (0.196 at 30k, 0.149 at full - about level
+with untyped hop 2).** Single runs; treat the 30k figures as the upper end.
+
+Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, base 0.242): the package's in-store scorer top 5% 0.497
+(AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
+mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
+
+### Brain-inspired tests, round 2 (13 November, afternoon)
+
+- **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
+  0.45-0.49 (NMI 0.13-0.29); as the relation cue (tools/relation_free.py RF_TYPES) the learned type pair gives AUC 0.50-0.57 alone and
+  0.62-0.67 with the words between (words alone 0.63, name shapes 0.66; gold type pair 0.79-0.83). Not positive: these features do not recover
+  the types that matter.
+- **Spreading activation for inference** (tools/spread_infer.py; 80,185 verifiable A-C): top 10% gold - resource allocation 0.153, Adamic-Adar
+  0.077, RA weighted by the learned extractor 0.218, + rarest bridge 0.221, three-step paths (L3, sample) 0.215 vs sample base 0.115; single
+  rarest bridge 0.211. Not positive: spreading over the name graph adds nothing over the rarest shared name.
+- **Event boundaries from trunk surprise** (tools/event_bounds.py; 400 unseen documents, 16,343 name pairs in one sentence, 22% related):
+  boundaries at surprise peaks above the 75th percentile (22 per 100 words) keep related pairs together more than unrelated ones AT THE SAME
+  DISTANCE (ratio 1.14 / 1.23 / 1.32 for pairs 1-3 / 4-7 / 8-20 words apart; random boundaries 0.94-0.99, fixed spacing 0.97-1.10,
+  punctuation 0.80-0.93); a segment holding a pair is related 0.291 vs base 0.223. **Modestly positive**: the trunk's surprise marks where
+  fact-bearing units start and end, beyond distance and punctuation.
+- **JEPA codes on name-masked records** (tools/relation_free.py RF_JEPA=3000: a 2-layer encoder, 40% of the words masked, predictor to an EMA
+  target encoder's states, L1, no negatives): relation identity AUC 0.568, nearest same relation 0.152 (chance 0.083); + name shape 0.677.
+  Below plain n-grams of the same masked record (0.665). The L1 rose during training (0.85 -> 0.95): the target drifted; not positive here.
+- **Overlapping replay** (tools/overlap_replay.py; the stand-in trained 1,500 more steps on pairs of passages from different documents that
+  name the same entity, vs random pairs): relation identity from the trunk's state 0.581 (overlap) vs 0.578 (random) vs 0.582 (start); held-out
+  bits per byte 2.444 (overlap) vs 2.256 (random) vs 2.192 (start). Not positive: replaying overlaps side by side taught no relational
+  structure here and fitted the repeated names (held-out worse).
+- **Schema-congruent consolidation** (tools/schema_consol.py; 100 new facts '<invented person> was born in <place>' mixed into ordinary text;
+  recall = true object first of 10 objects of its arm): congruent (real places that follow 'born in') vs incongruent (organisations / works)
+  at steps 50 / 100 / 200 / 400 - seed 0: 0.23 / 0.24 / 0.10 / 0.06 vs 0.05 / 0.05 / 0.05 / 0.09; seed 1: 0.14 / 0.19 / 0.29 / 0.35 vs
+  0.07 / 0.10 / 0.05 / 0.16; held-out bits per byte the same in both arms (+0.05). Weakly positive and unstable (seed 0 collapses after
+  step 100); the arms' distractor sets differ (places vs organisations), so difficulty may account for part of it.
+- **Replay by need** (tools/paraphrase_test.py PT_NEED; 4 extra biography copies for the half of the read-only people who will be asked vs 2
+  for every read-only person, same total), at step 4,000: the asked people in NEW question forms 0.33 vs 0.22; in the taught forms 0.55 vs
+  0.61 (150 items each, about +-0.04). Need-weighted replay helps where generalisation is needed, at a small cost in the familiar form.
+- **Prototype errors** (tools/paraphrase_test.py PT_ZIPF; values Zipf-skewed, the commonest 29% of facts): of the model's wrong answers about
+  read-only people in new question forms, 0.14 (step 2,000: 0.15) are the commonest value - about 2.7x an even spread over the 19 wrong
+  values (0.05), about half of a pure frequency guess (~0.3). A real but partial pull towards the prototype (Spens & Burgess): some false
+  answers are typical values, which the gate must catch.
+- **Usefulness as the teacher** (tools/usefulness.py; held-out records whose names meet again in another document, 1,370, related 0.304; LATER
+  BENEFIT = bits the record saves the stand-in trunk on the second name there). Each policy keeps a quarter:
+
+  | Policy | kept related | later benefit, raw | beyond the names alone |
+  |---|---|---|---|
+  | random | 0.313 | +0.089 | -0.021 |
+  | closeness | 0.371 | +0.102 | -0.008 |
+  | consistency-teacher learner | 0.576 | +0.057 | +0.006 |
+  | trunk-feedback learner | 0.585 | +0.052 | +0.013 |
+  | both (rank sum) | 0.596 | +0.046 | +0.006 |
+  | **learned from raw later benefit** | **0.067** | **+0.160** | -0.035 |
+
+  Optimising raw later benefit keeps almost no real relations (0.067): what saves the most bits later is names that merely co-occur. Usefulness
+  must be measured beyond co-occurrence (there the relation-keeping policies lead, weakly). On records whose names recur, both label-free
+  learners keep 0.58-0.60 related, about twice the base rate.
+
+### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
+
+The stand-in trunk (192 wide, 6,000 steps; never saw these documents) reads 600 Re-DocRED training documents (4,798 sentences, 2.16 bits per
+byte); every record (two names in one sentence, words between) gets the trunk's surprise; 'already knows' = the true second name costs the
+fewest bits among up to 10 names of the document (related records 0.161 vs chance 0.101: this trunk knows little).
+
+| Keep a quarter of 12,459 records by | related | recall | of kept related facts, trunk does NOT know | NEW true facts per 100 kept |
+|---|---|---|---|---|
+| random | 0.246 | 0.238 | 0.876 | 21.6 |
+| **surprise over the record** | **0.292** | **0.282** | **0.926** | **27.0** |
+| surprise on the second name | 0.250 | 0.242 | 0.966 | 24.2 |
+| surprise on the words between | 0.241 | 0.233 | 0.856 | 20.6 |
+| predictable record (least surprise) | 0.229 | 0.221 | 0.714 | 16.3 |
+| closeness of the names (no trunk) | 0.284 | 0.275 | 0.865 | 24.6 |
+
+- **Surprise-gated storage keeps 25% more new true facts per record than random (27.0 vs 21.6) and 66% more than keeping the predictable
+  (16.3)**: it keeps more real relations and, among them, more the trunk does not already know.
+- Sentences: the most surprising quarter hold 1.25 related records per sentence, the most predictable 0.55 (partly because surprising sentences
+  hold more names). Surprise on the second name alone best avoids storing what the trunk knows (0.966) but does not pick relations.
+- The stand-in knows few facts (0.16), so 'already known' filtering matters little here; the model's trunk knows more (known-fact recall
+  0.53-0.78 on the GPU), where this gate should save more.
+
+### Brain-inspired tests: relation identity from name-free codes; inference at reading time (13 November)
+
+**Relation identity** (tools/relation_free.py): records with both names masked ('[X] , the capital of [Y]', plus 3 words each side), Re-DocRED
+held-out documents, 600 queries x 30 candidates from other documents, 187 gold relation types.
+
+| Cue | nearest candidate same relation (chance 0.08) | AUC same vs not |
+|---|---|---|
+| frame words (tf-idf) | 0.16-0.19 | 0.63-0.64 |
+| word + character n-grams of the masked record, untrained | 0.20-0.23 | 0.65-0.67 |
+| label-free encoder (InfoNCE: same two names in another document = positive) | 0.16 | 0.54-0.56 |
+| stand-in trunk's state over the masked record | 0.17 | 0.58 |
+| (earlier) trunk substitution, tools/relsub.py | - | 0.58-0.60 |
+| name SHAPE pair alone (digits / capitalised) | 0.16 | 0.67 |
+| frame words + shape pair | 0.21 | 0.73 |
+| **GOLD entity-type pair alone** (PER-LOC, ORG-TIME ...) | **0.38** | **0.83** |
+| frame words + gold type pair | 0.37 | 0.85 |
+
+- **The types of the two names carry most of relation identity** (0.83 alone), as unsupervised relation extraction found (Tran, Le &
+  Ananiadou 2020). Learning name types without labels is the most promising route to relation identity.
+- Same-name pairs as label-free positives teach the wrong thing (0.54): only 29% of such pairs share a relation.
+
+**Inference at reading time** (tools/integrate_test.py): every name pair in a sentence is a stored record; a record B-C recalls the A-B records
+of other documents and proposes A-C (hub names in 200+ documents skipped). 2.2M proposals, 80,185 verifiable (A and C named in one document).
+
+| Proposals | gold-related |
+|---|---|
+| base rate: name pairs in one document | 0.092 |
+| all verifiable proposals | 0.108 |
+| top 10% by the rarest bridge | 0.211 |
+| top 10% by the learned extractor (both records) | 0.186 |
+| 2+ / 3+ / 5+ distinct bridges | 0.081 / 0.067 / 0.062 (more bridges = hub-like names, worse) |
+| **ceiling: both premise records truly related** | **0.480** (6,856 proposals; neither related: 0.073) |
+
+- **Integration without rules is sound when the premises are true**: two true records sharing a name give a true A-C relation half the time,
+  5x the base rate, with no rule and no relation label. The bottleneck is premise quality (extraction), not the inference step.
+
+### cg27a_xgain: extraction gain from the model's trunk (GPU, seed 4, 13 November; visits 2-6)
+
+cg27a_rtxw + inf_extract_gain 1 (readout only). Candidate records = gold-mention name pairs in one sentence of the benchmark documents read;
+gain = bits a record saves the trunk where its names meet again, beyond the names alone. Closeness column from the pre-fix (tie-biased) AUC.
+
+| Visit | records (related) | words between AUC | other-document targets | whole record | names only | top quarter related |
+|---|---|---|---|---|---|---|
+| 2 | 119 (0.31) | 0.48 | 0.58 (64) | 0.43 | 0.43 | 0.28 |
+| 4 | 301 (0.32) | 0.48 | 0.50 (210) | 0.50 | 0.50 | 0.29 |
+| 6 | 444 (0.32) | 0.54 | 0.55 (315) | 0.50 | 0.47 | 0.35 |
+
+- The model's trunk saves 1.2-1.7 bits per record, equally for related and unrelated pairs; what the relating words add is at most weakly
+  related to relations (0.54 at visit 6, about one standard error above chance) - the stand-in trunk's level (0.54). Not a usable teacher alone.
+- Safe: BPC within 0.011 of cg27a_rtxt at visits 1-6; the gate cuts never-read false answers 0.60 -> 0.29 and 0.64 -> 0.20 (visits 5, 6).
+- Domain-specific counting for the consistency teacher (tools/consistency_raw.py CR_PERDOM=1): Re-DocRED + WikiText 0.547 -> 0.563; all
+  domains still chance (0.49); WikiText alone 0.53. The teacher works when it counts over text very like the target (Re-DocRED itself: 0.59).
+- ENTITY NEIGHBOURHOOD (CR_NEIGH=K: count only over the K pool documents sharing the most distinctive names with each held-out document,
+  names by capitalisation; pool = every domain): K 5 / 20 / 50 -> AUC 0.51-0.54, top 10% 0.31-0.35 (all domains unselected 0.49 / 0.29;
+  Re-DocRED alone 0.59 / 0.45); without the Re-DocRED training documents in the pool, K 20: 0.53-0.54. Neighbourhoods pull in PubMed and law
+  documents through shared capitalised words. A small gain over mixing, far short of a matched collection.
+
+### The store teaching itself what to extract: consistency teachers (tools/consistency_teacher.py, 13 November; no trunk)
+
+Same candidates and held-out documents as tools/extract_learn.py (15,609 held-out candidates, 24.2% related). Label-free teachers counted on the
+training documents: T1 the same names and wording in another document; T2 FUNCTIONAL wording (a subject joined to one object); T3 SELECTIVE
+wording (the shapes of the names it joins); T4 records in a chain of a rule the counting miner verifies over the candidates themselves.
+
+| Extractor (held-out documents) | AUC | top 10%: precision / recall | top 25%: precision / recall |
+|---|---|---|---|
+| random | 0.50 | 0.25 / 0.10 | 0.24 / 0.24 |
+| learner from TRUNK feedback (tools/extract_learn.py) | 0.55-0.56 | 0.33-0.35 / 0.14 | 0.31 / 0.32 |
+| T2 + T3 applied directly (wordings seen in training) | 0.54 | 0.41 / 0.17 | 0.30 / 0.31 |
+| **learner from the combined consistency teacher** | **0.63** | **0.45 / 0.19** | **0.38 / 0.39** |
+| + self-training (the learner's kept records recount T2 / T3), round 1 | **0.64** | 0.46 / 0.19 | 0.39 / 0.40 |
+| rounds 2-3 | 0.63 | 0.45 / 0.18 | 0.38 / 0.39 |
+| ceiling: same learner, gold labels, all training candidates | 0.81 | 0.71 / 0.29 | 0.55 / 0.57 |
+
+- **Consistency is a better teacher than the trunk's prediction**: AUC 0.63 vs 0.55; top quarter 0.38 related vs 0.31 (base 0.24). On
+  training records the strongest single teacher is FUNCTIONAL wording (top quarter 0.42); corroboration (0.26) and rule chains (0.26; the
+  counting miner finds 1 rule, punctuation, over candidate records) add little.
+- Self-training helps once (+0.01 AUC) and then plateaus.
+- Roughly: keeping the top quarter captures ~40% of the within-sentence related pairs (~8% of all gold facts) at 0.38-0.39 precision,
+  against the current reader's ~3% at ~0.23.
+- **More text, better teacher** (CT_FRAC: share of the training documents read; same held-out test): learner AUC 0.49 / 0.56 / 0.60 / 0.63,
+  top 25% 0.24 / 0.31 / 0.33 / 0.37 at 10% / 25% / 50% / 100% (6,500 / 16,000 / 32,000 / 63,000 training candidates); functional-scored
+  wordings 8 / 17 / 20 / 43. About +0.03-0.04 AUC per doubling, not levelling off.
+- **On raw text, as the store sees it** (tools/consistency_raw.py: names by capitalisation, no gold mentions; same held-out test): counted over
+  the Re-DocRED documents alone AUC 0.59, top 25% 0.35 (gold mentions 0.63 / 0.37); **adding other text makes it worse** - + WikiText 0.55 /
+  0.29; + every domain the model reads (10.5M words) 0.49 / 0.25. The volume gain holds for more of the SAME kind of text only; counted over
+  everything the model reads, this teacher is near chance unless it counts per domain.
+- **Do rules come out of what it keeps?** (tools/kept_rules.py; counting miner, n >= 20, Wilson z 4 >= 0.7) Top 10% / 25% / 50% kept: 3,208 /
+  6,407 / 10,685 of 93,331 gold facts covered (precision 0.45 / 0.36 / 0.30). With GOLD relation types on the kept related records: 0 / 0 /
+  **1 rule** (a region's country from the places in it, 0.90 of 102; its proposals 0.74 gold - facts the extractor missed). With the
+  WORDING as the relation (what the store has): 0 rules at every share. All gold facts: 136 rules. Inference by counting needs both several
+  times this coverage and relation identity; relation identity is the larger gap.
+- **The trunk's feedback adds nothing to consistency** (tools/extract_combo.py): consistency alone AUC 0.628 / top 25% 0.375; + trunk
+  feedback at weight 1 / 2 / 4: 0.622 / 0.595 / 0.577 (top 25% 0.363 / 0.352 / 0.338).
+
+### Several wordings: does a read-only fact become answerable? (tools/paraphrase_test.py, 13 November; byte LM 128 wide, 3 layers)
+
+200 invented people (birth city, university, employer; 20 values each, chance 0.05), each biography read 5 times; questions taught about half
+(A), the other half (B) only read. Multiple choice by bits. SINGLE: one fixed wording; MULTI: 5 wordings per attribute, shuffled order.
+
+| After 10,000 steps | SINGLE | MULTI |
+|---|---|---|
+| storage (biography wording), B | 1.00 | 0.93 |
+| B, read only, the taught question forms | 0.64 | 0.60 |
+| A, question forms never trained | 0.47 | 0.58 |
+| **B, read only, question forms never trained** | **0.30** | **0.39** |
+
+- A trunk-sized byte LM taught questions about some people answers about people it only READ (0.60-0.64): learning from reading is not an
+  architectural limit; the model's 0.12-0.19 never-asked recall reflects how real facts are seen (once or twice, long sentences, pronouns).
+- The weak cell is NEW QUESTION FORMS (0.30-0.47): the model binds question shapes to stored facts. Several fact wordings lift it modestly
+  (+0.09-0.11) and leave read-only extraction in the taught forms unchanged; plateau by step 4,000 in both.
+
 ### cg27a_rtxt: title for pronoun in real-text replay, to visit 10 (GPU, seed 4, 13 November)
 
 cg27a_rtx16 + inf_distill_rtx_title 1 (pronoun-led replayed sentences replayed with the document's title for the pronoun). BPC within 0.006 of

@@ -220,7 +220,7 @@ def run(cfg):
         model.__dict__['_self_slot']=None
         if (cfg.self_dream_nreal and cfg.real_w_pass and float(cfg.real_w_pass[min(pass_i,len(cfg.real_w_pass)-1)])==0.0
                 and ts in (shist_ if cfg.infer_ctx else schedule[:vi]) and ts not in olds): olds.append(ts)   # cg26i ORDER-SAFE: slots seen, not domain ids   # NO-REAL-TEXT PASS: the visited domain is protected by its OWN dreams too
-        object.__setattr__(model,'_olds',olds); object.__setattr__(model,'_visit',vi); model.__dict__['_cur_dom']=int(t)
+        object.__setattr__(model,'_olds',olds); object.__setattr__(model,'_visit',vi); model.__dict__['_cur_dom']=int(t); model.__dict__['_cur_slot']=int(ts)   # 13 Nov: slot for the surprise gate
         _sinf_=bool(int(getattr(cfg,'inf_sleep_inferred',0))) and bool(cfg.infer_ctx)
         if _sinf_: model.__dict__['_cur_dom']=int(ts); model.__dict__.setdefault('_s2t',{})[int(ts)]=int(t)   # cg26i SLEEP KEYED BY THE INFERRED DOMAIN: the store records the routed slot
         if cfg.n_passes>1 and cfg.data_free and not cfg.topic_mode and not _eo: rebuild_old_cov(model, olds)   # protect OTHER domains only

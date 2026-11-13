@@ -1685,6 +1685,18 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if cgn9 > 0 and (vis + 1) % cgn9 == 0 and str(getattr(cfg, 'inf_bench', '') or ''):   # 12 Nov COMPRESSION GAIN readout (inference.compress)
             from platypus.inference.compress import compress_gain
             compress_gain(model, cfg, S_slot, vis, S_)
+        if int(getattr(cfg, 'inf_sstore', 0)):                                 # 13 Nov SURPRISE-GATED STORE (one model change): what it admitted
+            try:
+                from platypus.inference.sentences import sstore_report
+                sstore_report(model, cfg, vis)
+            except Exception as e9: _fail('inference.sstore:report'); print(f"  [SURPRISE GATE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        pm9 = int(getattr(cfg, 'inf_premises', 0))
+        if pm9 and (vis + 1) % max(1, int(getattr(cfg, 'inf_premises_every', 2))) == 0:   # 13 Nov PREMISES AT SCALE readout (inference.premises)
+            try:
+                from platypus.inference.premises import premises_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9): premises_readout(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.premises'); print(f"  [PREMISES AT SCALE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_store_link', 0)):                             # 13 Nov STORE LINKING (inference.compress; one model change)
             from platypus.inference.compress import store_link
             store_link(model, cfg, S_, S_slot, vis)
@@ -1696,6 +1708,11 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)                       #  opalg diverged
             if int(getattr(cfg, 'inf_distill_relmod', 0)): _dw_relmod(model, cfg, ents, held, vis)                         #  after sleep 1)
             if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_reader_chunk', 0)): _dw_relmod_real(model, cfg, S_, vis)
+        if int(getattr(cfg, 'inf_rti_write', 0)) and int(getattr(cfg, 'inf_premises', 0)):   # 13 Nov END-TO-END REAL-TEXT INFERENCE (one model change)
+            try:
+                from platypus.inference.premises import rti_write
+                ents, held = rti_write(model, cfg, S_slot, ents, held, ctl, vis)
+            except Exception as e9: _fail('inference.premises:rti_write'); print(f"  [REAL-TEXT INFERENCE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_distill_relmod_write', 0)):
             try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:
@@ -1919,6 +1936,12 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                       f"{np.mean(A1[:20]) if A1 else float('nan'):.3f} -> {np.mean(A1[-20:]) if A1 else float('nan'):.3f} | next visit: {nd9} documents replayed (half; the other half "
                       f"read once, the control), {sum(len(v) for v in rtx9.values())} sentences, {nv9} views"
                       + (f", {nt9} pronoun-led sentences replayed with the document's title for the pronoun" if ttl9 else ''), flush=True)
+                if int(getattr(cfg, 'inf_rti_evidence', 0)):                  # 13 Nov EVIDENCE REPLAY (inference.premises; cg27a_rti2's one model change)
+                    from platypus.inference.premises import rti_evidence
+                    ev9 = rti_evidence(cfg, S_slot, vis9_)
+                    for sl9_, v9_ in ev9.items(): rtx9.setdefault(sl9_, []).extend(x[:L09 - 1] for x in v9_)
+                    print(f"  [REAL-TEXT INFERENCE EVIDENCE | visit {vis + 1}] {sum(len(v) for v in ev9.values())} premise statements of written inferences join the "
+                          f"real-text replay pool (slots {sorted(ev9)})", flush=True)
                 spx9 = float(getattr(cfg, 'inf_distill_rtx_space', 0.0))
                 if spx9 > 0 and rtx9:                                          # 12 Nov REPLAY BY STORAGE CHECK (inf_distill_rtx_space = alpha): before each
                     rtw9 = _rtx_weights(model, rtx9, spx9, vis)                #   visit the trunk reads every replayed sentence; sentences it already predicts

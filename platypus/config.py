@@ -597,6 +597,46 @@ class Config:
                                     #     pattern is in place - binding gain at joins of capitalised words (units) and mutual compression gain between
                                     #     mentions (links), against the Re-DocRED gold mentions of the embedded documents read (needs inf_bench)
     inf_compress_n=600              #     joins sampled (pairs: up to 10x as many)
+    inf_extract_gain=0              #   13 Nov READOUT: EXTRACTION GAIN inside the compression-gain readout (inference.compress): does a candidate record (two names in one
+                                    #     sentence and the words between) save the trunk bits where the names meet again, more for related pairs? (needs inf_compress_gain)
+    inf_extract_n=1500              #     candidate records sampled
+    inf_sstore=0                    #   13 Nov SURPRISE-GATED STORE (MODEL CHANGE when on): real-text sentences enter the fast store only if the trunk finds
+                                    #     them surprising - bits per byte under the current model (the visit's slot) at or above the visit's running
+                                    #     (1 - inf_sstore_q) quantile; SLIMM: what the cortex already predicts is not stored as an episode (offline:
+                                    #     27.0 new true facts per 100 records kept vs 21.6 at random)
+    inf_sstore_q=0.5                #     share of scored sentences admitted
+    inf_sstore_n=64                 #     sentences scored per store call at most (the rest admitted at rate inf_sstore_q at random)
+    inf_sstore_warm=50              #     sentences per visit admitted ungated while the visit's running quantile warms up
+    inf_sstore_win=100              #     the running quantile is over the visit's last N scored sentences (the trunk's surprise falls as it learns)
+    inf_premises=0                  #   13 Nov READOUT: PREMISES AT SCALE (inference.premises) every inf_premises_every visits: a SEPARATE record store reads
+                                    #     DocRED's distant Wikipedia set (inf_premises_path, 101,873 documents, a 1/inf_premises_visits share more per visit) plus
+                                    #     the benchmark documents read; TYPES by record-level compression (three-way block model, warm-started visit to visit),
+                                    #     RELATION cue, the TRUNK's surprise per record, PREMISE precision by policy and A-C INFERENCE through a shared name by
+                                    #     policy (offline: types purity 0.50 -> 0.72 with 28x the records; premise precision 0.60 at 5%)
+    inf_premises_path=''            #     train_distant.json(.gz) (the notebook downloads it); empty = benchmark documents only
+    inf_premises_every=2            #     visits between readouts
+    inf_premises_visits=10          #     the distant set is spread over this many visits
+    inf_premises_k='4,16'           #     name classes of the block models fitted (wording classes inf_premises_m)
+    inf_premises_m=128
+    inf_premises_score_max=400000   #     new distant records scored by the trunk per readout at most (sampled)
+    inf_premises_ac_max=600000      #     A-C inference over a fixed sample of at most this many scored records (time)
+    inf_premises_typed=0            #   13 Nov READOUT (with inf_premises): TYPED INFERENCE - universal schema relations, a relational-wording scorer, typed coupled
+                                    #     inference and typed hop 2 on the premises store (tools/typed_infer.py offline: 0.160 vs 0.108; hop 2 0.196 vs 0.14)
+    inf_premises_typed_n=80000      #     distant records sampled as premises for typed inference (time)
+    inf_premises_typed_train=200000 #     records the relational-wording learner trains on
+    inf_rti_write=0                 #   13 Nov END-TO-END REAL-TEXT INFERENCE (MODEL CHANGE when on; needs inf_premises): premises chosen label-free from the
+                                    #     premises store, A-C inferred through a shared name (2+ bridges), CHECKED by the trunk (C in its top inf_rti_rank of 10
+                                    #     after 'A is connected to '), the passing ones WRITTEN into the question pool as facts (a fifth held back)
+    inf_rti_keep=0.1                #     share of scored records kept as premises (by trunk surprise + block association)
+    inf_rti_n=600                   #     new 2+ bridge proposals checked per readout (most bridges first)
+    inf_rti_rank=10                 #     the check: C ranked in the trunk's top N of C and 9 names of its class; 10 = readout only (13 Nov: the trunk's check is at
+                                    #     chance on the GPU, AUC 0.512 / 0.491 at cg27a_rti visits 2 / 4, and backwards offline, 0.445; cg27a_rti itself uses 3)
+    inf_rti_max=200                 #     inferences written per readout at most
+    inf_rti_bridges=2               #     distinct bridge names an A-C proposal needs
+    inf_rti_policy='surprise'       #     premise choice: surprise (trunk), both (surprise + block association), random
+    inf_rti_evidence=0              #   13 Nov EVIDENCE REPLAY (MODEL CHANGE when on): the premise statements of written inferences join the real-text replay pool
+    inf_rti_novel=0                 #     write only inferences whose A and C never appear together in a premise document or a benchmark document
+    inf_rti_ctl=0.0                 #     held-back share of written inferences by their own hash (0 = the question pool's fifth)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read

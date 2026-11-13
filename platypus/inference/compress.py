@@ -28,7 +28,7 @@ _CG_TOK = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\-]*")
 def _cg_auc(p, n):
     p, n = np.asarray(p, float), np.asarray(n, float)
     if len(p) == 0 or len(n) == 0: return float('nan')
-    r = np.concatenate([p, n]).argsort(kind='stable').argsort().astype(float) + 1
+    _u, _i, _c = np.unique(np.concatenate([p, n]), return_inverse=True, return_counts=True); r = (np.cumsum(_c) - (_c - 1) / 2.0)[_i]   # ties share their mean rank (13 Nov fix)
     return (r[:len(p)].sum() - len(p) * (len(p) + 1) / 2) / (len(p) * len(n))
 
 
@@ -168,8 +168,75 @@ def compress_gain(model, cfg, S_slot, vis, S_=None):
             msg.append(f"(d) RELATIONS unavailable ({type(e8).__name__}: {e8})"[:160])
         print(f"  [COMPRESSION GAIN | visit {vis + 1}] from the trunk (store off), Re-DocRED documents of the {len(seen)} domains visited, gold mentions || "
               + (" || ".join(msg) if msg else "no mentions yet"), flush=True)
+        if int(getattr(cfg, 'inf_extract_gain', 0)):                         # 13 Nov EXTRACTION GAIN (readout): can the trunk tell the reader what to keep?
+            try: _extract_gain(model, cfg, G, MT, seen, S_slot, run, vis, rs)
+            except Exception as e7: _fail('inference.compress:extract'); print(f"  [EXTRACTION GAIN | visit {vis + 1}] unavailable ({type(e7).__name__}: {e7})"[:240], flush=True)
     except Exception as e:
         _fail('inference.compress'); print(f"  [COMPRESSION GAIN] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+def _extract_gain(model, cfg, G, MT, seen, S_slot, run, vis, rs):
+    """13 Nov EXTRACTION GAIN (inf_extract_gain; readout, nothing written): extraction driven by the trunk, not by rules. CANDIDATE RECORDS =
+    every pair of gold name mentions in one sentence, the text from the first to the second <= 60 characters ('Dresden, the capital of
+    Saxony') - high recall, low precision. A record's worth: bits it saves the trunk on OTHER text where the same two names meet again (another
+    benchmark document of a domain visited, else a later sentence of the same document): the second name there, read after the record vs
+    after the record with its first name replaced by 'Thing'. Label-free; scored against gold (the pair holds a gold relation): AUC related
+    vs not for the WORDS BETWEEN beyond the names (record gain minus names-only gain - co-occurrence alone helps any associated pair; offline
+    stand-in AUC 0.54 vs 0.45 for the raw gain), the whole record, the names only, and closeness; share related among the top quarter kept.
+    If this separates related pairs, and better as the trunk learns, the trunk can supervise what the reader keeps."""
+    import collections as _co
+    TH = b'Thing'; n2g = _co.defaultdict(set)
+    for k_, v_ in G['ent_name'].items(): n2g[v_].add(int(k_))
+    rel = G['_rel']; nmax = int(getattr(cfg, 'inf_extract_n', 1500)); occ = _co.defaultdict(list); C = []
+    for d in seen:
+        docs = G['docs'].get(str(d), []); ments = MT.get(str(d), [])
+        for di, t in enumerate(docs):
+            ms = ments[di] if di < len(ments) else []
+            sents = [(m.start(), m.end()) for m in re.finditer(r'[^.!?]+[.!?]*', t)]
+            sid = lambda x: next((k for k, (a, b) in enumerate(sents) if a <= x < b), 0)
+            vn = _co.defaultdict(set)
+            for a, b, v in ms: vn[v].add(t[a:b])
+            vg = {v: set().union(*[n2g.get(x, set()) for x in xs]) for v, xs in vn.items()}
+            bys = _co.defaultdict(list)
+            for a, b, v in ms: bys[sid(a)].append((a, b, v))
+            for si, L in bys.items():
+                L = sorted(L)
+                for i in range(len(L)):
+                    for j in range(i + 1, len(L)):
+                        (a0, a1, va), (b0, b1, vb) = L[i], L[j]
+                        if va == vb or b0 < a1 or t[a0:a1] == t[b0:b1]: continue
+                        key = tuple(sorted((t[a0:a1], t[b0:b1])))
+                        occ[key].append((d, di, si, b0, b1, sents[si][0]))
+                        if b1 - a0 <= 60:
+                            C.append(dict(d=d, di=di, si=si, a=(a0, a1), b=(b0, b1), key=key, dist=b0 - a1,
+                                          gold=any((min(x, y), max(x, y)) in rel for x in vg[va] for y in vg[vb])))
+    U = []
+    for c in C:
+        oth = [o for o in occ[c['key']] if o[:2] != (c['d'], c['di'])]; kind = 'other'
+        if not oth: oth = [o for o in occ[c['key']] if o[:2] == (c['d'], c['di']) and o[2] > c['si']]; kind = 'same'
+        if oth: c['tgt'] = oth[int(rs.randint(len(oth)))]; c['kind'] = kind; U.append(c)
+    if len(U) > nmax: U = [U[int(i)] for i in rs.permutation(len(U))[:nmax]]
+    y = np.array([c['gold'] for c in U], bool)
+    if len(U) < 20 or y.sum() < 5 or (~y).sum() < 5:
+        print(f"  [EXTRACTION GAIN | visit {vis + 1}] too few candidate records whose names meet again ({len(U)}, related {int(y.sum())})", flush=True); return
+    A = {k: [] for k in ('w', 'o', 'pw', 'po')}
+    for c in U:
+        t = G['docs'][str(c['d'])][c['di']].encode('latin-1', 'replace'); (a0, a1), (b0, b1) = c['a'], c['b']
+        d2, di2, si2, y0, y1, s0 = c['tgt']; t2 = G['docs'][str(d2)][di2].encode('latin-1', 'replace')
+        pre = t2[max(s0, y0 - 36):y0]; tg = t2[y0:y1][:24]; sl = int(S_slot(d2))
+        for k, r in (('w', t[a0:b1] + b' .'), ('o', TH + t[a1:b1] + b' .'), ('pw', t[a0:a1] + b' ' + t[b0:b1] + b' .'), ('po', TH + b' ' + t[b0:b1] + b' .')):
+            q = r + b' ' + pre; A[k].append((sl, q + tg, len(q), len(q) + len(tg)))
+    v = {k: run(x) for k, x in A.items()}
+    g = v['o'] - v['w']; pg = v['po'] - v['pw']; wb = g - pg; cl = -np.array([c['dist'] for c in U], float)
+    kind = np.array([c['kind'] == 'other' for c in U])
+    def top(sc):
+        o = np.argsort(-sc)[:max(1, len(sc) // 4)]; return float(y[o].mean())
+    print(f"  [EXTRACTION GAIN | visit {vis + 1}] from the trunk (store off): {len(U)} candidate records (name pairs in one sentence, <= 60 characters; "
+          f"names meet again in another document {int(kind.sum())}, later in the same one {int((~kind).sum())}), related {y.mean():.3f} || AUC related vs not: "
+          f"WORDS BETWEEN beyond the names {_cg_auc(wb[y], wb[~y]):.3f}, whole record {_cg_auc(g[y], g[~y]):.3f}, names only {_cg_auc(pg[y], pg[~y]):.3f}, "
+          f"closeness {_cg_auc(cl[y], cl[~y]):.3f} | top quarter kept, related: words between {top(wb):.3f}, whole record {top(g):.3f}, closeness {top(cl):.3f} "
+          f"(base {y.mean():.3f}) | mean bits saved, related vs not: whole record {g[y].mean():+.2f} vs {g[~y].mean():+.2f}, words between {wb[y].mean():+.2f} vs "
+          f"{wb[~y].mean():+.2f} | other-document targets only: words between AUC {_cg_auc(wb[y & kind], wb[~y & kind]):.3f} (n {int(kind.sum())})", flush=True)
 
 
 def _sl_initials(y):
