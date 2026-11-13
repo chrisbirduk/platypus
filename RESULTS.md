@@ -751,6 +751,25 @@ writes (store off), taught vs held back: visit 3 RIGHT 0.07 (96 questions) vs 0.
 0.09 vs 0.03, WRONG 0.02 vs 0.00** - right inferences retained, wrong ones fading (about 2.5 standard errors; visit 3 showed the opposite).
 Provisional until visits 6-10.
 
+### Do wrong inferences fade while right ones stay? (tools/false_fade.py, 13 November, late; stand-in trunk, two seeds)
+
+120 RIGHT inferences (A and C gold-related in a Re-DocRED training document) and 120 WRONG ones (A with a same-type name from another
+document, never related), taught as 'A is connected to C.' (300 steps, 8 fact rows + 24 text windows), then 600 steps of reading in two
+arms. Recall: C first among 10 same-type names after 'It is on record that A is connected to ' (chance 0.10).
+
+| | seed 0 right / wrong | seed 1 right / wrong |
+|---|---|---|
+| before teaching | 0.28 / 0.10 | 0.22 / 0.12 |
+| taught | 0.39 / 0.25 | 0.32 / 0.33 |
+| + reading the EVIDENCE documents (those naming the pairs) | **0.39 / 0.11** | **0.33 / 0.21** |
+| + reading OTHER documents | 0.27 / 0.10 | 0.19 / 0.13 |
+
+**Positive (both seeds): wrong inferences fade whatever is read; right ones keep their taught gain (+0.11 above before-teaching in both
+seeds) only when later reading supports them, and fall back without it.** Continued reading filters written inferences - a plausible
+mechanism for the GPU cg27a_rti visit 4 pattern (right 0.09 vs wrong 0.02). In cg27a_rti the trunk never reads the distant documents the
+inferences come from, which may be why its weights-level signal is faint: the next build should have the trunk read them. Small trunk;
+about 2-3 standard errors per seed.
+
 ### Universal schema and typed, coupled inference (tools/typed_infer.py, 13 November, late; Re-DocRED + 30k distant documents)
 
 UNIVERSAL SCHEMA (Riedel et al. 2013): PPMI over 15,285 wordings x 609,864 ordered pairs (32,662 seen 2+ times), SVD 64, 64 latent
