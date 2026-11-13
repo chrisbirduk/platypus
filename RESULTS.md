@@ -597,6 +597,28 @@ Tested on 710 held-out documents (15,609 candidates, 24.2% related).
 - AUC helpers corrected the same day: tied scores now share their mean rank. Before, discrete scores (closeness, wording frequency, letter
   triples) read below 0.5; e.g. closeness 0.49 -> 0.59 in tools/extract_gain.py. Earlier letter-triple HARD figures (0.17-0.35) were biased.
 
+### The surprised store: keep what the trunk does not already predict (tools/surprise_store.py, 13 November; SLIMM)
+
+The stand-in trunk (192 wide, 6,000 steps; never saw these documents) reads 600 Re-DocRED training documents (4,798 sentences, 2.16 bits per
+byte); every record (two names in one sentence, words between) gets the trunk's surprise; 'already knows' = the true second name costs the
+fewest bits among up to 10 names of the document (related records 0.161 vs chance 0.101: this trunk knows little).
+
+| Keep a quarter of 12,459 records by | related | recall | of kept related facts, trunk does NOT know | NEW true facts per 100 kept |
+|---|---|---|---|---|
+| random | 0.246 | 0.238 | 0.876 | 21.6 |
+| **surprise over the record** | **0.292** | **0.282** | **0.926** | **27.0** |
+| surprise on the second name | 0.250 | 0.242 | 0.966 | 24.2 |
+| surprise on the words between | 0.241 | 0.233 | 0.856 | 20.6 |
+| predictable record (least surprise) | 0.229 | 0.221 | 0.714 | 16.3 |
+| closeness of the names (no trunk) | 0.284 | 0.275 | 0.865 | 24.6 |
+
+- **Surprise-gated storage keeps 25% more new true facts per record than random (27.0 vs 21.6) and 66% more than keeping the predictable
+  (16.3)**: it keeps more real relations and, among them, more the trunk does not already know.
+- Sentences: the most surprising quarter hold 1.25 related records per sentence, the most predictable 0.55 (partly because surprising sentences
+  hold more names). Surprise on the second name alone best avoids storing what the trunk knows (0.966) but does not pick relations.
+- The stand-in knows few facts (0.16), so 'already known' filtering matters little here; the model's trunk knows more (known-fact recall
+  0.53-0.78 on the GPU), where this gate should save more.
+
 ### Brain-inspired tests: relation identity from name-free codes; inference at reading time (13 November)
 
 **Relation identity** (tools/relation_free.py): records with both names masked ('[X] , the capital of [Y]', plus 3 words each side), Re-DocRED
