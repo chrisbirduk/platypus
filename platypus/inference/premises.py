@@ -232,3 +232,86 @@ def premises_readout(model, cfg, S_slot, vis):
             msg.append("INFERENCE A-C (distant labels; offline threshold: 0.13 at premises 0.38, 0.31 at 0.70): " + " | ".join(res))
         except Exception as e: _fail('inference.premises:infer'); msg.append(f"INFERENCE unavailable ({type(e).__name__}: {e})"[:160])
     print(f"  [PREMISES AT SCALE | visit {vis + 1}] " + " || ".join(msg) + f"  (trunk scoring {len(newd) + len(newb)} records {tsc:.0f} s; total {time.time() - t0:.0f} s)", flush=True)
+    if int(getattr(cfg, 'inf_rti_write', 0)) and scd is not None:
+        try: _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vis)
+        except Exception as e: _fail('inference.premises:rti'); print(f"  [REAL-TEXT INFERENCE] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
+
+
+_RTI_R = 'is connected to'
+
+
+def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vis):
+    """13 Nov END-TO-END REAL-TEXT INFERENCE (inf_rti_write; with inf_premises). READ (the premises store) -> CHOOSE premises (the top
+    inf_rti_keep of scored distant records by trunk surprise + block association, label-free) -> INFER A-C through a shared name B from another
+    document, kept only with 2+ distinct bridges -> CHECK by the model: after 'A is connected to ', does the trunk rank C among the top
+    inf_rti_rank of C and 9 names of C's class? (the trunk's own agreement, no labels) -> WRITE the passing ones (at most inf_rti_max a readout)
+    as facts 'A is connected to C' into the question pool (_rti_write). Truth where checkable: A and C named in one distant document, related
+    by its (Wikidata) labels."""
+    t0 = time.time(); rs = np.random.RandomState(int(cfg.seed) + 9191 + vis); nD = len(RD)
+    dn = collections.defaultdict(set)
+    for i in range(nD): dn[RD[i][1]].add(RD[i][0]); dn[RD[i][2]].add(RD[i][0])
+    LAB = _PM['LAB']; rk = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable') / max(1, len(x) - 1)
+    sc = rk(scd['trunk surprise']) + rk(scd['block association']); keep = ixd[np.argsort(-sc)[:int(len(ixd) * float(getattr(cfg, 'inf_rti_keep', 0.1)))]]
+    nb = collections.defaultdict(list); PR = collections.defaultdict(set)
+    for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0])); nb[RD[i][2]].append((RD[i][1], RD[i][0]))
+    for i in keep:
+        for B_, C_ in ((RD[i][1], RD[i][2]), (RD[i][2], RD[i][1])):
+            if len(dn[B_]) > 200: continue
+            for A_, dA in nb[B_]:
+                if dA != RD[i][0] and A_ != C_: PR[(A_, C_)].add(B_)
+    W = _PM.setdefault('rti', {}); done = {frozenset(k) for k in W}
+    P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= 2 and frozenset(k) not in done and k[0] in NI and k[1] in NI]
+    P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
+    if not P2:
+        print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] no new proposals with 2+ bridges ({len(PR)} proposals from {len(keep)} premises)", flush=True); return
+    byc = collections.defaultdict(list)                                       # distractors: names of C's class seen 3+ times in the store
+    for n, i in NI.items():
+        if nall[i] >= 3: byc[int(gn[i])].append(n)
+    seqs, meta = [], []
+    for (A_, C_), nbr in P2:
+        pool = [n for n in byc[int(gn[NI[C_]])] if n not in (A_, C_)]
+        if len(pool) < 9: continue
+        cands = [C_] + [pool[j] for j in rs.choice(len(pool), 9, replace=False)]; q = f"{A_} {_RTI_R} ".encode('utf-8', 'replace')
+        for c in cands:
+            cb = c.encode('utf-8', 'replace'); seqs.append((q + cb + b'.', len(q), len(q) + len(cb)))
+        meta.append((A_, C_, nbr, [len(c.encode('utf-8', 'replace')) for c in cands]))
+    dsl = 1 if 1 in seen else seen[-1]; was = model.training; model.eval()
+    try: bt = _cg_bits(model, int(S_slot(dsl)), seqs, bs=256) if seqs else np.zeros(0)
+    finally: model.train(was)
+    rows = []; nmax = int(getattr(cfg, 'inf_rti_max', 200)); rmax = int(getattr(cfg, 'inf_rti_rank', 3))
+    for k, (A_, C_, nbr, ls) in enumerate(meta):
+        v = bt[10 * k:10 * k + 10] / np.array(ls); rank = int((v < v[0]).sum())   # bits per byte; 0 = C is the trunk's first choice
+        chk = bool(dn[A_] & dn[C_]); tr = (frozenset((A_, C_)) in LAB) if chk else None
+        rows.append((A_, C_, nbr, rank, tr))
+    ok = [r for r in rows if r[3] < rmax]; ok.sort(key=lambda r: (r[3], -r[2])); wr = ok[:nmax]
+    for A_, C_, nbr, rank, tr in wr: W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=tr, bridges=nbr, rank=rank)
+    f = lambda L: (f"{np.mean([r[4] for r in L if r[4] is not None]):.3f} of {sum(r[4] is not None for r in L)} checkable" if any(r[4] is not None for r in L) else "none checkable")
+    ra = np.array([r[3] for r in rows if r[4] is not None], float); ta = np.array([r[4] for r in rows if r[4] is not None], bool)
+    au = _cg_auc(-ra[ta], -ra[~ta]) if ta.any() and (~ta).any() else float('nan')
+    print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] READ {nD} distant records -> CHOSE {len(keep)} premises (top {float(getattr(cfg, 'inf_rti_keep', 0.1)):.0%} by surprise + association) "
+          f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= 2)} with 2+ bridges, {len(rows)} new ones checked -> CHECK (the trunk ranks C in its top {rmax} of 10 "
+          f"after 'A {_RTI_R}'): passed {len(ok)}, right {f(ok)}; failed {len(rows) - len(ok)}, right {f([r for r in rows if r[3] >= rmax])} | the check tells right from wrong: AUC {au:.3f} "
+          f"-> WROTE {len(wr)} (right {f(wr)}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
+
+
+def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
+    """THE ONE MODEL CHANGE of cg27a_rti (inf_rti_write 1): real-text inferences that passed the check join the question pool as facts
+    'A is connected to C', taught by the interleaved rows like any fact; a fifth is held back by the pool's own hash (control). READOUT: recall
+    from the trunk (test wording 'It is on record that A is connected to ', store and memory off) of inferences written at an earlier readout,
+    taught vs held back, split by whether the inference is RIGHT, WRONG (a false memory if recalled) or unknown."""
+    from platypus.inference.distill import _dt_recall
+    W = _PM.get('rti') or {}
+    if not W:
+        print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
+    have = {repr(e['key']) for e in ents + held}; T_, H_ = [], []
+    for (A_, C_), w in W.items():
+        e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'])
+        if repr(e['key']) in have: continue
+        (H_ if ctl(e) else T_).append(e)
+    old = lambda L, t: [e for e in L if e['rm'] < vis and e['truth'] is t]
+    g = lambda d: f"{d['facts'][0]:.2f} ({d['facts'][1]})"
+    rec = {t: (_dt_recall(model, S_slot, old(T_, t)), _dt_recall(model, S_slot, old(H_, t))) for t in (True, False, None)}
+    print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] {len(W)} inferences written ({sum(1 for w in W.values() if w['vis'] == vis)} this readout) -> question pool: {len(T_)} taught, "
+          f"{len(H_)} held back || FROM THE TRUNK, written at an earlier readout, TAUGHT vs HELD BACK: RIGHT inferences {g(rec[True][0])} vs {g(rec[True][1])} | WRONG ones "
+          f"(false memories if recalled) {g(rec[False][0])} vs {g(rec[False][1])} | not checkable {g(rec[None][0])} vs {g(rec[None][1])}", flush=True)
+    return ents + T_, held + H_

@@ -620,6 +620,13 @@ class Config:
     inf_premises_m=128
     inf_premises_score_max=400000   #     new distant records scored by the trunk per readout at most (sampled)
     inf_premises_ac_max=600000      #     A-C inference over a fixed sample of at most this many scored records (time)
+    inf_rti_write=0                 #   13 Nov END-TO-END REAL-TEXT INFERENCE (MODEL CHANGE when on; needs inf_premises): premises chosen label-free from the
+                                    #     premises store, A-C inferred through a shared name (2+ bridges), CHECKED by the trunk (C in its top inf_rti_rank of 10
+                                    #     after 'A is connected to '), the passing ones WRITTEN into the question pool as facts (a fifth held back)
+    inf_rti_keep=0.1                #     share of scored records kept as premises (by trunk surprise + block association)
+    inf_rti_n=600                   #     new 2+ bridge proposals checked per readout (most bridges first)
+    inf_rti_rank=3                  #     the check: C ranked in the trunk's top N of C and 9 names of its class
+    inf_rti_max=200                 #     inferences written per readout at most
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read

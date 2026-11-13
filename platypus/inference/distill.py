@@ -1708,6 +1708,11 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             if int(getattr(cfg, 'inf_distill_opalg', 0)): _dw_opalg(model, cfg, S_, ents, held, vis)                       #  opalg diverged
             if int(getattr(cfg, 'inf_distill_relmod', 0)): _dw_relmod(model, cfg, ents, held, vis)                         #  after sleep 1)
             if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_reader_chunk', 0)): _dw_relmod_real(model, cfg, S_, vis)
+        if int(getattr(cfg, 'inf_rti_write', 0)) and int(getattr(cfg, 'inf_premises', 0)):   # 13 Nov END-TO-END REAL-TEXT INFERENCE (one model change)
+            try:
+                from platypus.inference.premises import rti_write
+                ents, held = rti_write(model, cfg, S_slot, ents, held, ctl, vis)
+            except Exception as e9: _fail('inference.premises:rti_write'); print(f"  [REAL-TEXT INFERENCE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_relmod', 0)) and int(getattr(cfg, 'inf_distill_relmod_write', 0)):
             try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:
