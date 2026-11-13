@@ -17,7 +17,9 @@ RM_INIT=split grows each configuration from the largest smaller one (classes spl
 from tools/name_types.py context types.
 RM_SUB=<fraction>: the block model is fitted on the consistency-teacher learner's top records only (a cleaner store); every other name and
 wording is then classed by all its records under the fitted table (the extractor cleans the store, compression finds classes on it).
-Usage: python3 tools/record_mdl.py   env RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
+RM_EXTRA=<documents>: the store also holds the records of the first documents of DocRED's distant training set (tools/distant_records.py,
+RM_DIST); more records per name. Evaluation stays on Re-DocRED (types: names that occur in Re-DocRED).
+Usage: python3 tools/record_mdl.py   env RM_EXTRA, RM_SUB, RM_INIT, RM_K (name classes, default 4,8,16,32), RM_M (wording classes, default 8,32,128), RM_OUT"""
 import os
 import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -29,28 +31,41 @@ SCR = '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpa
 OUT = os.environ.get('RM_OUT', SCR + '/record_mdl.json')
 KS = [int(x) for x in os.environ.get('RM_K', '4,8,16,32').split(',')]; MS = [int(x) for x in os.environ.get('RM_M', '8,32,128').split(',')]
 N = len(C)
-# ---- records: name ids, wording ids (wordings seen < 3 times backed off to their last word, then to their length)
-fc = collections.Counter(c['f'] for c in C); lw = lambda c: '~' + (c['mid'][-1].lower() if c['mid'] else '')
-lc = collections.Counter(lw(c) for c in C)
-def wk(c):
-    if fc[c['f']] >= 3: return c['f']
-    k = lw(c); return k if lc[k] >= 3 else '~?%d' % min(len(c['mid']), 6)
+EXTRA = int(os.environ.get('RM_EXTRA', 0))                                      # 13 Nov 18:40: + store records of the first EXTRA documents of
+RX = []; XTY = {}                                                               #   DocRED's distant set (tools/distant_records.py), fit only
+if EXTRA:
+    import pickle
+    _dr = pickle.load(open(os.environ.get('RM_DIST', SCR + '/distant/records.pkl'), 'rb')); XTY = _dr['types']
+    RX = [r for r in _dr['rec'] if r[0] < EXTRA]; del _dr
+# ---- records: name ids, wording ids (wordings seen < 3 times in the whole store backed off to their last word, then to their length)
+RA = [(c['cA'], c['f'], '~' + (c['mid'][-1].lower() if c['mid'] else ''), len(c['mid']), c['cB']) for c in C] + [(r[1], r[3], '~' + r[4], r[5], r[2]) for r in RX]
+del RX
+fc = collections.Counter(r[1] for r in RA); lc = collections.Counter(r[2] for r in RA)
+def wk_(r):
+    if fc[r[1]] >= 3: return r[1]
+    return r[2] if lc[r[2]] >= 3 else '~?%d' % min(r[3], 6)
+wk = lambda c: wk_((c['cA'], c['f'], '~' + (c['mid'][-1].lower() if c['mid'] else ''), len(c['mid']), c['cB']))
 NI = {}; WI = {}
-a = np.array([NI.setdefault(c['cA'], len(NI)) for c in C]); b = np.array([NI.setdefault(c['cB'], len(NI)) for c in C])
-w = np.array([WI.setdefault(wk(c), len(WI)) for c in C]); NN, NW = len(NI), len(WI); NAMES = list(NI)
-P(f"records {N}, names {NN}, wordings {NW} (exact {sum(1 for k in WI if not k.startswith('~'))}, backed off {sum(1 for k in WI if k.startswith('~'))})")
-# gold entity type per name (evaluation only)
+for c in C: NI.setdefault(c['cA'], len(NI)); NI.setdefault(c['cB'], len(NI))
+NR = len(NI)                                                                    # names 0..NR-1 are Re-DocRED's
+Af = np.array([NI.setdefault(r[0], len(NI)) for r in RA]); Bf = np.array([NI.setdefault(r[4], len(NI)) for r in RA])
+Wf = np.array([WI.setdefault(wk_(r), len(WI)) for r in RA]); del RA
+a, b, w = Af[:N], Bf[:N], Wf[:N]; NN, NW = len(NI), len(WI); NAMES = list(NI)
+P(f"store records {len(Af)} (Re-DocRED {N}, distant documents {EXTRA}: {len(Af) - N}), names {NN} (Re-DocRED {NR}), wordings {NW} "
+  f"(exact {sum(1 for k in WI if not k.startswith('~'))})")
+# gold entity type per name (evaluation only; names outside Re-DocRED: the distant set's automatic types, used only in the bucket report)
 gtc = collections.defaultdict(collections.Counter)
 for d in docs:
     for vs in d['vertexSet']:
         cn_ = collections.Counter(m['name'] for m in vs).most_common(1)[0][0]
         for m in vs: gtc[cn_][m.get('type', 'X')] += 1
-GT = np.array([gtc[n].most_common(1)[0][0] if gtc[n] else 'X' for n in NAMES])
+GT = np.array([gtc[n].most_common(1)[0][0] if gtc[n] else XTY.get(n, 'X') for n in NAMES])
+INR = np.arange(NN) < NR
 SUB = float(os.environ.get('RM_SUB', 0))                                        # 13 Nov 18:30: fit on the extractor's top records only
 lr_ = LogisticRegression(C=1.0, max_iter=2000).fit(Xtr, teacher_tr >= np.percentile(teacher_tr, 75))
 XA = feats(np.arange(N)); s_all = lr_.decision_function(XA)
-FI = np.argsort(-s_all)[:int(N * SUB)] if SUB else np.arange(N)
-fa, fb, fw = a[FI], b[FI], w[FI]; NF = len(FI); one = np.ones(NF)
+FI = np.argsort(-s_all)[:int(N * SUB)] if SUB else np.arange(len(Af))
+fa, fb, fw = Af[FI], Bf[FI], Wf[FI]; NF = len(FI); one = np.ones(NF)
 if SUB: P(f"FITTED ON the consistency-teacher learner's top {SUB:.0%} of records: {NF}, related {y[FI].mean():.3f}")
 
 
@@ -90,7 +105,7 @@ def dl(gn, gw, K, M):
     T = table(gn, gw, K, M); d = -np.log2(T[gn[fa], gw[fw], gn[fb]] / NF).sum()
     for ids, g in ((fa, gn[fa]), (fb, gn[fb]), (fw, gw[fw])):
         ni = np.bincount(ids)[ids]; ng = np.bincount(g)[g]; d += -np.log2(ni / ng).sum()
-    model = 0.5 * K * M * K * np.log2(NF) + len(set(fa) | set(fb)) * np.log2(max(K, 1)) + len(set(fw)) * np.log2(max(M, 1))
+    model = 0.5 * K * M * K * np.log2(NF) + len(np.union1d(fa, fb)) * np.log2(max(K, 1)) + len(np.unique(fw)) * np.log2(max(M, 1))
     tc = (T / NF * np.log2(np.where(T > 0, T * NF * NF / (T.sum((1, 2), keepdims=True) * T.sum((0, 2), keepdims=True) * T.sum((0, 1), keepdims=True)), 1))).sum()
     return d + model, d, model, tc
 
@@ -113,7 +128,7 @@ if INIT.startswith('nt:'):                                                      
 for K in KS:
     for M in MS:
         best = None; prev = [km for km in FITS if km[0] <= K and km[1] <= M]
-        for s in range(3):
+        for s in range(int(os.environ.get('RM_R', 3))):
             ini = None
             if INIT == 'split' and prev:                                       # grow from the largest smaller fit: each class split at random
                 K0, M0 = max(prev, key=lambda km: km[0] * km[1]); g0, h0 = FITS[K0, M0]
@@ -127,7 +142,18 @@ for K in KS:
           f"class triple shares {D[3]:.3f} bits | name classes vs gold types: purity {purity(gn, nocc):.3f}, NMI "
           f"{normalized_mutual_info_score(np.repeat(GT, nocc), np.repeat(gn, nocc)):.3f}  ({time.time() - T0:.0f}s)")
 KBEST = min(FITS, key=lambda km: dl(*FITS[km], *km)[0]); P(f"MDL choice: K {KBEST[0]}, M {KBEST[1]}")
-json.dump(dict(k=[f'{K}x{M}' for K, M in FITS], types={n: [int(FITS[km][0][i]) for km in FITS] for i, n in enumerate(NAMES)}), open(OUT, 'w'))
+json.dump(dict(k=[f'{K}x{M}' for K, M in FITS], types={n: [int(FITS[km][0][i]) for km in FITS] for i, n in enumerate(NAMES) if i < NR}), open(OUT, 'w'))
+nall = np.bincount(fa, minlength=NN) + np.bincount(fb, minlength=NN)             # 13 Nov 18:45: by store records per name (Re-DocRED names)
+P(f"Re-DocRED names by store records: " + ", ".join(f"{lo}-{hi}: {int((INR & (nall >= lo) & (nall <= hi)).sum())}" for lo, hi in ((1, 2), (3, 9), (10, 49), (50, 10 ** 9))))
+for km in sorted({KBEST, max(FITS, key=lambda km: km[0] * 1000 + km[1])}):
+    g_ = FITS[km][0]; row = []
+    for lo, hi in ((1, 2), (3, 9), (10, 49), (50, 10 ** 9)):
+        m = INR & (nall >= lo) & (nall <= hi)
+        if m.sum() < 20: continue
+        pur = sum(max((m & (g_ == c) & (GT == t)).sum() for t in set(GT[m & (g_ == c)])) for c in set(g_[m])) / m.sum()
+        maj = collections.Counter(GT[m]).most_common(1)[0][1] / m.sum()
+        row.append(f"{lo}-{hi if hi < 1e9 else '+'}: purity {pur:.2f} (majority {maj:.2f}) NMI {normalized_mutual_info_score(GT[m], g_[m]):.2f}")
+    P(f"   K {km[0]} M {km[1]} by records per name (Re-DocRED names, unweighted): " + " | ".join(row))
 gn, gw = FITS[KBEST]
 for g in range(KBEST[0]):
     m = gn == g; tc_ = collections.Counter(dict((t, int(nocc[m & (GT == t)].sum())) for t in np.unique(GT[m])))
