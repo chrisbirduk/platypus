@@ -639,6 +639,29 @@ into K classes and wordings into M classes by information-theoretic co-clusterin
   per name, not the compression principle. The Re-DocRED store is too small for most names, matching tools/name_types.py (T2a, 10 MB too few
   contexts).
 
+**More text per name: the volume curve** (tools/distant_records.py, record_mdl.py RM_EXTRA; DocRED's distant training set, 101,873 Wikipedia
+documents with no overlap with Re-DocRED, read into store records the same way; its labels are not used; split warm starts, 2 restarts, K
+4-64, M 32/128; evaluation unchanged, on Re-DocRED gold; one run each):
+
+| store | records | Re-DocRED names with 10+ records | name classes: purity / NMI (best) | relation cue AUC (best; gold types 0.80) | learner + block association, premise precision top 5% / 10% (learner alone 0.54 / 0.45) |
+|---|---|---|---|---|---|
+| Re-DocRED only | 79k | 5% | 0.50 / 0.16 | 0.61 | 0.48-0.53 / 0.42-0.45 |
+| + 10k distant documents | 286k | 12% | 0.56 / 0.20 | 0.61 | 0.46-0.55 / 0.38-0.45 |
+| + 30k | 704k | 21% | 0.67 / 0.32 | 0.65 | 0.50-0.55 / 0.42-0.49 |
+| + 101,873 (all) | 2.2M | **33%** | **0.72 / 0.37** | **0.68** (K 4 M 128 name-class pair + wording class; pair alone 0.66) | **0.60 / 0.52-0.53** |
+
+- **Positive: compression finds types once names have enough records**, and the relation cue improves with text, monotonically from 10k.
+  All-text classes are recognisable: cities, countries, US states, years, nationalities, given names, numbers, software products, works
+  (MDL choice K 16, M 128). By records per name (all text, K 16): 1-2 records purity 0.41 (majority 0.27), 3-9 0.57, 10-49 0.62, 50+ 0.70.
+- **Premise precision:** at full volume the block association adds to the label-free learner for the first time (top 5% 0.54 -> 0.60, top
+  10% 0.45 -> 0.53, held-out documents). Below full volume it does not. One run; the gain is at the target's lower edge (0.6).
+- **But inference from that store gets worse:** keeping the top 10% by learner + association (premise precision 0.53) gives A-C gold 0.20,
+  below the learner's own top 10% (0.46 precision, A-C 0.28). Type association favours records of relations that do not compose through a
+  shared name (e.g. nationality and country pairs), so premise precision alone does not predict inference (as the premise threshold test's
+  quality-vs-random gap also showed, in the other direction).
+- Trend: about +0.03 relation-cue AUC per tripling of text from 10k documents; on that trend the gold type cue (0.80) is several orders of
+  magnitude of text away, so types from volume alone close part of the gap, not all of it.
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
