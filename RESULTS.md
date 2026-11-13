@@ -525,6 +525,12 @@ entities (He 55, It 36, She 15, ...; chance 0.205). TITLE (the document's first 
 most recent 0.148; substitution with the trained trunk 0.197, untrained 0.213 (He 0.11, She 0.07, It 0.25). **The stand-in trunk cannot
 resolve pronouns; the title heuristic resolves more than half** (Wikipedia openings are about their title).
 
+**Local check of the new default readouts (GATEL = the 4x real-text run + compression gain every 2nd visit, probe 64, gated answers):**
+final BPC 2.996 / forgetting -0.158 - identical to the run without them (readouts only); no errors, FAILURES none. GATED ANSWERS (threshold
+calibrated at the previous sleep, applied to the new questions) at visits 8-10: never-read questions given a stored name 0.35 / 0.28 / 0.31
+ungated -> **0.17 / 0.15 / 0.15** gated; known facts right overall 0.18 / 0.16 / 0.14 ungated -> 0.05 / 0.11 / 0.08 gated (the small local
+model knows few facts, so the gate costs much of what it knows; the GPU, where known-right confidence is 0.59-0.66, is the real test).
+
 ### Refusal rows, replay by storage check, abstention, compression gain on the real trunk (cg27a_refuse to visit 6, cg27a_rtxsp to visit 4; seed 4; 12 November, night; both stopped by the author)
 
 Both = cg27a_rtx16 + ONE change: `cg27a_refuse` - a fifth of the question rows ask about FRESH names never read (taught wordings), answered
