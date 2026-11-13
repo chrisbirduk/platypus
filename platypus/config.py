@@ -597,6 +597,9 @@ class Config:
                                     #     pattern is in place - binding gain at joins of capitalised words (units) and mutual compression gain between
                                     #     mentions (links), against the Re-DocRED gold mentions of the embedded documents read (needs inf_bench)
     inf_compress_n=600              #     joins sampled (pairs: up to 10x as many)
+    inf_extract_gain=0              #   13 Nov READOUT: EXTRACTION GAIN inside the compression-gain readout (inference.compress): does a candidate record (two names in one
+                                    #     sentence and the words between) save the trunk bits where the names meet again, more for related pairs? (needs inf_compress_gain)
+    inf_extract_n=1500              #     candidate records sampled
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off
     inf_distill_bench_recall=1      #   12 Nov READOUT (with inf_bench): REAL-TEXT RECALL from the weights of benchmark relations in documents read
