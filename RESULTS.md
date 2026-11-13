@@ -505,6 +505,62 @@ ALIGNMENT CONTROL (facts only read, from the weights; ledger): never asked 0.00 
 (replaynoal) vs 0.00 / 0.04 / 0.02 (rtx) and 0.09 at visit 4 (cg27a_replay); taught 0.22 / 0.43 / 0.43 vs 0.25 / 0.43 / 0.44. No
 difference through visit 4; the decisive visits were not run.
 
+### cg27a_link: store linking and prequential bits (GPU, seed 4, 13 November; visits 1-6 so far)
+
+cg27a_rtx16 + inf_store_link 1 + inf_preq 1. BPC within seed noise of cg27a_rtxt at every visit (largest +0.016 at visit 6); local safety
+identical to the baseline (-0.158 / 2.996). Linking feeds only S_['relc'] (readouts), so nothing in training changes.
+- **Letter links: the 1.00 'same entity' printed at every visit is an artefact.** The check counted a link right when the two names
+  shared ANY distinctive benchmark word - true of every tail link by construction ('Smith' / 'John Smith'). Strict check (both names gold
+  mentions of one entity; added 13 November, compress.py): **0.58 (31)** on 50 benchmark documents locally against 1.00 (18) lenient;
+  offline on the 500 dev documents the same letter rule is 0.51 (964 pairs). Letter links are roughly half right, not all right.
+- **Compression links: 0 of 6** on benchmark entities (lenient check), 565 links by visit 5; median gain 4-5 bits.
+- Relation substitution AUC 0.598 / 0.642 / 0.606 at visits 2 / 4 / 6 (best same-type candidate 0.153 vs chance 0.086 at visit 6): weak
+  and flat, not rising.
+- Prequential bits on held-out text of the domains read: all bytes 2.023 -> 1.881 (visits 1-5); known names 2.2-2.3 vs unknown 3.5-5.1
+  bits per byte. NEXT-domain figures are invalid in this run (read through an untrained slot; fixed for cg27a_rtxw).
+- Gate (threshold from the previous sleep), never-read false vs ungated: 0.40 / 0.35 / 0.27 / 0.10 vs 0.63 / 0.65 / 0.55 / 0.56 at visits
+  3-6; right overall 0.41 / 0.33 / 0.50 / 0.34 vs ungated 0.44 / 0.39 / 0.53 / 0.53. Smoothed threshold: false 0.40 / 0.43 / 0.33 / 0.16,
+  right 0.41 / 0.36 / 0.52 / 0.39 - steadier.
+
+### Rules from real facts: the miner, not the amount of text (tools/dataset_volume.py, tools/count_miner.py, tools/count_miner_reader.py; 13 November)
+
+Re-DocRED train + dev (3,553 documents, 93,278 gold facts, local copy); 20% of facts held out; proposals checked against all gold facts on
+pairs Re-DocRED annotates (both entities in one document).
+
+| Documents | _rm_mine (learned snap): rules / proposals gold / writes | COUNTING miner (n >= 20, Wilson z 4 >= 0.7): rules / proposals gold | held-out recovered |
+|---|---|---|---|
+| 262 | 3 / 0.18 / 0 | 1 / 0.42 | 15 |
+| 800 | 2 (both spurious) / 0.00 / **9, all wrong** | 4 / 0.35 | 83 |
+| 1,600 | 1 / 0.04 / 0 | 16 / 0.34 | 219 |
+| 3,553 | out of memory (8 GB) | **36** / 0.33 | 603 |
+
+- **_rm_mine does not scale to real facts** (thousands of names): fewer rules with more text, and at 800 documents a spurious rule passed on
+  4 of 4 and would have written 9 wrong facts. Its n >= 3 at z 1.96 is far too lenient against thousands of candidates. Rule world only.
+- **Exact chain counts find real rules, more with more text**: a region's country from the places in it (0.88 of 992), siblings share a
+  father (0.93 of 119), a track's label and performer from its album (0.91-0.92 of 158-177). 40 s, little memory.
+- **But proposals are 0.33 gold** (0.49 when 3+ rules agree, 0.41 when every chain ends on the same name): rules that hold 0.88-0.96 on
+  subjects with a known answer are far weaker on subjects without one. Proposals are hypotheses, never writes.
+- **Through the reader: no rules at all.** The reader's records on the 3,053 train documents cover 2,903 of 85,932 gold facts (**3.4%**);
+  with gold relation types on those records 0 rules; on its 65,153 raw records (300 frames) 0; on 181,872 benchmark + Wikipedia records,
+  looser bound, 4 punctuation 'rules'. **The reader's fact recall is the blocker for real-text inference.**
+
+### Rescuing compression linking (tools/link_rescue.py, 13 November; Re-DocRED dev 500 documents, stand-in trunk 192 wide, 6,000 steps)
+
+The stand-in's link AUC is 0.56 (the model's 0.74-0.84): compare rows with each other. Candidates: the 12 nearest earlier mentions; pairs
+letters do not link (118,346; 3.3% the same entity).
+
+| Policy | Links | Same entity | Right, of them HARD (no shared word) |
+|---|---|---|---|
+| chance | 118,346 | 0.033 | 3,952 / 727 |
+| top 1.5% by gain (the GPU's link rate) | 1,776 | 0.075 | 133 / 83 |
+| calibrated on letter links (50th-90th percentile) | 8,571-52,090 | 0.040-0.049 | - |
+| one earlier mention per later mention, margin >= 2 bits, capitalised | 509 | 0.191 | 97 / 62 |
+| the same + top 1.5% | 182 | **0.264** | 48 / 35 |
+
+- Calibration on letter links fails here: letter links are only 0.51 right offline, so they are poor positives.
+- **Competition (each later mention picks one earlier mention, by a clear margin) lifts precision 3.5x over the fixed-rate policy and 8x
+  over chance**, and most of what it finds are hard pairs letters can never find. Still far from writable: a vote, or a hypothesis.
+
 ### cg27a_rtxt: title for pronoun in real-text replay, to visit 10 (GPU, seed 4, 13 November)
 
 cg27a_rtx16 + inf_distill_rtx_title 1 (pronoun-led replayed sentences replayed with the document's title for the pronoun). BPC within 0.006 of

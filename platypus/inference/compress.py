@@ -243,22 +243,34 @@ def store_link(model, cfg, S_, S_slot, vis):
             for a, r, b in _chk_records(cfg, S_, bytes(it[i]['s'])):
                 a2, b2 = mp.get(a, a), mp.get(b, b)
                 if (a2, b2) != (a, b) and a2 != b2: RC.setdefault((a2, r), {}).setdefault(b2, []).append(i); nadd += 1
-        prec = {'L': [], 'C': []}
-        if str(getattr(cfg, 'inf_bench', '') or ''):
-            from platypus.inference.probes import _bench
-            t2e = _bench(cfg)['_t2e']
+        prec = {'L': [], 'C': []}; prl = {'L': [], 'C': []}                 # STRICT (13 Nov): both names are gold MENTIONS of one entity;
+        if str(getattr(cfg, 'inf_bench', '') or ''):                          #   the earlier check (any distinctive word shared) passed every
+            from platypus.inference.probes import _bench                      #   tail link by construction ('Smith' / 'John Smith'): lenient, kept
+            G = _bench(cfg); t2e = G['_t2e']
+            n2e = model.__dict__.get('_sl_n2e')
+            if n2e is None:
+                n2e = {}; MT = json.loads(zlib.decompress(base64.b85decode(_BENCH_MENT)).decode('utf-8'))
+                for d_, docs_ in G['docs'].items():
+                    for di_, t_ in enumerate(docs_):
+                        for ma, mb, mv in (MT.get(str(d_), []) or [])[di_] if di_ < len(MT.get(str(d_), [])) else []:
+                            n2e.setdefault(t_[ma:mb].strip().encode('latin-1', 'replace'), set()).add((str(d_), di_, mv))
+                model.__dict__['_sl_n2e'] = n2e
             def ents(x):
                 es = set()
                 for w in x.decode('latin-1').split(): es |= t2e.get(w, set())
                 return es
             for (i, xf), (y, kd) in links.items():
                 ex, ey = ents(xf), ents(y)
-                if ex and ey: prec[kd].append(bool(ex & ey))
+                if ex and ey: prl[kd].append(bool(ex & ey))
+                sx, sy = n2e.get(xf.strip()), n2e.get(y.strip())
+                if sx and sy: prec[kd].append(bool(sx & sy))
         tot = model.__dict__.setdefault('_link_tot', [0, 0, 0]); tot[0] += nlet; tot[1] += ncmp; tot[2] += nadd
         print(f"  [STORE LINKING | visit {vis + 1}] {seen_s} sentences stored since the last sleep | LETTER links {nlet} (on benchmark entities {len(prec['L'])}, "
               f"same entity {np.mean(prec['L']) if prec['L'] else float('nan'):.2f}) | COMPRESSION links {ncmp} of {len(jobs)} candidate pairs (gain >= {bits_min:g} bits; "
               f"median {np.median(gains) if gains else float('nan'):.1f}; on benchmark entities {len(prec['C'])}, same entity {np.mean(prec['C']) if prec['C'] else float('nan'):.2f}) | "
-              f"records ADDED with linked names {nadd} | so far: letter {tot[0]}, compression {tot[1]}, records added {tot[2]}", flush=True)
+              f"records ADDED with linked names {nadd} | so far: letter {tot[0]}, compression {tot[1]}, records added {tot[2]} || same entity checked STRICTLY "
+              f"(both names gold mentions of one entity); LENIENT (any distinctive word shared, as before 13 Nov): letter "
+              f"{np.mean(prl['L']) if prl['L'] else float('nan'):.2f} ({len(prl['L'])}), compression {np.mean(prl['C']) if prl['C'] else float('nan'):.2f} ({len(prl['C'])})", flush=True)
     except Exception as e:
         _fail('inference.compress:store_link'); print(f"  [STORE LINKING] unavailable ({type(e).__name__}: {e})"[:240], flush=True)
 
