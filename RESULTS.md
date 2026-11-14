@@ -810,6 +810,26 @@ Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, 
 (AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
 mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
 
+### Second seeds of the label-free results (14 November, overnight; SPLIT_SEED 1 and 2 = new held-out documents and new train / test pair halves)
+
+| result (held-out Re-DocRED gold) | seed 0 (13 Nov) | seed 1 | seed 2 | verdict |
+|---|---|---|---|---|
+| label-free extractor (consistency teachers -> learner), AUC / precision top 10% / 25% (base 0.24) | 0.627 / 0.45 / 0.38 | 0.617-0.625 / 0.42-0.45 / 0.36-0.37 | 0.625-0.634 / 0.46-0.47 / 0.37-0.39 | **robust** |
+| universal schema, relation identity AUC (30k distant) | 0.658 | 0.649 | 0.658 | **robust** |
+| typed composability top 10%, gold (base 0.105-0.108) | 0.148 | 0.122 | 0.126 | weaker: 1.15-1.4x base |
+| + type coupling, top 10% | 0.160 | 0.120 | 0.130 | not robust |
+| typed hop 2, composability-gated (vs hop 1 of the accepted) | 0.196 (0.160) | 0.174 (0.124) | 0.176 (0.135) | hop 2 above hop 1 in all three at 30k (not at full scale: 0.149 vs 0.144) |
+| A-C confirmed by later reading in a relational wording | 0.359 | 0.363 | 0.360 | **robust: 3.4x base** |
+| 2+ bridges | 0.082 | 0.077 | 0.077 | **below base in all three** |
+| learned composability (wording kinds) top 10% | 0.115 | 0.097 | 0.094 | no gain |
+| stand-in trunk congruence (gain from A, top 3 of 10) | 0.078 | 0.087 | 0.087 | below base in all three (the trunk's check points the wrong way) |
+| hop 2 from confirmed inferences (hop 1 0.36-0.37) | - | 0.149 | 0.147 | inference on inference falls back to near base |
+
+The one strong label-free filter for inferences is still waiting for the text: an A-C proposal that a later sentence states in a relational
+wording is right 0.36 of the time against 0.105 for all proposals, on three splits. Everything computed from the premises alone (bridges,
+composability, the trunk's congruence) is at or below base. Note for the GPU builds: cg27a_rti requires 2+ bridges; on Re-DocRED that
+selects below base (0.077-0.082 vs 0.105), although on the distant set at GPU scale it was the best of the policies tried (0.178-0.188).
+
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 
 - **Name types without labels** (tools/name_types.py; names x contexts / own words / shape, PPMI, SVD, k-means): purity against gold types
