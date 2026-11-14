@@ -960,6 +960,14 @@ directions makes it worse), and **what differs between relations lies MORE in th
 words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
 would settle it for the real model.
 
+### GPU cg27a_rasym: the asymmetry write filter (seed 4, 14 November, visit 2)
+
+cg27a_rcode5 + inf_rcode_asym 1.0 (write only pairs with |log degree ratio| > 1). Visit 2 (the same store and candidates as cg27a_rcode5),
+labelled share of the top 100 / 200 / 400: code + RA 0.59 / 0.59 / 0.578 overall vs **0.67 / 0.68 / 0.642 among asymmetric pairs**; code +
+AA 0.66 / 0.60 / 0.565 overall vs **0.74 / 0.74 / 0.662 among asymmetric pairs**. **The 200 written right 0.680 (cg27a_rcode5: 0.590):
+the filter replicates at GPU scale, +0.09.** Code + Adamic-Adar would have done better still under the filter (0.74). Held-out bits
+visits 1 / 2: 2.0145 / 2.0206 (cg27a_rcode5 2.0241 / 2.0322).
+
 ### GPU cg27a_rcode5: the dose-fixed write path through pass 1 (seed 4, 14 November, visits 1-10)
 
 cg27a_rcode4 + inf_rti_rows_ref 8 (the dose loss weighted by rows / 8). Four batches of 200 written (visits 2 / 4 / 6 / 8): right 0.59 /
