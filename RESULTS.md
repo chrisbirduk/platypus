@@ -840,6 +840,138 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### GPU cg27a_rcode3: writing where the code and chaining agree (seed 4, 14 November, visits 2-5)
+
+One change against cg27a_rcode2: the 100 held-out pairs ranked highest by the rank sum of the code (512 dims) and Adamic-Adar are written
+(cg27a_rcode2: the 200 most similar codes). Visit 2 (345k records, 86,965 candidates never stated together, labelled 0.095), labelled share
+of each rule's top 100 / 200: code 0.19 / 0.32, Adamic-Adar 0.41 / 0.415, **code + Adamic-Adar 0.66 / 0.60**; **the 100 written right
+0.66** (cg27a_rcode2 at the same readout: 0.32). Recall from the trunk at visit 3 (one visit of teaching), test wording never taught:
+open-ended taught right 0.22 / wrong 0.27 vs held back 0.00 / 0.05; rank among itself and 9 held-back answers (the corrected readout,
+chance 0.10) taught 0.61 / 0.54 vs held back 0.18 / 0.10. (cg27a_rcode2 at the same point: open-ended 0.15 / 0.12.)
+**Positive: where the code and chaining agree, two thirds of what is written is right (base 0.095), double the code alone, and it is taken
+into the weights faster (twice the rows per inference).** False memories are now about a third of what is written, not two thirds.
+
+Visits 4-5. The second batch (written at visit 4, 200,000 candidates scored, labelled 0.087) is right 0.64 (cg27a_rcode2's visit-4
+batch: 0.255). Recall from the trunk in the test wording, taught vs held back, right / wrong:
+
+| | written at visit 2: taught | held back | written at visit 4: taught | held back |
+|---|---|---|---|---|
+| open-ended exact, visit 4 | 0.50 / 0.56 | 0.06 / 0.00 | - | - |
+| **open-ended exact, visit 5** | **0.52 / 0.54** | **0.12 / 0.00** | **0.33 / 0.23** | **0.03 / 0.00** |
+| (cg27a_rcode2, visit 5) | 0.37 / 0.41 | 0.00 / 0.00 | 0.00 / 0.08 | 0.00 / 0.00 |
+
+Rank among itself and 9 held-back answers (corrected readout, chance 0.10), all batches: visit 4 taught 0.88 / 0.88, held back 0.24 / 0.10;
+visit 5 taught 0.82 / 0.66, held back 0.22 / 0.15 (n 36 / 20). Cost: held-out bits on the domains read, visits 1-5, 2.0263 / 2.0209 /
+2.0053 / 1.9186 / 1.8533 against cg27a_rcode2's 2.0314 / 2.0265 / 2.0127 / 1.9263 / 1.8710 - none (the gap is already 0.005 at visit 1,
+before any inference is written: run-to-run variation, not a gain).
+**Positive, one seed: two thirds of what is written is right in both batches (0.66, 0.64), and recall is faster and higher than in
+cg27a_rcode2 (half the inferences, twice the rows each).** The weights still take in right and wrong alike (0.52 / 0.54) - selectivity
+lives in the store's choice, not in the trunk. Held-back RIGHT answers are ranked above chance at every visit (0.18 / 0.24 / 0.22, against
+0.10 / 0.10 / 0.15 for held-back wrong ones; small n): either the trunk generalises a little from the taught inferences or right answers
+are more familiar names - not yet separated.
+
+**Second seed (cg27a_rcode3_s5, SEED 5, visits 1-4).** The store side is the same as seed 4 (same documents, same held-out hash: the same
+86,965 candidates and the same 100 writes, right 0.66), so what replicates is the trunk. Written at visit 2, taught vs held back, right /
+wrong: open-ended visit 3 0.28 / 0.38 vs 0.00 / 0.00 (seed 4: 0.22 / 0.27 vs 0.00 / 0.05); **visit 4 0.67 / 0.69 vs 0.16 / 0.00** (seed 4:
+0.50 / 0.56 vs 0.06 / 0.00). Rank (corrected): visit 3 taught 0.52 / 0.42 vs held back 0.19 / 0.00; visit 4 0.78 / 0.71 vs 0.19 / 0.10.
+**Replicates: the written inferences reach the weights in an untaught wording, right and wrong alike, held back far lower.** Held-out
+bits, visits 1-4: 2.0102 / 2.0248 / 2.0189 / **1.9571** (seed 4: 2.0263 / 2.0209 / 2.0053 / 1.9186) - the visit-4 gap is mostly
+Gutenberg (2.161 vs 2.021; other domains +0.006 to +0.018), a domain whose cost already swings between runs (cg27a_rcode2 seed 4: 2.061
+at visit 4, 2.110 at visit 5); without a same-seed control it is a watch item, not a measured cost. Held-back right at 0.16-0.19 fits
+tools/gen_diag.py: a prior from reading (the held-back pairs' documents are kept out of the store, not out of the text the trunk reads).
+Visit 5 (seed 5 vs seed 4): visit-2 batch taught 0.73 / 0.67 vs held back 0.16 / 0.00 (0.52 / 0.54 vs 0.12 / 0.00); **visit-4 batch, one visit
+of teaching, 0.49 / 0.31 vs 0.03 / 0.05** (0.33 / 0.23 vs 0.03 / 0.00); rank taught 0.68 / 0.64 vs held back 0.14 / 0.15. Held-out bits
+1.8905 (seed 4: 1.8533); the domain just read matches the earlier seed-5 build cg27a_replay_s5 (post-train PubMed 1.678 vs 1.679, FreeLaw 1.583
+vs 1.585), the gap is in older domains (Gutenberg 2.160 vs 2.039, PubMed 1.725 vs 1.687, Wikipedia 2.064 vs 2.038) - seed or change cannot
+be told apart without a same-seed run without the inferences.
+
+### Does more reading flag a wrong inference? (tools/fact_compress.py FC_SAVE / FC_LOAD, 14 November; Re-DocRED gold, two splits)
+
+The store writes its top 200 by code + Adamic-Adar after reading 5,000 distant documents (right 0.37 / 0.405), reads 30,000 and re-ranks
+the same 200 (every candidate pair is still kept out of the store). Right vs wrong:
+
+| | split 0 | split 1 |
+|---|---|---|
+| still in the top 200 after more reading: right / wrong | 0.78 / 0.60 | 0.73 / 0.61 |
+| AUC of the stage-1 rank alone (within the 200) | 0.685 | 0.646 |
+| AUC of the rank CHANGE | 0.575 | 0.530 |
+| change within the lower / upper half of the stage-1 rank | 0.522 / 0.602 | 0.505 / 0.608 |
+| a newly read document names the pair: right / wrong | 0.99 / 0.96 | 0.99 / 0.94 |
+
+**Weak.** Most of the drop-out is the weakly ranked writes falling away, which the first ranking already knew; among the confident half,
+falling rank flags wrong writes at about 0.6. Co-occurrence in new reading says nothing (nearly every pair turns up). Re-ranking is a
+mild check on confident writes, not a retraction trigger.
+
+### Codes from compression, read as tokens (tools/compose_synth.py CS_PCODE 2, 14 November; synthetic, 3 x 192, seed 0)
+
+The person and city codes are no longer handed out: they are k-means clusters (40) of a 16-dim SVD of the PPMI of the fact graph (G + G^2;
+person-city and city-country links, plus CS_NOISE random person-city links per person), appended as a token after each name. No
+citizenship is ever stated for anyone (CS_IMPL 0). Citizenship of held-out people (chance 0.10) after 6,000 steps, and of a new person in
+an old city taught 'lives in' only (300 steps):
+
+| noise | country purity of the people's clusters | held-out citizenship (steps 1k-6k) | new person, 300 steps |
+|---|---|---|---|
+| 0 | 1.00 | **0.75** (0.83 - 0.69) | **0.66** |
+| 1.0 | 0.52 | **0.32** (0.39 - 0.24) | **0.32** |
+| 2.0 | 0.31 | 0.16 (0.12 - 0.20) | 0.14 |
+
+**Positive: codes made by compressing the fact table, not handed out, are read by the trunk in one hop - it infers a composite it was
+never told, in proportion to how clean the code is (about 60-75% of the code's own purity).** Noisy codes carry correspondingly less;
+the trunk does not clean them up. Real-text codes (Re-DocRED) are the next test (tools/codetok_diag.py).
+
+### Which selection rule writes the most right inferences: more signals (tools/fact_compress.py FC_SELECT 2, 14 November; two splits)
+
+Store of Re-DocRED + 30,000 distant documents, codes 256 dims, all candidates never stated together (base 0.095 / 0.086). Share labelled
+related among the top N written, split 0 / split 1:
+
+| rule | top 50 | top 100 | top 200 | top 400 |
+|---|---|---|---|---|
+| code alone | 0.40 / 0.28 | 0.43 / 0.26 | 0.38 / 0.305 | 0.33 / 0.28 |
+| code + Adamic-Adar (cg27a_rcode3) | 0.60 / 0.58 | 0.52 / 0.52 | 0.395 / 0.395 | 0.30 / 0.30 |
+| **code + resource allocation** | **0.62 / 0.52** | **0.53 / 0.54** | **0.465 / 0.445** | **0.40 / 0.37** |
+| code + Adamic-Adar + L3 (3-paths) | 0.64 / 0.64 | 0.50 / 0.44 | 0.385 / 0.38 | 0.33 / 0.315 |
+| bagged code (3 fits on 80%) + Adamic-Adar | 0.64 / 0.58 | 0.51 / 0.50 | 0.375 / 0.375 | 0.30 / 0.28 |
+
+**Positive, both splits: resource allocation (shared neighbours weighted 1/degree, not 1/log degree) in place of Adamic-Adar keeps
+precision as more is written - level at the top 100, +5 to +7 points at 200, +7 to +10 at 400.** The store could write two to four times
+as many inferences at nearly the same precision. 3-paths and bagged codes add nothing.
+
+### Unlearning a wrong taught inference (tools/retract_diag.py, 14 November; stand-in trunk 3 x 192, two seeds)
+
+The trunk is taught 120 right pairs, 120 wrong ones (A with a random name of the answer's type) and 120 bystanders in the system's
+question frames (about 18 rows each), then 200 retraction steps with the right ones rehearsed. Rank of the taught answer among it and 9
+of its kind (chance 0.10), seed 0 / seed 1:
+
+| | WRONG | RIGHT | BYSTANDER (taught, then left alone) | wiki bits |
+|---|---|---|---|---|
+| before teaching | 0.15 / 0.10 | 0.27 / 0.31 | 0.33 / 0.32 | 1.900 |
+| taught | 0.42 / 0.40 | 0.50 / 0.59 | 0.68 / 0.55 | 2.024 / 2.014 |
+| STOP (no longer taught) | 0.25 / 0.25 | 0.58 / 0.69 | 0.50 / 0.42 | 1.982 / 1.978 |
+| NEUTRAL answer ('no one on record') | 0.25 / 0.25 | 0.63 / 0.66 | 0.54 / 0.46 | 2.013 / 2.008 |
+| UNLIKELIHOOD, weight 1 | 0.00 / 0.01 | 0.68 / 0.65 | 0.43 / 0.49 | 2.034 / 2.010 |
+| NEUTRAL + UNLIKELIHOOD | 0.00 / 0.00 | 0.73 / 0.72 | 0.47 / 0.50 | 2.065 / 2.056 |
+| **UNLIKELIHOOD, weight 0.1** | **0.01 / 0.01** | 0.64 / 0.71 | **0.55 / 0.53** | 2.005 / 1.990 |
+| UNLIKELIHOOD, weight 0.3 | 0.02 / - | 0.65 / - | 0.51 / - | 2.012 / - |
+
+**Positive: unlikelihood on the wrong answer's bytes (with the right ones rehearsed) removes a taught wrong inference in both seeds;
+stopping or a neutral answer only halves it.** Collateral damage at weight 1 is seed-dependent (bystanders -7 / +7 points against STOP);
+at weight 0.1 none in either seed (bystanders 0.55 / 0.53 against STOP's 0.50 / 0.42), text cost +0.01 to +0.02 bits against STOP. The mechanism is settled; the trigger (which writes are
+wrong) is not.
+
+### Held-back right inferences ranked above chance: prior, not generalisation (tools/gen_diag.py, 14 November; stand-in trunk)
+
+GPU cg27a_rcode3 ranks held-back RIGHT answers first at 0.18-0.24 (held-back wrong 0.10-0.15). Stand-in trunk, 4 x 90 pairs (taught right
+/ wrong, held back right / wrong), rank among held-back answers as the GPU readout (in brackets: among 9 of its type):
+
+| | taught R | taught W | held back R | held back W |
+|---|---|---|---|---|
+| before teaching | 0.13 (0.24) | 0.08 (0.12) | **0.17 (0.33)** | 0.03 (0.11) |
+| after teaching (36 rows per taught pair) | 0.43 (0.64) | 0.40 (0.69) | **0.19 (0.29)** | 0.03 (0.09) |
+
+**Negative for generalisation:** held-back right answers are preferred BEFORE any teaching, and teaching other pairs leaves that
+unchanged. The trunk's reading already favours fitting answers; the GPU's held-back 0.22 is that prior, not inference learned from the
+taught pairs.
+
 ### Two hops answered by reading a code in one (tools/compose_synth.py CS_PCODE 1, 14 November; synthetic, 3 layers x 192, seed 0)
 
 Every person also carries a code summarising their neighbourhood - their city's country's code, right 80% of the time, as a compressor

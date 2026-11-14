@@ -73,9 +73,50 @@ if int(os.environ.get('FC_SELECT', 0)):                                         
     cd_ = SC[ck]; SEL = {'code': cd_, 'code, bridged pairs only': np.where(cn_cnt > 0, cd_, -9), 'code + Adamic-Adar (rank sum)': rk_(cd_) + rk_(SC['Adamic-Adar']),
            'code + Adamic-Adar, bridged only': np.where(cn_cnt > 0, rk_(cd_) + rk_(SC['Adamic-Adar']), -9), 'code, 2+ bridges only': np.where(cn_cnt >= 2, cd_, -9),
            'Adamic-Adar': SC['Adamic-Adar']}
+    if int(os.environ.get('FC_SELECT', 0)) >= 2:                                         # 14 Nov: more signals - resource allocation, 3-paths (L3), bagged codes
+        iw1 = np.where(deg > 0, 1.0 / np.maximum(deg, 1), 0.0); ra = np.asarray(G1[XA_].multiply(G1[XB_]).multiply(iw1[None, :]).sum(1)).ravel()
+        dh = csr_matrix((1.0 / np.sqrt(np.maximum(deg, 1)), (np.arange(NN), np.arange(NN))), shape=(NN, NN)); l3 = np.zeros(len(ok))
+        for c0 in range(0, len(ok), 1000):                                                # L3: paths A-u-v-C weighted 1/sqrt(k_u k_v) (Kovacs et al. 2019)
+            X_ = (G1[XA_[c0:c0 + 1000]] @ dh) @ G1; Y_ = G1[XB_[c0:c0 + 1000]] @ dh; l3[c0:c0 + 1000] = np.asarray(X_.multiply(Y_).sum(1)).ravel()
+        P(f"   resource allocation and L3 scored  ({time.time() - T0:.0f}s)")
+        kb = int(ck.split()[1]); bag = np.zeros(len(ok)); rb = np.random.RandomState(7); kidx = np.where(keep)[0]; nb_ = int(os.environ.get('FC_BAGS', 3))
+        for b_ in range(nb_):                                                              # bagged codes: refit on 80% of the store's records, average the ranks
+            sub = np.zeros(len(Af), bool); sub[rb.choice(kidx, int(0.8 * len(kidx)), replace=False)] = True
+            Gb = csr_matrix((np.ones(int(sub.sum())), (Af[sub], Bf[sub])), shape=(NN, NN)); Gb = Gb + Gb.T; Gb.sum_duplicates(); Gb.data[:] = 1.0
+            Ub = normalize(TruncatedSVD(kb, random_state=b_ + 1).fit_transform(ppmi(Gb)).astype(np.float32)); bag += rk_(np.einsum('ij,ij->i', Ub[XA_], Ub[XB_]))
+        P(f"   bagged codes ({nb_} fits on 80% of the records)  ({time.time() - T0:.0f}s)")
+        SEL.update({'resource allocation': ra, 'L3 (3-paths)': l3, 'code + resource allocation': rk_(cd_) + rk_(ra), 'code + L3': rk_(cd_) + rk_(l3),
+                    'code + Adamic-Adar + L3': rk_(cd_) + rk_(SC['Adamic-Adar']) + rk_(l3), 'bagged code': bag, 'bagged code + Adamic-Adar': rk_(bag) + rk_(SC['Adamic-Adar']),
+                    'code + bagged code + Adamic-Adar': rk_(cd_) + rk_(bag) + 2 * rk_(SC['Adamic-Adar'])})
     P(f"SELECTION RULES ({ck}), gold among the top N written (all {len(ok)} candidates, base {yy.mean():.3f}):")
     for k_, sv in SEL.items():
         o = np.argsort(-sv + 1e-12 * np.random.RandomState(2).rand(len(sv))); P(f"   {k_:40s} " + " | ".join(f"top {n} {yy[o[:n]].mean():.3f}" for n in (50, 100, 200, 400)))
+if os.environ.get('FC_SAVE') or os.environ.get('FC_LOAD'):                              # 14 Nov RETRACTION SIGNAL: does a written inference's standing change, right vs wrong,
+    import json as _js                                                                    #   when the store reads more? FC_SAVE: stage 1 writes its top 200 (code + Adamic-
+    rk2 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1)                        #   Adamic-Adar rank sum); FC_LOAD: stage 2 (more documents read) re-ranks them
+    ck = max(k for k in SC if k.startswith('CODE') and 'rel' not in k); both = rk2(SC[ck]) + rk2(SC['Adamic-Adar']); pb = rk2(both); pc = rk2(SC[ck]); pa = rk2(SC['Adamic-Adar'])
+    nst = collections.Counter(pk)                                                         # records anywhere stating the pair (before removal)
+    if os.environ.get('FC_SAVE'):
+        o = np.argsort(-both)[:200]
+        _js.dump([[sorted(ok[i])[0], sorted(ok[i])[1], bool(yy[i]), float(pb[i]), float(pc[i]), float(pa[i]), int(nst[ok[i]]), int(cn_cnt[i])] for i in o], open(os.environ['FC_SAVE'], 'w'))
+        P(f"SAVED stage 1: the top 200 written by code + Adamic-Adar, right {yy[o].mean():.3f}")
+    if os.environ.get('FC_LOAD'):
+        W1 = _js.load(open(os.environ['FC_LOAD'])); ix = {k: i for i, k in enumerate(ok)}; R_ = []
+        for a_, b_, y_, p1, c1, a1, n1, br1 in W1:
+            i = ix.get(frozenset((a_, b_)))
+            if i is None: continue
+            R_.append((y_, p1, float(pb[i]), c1, float(pc[i]), a1, float(pa[i]), int(nst[ok[i]]) - n1, br1, int(cn_cnt[i])))
+        _js.dump(R_, open(os.environ['FC_LOAD'] + '.s2.json', 'w'))                       # per write: y, both1, both2, code1, code2, aa1, aa2, new stating records, bridges1, bridges2
+        R_ = np.array(R_, float); y1 = R_[:, 0] > 0; top200 = np.sort(both)[-200] if len(both) >= 200 else -1
+        still = np.array([both[ix[frozenset((a_, b_))]] >= top200 for a_, b_, *_ in W1 if frozenset((a_, b_)) in ix])
+        a_ = lambda v: auc(v[y1], v[~y1])
+        P(f"RETRACTION SIGNAL: {len(R_)} of {len(W1)} stage-1 writes found at stage 2 (right {y1.mean():.3f}) | AUC right vs wrong (0.5 = no signal): "
+          f"stage-2 rank (code + AA) {a_(R_[:, 2]):.3f}, its CHANGE {a_(R_[:, 2] - R_[:, 1]):.3f} | code alone {a_(R_[:, 4]):.3f}, change {a_(R_[:, 4] - R_[:, 3]):.3f} | "
+          f"Adamic-Adar {a_(R_[:, 6]):.3f}, change {a_(R_[:, 6] - R_[:, 5]):.3f} | new bridges {a_(R_[:, 9] - R_[:, 8]):.3f} || still in the top 200: right "
+          f"{still[y1].mean():.2f}, wrong {still[~y1].mean():.2f} | stated in a newly read document: right {(R_[y1, 7] > 0).mean():.2f}, wrong {(R_[~y1, 7] > 0).mean():.2f}")
+        lo_ = R_[:, 1] <= np.median(R_[:, 1])                                              # does the change add to the stage-1 rank? AUC of the change within halves of it
+        P(f"   rank change within halves of the stage-1 rank: lower half AUC {auc((R_[:, 2] - R_[:, 1])[lo_ & y1], (R_[:, 2] - R_[:, 1])[lo_ & ~y1]):.3f}, upper half "
+          f"{auc((R_[:, 2] - R_[:, 1])[~lo_ & y1], (R_[:, 2] - R_[:, 1])[~lo_ & ~y1]):.3f} | stage-1 rank alone {a_(R_[:, 1]):.3f}")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")

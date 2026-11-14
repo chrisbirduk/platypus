@@ -20,6 +20,7 @@ in '), the city's country ('B lies in ').
 Usage: CS_D=192 CS_NL=3 CS_STEPS=6000 CS_IMPL=1 CS_SEED=0 python3 tools/compose_synth.py"""
 import os
 import math
+import collections
 import time
 import numpy as np
 import torch
@@ -52,6 +53,37 @@ def pnew(bi):
     n = person(); return (f"{n}-{pcode(bi)}" if PCODE else n), bi
 TRAINP = [pnew(int(rs.randint(len(OLD)))) for _ in range(400)]
 HELDP = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
+F1P = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
+if PCODE == 2:                                                                 # 14 Nov CS_PCODE 2 - codes from REAL COMPRESSION of the fact graph: names lose the
+    from scipy.sparse import csr_matrix                                        #   handed-out codes; the graph of what is stated (person-city, city-country, and
+    from sklearn.decomposition import TruncatedSVD                             #   person-country for training people if CS_IMPL) is coded by PPMI + truncated SVD
+    from sklearn.cluster import KMeans                                         #   (CS_PK dims) and k-means (CS_PKC clusters, no labels); each person and city
+    strip = lambda n: n.rsplit('-', 1)[0]                                      #   carries its cluster as a token ('Velmora-k07')
+    cities = [strip(b) for b, c in OLD]; people = [(strip(a), bi) for a, bi in TRAINP + HELDP + F1P]
+    nid = {}; ed = []
+    for i, (b, c) in enumerate(OLD): ed.append((nid.setdefault('C:' + cities[i], len(nid)), nid.setdefault('K:' + COUNTRY[c], len(nid))))
+    for j, (a, bi) in enumerate(people):
+        ed.append((nid.setdefault('P:' + a, len(nid)), nid['C:' + cities[bi]]))
+        if IMPL and j < len(TRAINP): ed.append((nid['P:' + a], nid['K:' + COUNTRY[OLD[bi][1]]]))
+        nz = float(os.environ.get('CS_NOISE', 0))                              #   CS_NOISE: co-occurrence noise - random person-city links (on average this
+        for _ in range(int(nz) + (1 if rs.rand() < nz - int(nz) else 0)):      #   many per person) that the store records like facts, as real text does
+            ed.append((nid['P:' + a], nid['C:' + cities[rs.randint(len(cities))]]))
+    NN_ = len(nid); ea = np.array(ed); G_ = csr_matrix((np.ones(len(ea)), (ea[:, 0], ea[:, 1])), shape=(NN_, NN_)); G_ = G_ + G_.T; G_.data[:] = 1.0
+    G2 = (G_ @ G_ + G_).tocoo(); dg = np.asarray(G2.sum(1)).ravel(); v_ = np.log(G2.sum() * G2.data / (dg[G2.row] * dg[G2.col]) + 1e-12); m_ = v_ > 0
+    U_ = TruncatedSVD(int(os.environ.get('CS_PK', 16)), random_state=SEED).fit_transform(csr_matrix((v_[m_], (G2.row[m_], G2.col[m_])), shape=G2.shape))
+    U_ /= np.linalg.norm(U_, axis=1, keepdims=True) + 1e-9
+    ent = [k for k in nid if not k.startswith('K:')]; KC = int(os.environ.get('CS_PKC', 40))
+    lab = KMeans(KC, random_state=SEED, n_init=5).fit_predict(U_[[nid[k] for k in ent]]); TOK = {k: f"k{l:02d}" for k, l in zip(ent, lab)}
+    def pur(keys, ctry):
+        cc = collections.defaultdict(collections.Counter)
+        for k, c in zip(keys, ctry): cc[TOK[k]][c] += 1
+        return sum(v.most_common(1)[0][1] for v in cc.values()) / max(1, len(keys))
+    pp = pur(['P:' + a for a, bi in people], [OLD[bi][1] for a, bi in people]); pc = pur(['C:' + c for c in cities], [c for b, c in OLD])
+    OLD = [(f"{cities[i]}-{TOK['C:' + cities[i]]}", c) for i, (b, c) in enumerate(OLD)]
+    rn = lambda L: [(f"{strip(a)}-{TOK['P:' + strip(a)]}", bi) for a, bi in L]
+    TRAINP, HELDP, F1P = rn(TRAINP), rn(HELDP), rn(F1P)
+    print(f"CODES FROM COMPRESSION: {NN_} nodes, PPMI of 1-2 hop graph, SVD {U_.shape[1]} dims, {KC} clusters | country purity of the clusters: people {pp:.2f}, "
+          f"cities {pc:.2f} (a handed-out code: 0.80; chance about {1 / NC:.2f})", flush=True)
 CT = ["{B} lies in {C}.", "{B} is a city in {C}.", "The city of {B} is in {C}.", "{B}, a town of {C}, is old."]
 PT = ["{A} lives in {B}.", "{A} has a home in {B}.", "{A} moved to {B} years ago."]
 IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
@@ -129,7 +161,8 @@ def arm(tag, people, cities, teach_lies):
     P(f"   {tag:16s} " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
 newp = lambda n: [(person(), i) for i in range(n)]
 P("IDEA 2 - taught briefly after pretraining (chance 0.10; citizenship is never taught for these people):")
-arm('F1 OLD CITY', [pnew(int(rs.randint(len(OLD)))) for _ in range(100)], OLD, False)
+arm('F1 OLD CITY', F1P, OLD, False)
+if PCODE == 2: P(f"DONE ({time.time() - T0:.0f}s)"); raise SystemExit
 NEWC = [rs.randint(NC) for _ in range(100)]
 arm('F2 NEW, RANDOM', newp(100), [(f"{name(3)}-{CODES[rs.randint(NC)]}", c) for c in NEWC], True)
 arm('F3 NEW, TYPED', newp(100), [(f"{name(3)}-{CODES[c]}", c) for c in NEWC], True)
