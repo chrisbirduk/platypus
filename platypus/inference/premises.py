@@ -640,7 +640,8 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
               f"{g(rn[True][1])} | WRONG {g(rn[False][0])} vs {g(rn[False][1])} | not checkable {g(rn[None][0])} vs {g(rn[None][1])}", flush=True)
     if int(getattr(cfg, 'inf_rti_rank_recall', 0)):                           # 14 Nov RANK RECALL (readout): open-ended exact recall cannot see real multi-word
         from platypus.inference.distill import _dw_cand_mc                     #   names (offline: rank 0.74 while exact 0.01); here the answer among itself and
-        pool_ = sorted({e['ans'] for e in T_ + H_ + U_}); rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)   #   9 other written answers (chance 0.10)
+        pool_ = sorted({e['ans'] for e in H_}) or sorted({e['ans'] for e in T_ + H_ + U_})   # distractors: HELD-BACK answers only (never taught), so taught
+        rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)                     #   and held-back facts face the same untaught distractors (chance 0.10)
         def rk_(L):
             L = [e for e in L if e['rm'] < vis][:150]; hit = []
             for e in L:
@@ -651,7 +652,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
             return f"{np.mean(hit):.2f} ({len(hit)})" if hit else "nan (0)"
         tr_ = lambda L, t: [e for e in L if e['truth'] is t]
         dl_ = (model.__dict__.get('_dtw') or {}).get('rtil') or []
-        print(f"  [REAL-TEXT INFERENCE RANK RECALL | visit {vis + 1}] the answer first among 10 written answers (chance 0.10), from the trunk, test wording: TAUGHT right "
+        print(f"  [REAL-TEXT INFERENCE RANK RECALL | visit {vis + 1}] the answer first among itself and 9 held-back answers (chance 0.10), from the trunk, test wording: TAUGHT right "
               f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
               + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
               + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
