@@ -878,6 +878,10 @@ chosen by compressing the fact table - are recalled from the weights in a wordin
 0.00-0.03 (0.06-0.11) for the held-back third.** **But right and wrong ones alike (0.40 vs 0.38; 0.78 vs 0.84):** the weights take in
 whatever they are taught, so about two thirds of what is written - the wrong inferences - becomes false memories at the same rate.
 Selectivity must come before the write (the code's top, confirmation by later reading) or after it (retraction when text contradicts).
+Visits 5-6: the visit-2 inferences are KEPT and rise (open-ended taught right / wrong 0.37 / 0.41 at visit 5, 0.46 / 0.40 at visit 6; held
+back 0.00-0.02); the visit-4 batch follows the same curve (0.00 / 0.08 after one visit, 0.17 / 0.23 after two). Rank recall at visit 6:
+taught 0.84 / 0.81, held back 0.08 / 0.06. Held-out bits at visits 5 / 6: 1.8710 / 1.8986 against cg27a_rcode's 1.8661 / 1.8978 (+0.005,
++0.001).
 
 ### Popularity-matched check, and which relation (tools/fact_compress.py, tools/rel_codes.py; 14 November, Re-DocRED gold, two splits)
 
