@@ -64,7 +64,10 @@ def rep(mask, title):
     for k, s in SC.items():
         sv = s[mask]; o = np.argsort(-sv + 1e-12 * np.random.RandomState(1).rand(len(sv)))
         pk_ = "/".join(f"{yv[o[:max(1, len(o) * q // 100)]].mean():.3f}" for q in (5, 10, 25))
-        P(f"   {k:44s} AUC {auc(sv[yv], sv[~yv]):.3f} | gold in top 5/10/25%: {pk_}")
+        dp = np.log1p(SC['degree product (popularity)'][mask]); qb = np.quantile(dp, [0.2, 0.4, 0.6, 0.8]); bins = np.searchsorted(qb, dp)
+        sa = [(auc(sv[(bins == q) & yv], sv[(bins == q) & ~yv]), int(((bins == q) & yv).sum())) for q in range(5) if ((bins == q) & yv).sum() >= 5 and ((bins == q) & ~yv).sum() >= 5]
+        pm = sum(a * n for a, n in sa) / max(1, sum(n for a, n in sa)) if sa else float('nan')
+        P(f"   {k:44s} AUC {auc(sv[yv], sv[~yv]):.3f} | gold in top 5/10/25%: {pk_} | POPULARITY-MATCHED AUC (within degree-product quintiles) {pm:.3f}")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
