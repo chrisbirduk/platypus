@@ -2,8 +2,10 @@
 Lin et al. 2025 (FAIR, 'Continual Learning via Sparse Memory Finetuning'): a memory layer (product keys, value slots) in the model; new facts
 update ONLY the slots they access most relative to background text (TF-IDF over slot accesses). On their QA streams: forgetting 89% (full
 finetuning), 71% (LoRA), 11% (sparse memory), at the same learning. Here, small:
-  1. The stand-in trunk (TG_CKPT, 3 blocks x TG_D) gets a product-key memory layer after block 2 (SM_SLOTS = n x n slots, top 16 of n x n per
-     byte, values of width d) and continues on wiki text SM_PRE steps so the memory is used (saved to SM_CKPT; resumable).
+  1. The stand-in trunk (TG_CKPT, 3 blocks x TG_D): block 2's MLP is REPLACED by a product-key memory layer (as in the paper, so the model
+     has to use it; n x n slots, top 16 per byte, values of width d, layer-normed half-queries against collapse) and the model continues on
+     wiki text SM_PRE steps (saved to SM_CKPT; resumable). First version (memory added beside the MLP) left it unused: bits with the
+     memory switched off equal, 1,532 of 16,384 slots used.
   2. Facts from Re-DocRED documents this trunk never read, in the gold relation's phrase, taught in the system's seven frames (no test
      wording) in batches of FACTS ONLY (no replay - the stress test of the paper): set A (60 facts), then set B (60 facts).
   3. Methods, each from the same memory model, two learning rates:
@@ -28,7 +30,7 @@ DW = int(os.environ.get('TG_D', 192)); NL = 3; CK = os.environ['TG_CKPT']; torch
 L = 128; PAD = 256; V = 257; rs = np.random.RandomState(0); torch.manual_seed(0)
 NS = int(os.environ.get('SM_N', 128)); KK = 16; DK = 64
 PRE = int(os.environ.get('SM_PRE', 1500)); STEPS = int(os.environ.get('SM_STEPS', 150)); TOPT = int(os.environ.get('SM_T', 256))
-SMCK = os.environ.get('SM_CKPT', SCR + f'/sm_mem_{DW}_{NS}_{PRE}.pt')
+SMCK = os.environ.get('SM_CKPT', SCR + f'/sm_memr_{DW}_{NS}_{PRE}.pt')
 FORMS = ("In short, {A} {r} ", "Notes on {A}: {A} {r} ", "{A}, as noted before, {r} ", "As for {A}, people say {A} {r} ",
          "Q: {A} {r} whom? A: ", "{A}, whose name came up earlier in the report, {r} ", "From the notes: {A} {r} ")
 REL = {'P17': 'is in the country', 'P131': 'is located in', 'P27': 'is a citizen of', 'P19': 'was born in', 'P20': 'died in', 'P108': 'worked for',
@@ -64,7 +66,7 @@ class Mem(nn.Module):
         super().__init__(); s.n = nn.LayerNorm(d); s.q = nn.Linear(d, 2 * DK); s.k1 = nn.Parameter(torch.randn(NS, DK) / DK ** 0.5)
         s.k2 = nn.Parameter(torch.randn(NS, DK) / DK ** 0.5); s.v = nn.Embedding(NS * NS, d); nn.init.normal_(s.v.weight, 0, 0.02); s.last = None
     def forward(s, x):
-        q = s.q(s.n(x)); q1, q2 = q[..., :DK], q[..., DK:]
+        q = s.q(s.n(x)); q1, q2 = F.layer_norm(q[..., :DK], (DK,)), F.layer_norm(q[..., DK:], (DK,))
         a1, i1 = (q1 @ s.k1.t()).topk(KK, -1); a2, i2 = (q2 @ s.k2.t()).topk(KK, -1)
         sc = (a1[..., :, None] + a2[..., None, :]).flatten(-2); ix = (i1[..., :, None] * NS + i2[..., None, :]).flatten(-2)
         top, j = sc.topk(KK, -1); idx = ix.gather(-1, j); w = F.softmax(top, -1); s.last = idx
@@ -73,8 +75,10 @@ class Blk(nn.Module):
     def __init__(s, d, h):
         super().__init__(); s.a = nn.MultiheadAttention(d, h, batch_first=True); s.m = nn.Sequential(nn.Linear(d, 4 * d), nn.GELU(), nn.Linear(4 * d, d))
         s.n1 = nn.LayerNorm(d); s.n2 = nn.LayerNorm(d)
-    def forward(s, x, am):
-        h = s.n1(x); x = x + s.a(h, h, h, attn_mask=am, need_weights=False)[0]; return x + s.m(s.n2(x))
+    def forward(s, x, am, mem=None, use=True):
+        h = s.n1(x); x = x + s.a(h, h, h, attn_mask=am, need_weights=False)[0]
+        if mem is None: return x + s.m(s.n2(x))
+        return x + mem(s.n2(x)) if use else x
 class LM(nn.Module):
     def __init__(s, d=DW, nl=NL):
         super().__init__(); s.emb = nn.Embedding(V, d); s.pos = nn.Parameter(torch.randn(L, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl))
@@ -82,8 +86,7 @@ class LM(nn.Module):
     def forward(s, X):
         T = X.shape[1]; am = torch.triu(torch.ones(T, T, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:T]
         for k, b in enumerate(s.b):
-            x = b(x, am)
-            if k == s.mem_at: x = x + s.mem(x)
+            x = b(x, am, s.mem if k == 1 else None, s.mem_at == 1)
         return s.o(s.n(x))
 class LoRA(nn.Module):
     def __init__(s, lin, r=16):
@@ -117,7 +120,7 @@ def recall(m, facts):
 def wiki_batch(rr, n=32): return [bytes(WK[i0:i0 + L]) for i0 in rr.randint(0, HO - L - 1, n)]
 
 # 1. the memory model: the trunk + a memory layer, continued on wiki (resumable)
-m = LM(); sd = torch.load(CK); miss = m.load_state_dict(sd, strict=False)
+m = LM(); sd = torch.load(CK); miss = m.load_state_dict({k: v for k, v in sd.items() if not k.startswith('b.1.m.')}, strict=False)
 P(f"facts {len(SET_A)} + {len(SET_B)} (never read by this trunk) | memory {NS}x{NS} = {NS * NS} slots of width {DW}, top {KK} per byte; "
   f"trunk parameters {sum(p.numel() for n, p in m.named_parameters() if not n.startswith('mem.')):,}, memory {sum(p.numel() for p in m.mem.parameters()):,}")
 b_tr = bits(m, EV_W)
@@ -127,7 +130,7 @@ else:
     op = torch.optim.AdamW([{'params': pm, 'lr': 1e-3}, {'params': po, 'lr': 1e-4}], weight_decay=0.0); rr = np.random.RandomState(1)
     for st in range(PRE):
         l = loss_of(m, wiki_batch(rr)); op.zero_grad(); l.backward(); op.step()
-        if (st + 1) % 500 == 0: P(f"   memory pretraining step {st + 1}: train {float(l) / math.log(2):.3f} bits per byte  ({time.time() - T0:.0f}s)")
+        if (st + 1) % 500 == 0: P(f"   memory pretraining step {st + 1}: train {float(l.detach()) / math.log(2):.3f} bits per byte  ({time.time() - T0:.0f}s)")
     torch.save(m.state_dict(), SMCK)
 # background slot use (document frequency over wiki batches) and how much the model leans on its memory
 cnt_bg = np.zeros(NS * NS); NBG = 100; rr = np.random.RandomState(2)
@@ -137,7 +140,7 @@ with torch.no_grad():
     at = m.mem_at; m.mem_at = -1; b_nomem = bits(m, EV_W); m.mem_at = at; m.train()
 IDF = torch.tensor(np.log((NBG + 1.0) / (cnt_bg + 1.0)), dtype=torch.float32)
 b0w, b0d = bits(m, EV_W), bits(m, EV_D)
-P(f"held-out wiki bits per byte: trunk {b_tr:.3f} | memory model {b0w:.3f} (memory switched off {b_nomem:.3f}) | dev text {b0d:.3f} | "
+P(f"held-out wiki bits per byte: memory untrained {b_tr:.3f} | memory model {b0w:.3f} (memory switched off {b_nomem:.3f}) | dev text {b0d:.3f} | "
   f"slots used by background {int((cnt_bg > 0).sum())} of {NS * NS}  ({time.time() - T0:.0f}s)")
 BASE = {k: v.clone() for k, v in m.state_dict().items()}
 
@@ -155,11 +158,11 @@ def run(tag, method, lr):
     mm = LM(); mm.load_state_dict(BASE); mm._touched = set(); rr = np.random.RandomState(11)
     for p in mm.parameters(): p.requires_grad_(False)
     if method == 'FULL': ps = list(mm.parameters())
-    elif method == 'MLP_OUT': ps = [b.m[2].weight for b in mm.b] + [b.m[2].bias for b in mm.b]
+    elif method == 'MLP_OUT': ps = [mm.b[k].m[2].weight for k in (0, 2)] + [mm.b[k].m[2].bias for k in (0, 2)]
     elif method in ('MEM_ALL', 'MEM_SPARSE'): ps = [mm.mem.v.weight]
     elif method == 'LORA':
         ps = []
-        for b in mm.b:
+        for b in (mm.b[0], mm.b[2]):
             for j in (0, 2): b.m[j] = LoRA(b.m[j]); ps += [b.m[j].A, b.m[j].B]
     for p in ps: p.requires_grad_(True)
     sp = method == 'MEM_SPARSE'
@@ -171,8 +174,8 @@ def run(tag, method, lr):
 r0a, r0b = recall(m, SET_A), recall(m, SET_B)
 P(f"before teaching: A open {r0a[0]:.2f} rank {r0a[1]:.2f} | B open {r0b[0]:.2f} rank {r0b[1]:.2f} | {STEPS} steps of 32 fact rows per set "
   f"(about {STEPS * 32 / 60:.0f} rows per fact), facts only")
-RUNS = [('FULL', 'FULL', 1e-4), ('FULL', 'FULL', 3e-4), ('LORA', 'LORA', 1e-3), ('LORA', 'LORA', 3e-3), ('MLP_OUT', 'MLP_OUT', 1e-4),
-        ('MLP_OUT', 'MLP_OUT', 3e-4), ('MEM_ALL', 'MEM_ALL', 1e-3), ('MEM_ALL', 'MEM_ALL', 1e-2), ('MEM_SPARSE', 'MEM_SPARSE', 1e-3),
+RUNS = [('FULL', 'FULL', 3e-5), ('FULL', 'FULL', 1e-4), ('LORA', 'LORA', 3e-4), ('LORA', 'LORA', 1e-3), ('MLP_OUT', 'MLP_OUT', 3e-5),
+        ('MLP_OUT', 'MLP_OUT', 1e-4), ('MEM_ALL', 'MEM_ALL', 1e-3), ('MEM_ALL', 'MEM_ALL', 1e-2), ('MEM_SPARSE', 'MEM_SPARSE', 1e-3),
         ('MEM_SPARSE', 'MEM_SPARSE', 1e-2), (f'MEM_SPARSE t={4 * TOPT}', 'MEM_SPARSE', 1e-2)]
 SEL = os.environ.get('SM_RUNS', '')
 for k, (tag, meth, lr) in enumerate(RUNS):
