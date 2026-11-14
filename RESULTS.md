@@ -960,6 +960,24 @@ directions makes it worse), and **what differs between relations lies MORE in th
 words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
 would settle it for the real model.
 
+### GPU cg27a_rcode5: the dose-fixed write path through pass 1 (seed 4, 14 November, visits 1-10)
+
+cg27a_rcode4 + inf_rti_rows_ref 8 (the dose loss weighted by rows / 8). Four batches of 200 written (visits 2 / 4 / 6 / 8): right 0.59 /
+0.59 / 0.57 / **0.425** - the best pairs run out by the fourth. Recall from the weights in the test wording (never taught), by batch,
+taught vs held back, right / wrong:
+
+| visit | batch of visit 2 | batch of visit 4 | batch of visit 6 | batch of visit 8 | rank, taught vs held back (right / wrong) |
+|---|---|---|---|---|---|
+| 4 | 0.54 / 0.49 vs 0.05 / 0.07 | - | - | - | 0.94 / 0.93 vs 0.11 / 0.25 |
+| 6 | 0.44 / 0.40 vs 0.04 / 0.00 | 0.37 / 0.38 vs 0.00 / 0.00 | - | - | 0.85 / 0.77 vs 0.14 / 0.14 |
+| 8 | 0.57 / 0.55 vs 0.01 / 0.02 | 0.56 / 0.52 vs 0.00 / 0.00 | 0.42 / 0.34 vs 0.00 / 0.00 | - | 0.86 / 0.76 vs 0.21 / 0.13 |
+| 9 | 0.51 / 0.47 vs 0.01 / 0.05 | 0.47 / 0.40 vs 0.02 / 0.00 | 0.38 / 0.29 vs 0.01 / 0.00 | 0.21 / 0.21 vs 0.02 / 0.00 | 0.80 / 0.65 vs 0.19 / 0.10 |
+
+**Every batch is kept through pass 1 (the first at about 0.5 open-ended seven visits after it was written), held back stays at 0.00-0.05,
+and from visit 6 right inferences are held more firmly than wrong ones (rank 0.80-0.86 vs 0.65-0.77).** Held-out bits visits 1-9:
+2.0241 / 2.0322 / 2.0137 / 1.9258 / 1.8645 / 1.8980 / 1.8720 / 1.8076 / 1.7635 (cg27a_rcode2 to visit 6: ... 1.8710 / 1.8986) - no cost
+visible. A readout error late in the run ([NAME MEMORY READOUT] stale unavailable, ValueError, twice; caught, the run continued).
+
 ### An exclusivity trigger, and asymmetry as a write filter (tools/exclusive_trigger.py, 14 November; the GPU write path, distant set)
 
 400 written by the package's own path at 20,375 distant documents (right 0.578), judged on documents 20,375-40,749. The subject S is the
@@ -977,6 +995,10 @@ retract on at a 0.4 wrong base (the flagged set would be about 58% wrong).** Res
 **Unexpected and more useful: asymmetry selects.** Writes whose subject is clearly more specific than the object are wrong 0.28 against
 0.42 overall (200 of 400): a label-free WRITE filter, not a retraction trigger. One write set, one seed; to be checked on more writes and
 on Re-DocRED gold before it is built.
+Checked on Re-DocRED gold (tools/fact_compress.py FC_ASYM, + 30k distant documents, two splits): the top 200 by code + Adamic-Adar are
+right 0.395 / 0.395; among them, pairs with |log degree ratio| > 1 right 0.672 / 0.667 (dropped 0.256 / 0.261), > 2 right 0.750 / 0.783;
+**writing the top 200 among pairs with |log degree ratio| > 1: right 0.585 / 0.525 against 0.395** (top 400: 0.515 / 0.453 against 0.30).
+**Positive, two splits and the GPU path agree: asymmetry is a label-free write filter worth about +0.13 to +0.19 precision.**
 
 ### Can compression statistics type an inference? (tools/compress_typing.py, 14 November; Re-DocRED gold + 30k distant documents, two splits)
 

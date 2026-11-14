@@ -117,6 +117,17 @@ if os.environ.get('FC_SAVE') or os.environ.get('FC_LOAD'):                      
         lo_ = R_[:, 1] <= np.median(R_[:, 1])                                              # does the change add to the stage-1 rank? AUC of the change within halves of it
         P(f"   rank change within halves of the stage-1 rank: lower half AUC {auc((R_[:, 2] - R_[:, 1])[lo_ & y1], (R_[:, 2] - R_[:, 1])[lo_ & ~y1]):.3f}, upper half "
           f"{auc((R_[:, 2] - R_[:, 1])[~lo_ & y1], (R_[:, 2] - R_[:, 1])[~lo_ & ~y1]):.3f} | stage-1 rank alone {a_(R_[:, 1]):.3f}")
+if int(os.environ.get('FC_ASYM', 0)):                                                  # 14 Nov ASYMMETRY AS A WRITE FILTER (tools/exclusive_trigger.py: on the GPU
+    rk3 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1)                      #   path, writes whose subject is clearly more specific were wrong 0.28 vs 0.42)
+    ck3 = max(k for k in SC if k.startswith('CODE') and 'rel' not in k); both3 = rk3(SC[ck3]) + rk3(SC['Adamic-Adar']); o3 = np.argsort(-both3)
+    asy = np.abs(np.log((deg[XA_] + 1) / (deg[XB_] + 1)))
+    for n_ in (200, 400, 800):
+        t_ = o3[:n_]; P(f"ASYMMETRY FILTER, top {n_} by code + Adamic-Adar (right {yy[t_].mean():.3f}): " + " | ".join(
+            f"|log degree ratio| > {th}: {int((asy[t_] > th).sum())} kept, right {yy[t_][asy[t_] > th].mean():.3f} (dropped {yy[t_][asy[t_] <= th].mean():.3f})" for th in (0.5, 1.0, 2.0)))
+    for th in (1.0,):                                                                   # the same NUMBER written, filtered first: the top n among asymmetric pairs
+        oa = [i for i in o3 if asy[i] > th]
+        P(f"   writing the top 200 / 400 among pairs with |log degree ratio| > {th}: right {yy[oa[:200]].mean():.3f} / {yy[oa[:400]].mean():.3f} (unfiltered {yy[o3[:200]].mean():.3f} / {yy[o3[:400]].mean():.3f})")
+    P(f"   all candidates: right with |log degree ratio| > 1 {yy[asy > 1].mean():.3f} vs <= 1 {yy[asy <= 1].mean():.3f} (base {yy.mean():.3f})")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
