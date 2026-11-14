@@ -942,6 +942,15 @@ Visit 4: the visit-2 batch, after two visits of teaching, open-ended taught righ
 code + AA 0.635). Held-out bits visit 4: 1.9246 (cg27a_rcode3: 1.9186). The dose loss is a mean over its rows, so 16 rows at weight 1
 pushed each row half as hard as 8 did: learning was slower (visit 3), not capped (visit 4). inf_rti_rows_ref (added) restores the push.
 
+### GPU cg27a_rret (= cg27a_rcode5 + retraction; seed 4, 14 November, visits 1-3): the dose fix
+
+Retraction cannot act before the first judgement (visit 4), so visits 1-3 test the dose scaling alone (inf_rti_rows_ref 8: each of 16 rows
+pushes as one of 8). Visit 3, the visit-2 batch after one visit of teaching: dose loss 1.171 -> 0.234 (cg27a_rcode4 1.234 -> 0.354;
+cg27a_rcode3 1.059 -> 0.253); **rank taught right / wrong 0.54 / 0.57 vs held back 0.11 / 0.11** (cg27a_rcode4 0.43 / 0.37; cg27a_rcode3
+0.61 / 0.54); open-ended 0.14 / 0.10 (unchanged from cg27a_rcode4; cg27a_rcode3 0.22 / 0.27). Held-out bits 2.0235 / 2.0263 / 2.0125
+(cg27a_rcode4 2.0237 / 2.0271 / 2.0110). **The fix restores most of the per-inference learning (loss and rank near cg27a_rcode3's, with
+twice as many taught: about 44 right ranked first vs 30), at no cost; open-ended exact recall has not caught up at one visit.**
+
 ### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
 
 Each name followed by its compression cluster token (128 k-means clusters of the store's co-mention graph codes) in the kept documents'
