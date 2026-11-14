@@ -1058,6 +1058,32 @@ right 0.395 / 0.395; among them, pairs with |log degree ratio| > 1 right 0.672 /
 **writing the top 200 among pairs with |log degree ratio| > 1: right 0.585 / 0.525 against 0.395** (top 400: 0.515 / 0.453 against 0.30).
 **Positive, two splits and the GPU path agree: asymmetry is a label-free write filter worth about +0.13 to +0.19 precision.**
 
+### Typing from the literature: typed predicates, entailment back-off, relation discovery (tools/typed_research.py, 14 November; two splits)
+
+Re-DocRED gold + 30k distant documents. T1 types RECORDS READ in held-out documents (the pair stated, in its own wording); T2 also types
+pairs NEVER STATED in the store (an inference). Probe as tools/compress_typing.py; 'coverage' = share typed at 80% precision. Split 0 / 1:
+
+| typing a READ record by (commonest relation 0.32 / 0.31) | exact: typed, right | exact coverage | family coverage |
+|---|---|---|---|
+| **the wording alone** | 0.85 / 0.83, **0.518 / 0.516** | **0.149 / 0.204** | **0.445 / 0.468** |
+| latent wording cluster (universal schema) | 1.00, 0.392 / 0.382 | 0.036 / 0.000 | 0.221 / 0.203 |
+| compressed class pair alone | 0.41 / 0.38, 0.421 / 0.446 | 0.001 / 0.016 | 0.111 / 0.147 |
+| TYPED PREDICATE (class A, wording, class B) | 0.17 / 0.14, 0.581 / 0.704 | 0.000 / 0.105 | 0.125 / 0.122 |
+| typed predicate + ENTAILMENT BACK-OFF (directional inclusion) | 0.18 / 0.16, 0.548 / 0.682 | 0.000 / 0.095 | 0.121 / 0.126 |
+| T2 encoder (relation discovery by reconstructing arguments) | 1.00, 0.386 / - | 0.000 / - | 0.000 / - |
+
+| typing a NEVER-STATED pair (commonest relation 0.476) | exact right | coverage |
+|---|---|---|
+| class pair alone | 0.445 | 0.002 |
+| T2 decoder (the latent relation that best links A and C) | 0.475 | 0.000 |
+
+(Split 1's T2 was killed for memory; one split.)
+**Negative for the literature methods at this volume: typed predicates are precise but sparse (only 14-17% of held-out records have one
+seen 3+ times), entailment back-off rescues 1%, and joint relation discovery types worse than the raw wording and no better than the
+commonest relation for unstated pairs.** **What does type: the wording a pair is READ in** - 0.52 exact, a sixth to a fifth of records at
+80% precision, nearly half by family. Typing comes from a sentence that states the pair, not from inference; a typed inference has to be
+confirmed by such a sentence (predict, then type on confirmation, as cg27a_rtc confirmed pairs).
+
 ### Can compression statistics type an inference? (tools/compress_typing.py, 14 November; Re-DocRED gold + 30k distant documents, two splits)
 
 Gold-related pairs of held-out documents with every record pairing them removed (3,186-3,536 test pairs, never stated in the store).
