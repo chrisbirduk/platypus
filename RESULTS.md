@@ -814,6 +814,29 @@ Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, 
 (AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
 mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
 
+### Inference as compression of the fact table (tools/fact_compress.py, 14 November, morning; Re-DocRED train + dev store, two held-out splits)
+
+The record compressor codes p(A | class A) and p(B | class B) independently: which names go together - the facts - is never compressed, and
+an inference is exactly a redundancy among facts (A-B, B-C make A-C cheap). Here each name gets a low-rank CODE of the store's name x name
+record graph (PPMI, truncated SVD; no labels). 400 documents are held out: their records are removed, and so is any record anywhere pairing
+two names of one held-out document - nothing in the store states any candidate pair. Candidates: names co-occurring in a held-out document,
+both still in the store; gold = related in that document.
+
+| pairs never stated together | base | bridges (common neighbours), top 5% | Adamic-Adar AUC / top 5% | CODE 128 AUC / top 5% | **CODE 512 AUC / top 5%** |
+|---|---|---|---|---|---|
+| with a chain A-B-C, split 0 | 0.094 | 0.196 | 0.619 / 0.243 | 0.684 / 0.291 | **0.726 / 0.365** |
+| with a chain, split 1 | 0.086 | - | 0.610 / 0.240 | 0.707 / 0.294 | **0.746 / 0.323** |
+| no chain, split 0 | 0.073 | 0.061 | 0.500 / 0.061 | 0.549 / 0.124 | **0.555 / 0.153** |
+| no chain, split 1 | 0.063 | - | 0.500 / 0.043 | 0.552 / 0.115 | **0.538 / 0.118** |
+| all pairs, split 0 | 0.081 | 0.131 | 0.555 / 0.177 | 0.612 / 0.221 | 0.618 / 0.281 |
+
+Popularity (degree product) is below chance (AUC 0.39-0.46); weighting records by the relational-wording learner changes nothing.
+**Positive, two splits: the compressed fact table infers.** Where a chain exists, the top 5% by code are right 0.32-0.37 - 3.8x base and
+level with waiting for later text to confirm (0.36, which needs the pair stated) - with nothing in the store stating the pair; where no
+chain exists, chaining is at chance by definition and the codes still find related pairs at about 2x base. Inference grows with the size
+of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
+relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
+
 ### Does reading the premises make a novel inference stick? (tools/evidence_infer.py, 14 November, overnight; stand-in trunk, two seeds)
 
 120 SUPPORTED pairs (A-B gold in one Re-DocRED document, B-C gold in another, A and C never in the same document anywhere) and 120
