@@ -1000,7 +1000,7 @@ predict when later text names A with a name of the object's class is unconfirmed
 (functional relations - the subset compression can type, tools/compress_typing.py); it cannot catch associations that later text keeps
 pairing (the GPU's wrong writes, tools/trigger_retest.py), which the trunk would 'confirm' too.
 
-### GPU cg27a_rasym: the asymmetry write filter (seed 4, 14 November, visit 2)
+### GPU cg27a_rasym: the asymmetry write filter (seed 4, 14 November, visits 1-6)
 
 cg27a_rcode5 + inf_rcode_asym 1.0 (write only pairs with |log degree ratio| > 1). Visit 2 (the same store and candidates as cg27a_rcode5),
 labelled share of the top 100 / 200 / 400: code + RA 0.59 / 0.59 / 0.578 overall vs **0.67 / 0.68 / 0.642 among asymmetric pairs**; code +
@@ -1011,6 +1011,22 @@ Visit 3: rank taught 0.56 / 0.66 vs held back 0.08 / 0.18; open-ended 0.09 / 0.0
 in the first visit. **Visit 4: the visit-2 batch open-ended 0.73 / 0.74 vs held back 0.03 / 0.03 (cg27a_rcode5: 0.54 / 0.49); rank 0.94 /
 0.96 vs 0.12 / 0.18. The second batch (visit 4) right 0.66 (cg27a_rcode5: 0.59).** Held-out bits 2.0167 / 1.9183 at visits 3 / 4
 (cg27a_rcode5 2.0137 / 1.9258). More right inferences written AND recalled better after two visits, at no cost.
+Visits 5-6 against cg27a_rcode5 at the same visits:
+
+| | cg27a_rasym | cg27a_rcode5 |
+|---|---|---|
+| batches written right (visits 2 / 4 / 6) | **0.680 / 0.660 / 0.670** | 0.590 / 0.590 / 0.570 |
+| visit 6, open-ended, taught right / wrong vs held back | **0.68 / 0.69** vs 0.03 / 0.00 | 0.40 / 0.39 vs 0.02 / 0.00 |
+| visit 6, by batch (visit 2; visit 4), taught right | **0.74; 0.62** | 0.44; 0.37 |
+| visit 6, rank, taught right / wrong vs held back | 0.95 / 0.99 vs 0.21 / 0.05 | 0.85 / 0.77 vs 0.14 / 0.14 |
+| visit 6, taught facts answered right (false memory probe c) | 0.52 | 0.36 |
+| held-out bits visits 4 / 5 / 6 | 1.9183 / 1.8624 / 1.8840 | 1.9258 / 1.8645 / 1.8980 |
+
+**Positive through visit 6: the precision gain holds on every batch (+0.08 to +0.10, the third batch not falling), and recall from the
+weights is about 1.7 times cg27a_rcode5's - about 91 right inferences recalled per batch against 47.** Wrong writes are recalled as
+strongly (0.69), so false memories also rise (about 45 per batch against 32); the right-to-wrong ratio among recalled inferences improves
+from 1.5 to 2.0. Held-back controls stay at 0.00-0.03. Bits slightly better at every visit (within seed noise). The candidate table again
+favours code + AA under the filter: top 200 0.740 / 0.700 / 0.730 against code + RA 0.680 / 0.670 / 0.700 (visits 2 / 4 / 6).
 
 ### GPU cg27a_rcode5: the dose-fixed write path through pass 1 (seed 4, 14 November, visits 1-10)
 
