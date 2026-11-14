@@ -887,6 +887,23 @@ the same 200 (every candidate pair is still kept out of the store). Right vs wro
 falling rank flags wrong writes at about 0.6. Co-occurrence in new reading says nothing (nearly every pair turns up). Re-ranking is a
 mild check on confident writes, not a retraction trigger.
 
+### Which selection rule writes the most right inferences: more signals (tools/fact_compress.py FC_SELECT 2, 14 November; two splits)
+
+Store of Re-DocRED + 30,000 distant documents, codes 256 dims, all candidates never stated together (base 0.095 / 0.086). Share labelled
+related among the top N written, split 0 / split 1:
+
+| rule | top 50 | top 100 | top 200 | top 400 |
+|---|---|---|---|---|
+| code alone | 0.40 / 0.28 | 0.43 / 0.26 | 0.38 / 0.305 | 0.33 / 0.28 |
+| code + Adamic-Adar (cg27a_rcode3) | 0.60 / 0.58 | 0.52 / 0.52 | 0.395 / 0.395 | 0.30 / 0.30 |
+| **code + resource allocation** | **0.62 / 0.52** | **0.53 / 0.54** | **0.465 / 0.445** | **0.40 / 0.37** |
+| code + Adamic-Adar + L3 (3-paths) | 0.64 / 0.64 | 0.50 / 0.44 | 0.385 / 0.38 | 0.33 / 0.315 |
+| bagged code (3 fits on 80%) + Adamic-Adar | 0.64 / 0.58 | 0.51 / 0.50 | 0.375 / 0.375 | 0.30 / 0.28 |
+
+**Positive, both splits: resource allocation (shared neighbours weighted 1/degree, not 1/log degree) in place of Adamic-Adar keeps
+precision as more is written - level at the top 100, +5 to +7 points at 200, +7 to +10 at 400.** The store could write two to four times
+as many inferences at nearly the same precision. 3-paths and bagged codes add nothing.
+
 ### Unlearning a wrong taught inference (tools/retract_diag.py, 14 November; stand-in trunk 3 x 192, two seeds)
 
 The trunk is taught 120 right pairs, 120 wrong ones (A with a random name of the answer's type) and 120 bystanders in the system's
