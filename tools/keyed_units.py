@@ -12,7 +12,12 @@ predictions weighted by each unit's confidence. Units:
   NUMBER    key: the sentence's last name + the word before a number - predicts the number
 Scored prequentially on the last RU_EVAL documents (memories filled from every earlier document and earlier in the same document):
 bits saved per 1,000 bytes, alone and on top of NAME, and bits saved per firing.
-Usage: TG_D=192 TG_CKPT=<model file> python3 tools/keyed_units.py   env RU_EVAL (600), RU_CONT (24)"""
+FEEDBACK GATE (14 Nov, second version): the fixed mixture above lets a weak unit drag down a strong one. The gate LEARNS how far to trust
+each unit from the bits it actually saves: a softmax over the trunk (logit 0) and each firing unit, the unit's logit read from a table keyed
+by (unit, consistent continuations n, bytes into the continuation, the trunk's own entropy at that byte - known before the byte is read),
+started at log(n / 2) (the fixed rule) and moved by one online gradient step on -log p after each byte is scored (prequential: every
+byte is scored before the gate learns from it). Reported for all scored documents and for the last two-thirds (after warm-up).
+Usage: TG_D=192 TG_CKPT=<model file> python3 tools/keyed_units.py   env RU_EVAL (600), RU_CONT (24), RU_LR (0.05)"""
 import os, sys, json, math, time, collections, re
 import numpy as np
 import torch
@@ -61,7 +66,7 @@ PRIO = {'FACT': 0, 'NUMBER': 1, 'DATE': 1, 'PLACE': 2, 'NAME': 3}   # combined u
 def add(b, fs):
     for u, k, p in fs: mem[u][k].append(b[p:p + CL])
 for b, fs in B[:ev0]: add(b, fs)
-def pmem(units, b, fs):
+def pmem(units, b, fs, raw=False):
     """per byte position: (lam, p_mem of the actual byte), units combined by pooling their consistent continuations"""
     best = {}
     for u, k, p in fs:
@@ -75,22 +80,41 @@ def pmem(units, b, fs):
             pm = (hit + 1.0 / 256) / (n + 1.0); lam = n / (n + 2.0)
             best.setdefault(p + off, {})                                             # per unit, the most confident firing at this position
             q = best[p + off].get(u)
-            if q is None or lam > q[0]: best[p + off][u] = (lam, pm)
+            if q is None or lam > q[0]: best[p + off][u] = (lam, pm, n, off)
+    if raw: return best
     out = {}
     for pos, d in best.items():                                                      # units combined as a mixture: p_mem weighted by each
-        lam = 1.0 - np.prod([1.0 - l for l, m_ in d.values()])                       #   unit's confidence, the overall weight 1 - prod(1 - lam_u)
-        pm = sum(l * m_ for l, m_ in d.values()) / sum(l for l, m_ in d.values()); out[pos] = (lam, pm, '+'.join(sorted(d)))
+        lam = 1.0 - np.prod([1.0 - v[0] for v in d.values()])                       #   unit's confidence, the overall weight 1 - prod(1 - lam_u)
+        pm = sum(v[0] * v[1] for v in d.values()) / sum(v[0] for v in d.values()); out[pos] = (lam, pm, '+'.join(sorted(d)))
     return out
 res = {c: [0.0, 0, 0] for c in ['NAME', 'FACT', 'PLACE', 'DATE', 'NUMBER', 'NAME+FACT', 'NAME+PLACE', 'NAME+DATE', 'NAME+NUMBER', 'ALL']}
 combos = {c: set(c.split('+')) if c != 'ALL' else set(UNITS) for c in res}
+LR = float(os.environ.get('RU_LR', 0.05)); W0 = ev0 + NE // 3
+nbk = lambda n: 0 if n <= 1 else 1 if n == 2 else 2 if n <= 4 else 3 if n <= 8 else 4
+obk = lambda o: 0 if o == 0 else 1 if o <= 3 else 2 if o <= 11 else 3
+ebk = lambda e: 0 if e < 0.5 else 1 if e < 1.5 else 2 if e < 3 else 3
+gate = {c: {} for c in res}; gres = {c: [0.0, 0.0] for c in res}; nb_late = 0; bb_late = 0.0
 nbytes = 0; base_bits = 0.0
 for di in range(ev0, len(B)):
     b, fs = B[di]
-    S, _ = run(lm, b); pt = 2.0 ** (-S.astype(np.float64)); nbytes += len(b); base_bits += float(S.sum())
+    S, Hs = run(lm, b); pt = 2.0 ** (-S.astype(np.float64)); nbytes += len(b); base_bits += float(S.sum())
+    with torch.no_grad(): lpo = F.log_softmax(lm.o(torch.tensor(Hs)), -1); ent = (-(lpo.exp() * lpo).sum(-1) / math.log(2)).numpy()
+    late = di >= W0
+    if late: nb_late += len(b); bb_late += float(S.sum())
     for c, us in combos.items():
         bp = pmem(us, b, fs); saved = 0.0
         for pos, (lam, pm, u) in bp.items(): saved += S[pos] - (-math.log2((1 - lam) * pt[pos] + lam * pm))
         res[c][0] += saved; res[c][1] += len(bp)
+        G = gate[c]; gs = 0.0                                                         # the feedback gate, prequential
+        for pos, d in sorted(pmem(us, b, fs, raw=True).items()):
+            ks = [(u, nbk(v[2]), obk(v[3]), ebk(ent[pos])) for u, v in d.items()]
+            lg = np.array([0.0] + [G.setdefault(k, math.log(max(d[k[0]][2], 1) / 2.0)) for k in ks])
+            w = np.exp(lg - lg.max()); w /= w.sum()
+            ps = np.array([pt[pos]] + [d[k[0]][1] for k in ks]); p = float((w * ps).sum())
+            gs += S[pos] + math.log2(max(p, 1e-12))
+            for j, k in enumerate(ks): G[k] += LR * w[j + 1] * (ps[j + 1] - p) / max(p, 1e-12)
+        gres[c][0] += gs
+        if late: gres[c][1] += gs
     add(b, fs)
     if (di - ev0 + 1) % 150 == 0: P(f"   {di - ev0 + 1} documents scored  ({time.time() - T0:.0f}s)")
 P(f"SCORED {NE} documents, {nbytes} bytes; trunk alone {base_bits / nbytes:.3f} bits per byte")
@@ -98,4 +122,12 @@ for c, (sv, npos, _) in res.items():
     P(f"   {c:12s} bits saved per 1,000 bytes {1000 * sv / nbytes:7.2f} ({100 * sv / base_bits:5.2f}% of the trunk's bits) | positions predicted {npos} | per predicted byte {sv / max(1, npos):.3f}")
 for u in ['FACT', 'PLACE', 'DATE', 'NUMBER']:
     P(f"   {u:7s} on top of NAME: {1000 * (res['NAME+' + u][0] - res['NAME'][0]) / nbytes:+.2f} bits per 1,000 bytes")
+P(f"FEEDBACK GATE (learned trust per unit, lr {LR}): bits saved per 1,000 bytes, all {NE} documents | last {len(B) - W0} (after warm-up)")
+for c in res: P(f"   {c:12s} gate {1000 * gres[c][0] / nbytes:7.2f} | late {1000 * gres[c][1] / nb_late:7.2f} ({100 * gres[c][1] / bb_late:5.2f}%)   fixed mixture {1000 * res[c][0] / nbytes:7.2f}")
+for u in ['FACT', 'PLACE', 'DATE', 'NUMBER']:
+    P(f"   {u:7s} on top of NAME with the gate: all {1000 * (gres['NAME+' + u][0] - gres['NAME'][0]) / nbytes:+.2f} | late {1000 * (gres['NAME+' + u][1] - gres['NAME'][1]) / nb_late:+.2f} bits per 1,000 bytes")
+P(f"   ALL on top of NAME with the gate: all {1000 * (gres['ALL'][0] - gres['NAME'][0]) / nbytes:+.2f} | late {1000 * (gres['ALL'][1] - gres['NAME'][1]) / nb_late:+.2f}")
+lt = collections.defaultdict(list)
+for k, v in gate['ALL'].items(): lt[k[0]].append(v)
+P("   learned logits (ALL), mean per unit: " + ", ".join(f"{u} {np.mean(v):+.2f} over {len(v)} cells" for u, v in lt.items()))
 P(f"DONE ({time.time() - T0:.0f}s)")

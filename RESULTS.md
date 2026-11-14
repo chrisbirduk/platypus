@@ -1084,6 +1084,59 @@ commonest relation for unstated pairs.** **What does type: the wording a pair is
 80% precision, nearly half by family. Typing comes from a sentence that states the pair, not from inference; a typed inference has to be
 confirmed by such a sentence (predict, then type on confirmation, as cg27a_rtc confirmed pairs).
 
+### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
+
+The author's idea: 4-6 generic KEYED units like NAME, indexable, extracted from local context, each with its own memory, kept only if they
+measurably improve language modelling. Counted extractors (no learning yet), each with a keyed continuation memory (the bytes after each
+firing, stored under its key); when the key fires again, the stored continuations consistent with the bytes read so far predict the next
+byte, mixed with the trunk at lam = n / (n + 2). Prequential on the last 600 of 3,053 documents (630,697 bytes; trunk alone 2.246 bits per
+byte); memories filled from every earlier document. Bits saved per 1,000 bytes:
+
+| unit (key) | alone | on top of NAME (fixed mixture) |
+|---|---|---|
+| **NAME** (a run of capitalised words) | **29.99 (1.34% of the trunk's bits)** | - |
+| FACT (a name + the 1-4 words after it) | 9.79 | **-1.77** |
+| PLACE (a locative word + a name) | 3.57 | -0.50 |
+| DATE (the sentence's last name, where a year or month starts) | 2.97 | **+1.29** |
+| NUMBER (the sentence's last name + the word before a number) | 3.05 | +0.30 |
+| ALL five | 29.31 | -0.68 |
+
+**NAME carries almost all of it. Every other unit saves bits alone, but only DATE (+1.29) and NUMBER (+0.30) add anything on top of NAME;
+FACT and PLACE are mostly NAME's predictions again and, through the fixed mixture, make it worse.** The mixture is the weak point, not the
+units: a unit with many stored continuations gets a high weight whether or not they are right. Next: a gate that learns each unit's trust
+from the bits it saves (the "feedback" half of the idea).
+
+### An AMIE-style functional contradiction trigger (tools/exclusive_trigger.py, 14 November; GPU write path, distant set, split 0)
+
+AMIE (Galarraga 2013): a wording is FUNCTIONAL if each subject has one object under it (functionality >= 0.8 over 5+ records; 3,328
+wordings). A written inference A-C is CONTRADICTED if A later appears under a functional wording with an object other than C. 400 writes
+at document 20,375, judged on documents 20,375-40,749:
+
+| writes | judged | contradicted: wrong | not contradicted: wrong | likelihood ratio |
+|---|---|---|---|---|
+| all | 336 (wrong 0.40) | 70: 0.49 | 0.37 | 1.4 |
+| asymmetry > 1 (functional-like) | 166 (wrong 0.24) | 20: 0.35 | 0.23 | 1.7 |
+
+**Weak: a functional contradiction is only 1.4-1.7 times likelier on a wrong write and fires on a fifth of them.** Confirmation by
+prediction (tools/surprise_trigger.py, AUC 0.80) stays the best retraction trigger found.
+
+### Type constraints from the class-pair table (tools/fact_compress.py FC_LCWA, 14 November; GPU write path, distant set, two splits)
+
+The type-constrained knowledge-graph literature (Krompass 2015, local closed-world assumption): keep a candidate inference only if its
+name-class pair (compressed classes of A and C) is one the store often links. Precision of the top 200 / 400 written by code + AA, split 0 / 1:
+
+| filter | top 200 | top 400 |
+|---|---|---|
+| none | 0.395 / 0.395 | 0.302 / 0.297 |
+| class-pair PMI above its 25th percentile | 0.375 / 0.400 | 0.282 / 0.297 |
+| class-pair PMI above its 50th percentile | 0.345 / 0.360 | 0.263 / 0.270 |
+| asymmetry > 1 alone | 0.585 / 0.525 | 0.515 / 0.453 |
+| asymmetry > 1 + class-pair PMI above its 25th percentile | 0.590 / 0.535 | 0.522 / 0.448 |
+
+**Negative: class-pair PMI does not separate right from wrong candidates (AUC 0.535 / 0.534); the filter costs precision on its own and
+adds nothing to the asymmetry filter.** The compressed classes are too coarse to act as types (as compress_typing found for exact
+relations); asymmetry stays the only label-free write filter that works.
+
 ### Can compression statistics type an inference? (tools/compress_typing.py, 14 November; Re-DocRED gold + 30k distant documents, two splits)
 
 Gold-related pairs of held-out documents with every record pairing them removed (3,186-3,536 test pairs, never stated in the store).
