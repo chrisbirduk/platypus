@@ -884,6 +884,11 @@ of teaching, 0.49 / 0.31 vs 0.03 / 0.05** (0.33 / 0.23 vs 0.03 / 0.00); rank tau
 1.8905 (seed 4: 1.8533); the domain just read matches the earlier seed-5 build cg27a_replay_s5 (post-train PubMed 1.678 vs 1.679, FreeLaw 1.583
 vs 1.585), the gap is in older domains (Gutenberg 2.160 vs 2.039, PubMed 1.725 vs 1.687, Wikipedia 2.064 vs 2.038) - seed or change cannot
 be told apart without a same-seed run without the inferences.
+Visit 6 (seed 5): a third batch written, right 0.55 (the readout's top 100 is 0.71, but pairs already written are skipped, so the
+batch reaches further down the ranking). Visit-2 batch kept: taught 0.71 / 0.65 vs held back 0.16 / 0.00; **visit-4 batch after two visits
+0.66 / 0.46 vs 0.03 / 0.15**; rank taught 0.85 / 0.58 vs held back 0.17 / 0.25 - right inferences now held more firmly than wrong ones
+(consistent with tools/gen_diag.py: the reading prior already favours right answers and adds to the teaching). Held-out bits 1.9166
+(cg27a_rcode2 seed 4 at visit 6: 1.8986; Gutenberg 2.178 vs 2.101).
 
 ### Does more reading flag a wrong inference? (tools/fact_compress.py FC_SAVE / FC_LOAD, 14 November; Re-DocRED gold, two splits)
 
