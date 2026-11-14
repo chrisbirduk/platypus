@@ -942,6 +942,25 @@ Visit 4: the visit-2 batch, after two visits of teaching, open-ended taught righ
 code + AA 0.635). Held-out bits visit 4: 1.9246 (cg27a_rcode3: 1.9186). The dose loss is a mean over its rows, so 16 rows at weight 1
 pushed each row half as hard as 8 did: learning was slower (visit 3), not capped (visit 4). inf_rti_rows_ref (added) restores the push.
 
+### Refusal again: familiarity rows and a name gate (tools/toy_refuse.py, 14 November; toy, 3,000 steps, two seeds)
+
+Taught wording (the toy cannot answer in the held-out one); refusal on fresh names from the stored names' syllables (never read); facts
+only read answered right; known facts right. NAME GATE (no training): abstain when the trunk's surprise at the subject's name (bits a byte
+after 'Some say that ') is above the 95th percentile of known names'. Seed 0 / seed 1:
+
+| condition | refuse never-read | only-read right | known right | name gate: AUC read vs fresh; abstains never-read / only-read |
+|---|---|---|---|---|
+| none | 0.00 / 0.00 | **0.62 / 0.78** | 1.00 / 1.00 | 0.87 / 0.93; **0.48 / 0.50**, 0.06 / 0.02 |
+| refusal rows, same syllables | 0.85 / 0.97 | 0.15 / 0.12 | 0.97 / 0.94 | 0.75 / 0.79; 0.30 / 0.28, 0.15 / 0.09 |
+| + 12 wordings | 0.87 / 0.80 | 0.05 / 0.09 | 0.99 / 0.99 | 0.95 / 0.96; 0.98 / 0.90, 0.33 / 0.13 |
+| refusal + FAMILIARITY rows ('Have I read about A? yes / no') | 0.82 / 0.75 | 0.38 / 0.21 | 0.99 / 0.99 | 0.71 / 0.82; 0.25 / 0.50, 0.10 / 0.15 |
+| familiarity rows only | 0.00 / 0.00 | 0.47 / 0.55 | 0.96 / 0.91 | 0.82 / 0.93; 0.50 / 0.77, 0.19 / 0.09 |
+
+In the held-out wording every refusal-trained arm refuses KNOWN facts too (0.54-0.81): the refusal is tied to taught frames. **Familiarity
+rows halve the damage of refusal rows to facts only read (0.15 / 0.12 -> 0.38 / 0.21) but do not remove it, and cost reading on their own
+(0.47 / 0.55). The name gate, with no training, abstains on half of never-read names at a 2-6% cost to facts known or only read, and leaves
+learning from reading untouched.** For the GPU: no refusal training; the name gate at answer time beside the confidence gate.
+
 ### GPU cg27a_rret (= cg27a_rcode5 + retraction; seed 4, 14 November, visits 1-3): the dose fix
 
 Retraction cannot act before the first judgement (visit 4), so visits 1-3 test the dose scaling alone (inf_rti_rows_ref 8: each of 16 rows
