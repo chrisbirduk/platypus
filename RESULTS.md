@@ -976,7 +976,13 @@ taught vs held back, right / wrong:
 **Every batch is kept through pass 1 (the first at about 0.5 open-ended seven visits after it was written), held back stays at 0.00-0.05,
 and from visit 6 right inferences are held more firmly than wrong ones (rank 0.80-0.86 vs 0.65-0.77).** Held-out bits visits 1-9:
 2.0241 / 2.0322 / 2.0137 / 1.9258 / 1.8645 / 1.8980 / 1.8720 / 1.8076 / 1.7635 (cg27a_rcode2 to visit 6: ... 1.8710 / 1.8986) - no cost
-visible. A readout error late in the run ([NAME MEMORY READOUT] stale unavailable, ValueError, twice; caught, the run continued).
+visible. A readout error late in the run ([NAME MEMORY READOUT] stale unavailable, ValueError, 4 times; caught, the run continued; fixed
+in cg27a_rasym).
+Visit 10: batches 0.42 / 0.36, 0.42 / 0.38, 0.31 / 0.25, 0.28 / 0.26 (taught right / wrong) vs held back 0.00-0.04; rank 0.79 / 0.66 vs
+0.22 / 0.10. **End of pass 1 (weights only): forgetting +0.037, final BPC 1.779** - against cg27a_replay seed 4 +0.026 / 1.767 (no
+real-text replay, no written inferences) and the real-text replay builds before the Wikipedia-slot fix +0.077-0.088 / 1.807-1.818. Per
+domain: Gutenberg +0.068, StackExchange +0.090, USPTO +0.094, PubMed +0.044, FreeLaw +0.041; Wikipedia -0.034, ArXiv -0.017, EuroParl 0.000.
+The whole write path costs about +0.011 forgetting / +0.012 BPC against the cleanest seed-4 run, most of the real-text replay cost gone.
 
 ### An exclusivity trigger, and asymmetry as a write filter (tools/exclusive_trigger.py, 14 November; the GPU write path, distant set)
 
