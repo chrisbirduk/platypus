@@ -960,6 +960,25 @@ directions makes it worse), and **what differs between relations lies MORE in th
 words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
 would settle it for the real model.
 
+### Contradiction by surprise? Confirmation by prediction (tools/surprise_trigger.py, 14 November; stand-in trunk, two seeds)
+
+The stand-in trunk is taught 120 RIGHT claims (gold relation phrase, gold object), 120 WRONG ones (same phrase, a random object of the
+right type) and leaves 120 untaught, in two arms: the gold phrase (typed) or 'is connected to'. Later reading: each pair's real Re-DocRED
+sentence (A before C, the TRUE object in the document's words). Change in the trunk's surprise at the true object after teaching (bits),
+seed 0 / seed 1:
+
+| arm | right | wrong | control | AUC wrong vs right | flagged above the control's 90th percentile: wrong / right |
+|---|---|---|---|---|---|
+| gold phrase (typed) | -7.42 / -9.07 | +1.04 / +0.52 | +0.72 / +1.24 | **0.797 / 0.816** | 0.13 / 0.01, 0.09 / 0.02 |
+| 'is connected to' | -7.30 / -8.57 | +0.83 / +0.29 | +0.75 / +1.26 | **0.805 / 0.800** | 0.12 / 0.01, 0.08 / 0.01 |
+
+**Positive, but as CONFIRMATION, not contradiction: a right taught claim makes the true object far cheaper when later text names it
+after A (-7 to -9 bits); a wrong one leaves it where an untaught pair is (+0.3 to +1.0 vs +0.7 to +1.3).** Typing does not matter here:
+the trunk learns 'C follows A' whatever phrase it was taught. The trigger it suggests: a written inference whose object the trunk does not
+predict when later text names A with a name of the object's class is unconfirmed. It applies where wrong claims have a true competitor
+(functional relations - the subset compression can type, tools/compress_typing.py); it cannot catch associations that later text keeps
+pairing (the GPU's wrong writes, tools/trigger_retest.py), which the trunk would 'confirm' too.
+
 ### GPU cg27a_rasym: the asymmetry write filter (seed 4, 14 November, visit 2)
 
 cg27a_rcode5 + inf_rcode_asym 1.0 (write only pairs with |log degree ratio| > 1). Visit 2 (the same store and candidates as cg27a_rcode5),
