@@ -90,4 +90,20 @@ conf = smax[gi]; hi = conf >= np.quantile(conf, 0.75)
 acc_hi = np.mean([GM.get(int(rhat[i]), '') in rs__ for i, rs__, h in zip(gi, rels, hi) if h])
 P(f"WHICH RELATION, gold-related candidates ({len(gi)}): predicted latent relation -> its majority gold relation right {acc:.3f} (most confident quarter {acc_hi:.3f}) | "
   f"commonest gold relation ({top1}) {base1:.3f} | commonest for the pair's GOLD entity types (oracle-typed reference) {tp_ref:.3f}")
+# ---- NEIGHBOUR VOTE: the relation A holds with names whose codes are like C's (and C with names like A), weighted by code similarity
+recs = collections.defaultdict(list)
+for a_, b_, r_ in zip(KA, KB, KR): recs[int(a_)].append((int(b_), int(r_))); recs[int(b_)].append((int(a_), int(r_)))
+def vote(x, z):
+    w = collections.Counter()
+    for (u, v) in ((x, z), (z, x)):
+        for b_, r_ in recs[u]:
+            if b_ == v: continue
+            c_ = float(U[b_] @ U[v])
+            if c_ > 0: w[r_] += c_ ** 3
+    return (w.most_common(1)[0] if w else (-1, 0.0))
+V = [vote(int(XA[i]), int(XB[i])) for i in gi]
+accv = np.mean([GM.get(r_, '') in rs__ for (r_, c_), rs__ in zip(V, rels)]); cv = np.array([c_ for r_, c_ in V]); hv = cv >= np.quantile(cv, 0.75)
+accvh = np.mean([GM.get(r_, '') in rs__ for (r_, c_), rs__, h in zip(V, rels, hv) if h])
+P(f"WHICH RELATION by NEIGHBOUR VOTE (A's relations with names whose codes are like C's, and C's with names like A's): right {accv:.3f} (most confident "
+  f"quarter {accvh:.3f}) | commonest {base1:.3f} | oracle-typed reference {tp_ref:.3f}")
 P(f"DONE ({time.time() - T0:.0f}s)")
