@@ -8,6 +8,9 @@ UNSUPPORTED pairs A-C' (C' of C's type, no chain, never together with A). The st
   TEACH+OT  taught, then as many other documents naming none of the names (cg27a_rti's taught arm)
 Recall: C first among C and 9 same-type names, in two wordings never taught ('It is on record that A is connected to ' and 'Records
 show a link between A and '), before, after teaching and after 100 / 300 / 600 steps of reading. Two seeds.
+v2 (14 Nov): the unsupported pairs' evidence includes C's own documents (C equally familiar; v1 read only A's, so reading could favour
+supported C by familiarity alone), and a third measure, the GAIN FROM A (C's bits after 'It is on record that someone is connected to '
+minus after the A wording, ranked among the 10 names), which familiarity cannot move.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/evidence_infer.py"""
 import os
 import sys
@@ -30,6 +33,8 @@ for di, d in enumerate(docs):
 ok = lambda n: 3 <= len(n) <= 30 and len(ndoc[n]) <= 5
 dtext = lambda di: ' '.join(' '.join(s) for s in docs[di]['sents']).encode('utf-8', 'replace')
 WORD = [("It is on record that {A} is connected to ", ""), ("Records show a link between {A} and ", "")]
+NEUT = "It is on record that someone is connected to "                     # v2: GAIN FROM A = C's bits after NEUT minus after WORD[0], ranked among
+                                                                             #   the 10 names (familiarity of C cancels)
 for seed in (0, 1):
     r = np.random.RandomState(seed); sup, uns, used = [], [], set()
     names = [n for n in r.permutation(sorted(GR)) if ok(n)]
@@ -48,7 +53,9 @@ for seed in (0, 1):
         t = sup[len(uns) % len(sup)][2]
         reach = {x for B, _ in GR[A] for x, _ in GR[B]}
         pool = [n for n in byt[t] if ok(n) and n != A and n not in used and n not in reach and not ndoc[A] & ndoc[n]]
-        if pool: C = pool[r.randint(len(pool))]; uns.append((A, C, t, tuple(sorted(ndoc[A]))[:2])); used |= {A, C}
+        if pool:                                                               # v2 (14 Nov): C's own documents are read too, so C is as familiar as a
+            C = pool[r.randint(len(pool))]; uns.append((A, C, t, tuple(sorted(ndoc[A]))[:2] + tuple(sorted(ndoc[C]))[:2])); used |= {A, C}   # supported C
+
     allnames = {x[0] for x in sup + uns} | {x[1] for x in sup + uns}
     ev = sorted({d for x in sup + uns for d in x[3]})
     oth = [di for di in r.permutation(len(docs)) if not any(n in allnames for n in cn_(docs[int(di)]))][:len(ev)]
@@ -56,6 +63,7 @@ for seed in (0, 1):
     facts = [f"{A} is connected to {C}.".encode('utf-8', 'replace') for A, C, t, _ in sup + uns]
     CANDS = {}
     for A, C, t, _ in sup + uns: CANDS[(A, C)] = [C] + [n for n in r.permutation(sorted(byt[t]))[:40] if n != C and n != A and ok(n)][:9]
+    SC0 = {}
     @torch.no_grad()
     def recall(m, items):
         m.eval(); out = []
@@ -67,9 +75,19 @@ for seed in (0, 1):
                 for k, q in enumerate(seqs): X[k, :len(q[:L])] = torch.tensor(list(q[:L]))
                 Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1); nl = -F.log_softmax(m(Xi), -1).gather(-1, X[..., None])[..., 0]
                 sc = [float(nl[k, len(pre):min(L, len(q)) - 1].mean()) for k, q in enumerate(seqs)]; hit.append(int(np.argmin(sc) == 0))
+                if w == WORD[0][0]: SC0[(A, C)] = sc
             out.append(float(np.mean(hit)))
+        hit = []
+        for A, C, t, _ in items:                                               # GAIN FROM A
+            pre = NEUT.encode('utf-8', 'replace'); seqs = [pre + c.encode('utf-8', 'replace') + b'.' for c in CANDS[(A, C)]]
+            X = torch.full((len(seqs), L), PAD, dtype=torch.long)
+            for k, q in enumerate(seqs): X[k, :len(q[:L])] = torch.tensor(list(q[:L]))
+            Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1); nl = -F.log_softmax(m(Xi), -1).gather(-1, X[..., None])[..., 0]
+            g0 = np.array([float(nl[k, len(pre):min(L, len(q)) - 1].mean()) for k, q in enumerate(seqs)]) - np.array(SC0[(A, C)])
+            hit.append(int(np.argmax(g0) == 0))
+        out.append(float(np.mean(hit)))
         m.train(); return out
-    fmt = lambda s, u: f"supported {s[0]:.2f}/{s[1]:.2f}, unsupported {u[0]:.2f}/{u[1]:.2f}"
+    fmt = lambda s, u: f"supported {s[0]:.2f}/{s[1]:.2f} gain {s[2]:.2f}, unsupported {u[0]:.2f}/{u[1]:.2f} gain {u[2]:.2f}"
     def batch(src, nfact, rr):
         seqs = [facts[rr.randint(len(facts))] for _ in range(nfact)]
         for _ in range(32 - nfact): i0 = rr.randint(0, len(src) - L - 1); seqs.append(bytes(src[i0:i0 + L]))
