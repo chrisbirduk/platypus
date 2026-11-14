@@ -76,6 +76,28 @@ if int(os.environ.get('FC_SELECT', 0)):                                         
     P(f"SELECTION RULES ({ck}), gold among the top N written (all {len(ok)} candidates, base {yy.mean():.3f}):")
     for k_, sv in SEL.items():
         o = np.argsort(-sv + 1e-12 * np.random.RandomState(2).rand(len(sv))); P(f"   {k_:40s} " + " | ".join(f"top {n} {yy[o[:n]].mean():.3f}" for n in (50, 100, 200, 400)))
+if os.environ.get('FC_SAVE') or os.environ.get('FC_LOAD'):                              # 14 Nov RETRACTION SIGNAL: does a written inference's standing change, right vs wrong,
+    import json as _js                                                                    #   when the store reads more? FC_SAVE: stage 1 writes its top 200 (code + Adamic-
+    rk2 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1)                        #   Adamic-Adar rank sum); FC_LOAD: stage 2 (more documents read) re-ranks them
+    ck = max(k for k in SC if k.startswith('CODE') and 'rel' not in k); both = rk2(SC[ck]) + rk2(SC['Adamic-Adar']); pb = rk2(both); pc = rk2(SC[ck]); pa = rk2(SC['Adamic-Adar'])
+    nst = collections.Counter(pk)                                                         # records anywhere stating the pair (before removal)
+    if os.environ.get('FC_SAVE'):
+        o = np.argsort(-both)[:200]
+        _js.dump([[sorted(ok[i])[0], sorted(ok[i])[1], bool(yy[i]), float(pb[i]), float(pc[i]), float(pa[i]), int(nst[ok[i]]), int(cn_cnt[i])] for i in o], open(os.environ['FC_SAVE'], 'w'))
+        P(f"SAVED stage 1: the top 200 written by code + Adamic-Adar, right {yy[o].mean():.3f}")
+    if os.environ.get('FC_LOAD'):
+        W1 = _js.load(open(os.environ['FC_LOAD'])); ix = {k: i for i, k in enumerate(ok)}; R_ = []
+        for a_, b_, y_, p1, c1, a1, n1, br1 in W1:
+            i = ix.get(frozenset((a_, b_)))
+            if i is None: continue
+            R_.append((y_, p1, float(pb[i]), c1, float(pc[i]), a1, float(pa[i]), int(nst[ok[i]]) - n1, br1, int(cn_cnt[i])))
+        R_ = np.array(R_, float); y1 = R_[:, 0] > 0; top200 = np.sort(both)[-200] if len(both) >= 200 else -1
+        still = np.array([both[ix[frozenset((a_, b_))]] >= top200 for a_, b_, *_ in W1 if frozenset((a_, b_)) in ix])
+        a_ = lambda v: auc(v[y1], v[~y1])
+        P(f"RETRACTION SIGNAL: {len(R_)} of {len(W1)} stage-1 writes found at stage 2 (right {y1.mean():.3f}) | AUC right vs wrong (0.5 = no signal): "
+          f"stage-2 rank (code + AA) {a_(R_[:, 2]):.3f}, its CHANGE {a_(R_[:, 2] - R_[:, 1]):.3f} | code alone {a_(R_[:, 4]):.3f}, change {a_(R_[:, 4] - R_[:, 3]):.3f} | "
+          f"Adamic-Adar {a_(R_[:, 6]):.3f}, change {a_(R_[:, 6] - R_[:, 5]):.3f} | new bridges {a_(R_[:, 9] - R_[:, 8]):.3f} || still in the top 200: right "
+          f"{still[y1].mean():.2f}, wrong {still[~y1].mean():.2f} | stated in a newly read document: right {(R_[y1, 7] > 0).mean():.2f}, wrong {(R_[~y1, 7] > 0).mean():.2f}")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
