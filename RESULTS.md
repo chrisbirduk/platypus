@@ -830,6 +830,9 @@ both still in the store; gold = related in that document.
 | no chain, split 1 | 0.063 | - | 0.500 / 0.043 | 0.552 / 0.115 | **0.538 / 0.118** |
 | all pairs, split 0 | 0.081 | 0.131 | 0.555 / 0.177 | 0.612 / 0.221 | 0.618 / 0.281 |
 
+VOLUME (same 15,103 candidate pairs, store + 30k distant documents, 625k more records): CODE 512 AUC 0.618 -> **0.698**, top 5% 0.281 ->
+0.297, top 25% 0.141 -> 0.169; Adamic-Adar flat (0.555 -> 0.559). More reading improves the compressed code and not chaining. (At 128
+dimensions with the larger candidate set the distant records diluted it: the code needs room - 512 dims, 32-bit, fits in 8 GB alone.)
 Popularity (degree product) is below chance (AUC 0.39-0.46); weighting records by the relational-wording learner changes nothing.
 **Positive, two splits: the compressed fact table infers.** Where a chain exists, the top 5% by code are right 0.32-0.37 - 3.8x base and
 level with waiting for later text to confirm (0.36, which needs the pair stated) - with nothing in the store stating the pair; where no
