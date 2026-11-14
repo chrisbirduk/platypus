@@ -840,6 +840,18 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### Popularity-matched check, and which relation (tools/fact_compress.py, tools/rel_codes.py; 14 November, Re-DocRED gold, two splits)
+
+POPULARITY MATCHED (AUC within quintiles of the degree product): with a chain, code-512 0.709 / 0.706 vs Adamic-Adar 0.691 / 0.700 (raw
+0.726 / 0.746 vs 0.619 / 0.610) - much of the code's raw AUC lead came from chaining being misled by popular names; at matched popularity
+they nearly tie, while at the top of the ranking (what is written) the code stays ahead (0.32-0.37 vs 0.24 in the top 5%). With no chain
+the code holds (0.553 / 0.536 matched; chaining 0.500).
+WHICH RELATION (gold-related held-out pairs, 1,217-1,371; base: the commonest gold relation, P131, 0.53-0.55; oracle: the commonest for the
+pair's gold entity types, 0.64-0.68): a DistMult code per name over 64 label-free latent relations 0.31-0.44 (and it does not even rank
+relatedness: AUC 0.41-0.47); a neighbour vote in code space (the relation A holds with names whose codes are like C's) 0.39-0.49, most
+confident quarter 0.49-0.60. **Negative:** label-free latent relations are too noisy (relation identity AUC 0.66) to say which relation
+better than guessing the commonest one. The compressed code says THAT, not WHICH.
+
 ### Why written real-text inferences are not recalled (tools/teach_diag.py, 14 November; stand-in trunk, 120 real Re-DocRED pairs)
 
 GPU cg27a_rcode visits 3-7: written inferences recalled from the trunk at 0.00-0.03 (open-ended exact), taught or held back, right or
