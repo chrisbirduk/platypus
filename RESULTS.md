@@ -960,6 +960,27 @@ directions makes it worse), and **what differs between relations lies MORE in th
 words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
 would settle it for the real model.
 
+### Can compression statistics type an inference? (tools/compress_typing.py, 14 November; Re-DocRED gold + 30k distant documents, two splits)
+
+Gold-related pairs of held-out documents with every record pairing them removed (3,186-3,536 test pairs, never stated in the store).
+Label-free signals; a probe maps each signal's value to the gold label it most often has on kept documents. 'Coverage at 0.8' = the share
+of test pairs the signal's most confident predictions type at 80% precision. Split 0 / split 1:
+
+| target (baseline) | best signal: right | coverage at 0.8 precision |
+|---|---|---|
+| exact relation (commonest, P131: 0.363 / 0.363) | class pair + asymmetry 0.410 / 0.443 | **0.000-0.014 for every signal** |
+| family: location, person, organisation, work, time (location: 0.610 / 0.594) | path wording 0.675 / 0.662 (on 67% of pairs); class pair + asymmetry 0.613 / 0.614 | class pair + asymmetry 0.395 / 0.416 |
+| functional or not (functional share 0.488 / 0.480) | **class pair + asymmetry 0.746 / 0.774**; asymmetry alone 0.717 / 0.737 | **0.608 / 0.747** |
+| direction, location pairs | **the more specific name (lower store degree) is the head 0.753 / 0.756** | - |
+
+Signals: compressed name-class pair; ASYMMETRY (log of A's store degree over C's); latent relations (universal schema) of the bridge records
+and their composition; the pair's own later records (only 4-8% of held-out pairs have one); the wordings' functionality (AUC 0.536-0.546).
+On Re-DocRED alone (no distant documents) family looked better (coverage 0.66); the noisier, larger store lowers it.
+**Mixed. The exact relation cannot be typed without labels; the family barely beats 'always location'. But two coarse properties can:
+whether the inferred relation is FUNCTIONAL (0.75-0.77, two thirds of pairs typed at 80% precision) and, for location-like pairs, its
+DIRECTION (0.75) - both mostly from how general one name is against the other in the store.** That is enough for a weaker trigger than
+typing: a confidently functional inference A -> C is contradicted when later reading ties A as strongly to another name of C's class.
+
 ### Why the retraction trigger failed on the GPU (tools/trigger_retest.py, 14 November; the package's own code path, distant set)
 
 PART 1 reruns the GPU path (_load_distant, _rcode_step at 20,375 documents, seed 4: 200 written, right 0.590 - as on the GPU) and judges the
