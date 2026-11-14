@@ -942,6 +942,34 @@ Visit 4: the visit-2 batch, after two visits of teaching, open-ended taught righ
 code + AA 0.635). Held-out bits visit 4: 1.9246 (cg27a_rcode3: 1.9186). The dose loss is a mean over its rows, so 16 rows at weight 1
 pushed each row half as hard as 8 did: learning was slower (visit 3), not capped (visit 4). inf_rti_rows_ref (added) restores the push.
 
+### Why the retraction trigger failed on the GPU (tools/trigger_retest.py, 14 November; the package's own code path, distant set)
+
+PART 1 reruns the GPU path (_load_distant, _rcode_step at 20,375 documents, seed 4: 200 written, right 0.590 - as on the GPU) and judges the
+writes on documents 20,375-40,749. The trigger reproduces: AUC 0.518, bottom 20% wrong 0.38 (overall 0.41). Its parts against the distant
+labels:
+
+| signal | AUC | bottom 20% wrong (overall 0.41) |
+|---|---|---|
+| documents / records / short-gap records stating the pair | 0.58 / 0.58 / 0.58 | 0.57 / 0.57 / 0.53 |
+| document PMI | **0.43** (reversed) | 0.28 |
+| the names' popularity (low = popular) | **0.41** (popular pairs are more often right) | 0.28 |
+| the write-time code; bridges at write | 0.39; 0.55 | 0.28; 0.50 |
+| **predictive compression** (A's later partners coded with C's old neighbourhood, over a same-degree control) | **0.50** | 0.50 |
+
+93% of the writes are stated again in the next documents (right 0.97, wrong 0.88): the signal is nearly saturated. Among these writes the
+popular pairs are the labelled ones, so PMI - which discounts popularity - points the wrong way and cancels the weak count signal.
+Predictive compression: the inference saves bits on the names' later partners for 97% of writes, right and wrong alike (AUC 0.50; on the
+Re-DocRED writes 0.49 / 0.53 against human labels) - the 'wrong' writes are related in the store's sense too.
+
+PART 2, the Re-DocRED writes under both truths: human and distant labels agree on 0.85 / 0.87; distant labels add 0.12-0.14 'right' and
+almost never drop a human-right pair (0.01). **The labels are not what broke the trigger; the writes are** - pairs of popular, often
+co-mentioned entities from the distant documents, where re-mention says little and popularity tracks the label.
+
+**What this means.** A 'wrong' write here is mostly a pair the text keeps putting together that has no labelled relation: compression
+cannot tell it apart, because it does compress. Telling such pairs apart needs WHICH relation (typed inferences a later sentence can
+confirm or contradict), not more evidence that the names are associated. Best untyped trigger left: raw re-mention counts (AUC 0.58,
+likelihood ratio about 1.7) - too weak to retract on.
+
 ### Refusal again: familiarity rows and a name gate (tools/toy_refuse.py, 14 November; toy, 3,000 steps, two seeds)
 
 Taught wording (the toy cannot answer in the held-out one); refusal on fresh names from the stored names' syllables (never read); facts
