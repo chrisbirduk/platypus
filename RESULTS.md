@@ -931,6 +931,11 @@ Visit 2 (the same store and candidates as cg27a_rcode3), labelled share of the t
 the 200 written right 0.590 (118 right inferences, against cg27a_rcode3's 66). **The offline edge of resource allocation does not appear
 at GPU scale** (level at 200, +0.013 at 400, -0.07 at 100): the gain is from writing more, at about the precision code + Adamic-Adar would
 give for 200. Held-out bits visits 1 / 2: 2.0237 / 2.0271 (cg27a_rcode3 seed 4: 2.0263 / 2.0209).
+Visit 3 (one visit of teaching): open-ended taught right / wrong 0.14 / 0.10 vs held back 0.00 / 0.02 (cg27a_rcode3: 0.22 / 0.27 vs
+0.00 / 0.05); rank taught 0.43 / 0.37 vs held back 0.11 / 0.11 (cg27a_rcode3: 0.61 / 0.54 vs 0.18 / 0.10); dose loss 1.234 -> 0.354
+(cg27a_rcode3: 1.059 -> 0.253). Rows per taught inference are the same as cg27a_rcode3 (about 47), yet each is learned more slowly with
+twice as many in play - so the number of right inferences recalled is about the same (rank: 0.43 x 81 = 35 vs 0.61 x 49 = 30). Held-out
+bits visit 3: 2.0110 (cg27a_rcode3: 2.0053) - no cost from the 16 rows.
 
 ### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
 
