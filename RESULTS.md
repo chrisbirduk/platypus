@@ -936,6 +936,11 @@ Visit 3 (one visit of teaching): open-ended taught right / wrong 0.14 / 0.10 vs 
 (cg27a_rcode3: 1.059 -> 0.253). Rows per taught inference are the same as cg27a_rcode3 (about 47), yet each is learned more slowly with
 twice as many in play - so the number of right inferences recalled is about the same (rank: 0.43 x 81 = 35 vs 0.61 x 49 = 30). Held-out
 bits visit 3: 2.0110 (cg27a_rcode3: 2.0053) - no cost from the 16 rows.
+Visit 4: the visit-2 batch, after two visits of teaching, open-ended taught right / wrong 0.43 / 0.36 vs held back 0.01 / 0.00 (cg27a_rcode3:
+0.50 / 0.56); **rank taught 0.89 / 0.87 vs held back 0.11 / 0.29** (cg27a_rcode3: 0.88 / 0.88 vs 0.24 / 0.10) - caught up per inference with
+1.65x as many taught (rank: about 72 right inferences recalled vs 43). The second batch (visit 4) right 0.59 again (code + RA top 200 0.63,
+code + AA 0.635). Held-out bits visit 4: 1.9246 (cg27a_rcode3: 1.9186). The dose loss is a mean over its rows, so 16 rows at weight 1
+pushed each row half as hard as 8 did: learning was slower (visit 3), not capped (visit 4). inf_rti_rows_ref (added) restores the push.
 
 ### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
 
