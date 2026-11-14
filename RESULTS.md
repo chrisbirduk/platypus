@@ -810,6 +810,42 @@ Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, 
 (AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
 mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
 
+### Standard baselines on the same trunk and schedule (14 November, overnight; local five-domain harness, 2 passes, seed 0; README open question 1)
+
+platypus/baselines.py (off by default): `bl_plain 1` switches the system's own protections off (dreams, Fisher-whitened Muon, current-batch KL,
+n-gram protection, reconstruction, conduit replay, write gates, the sleep layer); on top of that, online EWC (`bl_ewc 100`), stored-example
+replay (`bl_er 1`, 16 raw batches kept per visit) or per-episode adapters (`bl_adapter 16`, trunk frozen after the first visit). The system
+reference (SYS) runs the identical options with its protections on. SYS was stopped by the 2-hour job limit in phase 9 of 10, so the fair
+comparisons are pass 1 (all five domains seen once) and the pass-2 revisits it reached.
+
+| after pass 1 | mean BPC | forgetting since each visit | raw text kept |
+|---|---|---|---|
+| **system** | **2.797** | **-0.035** | none |
+| stored-example replay | 2.821 | +0.199 | 16 batches per domain |
+| EWC | 3.019 | +0.509 | none |
+| plain fine-tuning | 3.287 | +0.785 | none |
+| per-episode adapters | 3.285 | 0.000 | none |
+
+Pass-2 revisits, BPC on the domain just before it is revisited minus just after its pass-1 visit (forgetting over the intervening domains),
+then BPC after the revisit:
+
+| | Wikipedia | PubMed | FreeLaw |
+|---|---|---|---|
+| system | -0.057 -> 2.518 | -0.007 -> 2.397 | -0.006 -> 2.193 |
+| stored-example replay | +0.277 -> 2.521 | +0.014 -> 2.220 | +0.009 -> 2.080 |
+| EWC | +0.651 -> 2.491 | +0.201 -> 2.187 | +0.138 -> 2.049 |
+| plain fine-tuning | +0.856 -> 2.509 | +0.348 -> 2.218 | +0.232 -> 2.090 |
+
+Final (after pass 2, all domains): plain 2.592 (forgetting +0.292), EWC 2.502 (+0.179), replay 2.481 (+0.135), adapters 3.172 (0.000); the
+system's final figure is missing (stopped in phase 9). What this shows, on one seed and a small schedule: the system does not forget (the
+only run below zero on every revisit) and matches stored-example replay on mean BPC after pass 1 without keeping raw text; it pays in
+plasticity - each domain is learned less well at its visit (ArXiv 2.94 vs 2.57 for plain fine-tuning; PubMed revisit 2.40 vs 2.22), so on
+the final figure it may trail replay and EWC. Not yet shown: the final figure, a second seed, the ten-domain GPU schedule.
+
+JEPA vs random dreams (README open question 2): runs are identical through pass 1 (the dream choice acts from pass 2). On the revisits
+reached, JEPA dreams 2.517 / 2.377 against no dreams in the sleep replay (the system reference) 2.518 / 2.397: within noise (0.017).
+The random-dreams arm is running.
+
 ### Second seeds of the label-free results (14 November, overnight; SPLIT_SEED 1 and 2 = new held-out documents and new train / test pair halves)
 
 | result (held-out Re-DocRED gold) | seed 0 (13 Nov) | seed 1 | seed 2 | verdict |
