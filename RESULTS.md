@@ -776,6 +776,10 @@ mechanism for the GPU cg27a_rti visit 4 pattern (right 0.09 vs wrong 0.02). In c
 inferences come from, which may be why its weights-level signal is faint: the next build should have the trunk read them. Small trunk;
 about 2-3 standard errors per seed.
 
+**Caveat added 14 November (tools/evidence_infer.py v2, below):** in this test the right pairs' evidence documents name A and C *together*
+(the relation is stated, not inferred), and the wrong inferences' C is never read at all. Both favour the right C by familiarity and by
+direct statement. With novel pairs and the familiarity matched, the effect does not appear (next section).
+
 ### Universal schema and typed, coupled inference (tools/typed_infer.py, 13 November, late; Re-DocRED + 30k distant documents)
 
 UNIVERSAL SCHEMA (Riedel et al. 2013): PPMI over 15,285 wordings x 609,864 ordered pairs (32,662 seen 2+ times), SVD 64, 64 latent
@@ -809,6 +813,135 @@ with untyped hop 2).** Single runs; treat the 30k figures as the upper end.
 Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, base 0.242): the package's in-store scorer top 5% 0.497
 (AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
 mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
+
+### Inference as compression of the fact table (tools/fact_compress.py, 14 November, morning; Re-DocRED train + dev store, two held-out splits)
+
+The record compressor codes p(A | class A) and p(B | class B) independently: which names go together - the facts - is never compressed, and
+an inference is exactly a redundancy among facts (A-B, B-C make A-C cheap). Here each name gets a low-rank CODE of the store's name x name
+record graph (PPMI, truncated SVD; no labels). 400 documents are held out: their records are removed, and so is any record anywhere pairing
+two names of one held-out document - nothing in the store states any candidate pair. Candidates: names co-occurring in a held-out document,
+both still in the store; gold = related in that document.
+
+| pairs never stated together | base | bridges (common neighbours), top 5% | Adamic-Adar AUC / top 5% | CODE 128 AUC / top 5% | **CODE 512 AUC / top 5%** |
+|---|---|---|---|---|---|
+| with a chain A-B-C, split 0 | 0.094 | 0.196 | 0.619 / 0.243 | 0.684 / 0.291 | **0.726 / 0.365** |
+| with a chain, split 1 | 0.086 | - | 0.610 / 0.240 | 0.707 / 0.294 | **0.746 / 0.323** |
+| no chain, split 0 | 0.073 | 0.061 | 0.500 / 0.061 | 0.549 / 0.124 | **0.555 / 0.153** |
+| no chain, split 1 | 0.063 | - | 0.500 / 0.043 | 0.552 / 0.115 | **0.538 / 0.118** |
+| all pairs, split 0 | 0.081 | 0.131 | 0.555 / 0.177 | 0.612 / 0.221 | 0.618 / 0.281 |
+
+VOLUME (same 15,103 candidate pairs, store + 30k distant documents, 625k more records): CODE 512 AUC 0.618 -> **0.698**, top 5% 0.281 ->
+0.297, top 25% 0.141 -> 0.169; Adamic-Adar flat (0.555 -> 0.559). More reading improves the compressed code and not chaining. (At 128
+dimensions with the larger candidate set the distant records diluted it: the code needs room - 512 dims, 32-bit, fits in 8 GB alone.)
+Popularity (degree product) is below chance (AUC 0.39-0.46); weighting records by the relational-wording learner changes nothing.
+**Positive, two splits: the compressed fact table infers.** Where a chain exists, the top 5% by code are right 0.32-0.37 - 3.8x base and
+level with waiting for later text to confirm (0.36, which needs the pair stated) - with nothing in the store stating the pair; where no
+chain exists, chaining is at chance by definition and the codes still find related pairs at about 2x base. Inference grows with the size
+of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
+relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
+
+### GPU cg27a_rcode: the compressed fact table at scale (seed 4, 14 November; visit 2 readout, distant labels)
+
+Store graph 152,606 names from 344,600 records; 2,045 distant documents held out (their records and every record pairing two of their
+names removed); 86,965 candidate pairs never stated together, labelled 0.095. The same readout, same candidates, at two code sizes:
+
+| | Adamic-Adar AUC / top 5% / 25% | CODE 128 AUC / top 5% / 25% | **CODE 512 AUC / top 5% / 25%** |
+|---|---|---|---|
+| with a chain (labelled 0.119) | 0.587 / 0.246 / 0.156 | 0.593 / 0.224 / 0.172 | **0.682 / 0.330 / 0.225** |
+| all pairs (0.095) | 0.587 / 0.192 / 0.140 | 0.579 / 0.186 / 0.134 | **0.625 / 0.278 / 0.161** |
+| no chain (0.074) | 0.500 / 0.070 / 0.072 | 0.509 / 0.120 / 0.080 | 0.535 / 0.129 / 0.077 (popularity 0.587) |
+| the 200 written | - | right 0.270 | **right 0.320** (3.4x base; cg27a_rti about 0.18) |
+
+**Replicates at scale:** with 512 dimensions the compressed fact table beats chaining clearly on pairs with a chain (AUC 0.68 vs 0.59; top
+quarter 0.225 vs 0.156) and writes inferences right 0.32 of the time; at 128 dimensions it only ties (the dilution seen offline). Codes in
+12 s. Where no chain exists, popularity wins on the distant labels (they favour well-known names; on Re-DocRED gold popularity was below
+chance), so that comparison needs gold or a popularity-matched control. Consolidation readouts from visit 3.
+
+### Does reading the premises make a novel inference stick? (tools/evidence_infer.py, 14 November, overnight; stand-in trunk, two seeds)
+
+120 SUPPORTED pairs (A-B gold in one Re-DocRED document, B-C gold in another, A and C never in the same document anywhere) and 120
+UNSUPPORTED pairs (A with a C of the same type, no chain, never together). Recall: C first among 10 same-type names, in two wordings never
+taught; GAIN FROM A ranks C by how much A (against 'someone') helps predict it, which familiarity cannot move (chance 0.10 throughout).
+
+| after 600 steps | seed 0 supported / unsupported (wording 1, wording 2, gain) | seed 1 |
+|---|---|---|
+| v1: READ the evidence (unsupported: A's documents only) | 0.21, 0.23 / 0.11, 0.11 | 0.22, 0.21 / 0.15, 0.14 |
+| **v2: READ the evidence (unsupported: A's and C's documents)** | **0.18, 0.18, 0.07 / 0.11, 0.15, 0.06** | **0.15, 0.19, 0.12 / 0.13, 0.13, 0.10** |
+| v2: taught, then evidence | 0.23, 0.23, 0.07 / 0.20, 0.20, 0.07 | 0.19, 0.22, 0.16 / 0.19, 0.18, 0.09 |
+| v2: taught, then other text | 0.14, 0.16, 0.12 / 0.07, 0.07, 0.13 | 0.16, 0.14, 0.15 / 0.12, 0.12, 0.12 |
+
+**Negative.** v1's apparent inference from reading (0.12 -> 0.21-0.23) was mostly familiarity: once the unsupported C is read as often,
+supported leads by 0.00-0.07 (about one standard error) and the gain from A stays at chance. Reading the premises does not put the A-C
+link in this trunk's weights (consistent with open question 7: the trunk does not compose at this scale), and reading the evidence after
+teaching does not keep supported inferences above unsupported ones. For GPU cg27a_rti2 this predicts no right-over-wrong separation
+from evidence replay alone; its written inferences are familiarity-matched by construction (the B-C premise names C for right and wrong
+inferences alike), so it is a clean test of the same question at scale.
+
+### Standard baselines on the same trunk and schedule (14 November, overnight; local five-domain harness, 2 passes, seed 0; README open question 1)
+
+platypus/baselines.py (off by default): `bl_plain 1` switches the system's own protections off (dreams, Fisher-whitened Muon, current-batch KL,
+n-gram protection, reconstruction, conduit replay, write gates, the sleep layer); on top of that, online EWC (`bl_ewc 100`), stored-example
+replay (`bl_er 1`, 16 raw batches kept per visit) or per-episode adapters (`bl_adapter 16`, trunk frozen after the first visit). The system
+reference (SYS) runs the identical options with its protections on. SYS was stopped by the 2-hour job limit in phase 9 of 10, so the fair
+comparisons are pass 1 (all five domains seen once) and the pass-2 revisits it reached.
+
+| after pass 1 | mean BPC | forgetting since each visit | raw text kept |
+|---|---|---|---|
+| **system** | **2.797** | **-0.035** | none |
+| stored-example replay | 2.821 | +0.199 | 16 batches per domain |
+| EWC | 3.019 | +0.509 | none |
+| plain fine-tuning | 3.287 | +0.785 | none |
+| per-episode adapters | 3.285 | 0.000 | none |
+
+Pass-2 revisits, BPC on the domain just before it is revisited minus just after its pass-1 visit (forgetting over the intervening domains),
+then BPC after the revisit:
+
+| | Wikipedia | PubMed | FreeLaw |
+|---|---|---|---|
+| system | -0.057 -> 2.518 | -0.007 -> 2.397 | -0.006 -> 2.193 |
+| stored-example replay | +0.277 -> 2.521 | +0.014 -> 2.220 | +0.009 -> 2.080 |
+| EWC | +0.651 -> 2.491 | +0.201 -> 2.187 | +0.138 -> 2.049 |
+| plain fine-tuning | +0.856 -> 2.509 | +0.348 -> 2.218 | +0.232 -> 2.090 |
+
+Final (after pass 2, all domains): plain 2.592 (forgetting +0.292), EWC 2.502 (+0.179), replay 2.481 (+0.135), adapters 3.172 (0.000); the
+system's final figure is missing (stopped in phase 9). What this shows, on one seed and a small schedule: the system does not forget (the
+only run below zero on every revisit) and matches stored-example replay on mean BPC after pass 1 without keeping raw text; it pays in
+plasticity - each domain is learned less well at its visit (ArXiv 2.94 vs 2.57 for plain fine-tuning; PubMed revisit 2.40 vs 2.22), so on
+the final figure it may trail replay and EWC. Not yet shown: the final figure, a second seed, the ten-domain GPU schedule.
+
+Second seed of the baselines (seed 1): pass 1 mean BPC / forgetting - plain 3.400 / +0.924, EWC 3.102 / +0.611, replay 2.812 / +0.193,
+adapters 3.289 / 0.000; final - plain 2.679 (+0.395), EWC 2.572 (+0.294), replay 2.498 (+0.094), adapters 3.159 (0.000). Seed spread on
+the final figure is up to 0.09 BPC (plain), 0.02 for replay: the system's 0.02 lead over replay after pass 1 is within noise; its
+forgetting gap (-0.035 against +0.19-0.20 for replay on both seeds) is not.
+
+CONSOLIDATION OR REPLAY COUNT (README open question 3; new readout inf_tgrad_reps, JEPA-dreams run, two sleeps in pass 2): store-off
+two-hop recall regressed on the conclusion's age and its trunk replay rows (standardised): age +0.27 / +0.14, log replays -0.13 / -0.05
+(n 27 / 49; age and replays correlate +0.50 / +0.71). Recall from the weights follows age rather than replay count - consistent with
+consolidation, but too few conclusions to rely on.
+
+JEPA vs random dreams (README open question 2): runs are identical through pass 1 (the dream choice acts from pass 2). On the revisits
+reached, JEPA dreams 2.517 / 2.377 against no dreams in the sleep replay (the system reference) 2.518 / 2.397: within noise (0.017).
+The random-dreams arm could not reach pass 2 within the 2-hour job limit and was stopped: open.
+
+### Second seeds of the label-free results (14 November, overnight; SPLIT_SEED 1 and 2 = new held-out documents and new train / test pair halves)
+
+| result (held-out Re-DocRED gold) | seed 0 (13 Nov) | seed 1 | seed 2 | verdict |
+|---|---|---|---|---|
+| label-free extractor (consistency teachers -> learner), AUC / precision top 10% / 25% (base 0.24) | 0.627 / 0.45 / 0.38 | 0.617-0.625 / 0.42-0.45 / 0.36-0.37 | 0.625-0.634 / 0.46-0.47 / 0.37-0.39 | **robust** |
+| universal schema, relation identity AUC (30k distant) | 0.658 | 0.649 | 0.658 | **robust** |
+| typed composability top 10%, gold (base 0.105-0.108) | 0.148 | 0.122 | 0.126 | weaker: 1.15-1.4x base |
+| + type coupling, top 10% | 0.160 | 0.120 | 0.130 | not robust |
+| typed hop 2, composability-gated (vs hop 1 of the accepted) | 0.196 (0.160) | 0.174 (0.124) | 0.176 (0.135) | hop 2 above hop 1 in all three at 30k (not at full scale: 0.149 vs 0.144) |
+| A-C confirmed by later reading in a relational wording | 0.359 | 0.363 | 0.360 | **robust: 3.4x base** |
+| 2+ bridges | 0.082 | 0.077 | 0.077 | **below base in all three** |
+| learned composability (wording kinds) top 10% | 0.115 | 0.097 | 0.094 | no gain |
+| stand-in trunk congruence (gain from A, top 3 of 10) | 0.078 | 0.087 | 0.087 | below base in all three (the trunk's check points the wrong way) |
+| hop 2 from confirmed inferences (hop 1 0.36-0.37) | - | 0.149 | 0.147 | inference on inference falls back to near base |
+
+The one strong label-free filter for inferences is still waiting for the text: an A-C proposal that a later sentence states in a relational
+wording is right 0.36 of the time against 0.105 for all proposals, on three splits. Everything computed from the premises alone (bridges,
+composability, the trunk's congruence) is at or below base. Note for the GPU builds: cg27a_rti requires 2+ bridges; on Re-DocRED that
+selects below base (0.077-0.082 vs 0.105), although on the distant set at GPU scale it was the best of the policies tried (0.178-0.188).
 
 ### Brain-inspired tests, round 2 (13 November, afternoon)
 

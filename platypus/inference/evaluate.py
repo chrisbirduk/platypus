@@ -508,6 +508,16 @@ def _cls_measure(model,cfg,S_slot):
         mo_=np.mean(off_) if off_ else float('nan'); mn_=np.mean(on_) if on_ else float('nan')
         out_.append(f"{k_} (n {len(off_)} of {len(L_)}): off {mo_:.2f} / on {mn_:.2f} (store dependence {mn_-mo_:+.2f})")
     print("  [inference CLS | TEMPORAL GRADIENT] two-hop from the weights (store OFF) / with the store (ON), by age of the conclusion (random sample): "+" | ".join(out_),flush=True)
+    if int(getattr(cfg,'inf_tgrad_reps',0)) and len(obs9_)>=8:                 # 14 Nov CONSOLIDATION OR REPLAY COUNT? (README open question 3): the same store-off tests,
+        R9_=np.array([[vis_-int(c9_['bv']),c9_.get('wn',c9_.get('n',0)),float(r9_[0])] for c9_,r9_ in obs9_.values()],float)   #   with each conclusion's trunk
+        ag9_,rp9_,y9_=R9_[:,0],R9_[:,1],R9_[:,2]; q9_=np.quantile(rp9_,[1/3,2/3]) if len(rp9_)>=6 else (np.median(rp9_),)*2   #   replay rows so far (c['wn'])
+        tl9_=[('few',rp9_<=q9_[0]),('mid',(rp9_>q9_[0])&(rp9_<=q9_[1])),('many',rp9_>q9_[1])]
+        cell9_=lambda m_: f"{y9_[m_].mean():.2f} ({int(m_.sum())})" if m_.sum() else "- (0)"
+        X9_=np.c_[np.ones(len(y9_)),(ag9_-ag9_.mean())/(ag9_.std()+1e-9),(np.log1p(rp9_)-np.log1p(rp9_).mean())/(np.log1p(rp9_).std()+1e-9)]
+        b9_=np.linalg.lstsq(X9_,y9_,rcond=None)[0]; r9c_=float(np.corrcoef(ag9_,rp9_)[0,1]) if ag9_.std()>0 and rp9_.std()>0 else float('nan')
+        print("  [inference CLS | TEMPORAL GRADIENT BY REPLAYS] store-off two-hop by trunk replay rows so far (terciles "
+              f"<= {q9_[0]:.0f} / <= {q9_[1]:.0f} / more): "+" | ".join(f"{n9_} replays: all ages {cell9_(m9_)}, age 0-1 {cell9_(m9_&(ag9_<=1))}, age 2+ {cell9_(m9_&(ag9_>=2))}" for n9_,m9_ in tl9_)
+              +f" || linear fit of store-off recall (standardised): age {b9_[1]:+.3f}, log replays {b9_[2]:+.3f} | correlation of age and replays {r9c_:+.2f} | n {len(y9_)}",flush=True)
     TT_=int(getattr(cfg,'inf_tgrad_track',64)); lt_=lambda c_: c_['so'][-1][0] if c_.get('so') else -1   # FIX (review): tracking rotates - released ones by oldest test
     rel_=sorted([c_ for c_ in lv_ if c_.get('released')],key=lt_)[:max(1,TT_//2)]                         #   (so all can be restored), candidates on a passing run
     cand_=[c_ for c_ in lv_ if not c_.get('released') and ((c_.get('so') and c_['so'][-1][1] and c_['so'][-1][0]>=vis_-1) or (int(getattr(cfg,'inf_rem_exam_act',0)) and c_.get('ex') and c_['ex'][-1][0]==vis_ and c_['ex'][-1][1]=='right'))]   # cg26l: + REM exam RIGHT   #   continue every sleep, the rest
