@@ -870,6 +870,16 @@ lives in the store's choice, not in the trunk. Held-back RIGHT answers are ranke
 0.10 / 0.10 / 0.15 for held-back wrong ones; small n): either the trunk generalises a little from the taught inferences or right answers
 are more familiar names - not yet separated.
 
+**Second seed (cg27a_rcode3_s5, SEED 5, visits 1-4).** The store side is the same as seed 4 (same documents, same held-out hash: the same
+86,965 candidates and the same 100 writes, right 0.66), so what replicates is the trunk. Written at visit 2, taught vs held back, right /
+wrong: open-ended visit 3 0.28 / 0.38 vs 0.00 / 0.00 (seed 4: 0.22 / 0.27 vs 0.00 / 0.05); **visit 4 0.67 / 0.69 vs 0.16 / 0.00** (seed 4:
+0.50 / 0.56 vs 0.06 / 0.00). Rank (corrected): visit 3 taught 0.52 / 0.42 vs held back 0.19 / 0.00; visit 4 0.78 / 0.71 vs 0.19 / 0.10.
+**Replicates: the written inferences reach the weights in an untaught wording, right and wrong alike, held back far lower.** Held-out
+bits, visits 1-4: 2.0102 / 2.0248 / 2.0189 / **1.9571** (seed 4: 2.0263 / 2.0209 / 2.0053 / 1.9186) - the visit-4 gap is mostly
+Gutenberg (2.161 vs 2.021; other domains +0.006 to +0.018), a domain whose cost already swings between runs (cg27a_rcode2 seed 4: 2.061
+at visit 4, 2.110 at visit 5); without a same-seed control it is a watch item, not a measured cost. Held-back right at 0.16-0.19 fits
+tools/gen_diag.py: a prior from reading (the held-back pairs' documents are kept out of the store, not out of the text the trunk reads).
+
 ### Does more reading flag a wrong inference? (tools/fact_compress.py FC_SAVE / FC_LOAD, 14 November; Re-DocRED gold, two splits)
 
 The store writes its top 200 by code + Adamic-Adar after reading 5,000 distant documents (right 0.37 / 0.405), reads 30,000 and re-ranks
