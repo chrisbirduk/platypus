@@ -6,6 +6,7 @@ gold-related pair of a held-out document whose names never share a sentence anyw
 The stand-in trunk (TG_CKPT; never read these documents) is trained on the kept documents' sentences and on 'A is connected to C' question
 rows for names that share a kept sentence, in two arms that differ only in the cluster token after each name ('Paris [k017]'):
   TOKENS  every name in sentences and rows is followed by its cluster token
+  RANDOM  the same tokens shuffled across names (same text added, no code information; RD_ARMS=RANDOM)
   NONE    the same text without tokens
 Readout ('It is on record that A [kA] is connected to C [kC].', tokens only in the TOKENS arm): RANK of C among it and 9 names of its
 type whose store degree is in the same quintile (popularity matched), for the held-out pairs (never stated: the inference) and for
@@ -78,7 +79,9 @@ G = csr_matrix((np.ones(len(r_)), (r_, c_)), shape=(NN, NN)); G = G + G.T; deg =
 v = np.log(G.sum() * Gc.data / (deg[Gc.row] * deg[Gc.col])); mk = v > 0
 U = normalize(TruncatedSVD(128, random_state=0).fit_transform(csr_matrix((v[mk], (Gc.row[mk], Gc.col[mk])), shape=G.shape)))
 CL = MiniBatchKMeans(KC, random_state=0, n_init=3, batch_size=4096).fit_predict(U)
-TOK = lambda n: f" [k{CL[NI[n]]:03d}]" if n in NI else ''
+CLR = np.random.RandomState(1234).permutation(CL) if True else CL                    # RANDOM arm: the same tokens, shuffled across names (each name keeps one)
+TOKMODE = ['real']
+TOK = lambda n: (f" [k{(CL if TOKMODE[0] == 'real' else CLR)[NI[n]]:03d}]" if n in NI else '')
 # held-out candidates: gold pairs of held-out documents, both names coded, never sharing a kept sentence
 CAND = []
 for di in sorted(HOLD):
@@ -123,7 +126,9 @@ def rank(m, pairs, tok):
 def wiki_loss(m):
     m.eval(); X = tens2(HW); Xi = torch.cat([torch.full((len(HW), 1), PAD), X[:, :-1]], 1); l = F.cross_entropy(m(Xi).reshape(-1, V), X.reshape(-1)); m.train(); return float(l) / math.log(2)
 FORMS = ("In short, {A} is connected to ", "Notes on {A}: {A} is connected to ", "{A}, as noted before, is connected to ", "Q: {A} is connected to whom? A: ", "From the notes: {A} is connected to ")
-for arm, tok in (('TOKENS', True), ('NONE', False)):
+ARMS = os.environ.get('RD_ARMS', 'TOKENS,NONE').split(',')
+for arm in ARMS:
+    tok = arm != 'NONE'; TOKMODE[0] = 'random' if arm == 'RANDOM' else 'real'
     m = LM(); m.load_state_dict(torch.load(CK)); m.train(); op = torch.optim.AdamW(m.parameters(), lr=3e-4, weight_decay=0.01); rr = np.random.RandomState(SEED + 3)
     h0 = rank(m, CAND, tok); s0 = rank(m, STATED, tok)
     P(f"{arm}: before training - held-out (never stated) rank {h0[0]:.3f} (code itself {h0[1]:.3f}, n {h0[2]}) | stated rank {s0[0]:.3f} (code {s0[1]:.3f}, n {s0[2]}) | wiki {wiki_loss(m):.3f} bits  ({time.time() - T0:.0f}s)")
