@@ -840,6 +840,17 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### GPU cg27a_rcode3: writing where the code and chaining agree (seed 4, 14 November, visits 2-3)
+
+One change against cg27a_rcode2: the 100 held-out pairs ranked highest by the rank sum of the code (512 dims) and Adamic-Adar are written
+(cg27a_rcode2: the 200 most similar codes). Visit 2 (345k records, 86,965 candidates never stated together, labelled 0.095), labelled share
+of each rule's top 100 / 200: code 0.19 / 0.32, Adamic-Adar 0.41 / 0.415, **code + Adamic-Adar 0.66 / 0.60**; **the 100 written right
+0.66** (cg27a_rcode2 at the same readout: 0.32). Recall from the trunk at visit 3 (one visit of teaching), test wording never taught:
+open-ended taught right 0.22 / wrong 0.27 vs held back 0.00 / 0.05; rank among itself and 9 held-back answers (the corrected readout,
+chance 0.10) taught 0.61 / 0.54 vs held back 0.18 / 0.10. (cg27a_rcode2 at the same point: open-ended 0.15 / 0.12.)
+**Positive: where the code and chaining agree, two thirds of what is written is right (base 0.095), double the code alone, and it is taken
+into the weights faster (twice the rows per inference).** False memories are now about a third of what is written, not two thirds.
+
 ### Two hops answered by reading a code in one (tools/compose_synth.py CS_PCODE 1, 14 November; synthetic, 3 layers x 192, seed 0)
 
 Every person also carries a code summarising their neighbourhood - their city's country's code, right 80% of the time, as a compressor
