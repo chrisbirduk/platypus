@@ -23,6 +23,7 @@ I have made some significant progress on inference, and full rule free real text
 I have barely sufficient time to work on this project. The original aim was to understand if a memory system could be developed for agents which didn't decay into nonsense. I think the project demonstrates this is possible, and along with existing research points towards how this could be achieved. In the last few weeks, so many products have arrived in this area, that this work is less novel than when I started it.
 The code is very messy, I apologise for this - it is largely LLM generated and only the core memory system was sufficiently reviewed and has since deteriorated.
 I am not an AI engineer or AI researcher - this is a pet project.
+There are some issues after the 1st run - I'm aware of this, but haven't got around to fixing it yet.
 
 ## What it is, in one paragraph
 
