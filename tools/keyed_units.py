@@ -17,7 +17,8 @@ each unit from the bits it actually saves: a softmax over the trunk (logit 0) an
 by (unit, consistent continuations n, bytes into the continuation, the trunk's own entropy at that byte - known before the byte is read),
 started at log(n / 2) (the fixed rule) and moved by one online gradient step on -log p after each byte is scored (prequential: every
 byte is scored before the gate learns from it). Reported for all scored documents and for the last two-thirds (after warm-up).
-Usage: TG_D=192 TG_CKPT=<model file> python3 tools/keyed_units.py   env RU_EVAL (600), RU_CONT (24), RU_LR (0.05)"""
+Usage: TG_D=192 TG_CKPT=<model file> python3 tools/keyed_units.py   env RU_EVAL (600), RU_CONT (24), RU_LR (0.05), RU_EVALSET (test or dev:
+  memory from all 3,053 training documents, scored on that set instead)"""
 import os, sys, json, math, time, collections, re
 import numpy as np
 import torch
@@ -29,6 +30,8 @@ lm, run, P = g['lm'], g['run'], g['P']; T0 = time.time(); torch.set_num_threads(
 NE = int(os.environ.get('RU_EVAL', 600)); CL = int(os.environ.get('RU_CONT', 24))
 SCR = '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpad'
 docs = json.load(open(SCR + '/bench_dl/train_revised.json'))
+EVS = os.environ.get('RU_EVALSET', '')                                              # e.g. 'test': memory from all of train, scored on that set
+if EVS: ev_docs = json.load(open(SCR + f'/bench_dl/{EVS}_revised.json')); docs = docs + ev_docs; NE = len(ev_docs)
 NOSP_B = {',', '.', ';', ':', ')', "'s", "n't", '%', '!', '?', "'", "''"}; NOSP_A = {'(', '$', '``'}
 LOCW = {'in', 'of', 'at', 'from', 'near', 'to'}; MONTHS = {'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'}
 isyear = lambda w: bool(re.fullmatch(r'1[0-9]{3}|20[0-9]{2}', w)); isnum = lambda w: bool(re.fullmatch(r'[0-9][0-9,.]*', w))
@@ -87,7 +90,7 @@ def pmem(units, b, fs, raw=False):
         lam = 1.0 - np.prod([1.0 - v[0] for v in d.values()])                       #   unit's confidence, the overall weight 1 - prod(1 - lam_u)
         pm = sum(v[0] * v[1] for v in d.values()) / sum(v[0] for v in d.values()); out[pos] = (lam, pm, '+'.join(sorted(d)))
     return out
-res = {c: [0.0, 0, 0] for c in ['NAME', 'FACT', 'PLACE', 'DATE', 'NUMBER', 'NAME+FACT', 'NAME+PLACE', 'NAME+DATE', 'NAME+NUMBER', 'ALL']}
+res = {c: [0.0, 0, 0] for c in ['NAME', 'FACT', 'PLACE', 'DATE', 'NUMBER', 'NAME+FACT', 'NAME+PLACE', 'NAME+DATE', 'NAME+NUMBER', 'NAME+DATE+NUMBER', 'ALL']}
 combos = {c: set(c.split('+')) if c != 'ALL' else set(UNITS) for c in res}
 LR = float(os.environ.get('RU_LR', 0.05)); W0 = ev0 + NE // 3
 nbk = lambda n: 0 if n <= 1 else 1 if n == 2 else 2 if n <= 4 else 3 if n <= 8 else 4
@@ -126,6 +129,7 @@ P(f"FEEDBACK GATE (learned trust per unit, lr {LR}): bits saved per 1,000 bytes,
 for c in res: P(f"   {c:12s} gate {1000 * gres[c][0] / nbytes:7.2f} | late {1000 * gres[c][1] / nb_late:7.2f} ({100 * gres[c][1] / bb_late:5.2f}%)   fixed mixture {1000 * res[c][0] / nbytes:7.2f}")
 for u in ['FACT', 'PLACE', 'DATE', 'NUMBER']:
     P(f"   {u:7s} on top of NAME with the gate: all {1000 * (gres['NAME+' + u][0] - gres['NAME'][0]) / nbytes:+.2f} | late {1000 * (gres['NAME+' + u][1] - gres['NAME'][1]) / nb_late:+.2f} bits per 1,000 bytes")
+P(f"   DATE+NUMBER on top of NAME with the gate: all {1000 * (gres['NAME+DATE+NUMBER'][0] - gres['NAME'][0]) / nbytes:+.2f} | late {1000 * (gres['NAME+DATE+NUMBER'][1] - gres['NAME'][1]) / nb_late:+.2f}")
 P(f"   ALL on top of NAME with the gate: all {1000 * (gres['ALL'][0] - gres['NAME'][0]) / nbytes:+.2f} | late {1000 * (gres['ALL'][1] - gres['NAME'][1]) / nb_late:+.2f}")
 lt = collections.defaultdict(list)
 for k, v in gate['ALL'].items(): lt[k[0]].append(v)

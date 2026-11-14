@@ -1120,8 +1120,24 @@ online gradient step on -log p after each byte is scored (prequential). Bits sav
 
 **Positive: with trust learned from the bits each unit saves, three units add beyond NAME (DATE, NUMBER, FACT), all five together save
 36.1 bits per 1,000 bytes against NAME's 30.0 under the fixed rule (+20%), and the gain grows after warm-up.** PLACE stays slightly
-negative (its predictions are NAME's) and is the one to drop. One evaluation set, counted extractors; the next step is learned extractors and
-a second set of documents.
+negative (its predictions are NAME's) and is the one to drop.
+
+**Second document set (Re-DocRED test, 500 documents, 520,299 bytes; memory from all 3,053 training documents).** On top of NAME with the
+gate, all / last two-thirds, bits per 1,000 bytes (first set's last 400 for comparison):
+
+| | test set | first set |
+|---|---|---|
+| NAME alone: fixed rule / gate (late) | 28.37 / 32.01 | 29.99 / 33.04 |
+| + DATE | **+1.65 / +1.80** | +2.11 |
+| + NUMBER | **+0.58 / +0.57** | +0.60 |
+| + FACT | -0.50 / -0.48 | +0.72 |
+| + PLACE | -0.24 / -0.28 | -0.21 |
+| **+ DATE + NUMBER** | **+2.29 / +2.46** | **+2.71** |
+| + all four | +1.36 / +1.54 | +3.06 |
+
+**Replicated: the gate (+12-13% for NAME alone), DATE and NUMBER. Not replicated: FACT (helps on one set, hurts on the other). PLACE
+hurts on both.** The kept design is NAME + DATE + NUMBER behind the learned gate: 34.5-35.8 bits saved per 1,000 bytes (late), about 1.55%
+of the trunk's bits, against 28.4-30.0 for NAME under the fixed rule (+19-20%). Counted extractors throughout; learned extractors next.
 
 ### An AMIE-style functional contradiction trigger (tools/exclusive_trigger.py, 14 November; GPU write path, distant set, split 0)
 
