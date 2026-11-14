@@ -960,6 +960,24 @@ directions makes it worse), and **what differs between relations lies MORE in th
 words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
 would settle it for the real model.
 
+### An exclusivity trigger, and asymmetry as a write filter (tools/exclusive_trigger.py, 14 November; the GPU write path, distant set)
+
+400 written by the package's own path at 20,375 distant documents (right 0.578), judged on documents 20,375-40,749. The subject S is the
+name with the lower store degree; the object O's CLASS is a k-means class of the names' compressed codes (no labels). Trigger: in later
+reading S is tied to a competitor of O's class at least as often as to O, or O's share of S's later partners of that class is below 0.25.
+
+| writes | n (wrong) | competitor >= object: flagged wrong, LR | object's share < 0.25: flagged wrong, LR |
+|---|---|---|---|
+| all | 400 (0.42) | 0.51, 1.4 | **0.58, 1.9** |
+| subject read again with that class (2+) | 346 (0.40) | 0.51, 1.6 | **0.58, 2.0** (AUC of the share 0.636) |
+| asymmetry > 1 (subject clearly more specific) | **200 (0.28)** | 0.18, 0.6 | 0.12, 0.3 |
+
+**Weak positive for the trigger: AUC 0.64 and a likelihood ratio of about 2 (the re-mention trigger: 0.52, about 1) - not enough to
+retract on at a 0.4 wrong base (the flagged set would be about 58% wrong).** Restricting to functional-like writes REVERSES it.
+**Unexpected and more useful: asymmetry selects.** Writes whose subject is clearly more specific than the object are wrong 0.28 against
+0.42 overall (200 of 400): a label-free WRITE filter, not a retraction trigger. One write set, one seed; to be checked on more writes and
+on Re-DocRED gold before it is built.
+
 ### Can compression statistics type an inference? (tools/compress_typing.py, 14 November; Re-DocRED gold + 30k distant documents, two splits)
 
 Gold-related pairs of held-out documents with every record pairing them removed (3,186-3,536 test pairs, never stated in the store).
