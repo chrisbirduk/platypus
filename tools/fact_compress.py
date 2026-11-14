@@ -41,6 +41,10 @@ def graph(wt):
 G1 = graph(np.ones(len(Af))); G1.data[:] = 1.0                                          # distinct neighbours
 deg = np.asarray(G1.sum(1)).ravel()
 ok = [k for k in CAND if all(NI.get(n) is not None and deg[NI[n]] > 0 for n in k)]
+if int(os.environ.get('FC_SAMEC', 0)):                                                   # the candidate set of the Re-DocRED-only store: both names
+    G0 = csr_matrix((np.ones(int((keep & (np.arange(len(Af)) < N)).sum())), (Af[keep & (np.arange(len(Af)) < N)], Bf[keep & (np.arange(len(Af)) < N)])), shape=(NN, NN))
+    d0_ = np.asarray((G0 + G0.T).sum(1)).ravel(); ok = [k for k in ok if all(d0_[NI[n]] > 0 for n in k)]   #   keep a Re-DocRED record
+
 XA_ = np.array([NI[sorted(k)[0]] for k in ok]); XB_ = np.array([NI[sorted(k)[1]] for k in ok]); yy = np.array([k in GOLD for k in ok])
 cn_cnt = np.asarray(G1[XA_].multiply(G1[XB_]).sum(1)).ravel()
 iw = np.where(deg > 1, 1.0 / np.log(np.maximum(deg, 2)), 0.0)
@@ -49,11 +53,11 @@ SC = {'random': np.random.RandomState(FS).rand(len(ok)), 'degree product (popula
       'Adamic-Adar': aa}
 def ppmi(A_):
     A_ = A_.tocoo(); rs_ = np.asarray(A_.sum(1)).ravel(); tot = A_.sum(); v = np.log(tot * A_.data / (rs_[A_.row] * rs_[A_.col]) + 1e-12); m = v > 0
-    return csr_matrix((v[m], (A_.row[m], A_.col[m])), shape=A_.shape)
-for tag, wt in (('', np.ones(len(Af))), (' rel', rw)):
+    return csr_matrix((v[m].astype(np.float32), (A_.row[m], A_.col[m])), shape=A_.shape)
+for tag, wt in ((('', np.ones(len(Af))), (' rel', rw)) if not int(os.environ.get('FC_NOREL', 0)) else (('', np.ones(len(Af))),)):
     Gw = graph(wt); Pm = ppmi(Gw)
     for k in KS_:
-        U = normalize(TruncatedSVD(k, random_state=0).fit_transform(Pm)); SC[f'CODE {k}{tag} (compressed fact table)'] = np.einsum('ij,ij->i', U[XA_], U[XB_])
+        U = normalize(TruncatedSVD(k, random_state=0).fit_transform(Pm).astype(np.float32)); SC[f'CODE {k}{tag} (compressed fact table)'] = np.einsum('ij,ij->i', U[XA_], U[XB_])
     P(f"   codes fitted{tag}  ({time.time() - T0:.0f}s)")
 def rep(mask, title):
     yv = yy[mask]; P(f"{title}: {int(mask.sum())} candidates, gold {yv.mean():.3f}")
