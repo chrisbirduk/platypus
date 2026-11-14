@@ -887,6 +887,42 @@ the same 200 (every candidate pair is still kept out of the store). Right vs wro
 falling rank flags wrong writes at about 0.6. Co-occurrence in new reading says nothing (nearly every pair turns up). Re-ranking is a
 mild check on confident writes, not a retraction trigger.
 
+### Unlearning a wrong taught inference (tools/retract_diag.py, 14 November; stand-in trunk 3 x 192, two seeds)
+
+The trunk is taught 120 right pairs, 120 wrong ones (A with a random name of the answer's type) and 120 bystanders in the system's
+question frames (about 18 rows each), then 200 retraction steps with the right ones rehearsed. Rank of the taught answer among it and 9
+of its kind (chance 0.10), seed 0 / seed 1:
+
+| | WRONG | RIGHT | BYSTANDER (taught, then left alone) | wiki bits |
+|---|---|---|---|---|
+| before teaching | 0.15 / 0.10 | 0.27 / 0.31 | 0.33 / 0.32 | 1.900 |
+| taught | 0.42 / 0.40 | 0.50 / 0.59 | 0.68 / 0.55 | 2.024 / 2.014 |
+| STOP (no longer taught) | 0.25 / 0.25 | 0.58 / 0.69 | 0.50 / 0.42 | 1.982 / 1.978 |
+| NEUTRAL answer ('no one on record') | 0.25 / 0.25 | 0.63 / 0.66 | 0.54 / 0.46 | 2.013 / 2.008 |
+| UNLIKELIHOOD, weight 1 | 0.00 / 0.01 | 0.68 / 0.65 | 0.43 / 0.49 | 2.034 / 2.010 |
+| NEUTRAL + UNLIKELIHOOD | 0.00 / 0.00 | 0.73 / 0.72 | 0.47 / 0.50 | 2.065 / 2.056 |
+| **UNLIKELIHOOD, weight 0.1** | **0.01** / - | 0.64 / - | **0.55** / - | 2.005 / - |
+| UNLIKELIHOOD, weight 0.3 | 0.02 / - | 0.65 / - | 0.51 / - | 2.012 / - |
+
+**Positive: unlikelihood on the wrong answer's bytes (with the right ones rehearsed) removes a taught wrong inference in both seeds;
+stopping or a neutral answer only halves it.** Collateral damage at weight 1 is seed-dependent (bystanders -7 / +7 points against STOP);
+at weight 0.1 none in seed 0 (0.55 vs 0.50), text cost +0.02 bits against STOP. The mechanism is settled; the trigger (which writes are
+wrong) is not.
+
+### Held-back right inferences ranked above chance: prior, not generalisation (tools/gen_diag.py, 14 November; stand-in trunk)
+
+GPU cg27a_rcode3 ranks held-back RIGHT answers first at 0.18-0.24 (held-back wrong 0.10-0.15). Stand-in trunk, 4 x 90 pairs (taught right
+/ wrong, held back right / wrong), rank among held-back answers as the GPU readout (in brackets: among 9 of its type):
+
+| | taught R | taught W | held back R | held back W |
+|---|---|---|---|---|
+| before teaching | 0.13 (0.24) | 0.08 (0.12) | **0.17 (0.33)** | 0.03 (0.11) |
+| after teaching (36 rows per taught pair) | 0.43 (0.64) | 0.40 (0.69) | **0.19 (0.29)** | 0.03 (0.09) |
+
+**Negative for generalisation:** held-back right answers are preferred BEFORE any teaching, and teaching other pairs leaves that
+unchanged. The trunk's reading already favours fitting answers; the GPU's held-back 0.22 is that prior, not inference learned from the
+taught pairs.
+
 ### Two hops answered by reading a code in one (tools/compose_synth.py CS_PCODE 1, 14 November; synthetic, 3 layers x 192, seed 0)
 
 Every person also carries a code summarising their neighbourhood - their city's country's code, right 80% of the time, as a compressor
