@@ -644,6 +644,7 @@ class Config:
     bl_ad_lr=0.003
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
     inf_rti_rank_recall=0           #     readout: written inferences' answer ranked among 10 written answers (open-ended exact recall cannot see real names)
+    inf_rti_rows_ref=0              #     > 0: weight the dose loss by rows / inf_rti_rows_ref, so each row pushes as hard as at that many rows (the loss is a mean over rows)
     inf_rti_code=0                  #   14 Nov INFERENCE BY COMPRESSING THE FACT TABLE (MODEL CHANGE when on; cg27a_rcode): write the held-out pairs whose low-rank name codes agree most
     inf_rcode_k=128                 #     code dimensions (truncated SVD of the PPMI name x name record graph)
     inf_rcode_sel='code'            #     which pairs to write: 'code' (most similar codes), 'code+aa' (rank sum of the code and Adamic-Adar; cg27a_rcode3) or 'code+ra' (code and resource allocation, shared neighbours weighted 1/degree)
