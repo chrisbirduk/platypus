@@ -1100,6 +1100,48 @@ commonest relation for unstated pairs.** **What does type: the wording a pair is
 80% precision, nearly half by family. Typing comes from a sentence that states the pair, not from inference; a typed inference has to be
 confirmed by such a sentence (predict, then type on confirmation, as cg27a_rtc confirmed pairs).
 
+### A three-times longer-trained stand-in trunk (18k steps; 14 November, night)
+
+The stand-in trunk (3 x 192, wiki + Re-DocRED dev) trained 18,000 steps instead of 6,000: 1.70 bits per byte against 1.92. The same tests:
+
+| test | 6k trunk | 18k trunk |
+|---|---|---|
+| relation identity over the wording, layers 1 / 2 / 3 (nearest same / AUC; chance 0.084) | 0.133 / 0.539, 0.140 / 0.531, 0.142 / 0.519 | 0.137 / 0.539, 0.132 / 0.533, 0.128 / 0.524 |
+| teaching, rank after teaching: dose x4 / x16 / read too | 0.44 / 0.74 / 0.53 | **0.61 / 0.82 / 0.64** |
+| the same after 300 steps of other text | 0.37 / 0.47 / 0.40 | 0.39 / 0.51 / 0.40 |
+| confirmation by prediction, AUC typed / untyped (seed 0) | 0.797 / 0.805 | 0.792 / 0.762 |
+
+**A better-trained trunk learns taught facts faster but keeps them no better once other text follows, still holds no relation structure,
+and confirms no better.** Training length is not the bottleneck; dense-weight retention is. This lowers the priority of a Wikipedia-only
+multi-pass GPU build and supports moving facts into a sparse memory.
+
+### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
+
+The author's design: a sparse memory (Lin et al. 2025) whose address is (the subject's NAME KEY, a JEPA WORDING KEY of the name-masked
+question prefix) and whose VALUE is a name key, so a read can be the next read's query; bytes only at the end (nearest known name).
+Frozen stand-in trunk; product keys 64 x 64 = 4,096 slots, top 8 per read; wording head trained only on the system's seven frames (the
+test wording never seen); writing changes only the slots a fact reaches (the trunk is never touched, so no text forgetting by
+construction). Lifelong order in one memory: A (60, = sparse_mem's) -> B (60) -> M (40 subjects x 2 relations) -> 60 chains (both hops
+taught, never the chain). Recall in the test wording, open (nearest of 2,987 known names) / rank (among 10 of the type), 6k / 18k trunk:
+
+| | K-JEPA | K-RAW (no JEPA training) | K-NAME (no wording half) |
+|---|---|---|---|
+| A after A | 0.88 / 0.93, **0.98 / 1.00** | 0.93 / 1.00, 0.97 / 1.00 | 0.57 / 0.73, 0.55 / 0.63 |
+| B after B | 0.82 / 0.95, 0.90 / 0.98 | 0.88 / 0.95, 0.90 / 1.00 | 0.23 / 0.37, 0.25 / 0.37 |
+| M (two relations per subject) | 0.65 / 0.82, **0.91 / 1.00** | 0.94 / 0.99, 0.85 / 0.96 | 0.09 / 0.21, 0.06 / 0.16 |
+| chain hops | 0.75 / 0.90, 0.89 / 0.97 | 0.86 / 0.97, 0.82 / 0.98 | 0.06 / 0.17, 0.07 / 0.15 |
+| **TWO-HOP, the chain never taught: decoded** | 0.58 / 0.72, **0.78 / 0.87** | 0.73 / 0.88, 0.65 / 0.82 | 0.02 / 0.10, 0.02 / 0.03 |
+| two-hop, latent (no decoding between hops) | 0.27 / 0.47, 0.42 / 0.62 | 0.32 / 0.53, 0.25 / 0.52 | 0.00 / 0.15, 0.02 / 0.12 |
+| at the end (after 340 more facts): A / M rank | 0.77 / 0.81, 0.93 / 0.99 | 0.88 / 0.96, 0.92 / 0.95 | - |
+
+Wording head: the test wording's relation found by the training frames' keys 1.00 (raw state 0.81 / 0.86); a PARAPHRASED relation phrase
+('passed away in' for 'died in') only 0.38 for both.
+**Positive: a sparse key memory learns real facts in an unseen wording almost perfectly, keeps most through 340 later facts, separates
+two relations of one subject only with the wording half, and COMPOSES: two-hop answers for chains never taught 0.72-0.88 (rank) with the
+first hop decoded to a known name.** The JEPA head helps on the better trunk (M 1.00, two-hop 0.87) but not on the 6k one; decoding
+between hops beats latent chaining (the decode cleans the key). The gap: paraphrased relation phrases (0.38) - the wording key has to
+learn synonymy from text, not from our frames. Seeds, abstention, retraction and capacity queued.
+
 ### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
 
 The author's idea: 4-6 generic KEYED units like NAME, indexable, extracted from local context, each with its own memory, kept only if they
