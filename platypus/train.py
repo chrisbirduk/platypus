@@ -801,6 +801,14 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
         if hasattr(model,'_klw_opt'): model._klw_opt.zero_grad()
         _dt=locals().get('_dterm',0.0)
         _pt=locals().get('_pterm',None); _pterm=None; _pg=None
+        if float(getattr(cfg,'bl_ewc',0.0))>0 or float(getattr(cfg,'bl_er',0.0))>0:   # 14 Nov BASELINES (platypus.baselines; open question 1): EWC, stored-example replay
+            from platypus.baselines import ewc_penalty, er_loss
+            if float(getattr(cfg,'bl_ewc',0.0))>0:
+                pe_=ewc_penalty(model,cfg)
+                if pe_ is not None: loss=loss+pe_
+            if float(getattr(cfg,'bl_er',0.0))>0:
+                er_=er_loss(model,cfg,dom_id)
+                if er_ is not None: loss=loss+er_
         with _rf('backward'): loss.backward()
         if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
             from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the

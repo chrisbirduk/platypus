@@ -634,8 +634,16 @@ class Config:
     inf_rti_max=200                 #     inferences written per readout at most
     inf_rti_bridges=2               #     distinct bridge names an A-C proposal needs
     inf_rti_policy='surprise'       #     premise choice: surprise (trunk), both (surprise + block association), random
+    inf_tgrad_reps=0                # 14 Nov readout: the temporal gradient split by each conclusion's trunk replay rows (consolidation or replay count?)
+    bl_plain=0                      # 14 Nov BASELINES (platypus.baselines; README open question 1): 1 = the system's own protections OFF (dreams, Fisher-whitened
+                                    #   Muon, current-batch KL, n-gram protection, reconstruction, conduit replay, write gates, the sleep layer): plain fine-tuning
+    bl_ewc=0.0                      #   > 0: online EWC with this weight (diagonal empirical Fisher of bl_ewc_batches batches at each visit's end)
+    bl_ewc_batches=8
+    bl_er=0.0                       #   > 0: stored-example replay - every step adds bl_er x the loss on a stored batch of another slot (needs replay_buffer_batches)
+    bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
+    bl_ad_lr=0.003
     inf_rti_evidence=0              #   13 Nov EVIDENCE REPLAY (MODEL CHANGE when on): the premise statements of written inferences join the real-text replay pool
-    inf_rti_novel=0                 #     write only inferences whose A and C never appear together in a premise document or a benchmark document
+    inf_rti_novel=0                 #     write only inferences whose A and C never appear together in anything the trunk reads (benchmark documents, replayed spans)
     inf_rti_ctl=0.0                 #     held-back share of written inferences by their own hash (0 = the question pool's fifth)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off

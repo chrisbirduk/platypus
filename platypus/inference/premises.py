@@ -401,10 +401,11 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     W = _PM.setdefault('rti', {}); done = {frozenset(k) for k in W}
     nbm = int(getattr(cfg, 'inf_rti_bridges', 2))
     nov = int(getattr(cfg, 'inf_rti_novel', 0)); bco = _PM.get('bench_co', set())
-    def novel(k):                                                             # 13 Nov NOVELTY: A and C never together in anything the trunk reads - not in a
-        if not nov: return True                                               #   premise document (whose records it replays) nor in a benchmark document
-        pd_ = {RD[i][0] for i in PRR[k]}
-        return not (dn[k[0]] & dn[k[1]] & pd_) and frozenset(k) not in bco
+    def novel(k):                                                             # 14 Nov NOVELTY: A and C never together in anything the TRUNK reads - the benchmark
+        if not nov: return True                                               #   documents and the evidence spans it replays (each span holds A and B or B and C,
+        return frozenset(k) not in bco and not any(k[0] in RD[i][7] and k[1] in RD[i][7] for i in PRR[k])   # never both). The distant documents are read
+                                                                              #   only by the record store, so A and C may share one there: that is what keeps
+                                                                              #   the inference checkable (excluding premise documents left 4 of 300 checkable)
     P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI and novel(k)]
     P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
     if not P2:

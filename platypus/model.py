@@ -153,6 +153,9 @@ class Model(nn.Module):
                 b._dcontent=bool(s.cfg.dream_content>0 and i_>=len(s.blocks)-int(s.cfg.dream_content))
                 if rs_ is not None: h=_GScale.apply(h,rs_[0][i_])
                 h=b(h)
+                if s.__dict__.get('_bl_ad'):                                    # 14 Nov BASELINE: per-episode adapters (platypus.baselines)
+                    from platypus.baselines import ad_apply
+                    h=ad_apply(s,i_,h)
                 if side_: taps_.append(h.detach())
                 if _ENC_STOP['k'] is not None and i_>=_ENC_STOP['k']: break          # v9e FIRST-BLOCK CHECK: the re-encode stops here
             if rs_ is not None: h=_GScale.apply(h,rs_[1])

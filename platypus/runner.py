@@ -101,6 +101,13 @@ from platypus.losses import (
 
 def run(cfg):
     for k in ('theta_low','theta_high','theta_dist','theta_sigma','theta_reserve','drive_ema','drive_slow','peak_decay','route_width','hebb_rate'): setattr(Config,k,getattr(cfg,k))  # buffers read class attrs
+    if int(getattr(cfg,'bl_plain',0)):                                       # 14 Nov BASELINES: the system's own protections off (platypus.baselines)
+        for k_,v_ in dict(dream=False,dream_bank=0,pmuon=False,shunt=False,shunt_old_weight=0.0,lwf_posterior=False,ngram_protect=0.0,recon_w=0.0,cd_w=0.0,
+                          inf_on=False,use_write_threshold=False,channel_thresholds=False,kf_dream=0.0,borrow_w=0.0,feat_anchor=0.0,strand_anchor=0.0).items():
+            if hasattr(cfg,k_): setattr(cfg,k_,v_)
+        print(f"  [BASELINE] plain: dreams, Fisher-whitened Muon, current-batch KL, n-gram protection, reconstruction, conduit replay, write gates and the sleep "
+              f"layer OFF | EWC {float(getattr(cfg,'bl_ewc',0.0))} | stored-example replay {float(getattr(cfg,'bl_er',0.0))} x {int(cfg.replay_buffer_batches)} batches "
+              f"per visit | adapters rank {int(getattr(cfg,'bl_adapter',0))}", flush=True)
     set_seed(cfg.seed)
     _NOISE['gen']=torch.Generator().manual_seed(cfg.seed+12345)
     for fn in ('_prev_bpc','_plateau_count','_avg_difficulty'):
@@ -264,7 +271,14 @@ def run(cfg):
                     print(f"  [teacher] slot {ts}: the conduit teacher is the model saved at the end of this slot's last visit")
                 _les_=bool(cfg.trace_lesion) and pass_i>=int(cfg.trace_lesion_pass) and int(t) in tuple(int(z_) for z_ in cfg.trace_lesion)
                 if _les_: print(f"  [trace lesion] {_lab(cfg,t)}: visit SKIPPED (no traces, no replay; its old dreams stay)")
-                opt=(opt if _les_ else train_domain(model, None, meta_opt, opt, _gv, ts, prior_buffer, cfg))
+                if int(getattr(cfg,'bl_adapter',0))>0 and model.__dict__.get('_bl_first_done'):   # 14 Nov BASELINE: per-episode adapters, trunk frozen after the first visit
+                    from platypus.baselines import ad_train
+                    ad_train(model, cfg, _gv, ts)
+                else: opt=(opt if _les_ else train_domain(model, None, meta_opt, opt, _gv, ts, prior_buffer, cfg))
+                model.__dict__['_bl_first_done']=True
+                if float(getattr(cfg,'bl_ewc',0.0))>0:                           # 14 Nov BASELINE: online EWC anchor and Fisher at the visit's end
+                    from platypus.baselines import ewc_update
+                    ewc_update(model, cfg, train_of(t,pass_i), ts)
                 if int(cfg.pu_cons_steps)>0 and not _les_ and float(model.__dict__.get('_real_w',1.0))==0.0:   # cg19 CONSOLIDATION PHASE
                     _sd_=set(int(z_) for z_ in schedule[:vi]); pu_consolidate(model,cfg,t,ts,vals,[(d_,_S(d_)) for d_ in range(NDOM) if d_!=t and d_ in _sd_],_S)
                 if cfg.inf_on and not _les_ and _sinf_:                         # cg26i SLEEP KEYED BY THE INFERRED DOMAIN: sleep sees slots only - the current slot, the other slots
@@ -294,7 +308,7 @@ def run(cfg):
             bx,by=train_of(t,pass_i)(); prior_buffer.append((bx,by,t))
         if cfg.data_free and not cfg.topic_mode and not _eo: fold_domain_covariance(model, (ts) if cfg.n_passes>1 else None)                 # running input covariance -> 'old domains'
         for _ in range(cfg.replay_buffer_batches):          # separate, larger REPLAY store (bytes: stored compactly)
-            bx,by=train_of(t,pass_i)(); model._replay_buffer.append((bx.to(torch.uint8),by.to(torch.uint8),t))
+            bx,by=train_of(t,pass_i)(); model._replay_buffer.append((bx.to(torch.uint8),by.to(torch.uint8),(ts if float(getattr(cfg,'bl_er',0.0))>0 else t)))   # (ER baseline: by slot)
         # snapshot this domain's usage as "home" (polarization feature = deviation from it)
         with torch.no_grad():
             for b in model.blocks:
