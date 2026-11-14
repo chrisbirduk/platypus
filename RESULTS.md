@@ -849,7 +849,7 @@ of the fact table would give it ('Pebel Belsavo-qa'). Held-out people are never 
 |---|---|---|
 | no person codes (earlier run) | 0.12 | 0.10-0.11 |
 | **person codes + 400 worked citizenship examples** | **0.75-0.80** (from step 1000) | **0.70-0.75** |
-| **person codes, NO citizenship examples at all** | **0.50-0.66** | (running) |
+| **person codes, NO citizenship examples at all** | **0.50-0.66** (0.57 at the end) | **0.58-0.60** |
 
 Without any citizenship ever stated, the trunk reads the person's code and answers with the country it learned only from CITY codes
 ('Velmora-qa lies in C'). Arms whose people carry no code stay at chance (0.08-0.12) whatever else is known. **Positive: what the trunk
