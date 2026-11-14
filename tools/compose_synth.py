@@ -45,8 +45,13 @@ def city(c, informative=0.8):
     code = CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]
     return f"{name(3)}-{code}", c
 OLD = [city(rs.randint(NC)) for _ in range(300)]
-TRAINP = [(person(), int(rs.randint(len(OLD)))) for _ in range(400)]
-HELDP = [(person(), int(rs.randint(len(OLD)))) for _ in range(100)]
+PCODE = int(os.environ.get('CS_PCODE', 0))                                    # 14 Nov: CS_PCODE 1 - every PERSON also carries a code, the compressed
+def pcode(bi, informative=0.8):                                                #   fact table's summary of their neighbourhood: their city's country's
+    c = OLD[bi][1]; return CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]   #   code (80%, like the cities' codes)
+def pnew(bi):
+    n = person(); return (f"{n}-{pcode(bi)}" if PCODE else n), bi
+TRAINP = [pnew(int(rs.randint(len(OLD)))) for _ in range(400)]
+HELDP = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
 CT = ["{B} lies in {C}.", "{B} is a city in {C}.", "The city of {B} is in {C}.", "{B}, a town of {C}, is old."]
 PT = ["{A} lives in {B}.", "{A} has a home in {B}.", "{A} moved to {B} years ago."]
 IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
@@ -124,7 +129,7 @@ def arm(tag, people, cities, teach_lies):
     P(f"   {tag:16s} " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
 newp = lambda n: [(person(), i) for i in range(n)]
 P("IDEA 2 - taught briefly after pretraining (chance 0.10; citizenship is never taught for these people):")
-arm('F1 OLD CITY', [(person(), int(rs.randint(len(OLD)))) for _ in range(100)], OLD, False)
+arm('F1 OLD CITY', [pnew(int(rs.randint(len(OLD)))) for _ in range(100)], OLD, False)
 NEWC = [rs.randint(NC) for _ in range(100)]
 arm('F2 NEW, RANDOM', newp(100), [(f"{name(3)}-{CODES[rs.randint(NC)]}", c) for c in NEWC], True)
 arm('F3 NEW, TYPED', newp(100), [(f"{name(3)}-{CODES[c]}", c) for c in NEWC], True)
