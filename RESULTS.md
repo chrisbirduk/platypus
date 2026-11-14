@@ -866,9 +866,19 @@ only run below zero on every revisit) and matches stored-example replay on mean 
 plasticity - each domain is learned less well at its visit (ArXiv 2.94 vs 2.57 for plain fine-tuning; PubMed revisit 2.40 vs 2.22), so on
 the final figure it may trail replay and EWC. Not yet shown: the final figure, a second seed, the ten-domain GPU schedule.
 
+Second seed of the baselines (seed 1): pass 1 mean BPC / forgetting - plain 3.400 / +0.924, EWC 3.102 / +0.611, replay 2.812 / +0.193,
+adapters 3.289 / 0.000; final - plain 2.679 (+0.395), EWC 2.572 (+0.294), replay 2.498 (+0.094), adapters 3.159 (0.000). Seed spread on
+the final figure is up to 0.09 BPC (plain), 0.02 for replay: the system's 0.02 lead over replay after pass 1 is within noise; its
+forgetting gap (-0.035 against +0.19-0.20 for replay on both seeds) is not.
+
+CONSOLIDATION OR REPLAY COUNT (README open question 3; new readout inf_tgrad_reps, JEPA-dreams run, two sleeps in pass 2): store-off
+two-hop recall regressed on the conclusion's age and its trunk replay rows (standardised): age +0.27 / +0.14, log replays -0.13 / -0.05
+(n 27 / 49; age and replays correlate +0.50 / +0.71). Recall from the weights follows age rather than replay count - consistent with
+consolidation, but too few conclusions to rely on.
+
 JEPA vs random dreams (README open question 2): runs are identical through pass 1 (the dream choice acts from pass 2). On the revisits
 reached, JEPA dreams 2.517 / 2.377 against no dreams in the sleep replay (the system reference) 2.518 / 2.397: within noise (0.017).
-The random-dreams arm is running.
+The random-dreams arm could not reach pass 2 within the 2-hour job limit and was stopped: open.
 
 ### Second seeds of the label-free results (14 November, overnight; SPLIT_SEED 1 and 2 = new held-out documents and new train / test pair halves)
 
