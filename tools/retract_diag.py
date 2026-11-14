@@ -49,6 +49,38 @@ def pairs(docs, familiar):
         if len(out) >= NF: break
     return out, byt
 
+wiki = open(os.environ.get('MINIPILE_DIR', '/tmp/claude-0/sweep/minipile') + '/wiki.bin', 'rb').read().replace(b'\n', b' '); WK = np.frombuffer(wiki, dtype=np.uint8)
+class Blk(nn.Module):
+    def __init__(s, d, h):
+        super().__init__(); s.a = nn.MultiheadAttention(d, h, batch_first=True); s.m = nn.Sequential(nn.Linear(d, 4 * d), nn.GELU(), nn.Linear(4 * d, d))
+        s.n1 = nn.LayerNorm(d); s.n2 = nn.LayerNorm(d)
+    def forward(s, x, am):
+        h = s.n1(x); x = x + s.a(h, h, h, attn_mask=am, need_weights=False)[0]; return x + s.m(s.n2(x))
+class LM(nn.Module):
+    def __init__(s, d=DW, nl=NL):
+        super().__init__(); s.emb = nn.Embedding(V, d); s.pos = nn.Parameter(torch.randn(L, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl))
+        s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V)
+    def forward(s, X):
+        T = X.shape[1]; am = torch.triu(torch.ones(T, T, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:T]
+        for b in s.b: x = b(x, am)
+        return s.o(s.n(x))
+def tens(seqs):
+    X = torch.full((len(seqs), L), PAD, dtype=torch.long)
+    for k, q in enumerate(seqs): X[k, :len(q[:L])] = torch.tensor(list(q[:L]))
+    return X
+@torch.no_grad()
+def recall(m, facts, rel_of, byt):
+    m.eval(); oe, rk = [], []; rr = np.random.RandomState(5)
+    for f in facts:
+        pb = f"It is on record that {f['A']} {rel_of(f)} ".encode('latin-1'); tb = (f['C'] + '.').encode('latin-1')
+        X = tens([pb + tb]); Xi = torch.cat([torch.full((1, 1), PAD), X[:, :-1]], 1); lg = m(Xi)[0]
+        ps = torch.arange(len(pb), len(pb) + len(tb)); top = lg[ps].argmax(-1); oe.append(int(bool((top[:-1] == X[0, ps][:-1]).all())))
+        alts = sorted(n for n in byt[f['t']] if n != f['C'] and 3 <= len(n) <= 30 and all(ord(ch) < 256 for ch in n))
+        cands = [f['C']] + [alts[j] for j in rr.choice(len(alts), 9, replace=False)]
+        seqs = [pb + c.encode('latin-1') + b'.' for c in cands]; X = tens(seqs); Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1)
+        nl = -F.log_softmax(m(Xi), -1).gather(-1, X[..., None])[..., 0]; sc = [float(nl[k, len(pb):len(q) - 1].mean()) for k, q in enumerate(seqs)]
+        rk.append(int(np.argmin(sc) == 0))
+    m.train(); return f"open-ended {np.mean(oe):.2f} | rank {np.mean(rk):.2f}"
 NF = int(os.environ.get('RD_NF', 360)); S1 = int(os.environ.get('RD_STEPS1', 400)); S2 = int(os.environ.get('RD_STEPS2', 200))
 FACTS, BYT = pairs(tr_docs, False); rs.shuffle(FACTS); FACTS = FACTS[:NF]; n3 = len(FACTS) // 3
 RIGHT, WRONG, BYST = FACTS[:n3], [dict(f) for f in FACTS[n3:2 * n3]], FACTS[2 * n3:3 * n3]
