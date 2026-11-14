@@ -41,9 +41,52 @@ for name, v in (('documents stating the pair', docs), ('records', recs), ('short
                 ('popularity of the names', pop), ('the write-time code', code), ('bridges at write', br)):
     f = rk(v) <= 0.2
     P(f"   {name:28s} AUC vs DISTANT labels {_cg_auc(v[y], v[~y]):.3f} | bottom 20% wrong {1 - y[f].mean():.2f} (overall {1 - y.mean():.2f})")
+# ---- 14 Nov PREDICTIVE COMPRESSION ('reverse the judgement'): does the inference A~C make what is read LATER cheaper to code? If A and C are
+# related, A's new partners should come from C's neighbourhood (and C's from A's) more than chance. For each write: the bits saved coding A's
+# new partners (C excluded) with C's old neighbourhood mixed in, against the names' popularity alone - and the same with a CONTROL name of
+# C's degree in C's place. Retracting a write whose gain is no better than the control's costs nothing in compression.
+def compress_gain(pairs, old_lo, old_hi, new_lo, new_hi):
+    nbr = collections.defaultdict(set); deg = collections.Counter()
+    for r in R:
+        if old_lo <= r[0] < old_hi: nbr[r[1]].add(r[2]); nbr[r[2]].add(r[1])
+    for n, v in nbr.items(): deg[n] = len(v)
+    names = list(nbr); Z = sum(deg.values()) + len(names)
+    p0 = lambda x: (deg.get(x, 0) + 1) / Z
+    newp = collections.defaultdict(list); want = {n for k in pairs for n in k}
+    for r in R:
+        if new_lo <= r[0] < new_hi:
+            if r[1] in want: newp[r[1]].append(r[2])
+            if r[2] in want: newp[r[2]].append(r[1])
+    byd = collections.defaultdict(list)
+    for n in names: byd[min(int(np.log2(deg[n] + 1)), 20)].append(n)
+    rr = np.random.RandomState(11); lam = 0.3
+    def gain(a, c_nb, excl):
+        xs = [x for x in newp.get(a, []) if x not in excl]
+        if not xs or not c_nb: return 0.0, len(xs)
+        q = lambda x: (1 - lam) * p0(x) + lam * (1.0 / len(c_nb) if x in c_nb else 0.0)
+        return float(np.sum([np.log2(q(x)) - np.log2(p0(x)) for x in xs])), len(xs)
+    out = []
+    for a, c in pairs:
+        g1, n1_ = gain(a, nbr.get(c, set()) - {a}, {c}); g2, n2_ = gain(c, nbr.get(a, set()) - {c}, {a}); ctl = []
+        for _ in range(3):
+            pool_c = byd.get(min(int(np.log2(deg.get(c, 0) + 1)), 20)) or names; pool_a = byd.get(min(int(np.log2(deg.get(a, 0) + 1)), 20)) or names
+            zc = pool_c[rr.randint(len(pool_c))]; za = pool_a[rr.randint(len(pool_a))]
+            ctl.append(gain(a, nbr.get(zc, set()) - {a}, {c})[0] + gain(c, nbr.get(za, set()) - {c}, {a})[0])
+        out.append((g1 + g2, float(np.mean(ctl)), n1_ + n2_))
+    return np.array(out)
+G = compress_gain(ks, 0, n1, n1, n2); net = G[:, 0] - G[:, 1]; has = G[:, 2] > 0; per = net / np.maximum(G[:, 2], 1)
+P(f"   PREDICTIVE COMPRESSION ({int(has.sum())} of {len(ks)} writes with new partners): bits saved on later partners with the inference "
+  f"{np.mean(G[has, 0]):.1f} vs a same-degree control {np.mean(G[has, 1]):.1f} | AUC vs distant labels: gain {_cg_auc(G[:, 0][y], G[:, 0][~y]):.3f}, over control "
+  f"{_cg_auc(net[y], net[~y]):.3f}, per new partner {_cg_auc(per[y], per[~y]):.3f} | bottom 20% of gain over control: wrong {1 - y[rk(net) <= 0.2].mean():.2f} "
+  f"(overall {1 - y.mean():.2f}) | retracting would improve compression (gain over control < 0): {np.mean(net < 0):.2f} of writes, wrong among them "
+  f"{(1 - y[net < 0].mean()) if (net < 0).any() else float('nan'):.2f}")
 P("PART 2: the Re-DocRED writes (human labels) scored against the distant labels as well")
 for path in sys.argv[2:]:
     Wr = json.load(open(path)); yh = np.array([w[2] for w in Wr], bool); yd = np.array([frozenset((w[0], w[1])) in LAB for w in Wr], bool)
     P(f"   {path.split('/')[-1]}: human-labelled right {yh.mean():.2f}, distant-labelled right {yd.mean():.2f}, agreement {np.mean(yh == yd):.2f} "
       f"(human right & distant right {np.mean(yh & yd):.2f}, human right only {np.mean(yh & ~yd):.2f}, distant right only {np.mean(~yh & yd):.2f})")
+    G2 = compress_gain([(w[0], w[1]) for w in Wr], 0, 5000, 5000, 30000); net2 = G2[:, 0] - G2[:, 1]; h2 = G2[:, 2] > 0
+    a2 = _cg_auc(net2[yd], net2[~yd]) if yd.any() and (~yd).any() else float('nan')
+    P(f"      PREDICTIVE COMPRESSION on them (old = distant documents 0-5,000, later = 5,000-30,000; {int(h2.sum())} with new partners): AUC gain over "
+      f"control vs HUMAN labels {_cg_auc(net2[yh], net2[~yh]):.3f}, vs distant labels {a2:.3f} | bottom 20%: wrong (human) {1 - yh[rk(net2) <= 0.2].mean():.2f} (overall {1 - yh.mean():.2f})")
 P(f"DONE ({time.time() - T0:.0f}s)")
