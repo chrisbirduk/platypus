@@ -840,6 +840,27 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### Why written real-text inferences are not recalled (tools/teach_diag.py, 14 November; stand-in trunk, 120 real Re-DocRED pairs)
+
+GPU cg27a_rcode visits 3-7: written inferences recalled from the trunk at 0.00-0.03 (open-ended exact), taught or held back, right or
+wrong, while the code kept its lead in the store (visit 6, 969k records: with a chain AUC 0.659 vs Adamic-Adar 0.565, top 5% 0.268 vs
+0.158; written right 0.285). On the GPU each written inference gets about one question row a visit (4 rows a step from one random slot,
+shared with that slot's other facts) and is never read in any text. Taught offline the same way (the system's seven frames, test wording
+'It is on record that A r '), recall measured open-ended exact AND as the answer's rank among 10 of its kind (chance 0.10; 0.28 before):
+
+| condition | rows per fact | open-ended | rank, taught | rank, +300 steps of other text |
+|---|---|---|---|---|
+| GPU-like dose, never-read names, 'is connected to' | 2.5 | 0.00 | 0.34 | 0.29 |
+| dose x4 | 10 | 0.00 | 0.44 | 0.37 |
+| dose x16 | 40 | 0.01 | **0.74** | **0.47** |
+| familiar names (read by this trunk), 2.5 / 10 rows | 2.5 / 10 | 0.00 | 0.31 / 0.39 | 0.32 / 0.30 |
+| the gold relation's phrase, 10 rows | 10 | 0.00 | 0.46 | 0.36 |
+| the source sentence also read, 10 rows | 10 | 0.00 | 0.53 | 0.40 |
+
+**Two causes:** (1) the readout - open-ended exact recall cannot see real multi-word names (0.01 while rank is 0.74); planted names are short
+invented strings; (2) the dose - about one row a visit is far too little. Familiarity and the relation phrase add little; reading the
+sentence some. Next build (cg27a_rcode2): the written inferences' own question rows, 8 a step, and a rank-recall readout.
+
 ### GPU cg27a_rcode: the compressed fact table at scale (seed 4, 14 November; visit 2 readout, distant labels)
 
 Store graph 152,606 names from 344,600 records; 2,045 distant documents held out (their records and every record pairing two of their
