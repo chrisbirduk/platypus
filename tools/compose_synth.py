@@ -35,14 +35,18 @@ def name(nsy):
     while True:
         n = ''.join(rs.choice(SY) for _ in range(nsy)).capitalize()
         if n not in used: used.add(n); return n
+def person():                                                                  # first + family name; unique as a whole
+    while True:
+        n = ''.join(rs.choice(SY) for _ in range(2)).capitalize() + ' ' + ''.join(rs.choice(SY) for _ in range(3)).capitalize()
+        if n not in used: used.add(n); return n
 CODES = ['q' + c for c in 'abcdefghijklmnopqrst']
 NC = 20; COUNTRY = [name(3) for _ in range(NC)]
 def city(c, informative=0.8):
     code = CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]
     return f"{name(3)}-{code}", c
 OLD = [city(rs.randint(NC)) for _ in range(300)]
-TRAINP = [(name(2) + name(1).lower() + ' ' + name(3), int(rs.randint(len(OLD)))) for _ in range(400)]
-HELDP = [(name(2) + name(1).lower() + ' ' + name(3), int(rs.randint(len(OLD)))) for _ in range(100)]
+TRAINP = [(person(), int(rs.randint(len(OLD)))) for _ in range(400)]
+HELDP = [(person(), int(rs.randint(len(OLD)))) for _ in range(100)]
 CT = ["{B} lies in {C}.", "{B} is a city in {C}.", "The city of {B} is in {C}.", "{B}, a town of {C}, is old."]
 PT = ["{A} lives in {B}.", "{A} has a home in {B}.", "{A} moved to {B} years ago."]
 IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
@@ -118,9 +122,9 @@ def arm(tag, people, cities, teach_lies):
             re_ = np.random.RandomState(9)
             out.append(f"{s_}: CITIZENSHIP {rank1(mm, cit(people, cities), re_):.2f} | city {rank1(mm, liv(people, cities), re_):.2f} | city's country {rank1(mm, lie(cities), re_):.2f}")
     P(f"   {tag:16s} " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
-newp = lambda n: [(name(2) + name(1).lower() + ' ' + name(3), i) for i in range(n)]
+newp = lambda n: [(person(), i) for i in range(n)]
 P("IDEA 2 - taught briefly after pretraining (chance 0.10; citizenship is never taught for these people):")
-arm('F1 OLD CITY', [(name(2) + name(1).lower() + ' ' + name(3), int(rs.randint(len(OLD)))) for _ in range(100)], OLD, False)
+arm('F1 OLD CITY', [(person(), int(rs.randint(len(OLD)))) for _ in range(100)], OLD, False)
 NEWC = [rs.randint(NC) for _ in range(100)]
 arm('F2 NEW, RANDOM', newp(100), [(f"{name(3)}-{CODES[rs.randint(NC)]}", c) for c in NEWC], True)
 arm('F3 NEW, TYPED', newp(100), [(f"{name(3)}-{CODES[c]}", c) for c in NEWC], True)
