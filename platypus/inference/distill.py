@@ -1959,7 +1959,14 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             except Exception: _fail('inference.distill:rti_rows')
             print(f"  [REAL-TEXT INFERENCE DOSE | visit {vis + 1}] next visit: {len(rtir9)} rows of taught real-text inferences, {int(getattr(cfg, 'inf_rti_rows', 0))} of them "
                   f"added to every question-row step (on top of the pool's own rows)", flush=True)
-        model.__dict__['_dtw'] = dict(rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        rret9 = []                                                             # 14 Nov RETRACTION (inf_rret): unlikelihood rows for retracted inferences
+        if int(getattr(cfg, 'inf_rret', 0)):
+            for e in (model.__dict__.get('_rret_x') or []):
+                sl9 = int(S_slot(e['d']))
+                for fm in FORMS9: rret9.append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), sl9))
+            print(f"  [RETRACTION | visit {vis + 1}] next visit: {len(model.__dict__.get('_rret_x') or [])} retracted inferences, {len(rret9)} unlikelihood rows, "
+                  f"{int(getattr(cfg, 'inf_rret_rows', 8))} a step at weight {float(getattr(cfg, 'inf_rret_w', 0.1)):g}", flush=True)
+        model.__dict__['_dtw'] = dict(rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -2043,10 +2050,27 @@ def distill_wake_loss(model, cfg):
                 for r9, it in enumerate(it2):
                     p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)
                     if n_ > 0: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
-                if c2: l2 = t2 / c2; loss = loss + l2; D['rtil'].append(float(l2.detach()))
+                if c2:                                                         # 14 Nov DOSE SCALING (inf_rti_rows_ref > 0): the loss is a mean over the rows'
+                    l2 = t2 / c2; rf2 = int(getattr(cfg, 'inf_rti_rows_ref', 0))   #   answer bytes, so more rows a step would push each row less; weighting
+                    w2 = (len(it2) / rf2) if rf2 > 0 else 1.0                      #   by rows / ref keeps each row's push at the ref's (cg27a_rcode4: 16 rows
+                    loss = loss + w2 * l2; D['rtil'].append(float(l2.detach()))    #   at weight 1 halved it - each inference learned more slowly)
             except Exception as e2:
                 _fail('inference.distill:rti_dose')
                 if not D.get('err2'): D['err2'] = 1; print(f"  [REAL-TEXT INFERENCE DOSE] a step failed ({type(e2).__name__}: {e2})"[:300], flush=True)
+        rk3 = int(getattr(cfg, 'inf_rret_rows', 8)); rp3 = D.get('rret')
+        if int(getattr(cfg, 'inf_rret', 0)) and rk3 > 0 and rp3:              # 14 Nov RETRACTION: unlikelihood on retracted inferences' answer bytes
+            try:                                                               #   -log(1 - p(byte)), weight inf_rret_w (offline 0.1: unlearns, no bystander harm)
+                it3 = [rp3[int(i)] for i in rs.choice(len(rp3), min(rk3, len(rp3)), replace=False)]; sl3 = int(it3[0][2])
+                X3, _ = _ws_batch(model, [it[0] + it[1] for it in it3]); lg3 = _ws_run(model, X3, sl3, grad_=True); t3 = 0.0; c3 = 0
+                for r9, it in enumerate(it3):
+                    p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg3.shape[1] - p0)
+                    if n_ > 0:
+                        lp3 = F.log_softmax(lg3[r9, p0:p0 + n_].float(), -1).gather(-1, X3[r9, p0 + 1:p0 + 1 + n_, None])[:, 0]
+                        t3 = t3 - torch.log1p(-lp3.exp().clamp(max=0.999)).sum(); c3 += n_
+                if c3: l3 = t3 / c3; loss = loss + float(getattr(cfg, 'inf_rret_w', 0.1)) * l3; D['rretl'].append(float(l3.detach()))
+            except Exception as e3:
+                _fail('inference.distill:rret')
+                if not D.get('err3'): D['err3'] = 1; print(f"  [RETRACTION] an unlikelihood step failed ({type(e3).__name__}: {e3})"[:300], flush=True)
         rtv = (D.get('rtxv') or {}).get(sl) if aw > 0 else None
         if rtv:                                                                # REAL-TEXT ALIGNMENT: a view's question state -> its declaration's (no labels)
             vv = [rtv[int(i)] for i in rs.choice(len(rtv), min(k, len(rtv)), replace=False)]
