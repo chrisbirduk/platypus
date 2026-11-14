@@ -840,6 +840,23 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### GPU cg27a_rcode: the compressed fact table at scale (seed 4, 14 November; visit 2 readout, distant labels)
+
+Store graph 152,606 names from 344,600 records; 2,045 distant documents held out (their records and every record pairing two of their
+names removed); 86,965 candidate pairs never stated together, labelled 0.095. The same readout, same candidates, at two code sizes:
+
+| | Adamic-Adar AUC / top 5% / 25% | CODE 128 AUC / top 5% / 25% | **CODE 512 AUC / top 5% / 25%** |
+|---|---|---|---|
+| with a chain (labelled 0.119) | 0.587 / 0.246 / 0.156 | 0.593 / 0.224 / 0.172 | **0.682 / 0.330 / 0.225** |
+| all pairs (0.095) | 0.587 / 0.192 / 0.140 | 0.579 / 0.186 / 0.134 | **0.625 / 0.278 / 0.161** |
+| no chain (0.074) | 0.500 / 0.070 / 0.072 | 0.509 / 0.120 / 0.080 | 0.535 / 0.129 / 0.077 (popularity 0.587) |
+| the 200 written | - | right 0.270 | **right 0.320** (3.4x base; cg27a_rti about 0.18) |
+
+**Replicates at scale:** with 512 dimensions the compressed fact table beats chaining clearly on pairs with a chain (AUC 0.68 vs 0.59; top
+quarter 0.225 vs 0.156) and writes inferences right 0.32 of the time; at 128 dimensions it only ties (the dilution seen offline). Codes in
+12 s. Where no chain exists, popularity wins on the distant labels (they favour well-known names; on Re-DocRED gold popularity was below
+chance), so that comparison needs gold or a popularity-matched control. Consolidation readouts from visit 3.
+
 ### Does reading the premises make a novel inference stick? (tools/evidence_infer.py, 14 November, overnight; stand-in trunk, two seeds)
 
 120 SUPPORTED pairs (A-B gold in one Re-DocRED document, B-C gold in another, A and C never in the same document anywhere) and 120
