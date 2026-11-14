@@ -10,7 +10,8 @@ afterwards). Then 200 retraction steps, the right ones rehearsed in every arm, t
   NEUTRAL + UL  both
 Readout (test wording 'It is on record that A is connected to '): RANK of the taught answer among it and 9 of its kind (chance 0.10;
 untaught prior about 0.28), for wrong / right / bystander, and text loss on held wiki (collateral).
-Usage: TG_D=192 TG_CKPT=<model file> python3 tools/retract_diag.py   env RD_NF (360), RD_STEPS1 (400), RD_STEPS2 (200)"""
+Usage: TG_D=192 TG_CKPT=<model file> python3 tools/retract_diag.py   env RD_NF (360), RD_STEPS1 (400), RD_STEPS2 (200), RD_ULW (1.0, unlikelihood
+ weight), RD_ARMS (comma list), TD_SEED (0)"""
 import os
 import json
 import math
@@ -81,7 +82,7 @@ def recall(m, facts, rel_of, byt):
         nl = -F.log_softmax(m(Xi), -1).gather(-1, X[..., None])[..., 0]; sc = [float(nl[k, len(pb):len(q) - 1].mean()) for k, q in enumerate(seqs)]
         rk.append(int(np.argmin(sc) == 0))
     m.train(); return f"open-ended {np.mean(oe):.2f} | rank {np.mean(rk):.2f}"
-NF = int(os.environ.get('RD_NF', 360)); S1 = int(os.environ.get('RD_STEPS1', 400)); S2 = int(os.environ.get('RD_STEPS2', 200))
+NF = int(os.environ.get('RD_NF', 360)); ULW = float(os.environ.get('RD_ULW', 1.0)); ARMS = os.environ.get('RD_ARMS', 'STOP,NEUTRAL,UNLIKELIHOOD,NEUTRAL + UL').split(','); S1 = int(os.environ.get('RD_STEPS1', 400)); S2 = int(os.environ.get('RD_STEPS2', 200))
 FACTS, BYT = pairs(tr_docs, False); rs.shuffle(FACTS); FACTS = FACTS[:NF]; n3 = len(FACTS) // 3
 RIGHT, WRONG, BYST = FACTS[:n3], [dict(f) for f in FACTS[n3:2 * n3]], FACTS[2 * n3:3 * n3]
 for f in WRONG:
@@ -116,14 +117,14 @@ for st in range(S1):
 P(f"TAUGHT ({S1} steps, {S1 * 16 / len(ALL):.1f} rows per fact):            {rep(m)}  ({time.time() - T0:.0f}s)")
 SD = {k: v.clone() for k, v in m.state_dict().items()}; OD = op.state_dict()
 import copy
-for arm in ('STOP', 'NEUTRAL', 'UNLIKELIHOOD', 'NEUTRAL + UL'):
+for arm in ARMS:
     m = LM(); m.load_state_dict(SD); m.train(); op = torch.optim.AdamW(m.parameters(), lr=3e-4, weight_decay=0.01); op.load_state_dict(copy.deepcopy(OD)); np.random.seed(SEED + 7)
     for st in range(S2):
         seqs = [row(RIGHT[np.random.randint(len(RIGHT))]) for _ in range(8)]
         if 'NEUTRAL' in arm: seqs += [row(WRONG[np.random.randint(len(WRONG))], NEUT) for _ in range(8)]
         seqs += [bytes(WK[i0:i0 + L]) for i0 in np.random.randint(0, len(WK) - L - 1, 32 - len(seqs))]
         l = lm_loss(m, seqs)
-        if 'UL' in arm or arm == 'UNLIKELIHOOD': l = l + ul_loss(m, [WRONG[np.random.randint(len(WRONG))] for _ in range(8)])
+        if 'UL' in arm or arm == 'UNLIKELIHOOD': l = l + ULW * ul_loss(m, [WRONG[np.random.randint(len(WRONG))] for _ in range(8)])
         op.zero_grad(); l.backward(); op.step()
-    P(f"RETRACTED by {arm:14s} ({S2} steps):            {rep(m)}  ({time.time() - T0:.0f}s)")
+    P(f"RETRACTED by {arm:14s} (weight {ULW:g}, {S2} steps):            {rep(m)}  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")
