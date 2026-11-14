@@ -21,7 +21,9 @@ Second version (14 Nov, late): JM_SEED (fact order, memory and head seeds), and 
              reach are the only ones that change): their recall, and the bystanders' (the rest of A, B, M)
   CAPACITY   JM_CAP more single facts in batches of 200 (one per subject, unused documents): recall of each batch at the end and of A
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/jepa_mem.py   env JM_N (64), JM_KK (8), JM_STEPS (150 per set), JM_LR (0.05), JM_SEED (0),
-  JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME)"""
+  JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME; add K-TEXT with JM_TEXT), JM_TEXT (a DocRED distant .json.gz: K-TEXT, a wording head
+  trained on REAL TEXT only - two different wordings that link the same pair of names in one sentence are one statement; InfoNCE; the
+  frames and the test wording never seen), JM_PAIRS (20000)"""
 import os, json, math, time, collections
 import numpy as np
 import torch
@@ -176,6 +178,42 @@ P(f"wording keys: the TEST wording's nearest relation (by the training frames' m
   f"(chance {1 / len(RELS):.2f}, {len(RELS)} relations) | PARAPHRASED test wording ('It is on record that someone passed away in '): JEPA head "
   f"{waccp(WJ, WJP):.2f}, raw state {waccp(WR, WRP):.2f}  ({time.time() - T0:.0f}s)")
 R1 = torch.randn(DW, DK) / DW ** 0.5
+TXT = os.environ.get('JM_TEXT', '')                                            # K-TEXT: the wording head learned from REAL TEXT, no frames
+if TXT:
+    import gzip
+    dd = json.load(gzip.open(TXT, 'rt')); NPAIR = int(os.environ.get('JM_PAIRS', 20000)); W_ = collections.defaultdict(dict)
+    for d in dd:
+        cn = cn_(d)
+        for i, vi in enumerate(d['vertexSet']):
+            for j, vj in enumerate(d['vertexSet']):
+                if i == j or not ok(cn[i]) or not ok(cn[j]): continue
+                for mi in vi:
+                    for mj in vj:
+                        if mi['sent_id'] != mj['sent_id'] or not (0 < mj['pos'][0] - mi['pos'][1] <= 8): continue
+                        tk = d['sents'][mi['sent_id']]; btw = ' '.join(tk[mi['pos'][1]:mj['pos'][0]])
+                        if not all(ord(ch) < 256 for ch in btw) or not any(ch.isalpha() for ch in btw): continue
+                        ctx = ' '.join(tk[max(0, mi['pos'][0] - 5):mi['pos'][0]])
+                        if all(ord(ch) < 256 for ch in ctx): W_[(cn[i], cn[j])].setdefault(btw, (ctx + ' someone ' + btw + ' ').strip() + ' ')
+    del dd
+    multi = [(k, list(v.values())[:3]) for k, v in W_.items() if len(v) >= 2]; np.random.RandomState(SEED + 9).shuffle(multi); multi = multi[:NPAIR]; del W_
+    tp_txt = [t[-L + 1:] for k, ws in multi for t in ws]; owner = np.array([n for n, (k, ws) in enumerate(multi) for t in ws])
+    P(f"K-TEXT: {len(multi)} name pairs stated in 2+ different wordings ({len(tp_txt)} prefixes) from {TXT.split('/')[-1]}  ({time.time() - T0:.0f}s)")
+    tm_, tl_ = enc(tp_txt, [(0, len(t)) for t in tp_txt]); TC = torch.cat([tm_, tl_], -1); TMU, TSD = TC.mean(0), TC.std(0) + 1e-6; TC = (TC - TMU) / TSD
+    P(f"   text prefixes encoded  ({time.time() - T0:.0f}s)")
+    head_t = nn.Sequential(nn.Linear(TC.shape[1], 128), nn.GELU(), nn.Linear(128, DK)); opt_ = torch.optim.Adam(head_t.parameters(), lr=1e-3); tr_ = np.random.RandomState(SEED + 8)
+    byo = collections.defaultdict(list)
+    for k, o in enumerate(owner): byo[int(o)].append(k)
+    keys_ = list(byo)
+    for st in range(3000):
+        ps_ = [keys_[i] for i in tr_.choice(len(keys_), 256, replace=False)]; a_ = [byo[p_][0] for p_ in ps_]; b_ = [byo[p_][1 + tr_.randint(len(byo[p_]) - 1)] for p_ in ps_]
+        z1 = F.normalize(head_t(TC[a_]), dim=-1); z2 = F.normalize(head_t(TC[b_]), dim=-1)
+        lo = F.cross_entropy(z1 @ z2.t() / 0.1, torch.arange(256)); opt_.zero_grad(); lo.backward(); opt_.step()
+        if (st + 1) % 1000 == 0: P(f"   text head step {st + 1}: InfoNCE {float(lo.detach()):.3f}  ({time.time() - T0:.0f}s)")
+    with torch.no_grad():
+        raw_ = lambda m_, l_: (torch.cat([m_, l_], -1) - TMU) / TSD
+        WT = F.normalize(head_t(raw_(pm, pl)), dim=-1); WTP = F.normalize(head_t(raw_(ppm, ppl)), dim=-1)
+    P(f"   K-TEXT wording keys: the TEST wording's relation by the frames' keys {wacc(WT):.2f} | PARAPHRASED {waccp(WT, WTP):.2f} "
+      f"(frame-trained JEPA head {wacc(WJ):.2f} / {waccp(WJ, WJP):.2f}; raw {wacc(WR):.2f} / {waccp(WR, WRP):.2f})")
 
 class KMem:
     def __init__(s, arm):
@@ -183,8 +221,8 @@ class KMem:
         s.v = torch.zeros(NS * NS, DW, requires_grad=True); s.opt = torch.optim.Adam([s.v], lr=LR); s.touched = set()
     def wkey(s, r, fi):
         if s.arm == 'K-NAME': return torch.zeros(DK)
-        if fi == 'P': return (WJP if s.arm == 'K-JEPA' else WRP)[RELS.index(r)]
-        return (WJ if s.arm == 'K-JEPA' else WR)[PIDX[(r, fi)]]
+        if fi == 'P': return {'K-JEPA': WJP, 'K-RAW': WRP, 'K-TEXT': WTP if TXT else None}[s.arm][RELS.index(r)]
+        return {'K-JEPA': WJ, 'K-RAW': WR, 'K-TEXT': WT if TXT else None}[s.arm][PIDX[(r, fi)]]
     def read(s, nk, wk):
         """nk: (B, DW) subject name keys; wk: (B, DK) wording keys -> (B, DW) read value, slot indices"""
         q1 = F.normalize(nk @ R1, dim=-1); a1, i1 = (q1 @ s.k1.t()).topk(KK, -1)
