@@ -924,6 +924,14 @@ an old city taught 'lives in' only (300 steps):
 never told, in proportion to how clean the code is (about 60-75% of the code's own purity).** Noisy codes carry correspondingly less;
 the trunk does not clean them up. Real-text codes (Re-DocRED) are the next test (tools/codetok_diag.py).
 
+### GPU cg27a_rcode4: write 200 by code + resource allocation, 16 rows a step (seed 4, 14 November, visits 1-2)
+
+Visit 2 (the same store and candidates as cg27a_rcode3), labelled share of the top 100 / 200 / 400 of all 86,965 candidates: code 0.19 /
+0.32 / 0.345; Adamic-Adar 0.41 / 0.415 / 0.367; code + Adamic-Adar 0.66 / 0.60 / 0.565; **code + resource allocation 0.59 / 0.59 / 0.578**;
+the 200 written right 0.590 (118 right inferences, against cg27a_rcode3's 66). **The offline edge of resource allocation does not appear
+at GPU scale** (level at 200, +0.013 at 400, -0.07 at 100): the gain is from writing more, at about the precision code + Adamic-Adar would
+give for 200. Held-out bits visits 1 / 2: 2.0237 / 2.0271 (cg27a_rcode3 seed 4: 2.0263 / 2.0209).
+
 ### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
 
 Each name followed by its compression cluster token (128 k-means clusters of the store's co-mention graph codes) in the kept documents'
