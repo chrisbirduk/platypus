@@ -918,12 +918,12 @@ of its kind (chance 0.10), seed 0 / seed 1:
 | NEUTRAL answer ('no one on record') | 0.25 / 0.25 | 0.63 / 0.66 | 0.54 / 0.46 | 2.013 / 2.008 |
 | UNLIKELIHOOD, weight 1 | 0.00 / 0.01 | 0.68 / 0.65 | 0.43 / 0.49 | 2.034 / 2.010 |
 | NEUTRAL + UNLIKELIHOOD | 0.00 / 0.00 | 0.73 / 0.72 | 0.47 / 0.50 | 2.065 / 2.056 |
-| **UNLIKELIHOOD, weight 0.1** | **0.01** / - | 0.64 / - | **0.55** / - | 2.005 / - |
+| **UNLIKELIHOOD, weight 0.1** | **0.01 / 0.01** | 0.64 / 0.71 | **0.55 / 0.53** | 2.005 / 1.990 |
 | UNLIKELIHOOD, weight 0.3 | 0.02 / - | 0.65 / - | 0.51 / - | 2.012 / - |
 
 **Positive: unlikelihood on the wrong answer's bytes (with the right ones rehearsed) removes a taught wrong inference in both seeds;
 stopping or a neutral answer only halves it.** Collateral damage at weight 1 is seed-dependent (bystanders -7 / +7 points against STOP);
-at weight 0.1 none in seed 0 (0.55 vs 0.50), text cost +0.02 bits against STOP. The mechanism is settled; the trigger (which writes are
+at weight 0.1 none in either seed (bystanders 0.55 / 0.53 against STOP's 0.50 / 0.42), text cost +0.01 to +0.02 bits against STOP. The mechanism is settled; the trigger (which writes are
 wrong) is not.
 
 ### Held-back right inferences ranked above chance: prior, not generalisation (tools/gen_diag.py, 14 November; stand-in trunk)
