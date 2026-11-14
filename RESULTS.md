@@ -879,6 +879,11 @@ bits, visits 1-4: 2.0102 / 2.0248 / 2.0189 / **1.9571** (seed 4: 2.0263 / 2.0209
 Gutenberg (2.161 vs 2.021; other domains +0.006 to +0.018), a domain whose cost already swings between runs (cg27a_rcode2 seed 4: 2.061
 at visit 4, 2.110 at visit 5); without a same-seed control it is a watch item, not a measured cost. Held-back right at 0.16-0.19 fits
 tools/gen_diag.py: a prior from reading (the held-back pairs' documents are kept out of the store, not out of the text the trunk reads).
+Visit 5 (seed 5 vs seed 4): visit-2 batch taught 0.73 / 0.67 vs held back 0.16 / 0.00 (0.52 / 0.54 vs 0.12 / 0.00); **visit-4 batch, one visit
+of teaching, 0.49 / 0.31 vs 0.03 / 0.05** (0.33 / 0.23 vs 0.03 / 0.00); rank taught 0.68 / 0.64 vs held back 0.14 / 0.15. Held-out bits
+1.8905 (seed 4: 1.8533); the domain just read matches the earlier seed-5 build cg27a_replay_s5 (post-train PubMed 1.678 vs 1.679, FreeLaw 1.583
+vs 1.585), the gap is in older domains (Gutenberg 2.160 vs 2.039, PubMed 1.725 vs 1.687, Wikipedia 2.064 vs 2.038) - seed or change cannot
+be told apart without a same-seed run without the inferences.
 
 ### Does more reading flag a wrong inference? (tools/fact_compress.py FC_SAVE / FC_LOAD, 14 November; Re-DocRED gold, two splits)
 
