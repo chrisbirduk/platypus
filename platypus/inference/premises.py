@@ -638,6 +638,23 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         rn = {t: (_dt_recall(model, S_slot, old(nv(T_), t)), _dt_recall(model, S_slot, old(nv(H_), t))) for t in (True, False, None)}
         print(f"  [REAL-TEXT INFERENCE WRITES, NOVEL ONLY | visit {vis + 1}] {len(nv(T_))} taught, {len(nv(H_))} held back | TAUGHT vs HELD BACK: RIGHT {g(rn[True][0])} vs "
               f"{g(rn[True][1])} | WRONG {g(rn[False][0])} vs {g(rn[False][1])} | not checkable {g(rn[None][0])} vs {g(rn[None][1])}", flush=True)
+    if int(getattr(cfg, 'inf_rti_rank_recall', 0)):                           # 14 Nov RANK RECALL (readout): open-ended exact recall cannot see real multi-word
+        from platypus.inference.distill import _dw_cand_mc                     #   names (offline: rank 0.74 while exact 0.01); here the answer among itself and
+        pool_ = sorted({e['ans'] for e in T_ + H_ + U_}); rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)   #   9 other written answers (chance 0.10)
+        def rk_(L):
+            L = [e for e in L if e['rm'] < vis][:150]; hit = []
+            for e in L:
+                alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                if len(alts) < 9: continue
+                cs = [e['ans']] + [alts[j] for j in rr_.choice(len(alts), 9, replace=False)]
+                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", cs) == 0))
+            return f"{np.mean(hit):.2f} ({len(hit)})" if hit else "nan (0)"
+        tr_ = lambda L, t: [e for e in L if e['truth'] is t]
+        dl_ = (model.__dict__.get('_dtw') or {}).get('rtil') or []
+        print(f"  [REAL-TEXT INFERENCE RANK RECALL | visit {vis + 1}] the answer first among 10 written answers (chance 0.10), from the trunk, test wording: TAUGHT right "
+              f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
+              + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
+              + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
     if U_:
         ru = {t: _dt_recall(model, S_slot, old(U_, t)) for t in (True, False)}
         print(f"  [REAL-TEXT CONFIRMATION RECALL | visit {vis + 1}] PREDICTED and confirmed: taught RIGHT {g(rec[True][0])} / WRONG {g(rec[False][0])} | held back (read the "

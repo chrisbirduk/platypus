@@ -1950,7 +1950,16 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         lfk9 = set(repr(e['key']) for e in held_lf9); pc9 = [e for e in held if e['key'][0] == 'fact' and repr(e['key']) not in lfk9]; rq9 = np.random.RandomState(int(cfg.seed) + 9696 + vis)
         lfp9 = [held_lf9[int(i)] for i in rq9.choice(len(held_lf9), min(32, len(held_lf9)), replace=False)] if held_lf9 else []
         pcp9 = [pc9[int(i)] for i in rq9.choice(len(pc9), min(32, len(pc9)), replace=False)] if (lf9 and pc9) else []
-        model.__dict__['_dtw'] = dict(rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        rtir9 = []                                                             # 14 Nov RTI DOSE (inf_rti_rows): the taught real-text inferences' own rows
+        if int(getattr(cfg, 'inf_rti_rows', 0)):
+            try:
+                from platypus.inference.premises import _PM as _PM9, _RTI_R as _RR9
+                kk9 = {repr(('fact', A9, _RR9, C9)) for (A9, C9) in (_PM9.get('rti') or {})}
+                rtir9 = [rw for rw in rows if rw[3] in kk9]
+            except Exception: _fail('inference.distill:rti_rows')
+            print(f"  [REAL-TEXT INFERENCE DOSE | visit {vis + 1}] next visit: {len(rtir9)} rows of taught real-text inferences, {int(getattr(cfg, 'inf_rti_rows', 0))} of them "
+                  f"added to every question-row step (on top of the pool's own rows)", flush=True)
+        model.__dict__['_dtw'] = dict(rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -2026,6 +2035,14 @@ def distill_wake_loss(model, cfg):
             Xs, Ms = _ws_batch(model, ss); lgs = _ws_run(model, Xs, sl, grad_=True); T9 = lgs.shape[1]; ms = Ms[:, 1:T9 + 1].float()
             cs = F.cross_entropy(lgs.reshape(-1, lgs.shape[-1]).float(), Xs[:, 1:T9 + 1].reshape(-1), reduction='none').view(ms.shape)
             lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rtxl'].append(float(lr_.detach()))
+        rk2 = int(getattr(cfg, 'inf_rti_rows', 0)); rp2 = D.get('rtir')
+        if rk2 > 0 and rp2:                                                    # 14 Nov RTI DOSE: the written real-text inferences' own question rows
+            it2 = [rp2[int(i)] for i in rs.choice(len(rp2), min(rk2, len(rp2)), replace=False)]; sl2 = int(it2[0][2])
+            X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
+            for r9, it in enumerate(it2):
+                p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)
+                if n_ > 0: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
+            if c2: l2 = t2 / c2; loss = loss + l2; D['rtil'].append(float(l2.detach()))
         rtv = (D.get('rtxv') or {}).get(sl) if aw > 0 else None
         if rtv:                                                                # REAL-TEXT ALIGNMENT: a view's question state -> its declaration's (no labels)
             vv = [rtv[int(i)] for i in rs.choice(len(rtv), min(k, len(rtv)), replace=False)]

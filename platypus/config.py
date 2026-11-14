@@ -642,6 +642,8 @@ class Config:
     bl_er=0.0                       #   > 0: stored-example replay - every step adds bl_er x the loss on a stored batch of another slot (needs replay_buffer_batches)
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
+    inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
+    inf_rti_rank_recall=0           #     readout: written inferences' answer ranked among 10 written answers (open-ended exact recall cannot see real names)
     inf_rti_code=0                  #   14 Nov INFERENCE BY COMPRESSING THE FACT TABLE (MODEL CHANGE when on; cg27a_rcode): write the held-out pairs whose low-rank name codes agree most
     inf_rcode_k=128                 #     code dimensions (truncated SVD of the PPMI name x name record graph)
     inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
