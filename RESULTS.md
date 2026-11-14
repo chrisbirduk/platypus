@@ -951,6 +951,13 @@ cg27a_rcode3 1.059 -> 0.253); **rank taught right / wrong 0.54 / 0.57 vs held ba
 (cg27a_rcode4 2.0237 / 2.0271 / 2.0110). **The fix restores most of the per-inference learning (loss and rank near cg27a_rcode3's, with
 twice as many taught: about 44 right ranked first vs 30), at no cost; open-ended exact recall has not caught up at one visit.**
 
+Visit 4. **The trigger does not transfer to the GPU: AUC 0.517; the 40 flagged are wrong 0.38 against 0.42 unflagged** (200 judged on 20,374
+documents read since; 20 with no confirming record). 23 flagged taught: 8 retracted (3 wrong), 15 kept as control - too few, and no more
+wrong than the rest. Offline (Re-DocRED human labels, 0.6 wrong) the same score had AUC 0.72-0.73; here truth is the distant set's
+Wikidata labels and the writes are pairs from held-out distant documents - which difference breaks it is not yet known. Recall with the
+dose fix after two visits: **rank taught 0.97 / 0.90 vs held back 0.19 / 0.25** (cg27a_rcode4 0.89 / 0.87; cg27a_rcode3 0.88 / 0.88);
+open-ended 0.47 / 0.39 vs 0.01 / 0.00 (cg27a_rcode4 0.43 / 0.36). Second batch right 0.59. Held-out bits 1.9236 (cg27a_rcode4 1.9246).
+
 ### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
 
 Each name followed by its compression cluster token (128 k-means clusters of the store's co-mention graph codes) in the kept documents'
