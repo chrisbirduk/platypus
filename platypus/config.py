@@ -643,7 +643,7 @@ class Config:
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
     inf_rti_evidence=0              #   13 Nov EVIDENCE REPLAY (MODEL CHANGE when on): the premise statements of written inferences join the real-text replay pool
-    inf_rti_novel=0                 #     write only inferences whose A and C never appear together in anything the trunk reads (benchmark documents, replayed spans)
+    inf_rti_novel=0                 #     NOVELTY (A and C never together in anything the trunk reads: benchmark documents, replayed spans): 1 = write only those, 2 = tag and report apart
     inf_rti_ctl=0.0                 #     held-back share of written inferences by their own hash (0 = the question pool's fifth)
     inf_distill_refuse=0.0          #   12 Nov REFUSAL ROWS: share f in (0, 1) of each slot's question pool made of questions about FRESH names never read
                                     #     (taught wordings) answered with the refusal word 'unknown' (after R-Tuning); 0 = off

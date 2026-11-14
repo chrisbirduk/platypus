@@ -402,10 +402,12 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     nbm = int(getattr(cfg, 'inf_rti_bridges', 2))
     nov = int(getattr(cfg, 'inf_rti_novel', 0)); bco = _PM.get('bench_co', set())
     def novel(k):                                                             # 14 Nov NOVELTY: A and C never together in anything the TRUNK reads - the benchmark
-        if not nov: return True                                               #   documents and the evidence spans it replays (each span holds A and B or B and C,
+        if nov != 1: return True                                              #   documents and the evidence spans it replays (each span holds A and B or B and C,
         return frozenset(k) not in bco and not any(k[0] in RD[i][7] and k[1] in RD[i][7] for i in PRR[k])   # never both). The distant documents are read
                                                                               #   only by the record store, so A and C may share one there: that is what keeps
                                                                               #   the inference checkable (excluding premise documents left 4 of 300 checkable)
+    isnov = lambda k: frozenset(k) not in bco and not any(k[0] in RD[i][7] and k[1] in RD[i][7] for i in PRR[k])   # inf_rti_novel 2: TAG only (write as cg27a_rti,
+                                                                              #   report the novel ones apart - the filter left few checkable inferences locally)
     P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI and novel(k)]
     P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
     if not P2:
@@ -433,7 +435,7 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
         chk = bool(dn[A_] & dn[C_]); tr = (frozenset((A_, C_)) in LAB) if chk else None
         rows.append((A_, C_, nbr, rank, tr))
     ok = [r for r in rows if r[3] < rmax]; ok.sort(key=lambda r: (r[3], -r[2])); wr = ok[:nmax]
-    for A_, C_, nbr, rank, tr in wr: W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=tr, bridges=nbr, rank=rank,
+    for A_, C_, nbr, rank, tr in wr: W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=tr, bridges=nbr, rank=rank, novel=bool(isnov((A_, C_))),
                                                          ev=[RD[i][7] for i in sorted(PRR[(A_, C_)])[:6]])   # the premise statements (evidence replay)
     f = lambda L: (f"{np.mean([r[4] for r in L if r[4] is not None]):.3f} of {sum(r[4] is not None for r in L)} checkable" if any(r[4] is not None for r in L) else "none checkable")
     ra = np.array([r[3] for r in rows if r[4] is not None], float); ta = np.array([r[4] for r in rows if r[4] is not None], bool)
@@ -441,7 +443,8 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
     print(f"  [REAL-TEXT INFERENCE | visit {vis + 1}] READ {nD} distant records -> CHOSE {len(keep)} premises (top {float(getattr(cfg, 'inf_rti_keep', 0.1)):.0%} by {pol_}) "
           f"-> INFERRED {len(PR)} A-C, {sum(1 for v in PR.values() if len(v) >= nbm)} with {nbm}+ bridges, {len(rows)} new ones checked -> CHECK (A helps the trunk predict C more than all but {rmax - 1} of 9 same-class names; "
           f"'A {_RTI_R}' vs 'Someone {_RTI_R}'): passed {len(ok)}, right {f(ok)}; failed {len(rows) - len(ok)}, right {f([r for r in rows if r[3] >= rmax])} | the check tells right from wrong: AUC {au:.3f} "
-          f"-> WROTE {len(wr)} (right {f(wr)}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
+          f"-> WROTE {len(wr)} (right {f(wr)}; novel - A and C never together in anything the trunk reads - {sum(1 for r in wr if isnov((r[0], r[1])))}, right "
+          f"{f([r for r in wr if isnov((r[0], r[1]))])}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
 def rti_evidence(cfg, S_slot, seen):
@@ -469,7 +472,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
     have = {repr(e['key']) for e in ents + held}; T_, H_ = [], []
     for (A_, C_), w in W.items():
-        e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'])
+        e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel'))
         if repr(e['key']) in have: continue
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)
@@ -480,6 +483,11 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] {len(W)} inferences written ({sum(1 for w in W.values() if w['vis'] == vis)} this readout) -> question pool: {len(T_)} taught, "
           f"{len(H_)} held back || FROM THE TRUNK, written at an earlier readout, TAUGHT vs HELD BACK: RIGHT inferences {g(rec[True][0])} vs {g(rec[True][1])} | WRONG ones "
           f"(false memories if recalled) {g(rec[False][0])} vs {g(rec[False][1])} | not checkable {g(rec[None][0])} vs {g(rec[None][1])}", flush=True)
+    if int(getattr(cfg, 'inf_rti_novel', 0)):                                 # 14 Nov: the NOVEL ones only (A and C never together in anything the trunk reads)
+        nv = lambda L: [e for e in L if e.get('novel')]
+        rn = {t: (_dt_recall(model, S_slot, old(nv(T_), t)), _dt_recall(model, S_slot, old(nv(H_), t))) for t in (True, False, None)}
+        print(f"  [REAL-TEXT INFERENCE WRITES, NOVEL ONLY | visit {vis + 1}] {len(nv(T_))} taught, {len(nv(H_))} held back | TAUGHT vs HELD BACK: RIGHT {g(rn[True][0])} vs "
+              f"{g(rn[True][1])} | WRONG {g(rn[False][0])} vs {g(rn[False][1])} | not checkable {g(rn[None][0])} vs {g(rn[None][1])}", flush=True)
     coh = sorted({e['rm'] for e in T_ + H_ if e['rm'] < vis})                 # 13 Nov: by WHEN the inference was written (fresh ones may be recalled, then fade)
     if coh:
         by = lambda L, t, v: [e for e in L if e['truth'] is t and e['rm'] == v]
