@@ -1103,8 +1103,25 @@ byte); memories filled from every earlier document. Bits saved per 1,000 bytes:
 
 **NAME carries almost all of it. Every other unit saves bits alone, but only DATE (+1.29) and NUMBER (+0.30) add anything on top of NAME;
 FACT and PLACE are mostly NAME's predictions again and, through the fixed mixture, make it worse.** The mixture is the weak point, not the
-units: a unit with many stored continuations gets a high weight whether or not they are right. Next: a gate that learns each unit's trust
-from the bits it saves (the "feedback" half of the idea).
+units: a unit with many stored continuations gets a high weight whether or not they are right.
+
+**The feedback gate (same run, second version).** A softmax over the trunk and each firing unit; each unit's logit comes from a table keyed by
+(unit, consistent continuations, bytes into the continuation, the trunk's entropy at that byte), starts at the fixed rule and takes one
+online gradient step on -log p after each byte is scored (prequential). Bits saved per 1,000 bytes, all 600 documents / last 400:
+
+| | fixed mixture | learned gate (all / last 400) | on top of NAME with the gate (all / last 400) |
+|---|---|---|---|
+| NAME | 29.99 | **32.29 / 33.04** | - |
+| NAME+FACT | 28.22 | 32.76 / 33.75 | **+0.47 / +0.72** |
+| NAME+PLACE | 29.48 | 32.14 / 32.82 | -0.15 / -0.21 |
+| NAME+DATE | 31.27 | 34.35 / 35.15 | **+2.05 / +2.11** |
+| NAME+NUMBER | 30.29 | 32.84 / 33.64 | **+0.54 / +0.60** |
+| ALL five | 29.31 | **35.06 / 36.10 (1.61% of the trunk's bits)** | **+2.76 / +3.06** |
+
+**Positive: with trust learned from the bits each unit saves, three units add beyond NAME (DATE, NUMBER, FACT), all five together save
+36.1 bits per 1,000 bytes against NAME's 30.0 under the fixed rule (+20%), and the gain grows after warm-up.** PLACE stays slightly
+negative (its predictions are NAME's) and is the one to drop. One evaluation set, counted extractors; the next step is learned extractors and
+a second set of documents.
 
 ### An AMIE-style functional contradiction trigger (tools/exclusive_trigger.py, 14 November; GPU write path, distant set, split 0)
 
