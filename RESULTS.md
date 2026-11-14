@@ -942,6 +942,24 @@ Visit 4: the visit-2 batch, after two visits of teaching, open-ended taught righ
 code + AA 0.635). Held-out bits visit 4: 1.9246 (cg27a_rcode3: 1.9186). The dose loss is a mean over its rows, so 16 rows at weight 1
 pushed each row half as hard as 8 did: learning was slower (visit 3), not capped (visit 4). inf_rti_rows_ref (added) restores the push.
 
+### Is relation orthogonal to the trunk's main structure? NEGATIVE here (tools/relation_ortho.py, 14 November; stand-in trunk 3 x 192)
+
+The stand-in trunk reads the held-out Re-DocRED relation records (names masked; 600 queries x 30 candidates; same relation 0.084); its state
+averaged over the wording between the names, per layer. Relation identity (nearest candidate of the same relation / AUC) with the top k
+principal directions of ORDINARY TEXT removed, and the share of the between-relation variance (20 commonest relations) in those directions:
+
+| layer | k = 0 | 5 | 10 | 20 | 50 | 100 | between-relation vs all variance in the top 5 / 10 / 20 directions |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.133 / 0.539 | 0.155 / 0.523 | 0.160 / 0.532 | 0.150 / 0.533 | 0.157 / 0.572 | 0.128 / 0.551 | 0.79 vs 0.69 / 0.86 vs 0.79 / 0.92 vs 0.88 |
+| 2 | 0.140 / 0.531 | 0.147 / 0.528 | 0.143 / 0.516 | 0.143 / 0.516 | 0.140 / 0.518 | 0.135 / 0.519 | 0.40 vs 0.30 / 0.60 vs 0.46 / 0.68 vs 0.58 |
+| 3 | 0.142 / 0.519 | 0.148 / 0.519 | 0.135 / 0.519 | 0.140 / 0.520 | 0.142 / 0.517 | 0.115 / 0.515 | 0.58 vs 0.40 / 0.70 vs 0.57 / 0.81 vs 0.71 |
+
+**Negative: removing the main structure does not reveal a relation signal** (AUC 0.52-0.57 at every k; removing the records' own top
+directions makes it worse), and **what differs between relations lies MORE in the top directions than the average variance does**
+(ratio 1.05-1.44), not orthogonal to them. In this small trunk relations are barely represented at all over the wording (AUC ~0.53, frame
+words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
+would settle it for the real model.
+
 ### Why the retraction trigger failed on the GPU (tools/trigger_retest.py, 14 November; the package's own code path, distant set)
 
 PART 1 reruns the GPU path (_load_distant, _rcode_step at 20,375 documents, seed 4: 200 written, right 0.590 - as on the GPU) and judges the
