@@ -64,4 +64,29 @@ for nm, msk in (('all writes', ok), ('functional-like (subject clearly more spec
 vv = ok & (totc >= 2)
 if vv.sum() > 10 and (y[vv]).any() and (~y[vv]).any():
     P(f"   AUC (object's share of the class among the subject's later partners), writes with 2+ such mentions ({int(vv.sum())}): {_cg_auc(share[vv & y], share[vv & ~y]):.3f}")
+# ---- 14 Nov AMIE-STYLE CONTRADICTION (Galarraga et al. 2013: functionality, partial completeness): only FUNCTIONAL wordings count (a
+# wording whose subjects have one object: functionality >= 0.8 over 5+ records read before the write); the subject S of a write is JUDGED only
+# if later reading gives S a functional-wording object of O's class (partial completeness: S's value is then known), and the write is
+# CONTRADICTED when that object is not O.
+subj = collections.defaultdict(lambda: collections.defaultdict(set)); wn = collections.Counter()
+for r in R:
+    if r[0] < n1: subj[r[3]][r[1]].add(r[2]); wn[r[3]] += 1
+funw = {w for w, d in subj.items() if wn[w] >= 5 and np.mean([1.0 / len(v_) for v_ in d.values()]) >= 0.8}
+fobj = collections.defaultdict(collections.Counter)
+for r in R:
+    if n1 <= r[0] < n2 and r[3] in funw: fobj[r[1]][r[2]] += 1
+P(f"AMIE-STYLE: {len(funw)} functional wordings (functionality >= 0.8, 5+ records)")
+for nm, need in (('all writes', None), ('functional-like writes (asymmetry > 1)', 1.0)):
+    jud, con, yj = [], [], []
+    for j, (A, C_) in enumerate(ks):
+        a, c = NI.get(A), NI.get(C_)
+        if a is None or c is None or (need and abs(math.log((deg[a] + 1) / (deg[c] + 1))) <= need): continue
+        S, O = (A, C_) if deg[a] <= deg[c] else (C_, A); o = NI[O]
+        vals = {x: n for x, n in fobj.get(S, {}).items() if x in NI and cl[NI[x]] == cl[o]}
+        if not vals: continue
+        jud.append(j); con.append(O not in vals); yj.append(y[j])
+    if not jud: P(f"   {nm}: none judged"); continue
+    con = np.array(con); yj = np.array(yj); caught = (con & ~yj).sum() / max(1, (~yj).sum()); lost = (con & yj).sum() / max(1, yj.sum())
+    P(f"   {nm}: JUDGED {len(jud)} of {len(ks)} (wrong {1 - yj.mean():.2f}) | CONTRADICTED {int(con.sum())}: wrong {1 - yj[con].mean() if con.any() else float('nan'):.2f} "
+      f"| not contradicted: wrong {1 - yj[~con].mean() if (~con).any() else float('nan'):.2f} | likelihood ratio {caught / max(lost, 1e-9):.1f}")
 P(f"DONE ({time.time() - T0:.0f}s)")

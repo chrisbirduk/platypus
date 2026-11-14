@@ -153,6 +153,23 @@ if int(os.environ.get('FC_RECYCLE', 0)):                                        
         P(f"   recycled at {lab}: NEXT batch right {yy[nxt1].mean():.3f} with recycling vs {yy[nxt0].mean():.3f} without ({yy[nxt1].mean() - yy[nxt0].mean():+.3f}) | "
           f"next-batch pairs touching a recycled name {near1.mean():.2f} (right {yy[np.array(nxt1)[near1]].mean() if near1.any() else float('nan'):.3f}, others "
           f"{yy[np.array(nxt1)[~near1]].mean() if (~near1).any() else float('nan'):.3f})  ({time.time() - T0:.0f}s)")
+if int(os.environ.get('FC_LCWA', 0)):                                                  # 14 Nov TYPE CONSTRAINTS, LOCAL CLOSED WORLD (after Krompass et al. 2015): the
+    from sklearn.cluster import MiniBatchKMeans                                          #   class pairs the store has actually linked are the 'domain x range' a
+    U5 = normalize(TruncatedSVD(128, random_state=0).fit_transform(ppmi(G1)).astype(np.float32)); dg5 = np.asarray(G1.sum(1)).ravel() > 0
+    cl5 = np.full(NN, -1); cl5[dg5] = MiniBatchKMeans(32, random_state=0, batch_size=8192, n_init=3).fit_predict(U5[dg5])   # link may join;
+    Gt = G1.tocoo(); cc = collections.Counter(zip(cl5[Gt.row].tolist(), cl5[Gt.col].tolist())); tot5 = sum(cc.values())   # candidates whose
+    mc = collections.Counter(); [mc.__setitem__(a, mc[a] + n) for (a, b), n in cc.items()]                                   # class pair the store
+    cpm = np.array([np.log((cc.get((cl5[a], cl5[b]), 0) + 0.5) * tot5 / ((mc[cl5[a]] + 1) * (mc[cl5[b]] + 1))) for a, b in zip(XA_, XB_)])   # rarely links
+    rk5 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1); ck5 = max(k for k in SC if k.startswith('CODE') and 'rel' not in k)    # are dropped
+    both5 = rk5(SC[ck5]) + rk5(SC['Adamic-Adar']); asy5 = np.abs(np.log((deg[XA_] + 1) / (deg[XB_] + 1)))
+    def top5(mask, n): o = [i for i in np.argsort(-both5) if mask[i]][:n]; return f"{yy[o].mean():.3f}" if o else 'nan'
+    allm = np.ones(len(ok), bool)
+    for q in (0.25, 0.5):
+        th = np.quantile(cpm, q)
+        P(f"TYPE CONSTRAINTS (class-pair PMI above its {int(q * 100)}th percentile): top 200 / 400 by code + AA right {top5(cpm > th, 200)} / {top5(cpm > th, 400)} "
+          f"(unfiltered {top5(allm, 200)} / {top5(allm, 400)}) | with asymmetry > 1 as well {top5((cpm > th) & (asy5 > 1), 200)} / {top5((cpm > th) & (asy5 > 1), 400)} "
+          f"(asymmetry alone {top5(asy5 > 1, 200)} / {top5(asy5 > 1, 400)})")
+    P(f"   all candidates: AUC of the class-pair PMI {auc(cpm[yy], cpm[~yy]):.3f}")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
