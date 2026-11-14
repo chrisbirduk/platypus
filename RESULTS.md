@@ -924,6 +924,41 @@ an old city taught 'lives in' only (300 steps):
 never told, in proportion to how clean the code is (about 60-75% of the code's own purity).** Noisy codes carry correspondingly less;
 the trunk does not clean them up. Real-text codes (Re-DocRED) are the next test (tools/codetok_diag.py).
 
+### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
+
+Each name followed by its compression cluster token (128 k-means clusters of the store's co-mention graph codes) in the kept documents'
+sentences and in 'A is connected to C' rows; held-out pairs (gold-related in held-out documents, never sharing a kept sentence), rank of the
+true partner among 10 of its type and popularity quintile (the code itself, no trunk: 0.30 / 0.28). Step 1,500, seed 0 / seed 1:
+
+| arm | held-out (never stated) rank | wiki bits |
+|---|---|---|
+| no tokens | 0.370 / 0.390 | 2.021 / 2.018 |
+| real code tokens | 0.455 / 0.460 | 2.019 / 2.015 |
+| **the same tokens shuffled across names** | **0.470 / 0.465** | 2.017 / 2.017 |
+
+**Negative: the gain over no tokens is the added token, not the code** - shuffled tokens, which carry no relational information, match or
+beat the real ones at every checkpoint (step 500: 0.445 / 0.425; 1,000: 0.495 / 0.445). A plausible reading: any fixed token after a name
+marks the name's end and sharpens the candidate scoring. With real-text codes this noisy (0.28-0.30 on their own), and a trunk that reads
+a code only as well as the code is clean (tools/compose_synth.py CS_PCODE 2), codes as tokens do not carry inference on real text here.
+
+### A retraction trigger from later reading (tools/confirm_trigger.py, 14 November; Re-DocRED gold, two splits)
+
+The 200 writes of each split (code + Adamic-Adar after 5,000 distant documents), judged on distant documents 5,000-30,000, label-free. AUC
+right vs wrong, and the least confirmed 20% as the retraction set (wrong share; likelihood ratio = wrong caught / right lost):
+
+| signal | AUC | bottom 20%: wrong, LR (split 0 / 1) | at the GPU's base (a third wrong) |
+|---|---|---|---|
+| re-ranking by the store's own score (test A) | 0.65-0.69 | 0.80 / 0.68, 2.3 / 1.4 | 0.42-0.55 |
+| documents stating the pair | 0.71 | 0.85 / 0.82, 3.3 / 3.2 | 0.62-0.63 |
+| short-gap records (3 or fewer words between) | 0.71-0.72 | 0.82 / 0.88, 2.8 / 4.8 | 0.59-0.71 |
+| document PMI of the pair | 0.64-0.65 | 0.93 / 0.85, 7.2 / 3.9 | 0.67-0.79 |
+| **short-gap records + PMI (rank sum)** | **0.72-0.73** | **0.88 / 0.93, 4.1 / 8.4** | **0.68-0.81** |
+| the names' popularity | 0.46 | - | - |
+
+**Positive: what later reading says about the pair itself - stated close together, more often than the names' frequencies predict -
+flags wrong inferences far better than re-ranking (likelihood ratio 4-8 against about 2).** At the GPU's base the retraction set would be
+about 70-80% wrong. Small samples (40 flagged a split); the labels are incomplete, so some 'wrong' writes are true.
+
 ### Which selection rule writes the most right inferences: more signals (tools/fact_compress.py FC_SELECT 2, 14 November; two splits)
 
 Store of Re-DocRED + 30,000 distant documents, codes 256 dims, all candidates never stated together (base 0.095 / 0.086). Share labelled

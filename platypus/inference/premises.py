@@ -547,6 +547,11 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     from scipy.sparse import csr_matrix
     from sklearn.decomposition import TruncatedSVD
     t0 = time.time(); LAB = _PM['LAB']; W = _PM.setdefault('rti', {}); nD = len(RD); hf = float(getattr(cfg, 'inf_rcode_hold', 0.1))
+    ndv_ = (max(r[0] for r in RD) + 1) if RD else 0
+    if int(getattr(cfg, 'inf_rret', 0)):
+        try: _rret_judge(cfg, RD, ndv_, vis)
+        except Exception as e9:
+            _fail('inference.premises:rret'); print(f"  [RETRACTION TRIGGER | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     hold = lambda d: zlib.crc32(b'rcode%d' % int(d)) % 1000 < hf * 1000
     HD = np.array([hold(r[0]) for r in RD], bool)
     co = collections.defaultdict(set)                                         # held-out documents: the names they hold together
@@ -601,12 +606,58 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         if len(wr) >= nmax: break
         c = ks[j]
         if c in done: continue
-        A_, C_ = sorted(c); W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(G[NI[A_]].multiply(G[NI[C_]]).sum()), rank=-1, novel=True, code=float(code[j]))
+        A_, C_ = sorted(c); W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(G[NI[A_]].multiply(G[NI[C_]]).sum()), rank=-1, novel=True, code=float(code[j]), ndv=int(ndv_))
         wr.append(bool(yy[j]))
     print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
           f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
           f"(labelled {yy.mean():.3f}) || " + " || ".join([line(np.ones(len(sub), bool), 'ALL'), line(cn_ > 0, 'WITH A BRIDGE'), line(cn_ == 0, 'NO BRIDGE')])
           + selmsg + f" || WROTE the top {len(wr)} by {sel_}: right {np.mean(wr) if wr else float('nan'):.3f} ({len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
+
+
+def _rret_key_held(cfg, A_, C_, tag):
+    import zlib
+    k = repr(('fact', A_, _RTI_R, C_)); hc = float(getattr(cfg, 'inf_rti_ctl', 0.0)) if tag == '|rti' else float(getattr(cfg, 'inf_rret_ctl', 0.5))
+    return zlib.crc32((k + tag).encode()) % 1000 < hc * 1000
+
+
+def _rret_judge(cfg, RD, ndv_, vis):
+    """14 Nov RETRACTION TRIGGER (inf_rret; THE ONE MODEL CHANGE of cg27a_rret). Each written inference not yet judged, written at an earlier
+    readout, is judged by what the store has read SINCE it was written (documents ndv at the write .. now), label-free: SHORT = records stating
+    the pair with 3 or fewer words between the names; PMI = log((documents stating the pair + 0.5) x documents read / (documents naming A + 1)
+    (documents naming C + 1)). Rank sum within the batch; the least confirmed inf_rret_q are FLAGGED. Flagged TAUGHT inferences are
+    RETRACTED - no longer taught, unlikelihood rows on their answer - except a control share (inf_rret_ctl, own hash) kept as before.
+    Offline (tools/confirm_trigger.py, Re-DocRED gold, two splits, 200 writes each, 25k documents read after): AUC 0.72-0.73, the bottom 20%
+    wrong 0.88 / 0.93 against 0.63 / 0.59 overall (likelihood ratio 4-8; re-ranking by the store's own score: about 2)."""
+    W = _PM.get('rti') or {}
+    groups = collections.defaultdict(list)
+    for k, w in W.items():
+        if w.get('judged') is None and w['vis'] < vis and 'ndv' in w and w['ndv'] < ndv_: groups[w['ndv']].append(k)
+    if not groups:
+        print(f"  [RETRACTION TRIGGER | visit {vis + 1}] nothing to judge ({len(W)} written)", flush=True); return
+    q = float(getattr(cfg, 'inf_rret_q', 0.2)); out = []
+    for lo, ks in sorted(groups.items()):
+        nd = max(1, ndv_ - lo); df = collections.Counter(); byp = collections.defaultdict(lambda: [set(), 0]); seenpair = set()
+        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set()
+        for r in RD:
+            if r[0] < lo: continue
+            for n in (r[1], r[2]):
+                if n in nm and (r[0], n) not in dn: dn.add((r[0], n)); df[n] += 1
+            fk = frozenset((r[1], r[2]))
+            if fk in want:
+                b = byp[fk]; b[0].add(r[0]); b[1] += int(r[5] <= 3)
+        short = np.array([byp[frozenset(k)][1] if frozenset(k) in byp else 0 for k in ks], float)
+        pmi = np.array([np.log((len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0) + 0.5) + np.log(nd) - np.log(df[k[0]] + 1) - np.log(df[k[1]] + 1) for k in ks])
+        rk = lambda x: np.argsort(np.argsort(x + 1e-9 * np.random.RandomState(7).rand(len(x)), kind='stable'), kind='stable') / max(1, len(x) - 1)
+        sc = rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr
+        y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
+        ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
+        for j, k in enumerate(ks): W[k].update(judged=vis, flag=bool(fl[j]), ret=bool(ret[j]), rscore=float(sc[j]))
+        a_ = _cg_auc(sc[y], sc[~y]) if y.any() and (~y).any() else float('nan')
+        out.append(f"written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
+                   f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "
+                   f"| no confirming record {int((short == 0).sum())} | RETRACTED {int(ret.sum())} (wrong {1 - y[ret].mean() if ret.any() else float('nan'):.2f}), flagged taught kept as control "
+                   f"{int((fl & taught & ctl_).sum())}")
+    print(f"  [RETRACTION TRIGGER | visit {vis + 1}] " + " || ".join(out), flush=True)
 
 
 def rti_evidence(cfg, S_slot, seen):
@@ -632,13 +683,15 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     W = _PM.get('rti') or {}
     if not W:
         print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
-    have = {repr(e['key']) for e in ents + held}; T_, H_, U_ = [], [], []
+    have = {repr(e['key']) for e in ents + held}; T_, H_, U_, X_ = [], [], [], []
     for (A_, C_), w in W.items():
         e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel'))
         if repr(e['key']) in have: continue
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)
         if w.get('unpred'): U_.append(e); continue                            # 14 Nov cg27a_rtc control: unpredicted facts are read, never taught
+        if w.get('ret') and not held_: e['flag'] = True; X_.append(e); continue   # 14 Nov cg27a_rret: RETRACTED - no longer taught (unlikelihood rows)
+        if w.get('flag'): e['flag'] = True
         (H_ if held_ else T_).append(e)
     old = lambda L, t: [e for e in L if e['rm'] < vis and e['truth'] is t]
     g = lambda d: f"{d['facts'][0]:.2f} ({d['facts'][1]})"
@@ -669,6 +722,25 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
               f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
               + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
               + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
+    model.__dict__['_rret_x'] = X_                                            # retracted: the unlikelihood rows are built from these at the pool rebuild
+    if int(getattr(cfg, 'inf_rret', 0)):                                      # 14 Nov RETRACTION RECALL: retracted vs flagged-but-kept (control) vs unflagged taught
+        Kf = [e for e in T_ if e.get('flag')]; Nf = [e for e in T_ if not e.get('flag') and (W.get((e['A'], e['ans'])) or {}).get('judged') is not None]
+        rr2 = np.random.RandomState(int(cfg.seed) + 78 + vis); pool2 = sorted({e['ans'] for e in H_})
+        def rk2(L):
+            if not int(getattr(cfg, 'inf_rti_rank_recall', 0)) or len(pool2) < 10: return ''
+            from platypus.inference.distill import _dw_cand_mc
+            hit = []
+            for e in L[:150]:
+                alts = [x for x in pool2 if x not in (e['ans'], e['A'])]
+                cs = [e['ans']] + [alts[j] for j in rr2.choice(len(alts), 9, replace=False)]
+                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", cs) == 0))
+            return f", rank {np.mean(hit):.2f}" if hit else ''
+        def both(L, t):
+            L = [e for e in L if e['truth'] is t]; return f"{g(_dt_recall(model, S_slot, L))}{rk2(L)}"
+        ul_ = (model.__dict__.get('_dtw') or {}).get('rretl') or []
+        print(f"  [RETRACTION RECALL | visit {vis + 1}] from the trunk, test wording, open-ended (and rank among 10 held-back answers): RETRACTED right {both(X_, True)} / wrong "
+              f"{both(X_, False)} | FLAGGED, KEPT (control) right {both(Kf, True)} / wrong {both(Kf, False)} | JUDGED, NOT FLAGGED right {both(Nf, True)} / wrong {both(Nf, False)}"
+              + (f" || unlikelihood rows last visit: loss {np.mean(ul_[:20]):.4f} (first 20) -> {np.mean(ul_[-20:]):.4f} (last 20), {len(ul_)} steps" if ul_ else ''), flush=True)
     if U_:
         ru = {t: _dt_recall(model, S_slot, old(U_, t)) for t in (True, False)}
         print(f"  [REAL-TEXT CONFIRMATION RECALL | visit {vis + 1}] PREDICTED and confirmed: taught RIGHT {g(rec[True][0])} / WRONG {g(rec[False][0])} | held back (read the "
