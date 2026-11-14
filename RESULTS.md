@@ -840,7 +840,7 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
-### GPU cg27a_rcode3: writing where the code and chaining agree (seed 4, 14 November, visits 2-3)
+### GPU cg27a_rcode3: writing where the code and chaining agree (seed 4, 14 November, visits 2-5)
 
 One change against cg27a_rcode2: the 100 held-out pairs ranked highest by the rank sum of the code (512 dims) and Adamic-Adar are written
 (cg27a_rcode2: the 200 most similar codes). Visit 2 (345k records, 86,965 candidates never stated together, labelled 0.095), labelled share
@@ -850,6 +850,42 @@ open-ended taught right 0.22 / wrong 0.27 vs held back 0.00 / 0.05; rank among i
 chance 0.10) taught 0.61 / 0.54 vs held back 0.18 / 0.10. (cg27a_rcode2 at the same point: open-ended 0.15 / 0.12.)
 **Positive: where the code and chaining agree, two thirds of what is written is right (base 0.095), double the code alone, and it is taken
 into the weights faster (twice the rows per inference).** False memories are now about a third of what is written, not two thirds.
+
+Visits 4-5. The second batch (written at visit 4, 200,000 candidates scored, labelled 0.087) is right 0.64 (cg27a_rcode2's visit-4
+batch: 0.255). Recall from the trunk in the test wording, taught vs held back, right / wrong:
+
+| | written at visit 2: taught | held back | written at visit 4: taught | held back |
+|---|---|---|---|---|
+| open-ended exact, visit 4 | 0.50 / 0.56 | 0.06 / 0.00 | - | - |
+| **open-ended exact, visit 5** | **0.52 / 0.54** | **0.12 / 0.00** | **0.33 / 0.23** | **0.03 / 0.00** |
+| (cg27a_rcode2, visit 5) | 0.37 / 0.41 | 0.00 / 0.00 | 0.00 / 0.08 | 0.00 / 0.00 |
+
+Rank among itself and 9 held-back answers (corrected readout, chance 0.10), all batches: visit 4 taught 0.88 / 0.88, held back 0.24 / 0.10;
+visit 5 taught 0.82 / 0.66, held back 0.22 / 0.15 (n 36 / 20). Cost: held-out bits on the domains read, visits 1-5, 2.0263 / 2.0209 /
+2.0053 / 1.9186 / 1.8533 against cg27a_rcode2's 2.0314 / 2.0265 / 2.0127 / 1.9263 / 1.8710 - none (the gap is already 0.005 at visit 1,
+before any inference is written: run-to-run variation, not a gain).
+**Positive, one seed: two thirds of what is written is right in both batches (0.66, 0.64), and recall is faster and higher than in
+cg27a_rcode2 (half the inferences, twice the rows each).** The weights still take in right and wrong alike (0.52 / 0.54) - selectivity
+lives in the store's choice, not in the trunk. Held-back RIGHT answers are ranked above chance at every visit (0.18 / 0.24 / 0.22, against
+0.10 / 0.10 / 0.15 for held-back wrong ones; small n): either the trunk generalises a little from the taught inferences or right answers
+are more familiar names - not yet separated.
+
+### Does more reading flag a wrong inference? (tools/fact_compress.py FC_SAVE / FC_LOAD, 14 November; Re-DocRED gold, two splits)
+
+The store writes its top 200 by code + Adamic-Adar after reading 5,000 distant documents (right 0.37 / 0.405), reads 30,000 and re-ranks
+the same 200 (every candidate pair is still kept out of the store). Right vs wrong:
+
+| | split 0 | split 1 |
+|---|---|---|
+| still in the top 200 after more reading: right / wrong | 0.78 / 0.60 | 0.73 / 0.61 |
+| AUC of the stage-1 rank alone (within the 200) | 0.685 | 0.646 |
+| AUC of the rank CHANGE | 0.575 | 0.530 |
+| change within the lower / upper half of the stage-1 rank | 0.522 / 0.602 | 0.505 / 0.608 |
+| a newly read document names the pair: right / wrong | 0.99 / 0.96 | 0.99 / 0.94 |
+
+**Weak.** Most of the drop-out is the weakly ranked writes falling away, which the first ranking already knew; among the confident half,
+falling rank flags wrong writes at about 0.6. Co-occurrence in new reading says nothing (nearly every pair turns up). Re-ranking is a
+mild check on confident writes, not a retraction trigger.
 
 ### Two hops answered by reading a code in one (tools/compose_synth.py CS_PCODE 1, 14 November; synthetic, 3 layers x 192, seed 0)
 
