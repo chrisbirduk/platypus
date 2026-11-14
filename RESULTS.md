@@ -960,6 +960,27 @@ directions makes it worse), and **what differs between relations lies MORE in th
 words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
 would settle it for the real model.
 
+### Is there a tipping point? Recycling inferences as premises (tools/fact_compress.py FC_RECYCLE, 14 November; two splits)
+
+Re-DocRED gold + 30k distant documents, codes 256. The first batch (top 200 by code + Adamic-Adar) is right 0.395 / 0.385. 200 inferences
+from the top 2,000 are added to the store graph as if read, at a SET precision; codes and chaining are recomputed; the NEXT 200 written
+(the added pairs excluded) against the same next batch without recycling, split 0 / split 1:
+
+| recycled at | next batch with recycling | without | change |
+|---|---|---|---|
+| the actual first batch (0.40 / 0.39) | 0.200 / 0.185 | 0.195 / 0.170 | +0.005 / +0.015 |
+| 0.6 | 0.315 / 0.270 | 0.305 / 0.270 | +0.010 / 0.000 |
+| 0.7 | 0.300 / 0.290 | 0.305 / 0.280 | -0.005 / +0.010 |
+| 0.8 | 0.305 / 0.270 | 0.305 / 0.275 | 0.000 / -0.005 |
+| 0.9 | 0.270 / 0.240 | 0.270 / 0.245 | 0.000 / -0.005 |
+| 1.0 | 0.280 / 0.245 | 0.280 / 0.245 | 0.000 / 0.000 |
+
+**No tipping point through the store: even perfectly right recycled inferences do not change the next batch (within +-0.015).** 200
+edges among some 600,000 read name pairs do not move the codes or the chaining scores; next-batch pairs touching a recycled name are right
+more often (0.45-0.49 at precision 1.0 vs 0.07 for the rest), but they were ranked there anyway. What limits the next batch is DEPLETION
+(the first batch takes the best pairs: 0.39 -> 0.17-0.31) and what the store has READ, not its premises. A self-reinforcing loop would
+have to run through reading (more and better records), not through recycling conclusions.
+
 ### Contradiction by surprise? Confirmation by prediction (tools/surprise_trigger.py, 14 November; stand-in trunk, two seeds)
 
 The stand-in trunk is taught 120 RIGHT claims (gold relation phrase, gold object), 120 WRONG ones (same phrase, a random object of the
