@@ -583,7 +583,16 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
             o = np.argsort(-sv + 1e-9 * rs.rand(len(sv))); out.append(f"{nm} AUC {_cg_auc(sv[yv], sv[~yv]):.3f}, top 5/10/25% "
                                                                       + "/".join(f"{yv[o[:max(1, len(o) * q // 100)]].mean():.3f}" for q in (5, 10, 25)))
         return f"{title}: {int(mask.sum())} pairs, labelled {yv.mean():.3f} - " + "; ".join(out)
-    done = {frozenset(x) for x in W}; o = np.argsort(-code); nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
+    sel_ = str(getattr(cfg, 'inf_rcode_sel', 'code')); selmsg = ''
+    if sel_ == 'code+aa' or int(getattr(cfg, 'inf_rcode_selreport', 0)):     # 14 Nov SELECTION (cg27a_rcode3): the code and Adamic-Adar agree (rank sum);
+        aa_all = np.zeros(len(ks), np.float32)                                #   offline (Re-DocRED gold, two splits) the top 100 right 0.42-0.45 vs 0.38-0.41
+        for s0 in range(0, len(ks), 100000):                                  #   for the code alone (top 50: 0.50-0.62 vs 0.32-0.46)
+            sl0 = slice(s0, s0 + 100000); aa_all[sl0] = np.asarray(G[XA[sl0]].multiply(G[XB[sl0]]).multiply(iw[None, :]).sum(1)).ravel()
+        rkf = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable') / max(1, len(x) - 1); both = rkf(code) + rkf(aa_all)
+        top = lambda sv, n: f"{yy[np.argsort(-sv)[:n]].mean():.3f}"
+        selmsg = (" || SELECTION RULES, labelled among the top 100 / 200 of all candidates: code " + top(code, 100) + " / " + top(code, 200) + "; Adamic-Adar "
+                  + top(aa_all, 100) + " / " + top(aa_all, 200) + "; code + Adamic-Adar (rank sum) " + top(both, 100) + " / " + top(both, 200) + f" (writing by: {sel_})")
+    done = {frozenset(x) for x in W}; o = np.argsort(-(both if sel_ == 'code+aa' else code)); nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
         c = ks[j]
@@ -593,7 +602,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
           f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
           f"(labelled {yy.mean():.3f}) || " + " || ".join([line(np.ones(len(sub), bool), 'ALL'), line(cn_ > 0, 'WITH A BRIDGE'), line(cn_ == 0, 'NO BRIDGE')])
-          + f" || WROTE the top {len(wr)} by code: right {np.mean(wr) if wr else float('nan'):.3f} ({len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
+          + selmsg + f" || WROTE the top {len(wr)} by {sel_}: right {np.mean(wr) if wr else float('nan'):.3f} ({len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
 def rti_evidence(cfg, S_slot, seen):
@@ -638,6 +647,24 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         rn = {t: (_dt_recall(model, S_slot, old(nv(T_), t)), _dt_recall(model, S_slot, old(nv(H_), t))) for t in (True, False, None)}
         print(f"  [REAL-TEXT INFERENCE WRITES, NOVEL ONLY | visit {vis + 1}] {len(nv(T_))} taught, {len(nv(H_))} held back | TAUGHT vs HELD BACK: RIGHT {g(rn[True][0])} vs "
               f"{g(rn[True][1])} | WRONG {g(rn[False][0])} vs {g(rn[False][1])} | not checkable {g(rn[None][0])} vs {g(rn[None][1])}", flush=True)
+    if int(getattr(cfg, 'inf_rti_rank_recall', 0)):                           # 14 Nov RANK RECALL (readout): open-ended exact recall cannot see real multi-word
+        from platypus.inference.distill import _dw_cand_mc                     #   names (offline: rank 0.74 while exact 0.01); here the answer among itself and
+        pool_ = sorted({e['ans'] for e in H_}) or sorted({e['ans'] for e in T_ + H_ + U_})   # distractors: HELD-BACK answers only (never taught), so taught
+        rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)                     #   and held-back facts face the same untaught distractors (chance 0.10)
+        def rk_(L):
+            L = [e for e in L if e['rm'] < vis][:150]; hit = []
+            for e in L:
+                alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                if len(alts) < 9: continue
+                cs = [e['ans']] + [alts[j] for j in rr_.choice(len(alts), 9, replace=False)]
+                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", cs) == 0))
+            return f"{np.mean(hit):.2f} ({len(hit)})" if hit else "nan (0)"
+        tr_ = lambda L, t: [e for e in L if e['truth'] is t]
+        dl_ = (model.__dict__.get('_dtw') or {}).get('rtil') or []
+        print(f"  [REAL-TEXT INFERENCE RANK RECALL | visit {vis + 1}] the answer first among itself and 9 held-back answers (chance 0.10), from the trunk, test wording: TAUGHT right "
+              f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
+              + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
+              + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
     if U_:
         ru = {t: _dt_recall(model, S_slot, old(U_, t)) for t in (True, False)}
         print(f"  [REAL-TEXT CONFIRMATION RECALL | visit {vis + 1}] PREDICTED and confirmed: taught RIGHT {g(rec[True][0])} / WRONG {g(rec[False][0])} | held back (read the "

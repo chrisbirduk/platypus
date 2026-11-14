@@ -840,6 +840,82 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### Two hops answered by reading a code in one (tools/compose_synth.py CS_PCODE 1, 14 November; synthetic, 3 layers x 192, seed 0)
+
+Every person also carries a code summarising their neighbourhood - their city's country's code, right 80% of the time, as a compressor
+of the fact table would give it ('Pebel Belsavo-qa'). Held-out people are never told their citizenship (chance 0.10; ceiling about 0.80):
+
+| | citizenship of held-out people (never taught) | new person in an old city, taught 'lives in' only (300 steps) |
+|---|---|---|
+| no person codes (earlier run) | 0.12 | 0.10-0.11 |
+| **person codes + 400 worked citizenship examples** | **0.75-0.80** (from step 1000) | **0.70-0.75** |
+| **person codes, NO citizenship examples at all** | **0.50-0.66** (0.57 at the end) | **0.58-0.60** |
+
+Without any citizenship ever stated, the trunk reads the person's code and answers with the country it learned only from CITY codes
+('Velmora-qa lies in C'). Arms whose people carry no code stay at chance (0.08-0.12) whatever else is known. **Positive: what the trunk
+cannot compose (two hops), it reads in one hop from a code that already holds the composite.** Caveat: the code here is a token close to
+the answer (80% informative); real compressed codes are 512-dim vectors and carry 'related', not which relation - whether they can be
+attached to names as tokens the trunk reads (e.g. the nearest of k code clusters) is the next test.
+
+### GPU cg27a_rcode2: the compressed fact table's inferences reach the weights (seed 4, 14 November, visits 2-5)
+
+One change against cg27a_rcode: the written inferences get their own question rows (8 a step; about 900-1,900 rows in play). Same
+store result (visit 4, with a chain: code AUC 0.674 vs Adamic-Adar 0.568; the 200 written right 0.255-0.32). Recall from the trunk in
+the test wording 'It is on record that A is connected to ' (never taught), inferences written at visit 2:
+
+| | taught RIGHT | taught WRONG | held back RIGHT | held back WRONG |
+|---|---|---|---|---|
+| open-ended exact, visit 3 | 0.15 (92) | 0.12 (164) | 0.00 (36) | 0.02 (108) |
+| **open-ended exact, visit 4** | **0.40** | **0.38** | **0.03** | **0.00** |
+| rank among 10 written answers, visit 3 | 0.41 (46) | 0.32 (82) | 0.11 (18) | 0.04 (54) |
+| **rank, visit 4** | **0.78** | **0.84** | **0.06** | **0.11** |
+
+(cg27a_rcode, the same inferences at about one row a visit: 0.00-0.03 open-ended. The rank readout's distractors were partly taught
+answers, which pushes the held-back figure below chance; fixed for the next build.) Cost: held-out bits on the domains read, visits
+2-4, 2.0265 / 2.0127 / 1.9263 against cg27a_rcode's 2.0281 / 2.0129 / 1.9293 - none.
+**Positive, one seed: inferences drawn from real text without labels or rules - pairs never stated together anywhere in the store,
+chosen by compressing the fact table - are recalled from the weights in a wording never taught, 0.40 open-ended (0.78 ranked) against
+0.00-0.03 (0.06-0.11) for the held-back third.** **But right and wrong ones alike (0.40 vs 0.38; 0.78 vs 0.84):** the weights take in
+whatever they are taught, so about two thirds of what is written - the wrong inferences - becomes false memories at the same rate.
+Selectivity must come before the write (the code's top, confirmation by later reading) or after it (retraction when text contradicts).
+Visits 5-6: the visit-2 inferences are KEPT and rise (open-ended taught right / wrong 0.37 / 0.41 at visit 5, 0.46 / 0.40 at visit 6; held
+back 0.00-0.02); the visit-4 batch follows the same curve (0.00 / 0.08 after one visit, 0.17 / 0.23 after two). Rank recall at visit 6:
+taught 0.84 / 0.81, held back 0.08 / 0.06. Held-out bits at visits 5 / 6: 1.8710 / 1.8986 against cg27a_rcode's 1.8661 / 1.8978 (+0.005,
++0.001).
+
+### Popularity-matched check, and which relation (tools/fact_compress.py, tools/rel_codes.py; 14 November, Re-DocRED gold, two splits)
+
+POPULARITY MATCHED (AUC within quintiles of the degree product): with a chain, code-512 0.709 / 0.706 vs Adamic-Adar 0.691 / 0.700 (raw
+0.726 / 0.746 vs 0.619 / 0.610) - much of the code's raw AUC lead came from chaining being misled by popular names; at matched popularity
+they nearly tie, while at the top of the ranking (what is written) the code stays ahead (0.32-0.37 vs 0.24 in the top 5%). With no chain
+the code holds (0.553 / 0.536 matched; chaining 0.500).
+WHICH RELATION (gold-related held-out pairs, 1,217-1,371; base: the commonest gold relation, P131, 0.53-0.55; oracle: the commonest for the
+pair's gold entity types, 0.64-0.68): a DistMult code per name over 64 label-free latent relations 0.31-0.44 (and it does not even rank
+relatedness: AUC 0.41-0.47); a neighbour vote in code space (the relation A holds with names whose codes are like C's) 0.39-0.49, most
+confident quarter 0.49-0.60. **Negative:** label-free latent relations are too noisy (relation identity AUC 0.66) to say which relation
+better than guessing the commonest one. The compressed code says THAT, not WHICH.
+
+### Why written real-text inferences are not recalled (tools/teach_diag.py, 14 November; stand-in trunk, 120 real Re-DocRED pairs)
+
+GPU cg27a_rcode visits 3-7: written inferences recalled from the trunk at 0.00-0.03 (open-ended exact), taught or held back, right or
+wrong, while the code kept its lead in the store (visit 6, 969k records: with a chain AUC 0.659 vs Adamic-Adar 0.565, top 5% 0.268 vs
+0.158; written right 0.285). On the GPU each written inference gets about one question row a visit (4 rows a step from one random slot,
+shared with that slot's other facts) and is never read in any text. Taught offline the same way (the system's seven frames, test wording
+'It is on record that A r '), recall measured open-ended exact AND as the answer's rank among 10 of its kind (chance 0.10; 0.28 before):
+
+| condition | rows per fact | open-ended | rank, taught | rank, +300 steps of other text |
+|---|---|---|---|---|
+| GPU-like dose, never-read names, 'is connected to' | 2.5 | 0.00 | 0.34 | 0.29 |
+| dose x4 | 10 | 0.00 | 0.44 | 0.37 |
+| dose x16 | 40 | 0.01 | **0.74** | **0.47** |
+| familiar names (read by this trunk), 2.5 / 10 rows | 2.5 / 10 | 0.00 | 0.31 / 0.39 | 0.32 / 0.30 |
+| the gold relation's phrase, 10 rows | 10 | 0.00 | 0.46 | 0.36 |
+| the source sentence also read, 10 rows | 10 | 0.00 | 0.53 | 0.40 |
+
+**Two causes:** (1) the readout - open-ended exact recall cannot see real multi-word names (0.01 while rank is 0.74); planted names are short
+invented strings; (2) the dose - about one row a visit is far too little. Familiarity and the relation phrase add little; reading the
+sentence some. Next build (cg27a_rcode2): the written inferences' own question rows, 8 a step, and a rank-recall readout.
+
 ### GPU cg27a_rcode: the compressed fact table at scale (seed 4, 14 November; visit 2 readout, distant labels)
 
 Store graph 152,606 names from 344,600 records; 2,045 distant documents held out (their records and every record pairing two of their
