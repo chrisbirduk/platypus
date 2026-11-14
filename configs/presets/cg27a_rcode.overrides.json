@@ -133,9 +133,10 @@
   "inf_rti_policy": "random",
   "_inf_rti_policy": "premises sampled at random (10%), the bridges and the check do the selecting: GPU cg27a_prem, A-C right with 2+ bridges from premises kept at random 0.178 / 0.188 (visits 2 / 4) vs trunk surprise 0.132 / 0.120 vs block association 0.061 / 0.081",
   "inf_rti_code": 1,
-  "inf_rcode_k": 128,
+  "inf_rcode_k": 512,
   "inf_rcode_hold": 0.1,
   "inf_rti_ctl": 0.333,
   "_inf_rti_code": "THE ONE MODEL CHANGE: choose the inferences to write by the compressed fact table (name codes) on held-out pairs",
-  "_inf_rti_ctl": "control: a third of written inferences held back by their own hash"
+  "_inf_rti_ctl": "control: a third of written inferences held back by their own hash",
+  "_inf_rcode_k": "512 dims: offline the code needs room once noisy distant records are added (code-512 AUC 0.618 -> 0.698 with 30k distant documents; 128 dims was diluted)"
 }
