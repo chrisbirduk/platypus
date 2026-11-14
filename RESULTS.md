@@ -887,6 +887,23 @@ the same 200 (every candidate pair is still kept out of the store). Right vs wro
 falling rank flags wrong writes at about 0.6. Co-occurrence in new reading says nothing (nearly every pair turns up). Re-ranking is a
 mild check on confident writes, not a retraction trigger.
 
+### Codes from compression, read as tokens (tools/compose_synth.py CS_PCODE 2, 14 November; synthetic, 3 x 192, seed 0)
+
+The person and city codes are no longer handed out: they are k-means clusters (40) of a 16-dim SVD of the PPMI of the fact graph (G + G^2;
+person-city and city-country links, plus CS_NOISE random person-city links per person), appended as a token after each name. No
+citizenship is ever stated for anyone (CS_IMPL 0). Citizenship of held-out people (chance 0.10) after 6,000 steps, and of a new person in
+an old city taught 'lives in' only (300 steps):
+
+| noise | country purity of the people's clusters | held-out citizenship (steps 1k-6k) | new person, 300 steps |
+|---|---|---|---|
+| 0 | 1.00 | **0.75** (0.83 - 0.69) | **0.66** |
+| 1.0 | 0.52 | **0.32** (0.39 - 0.24) | **0.32** |
+| 2.0 | 0.31 | 0.16 (0.12 - 0.20) | 0.14 |
+
+**Positive: codes made by compressing the fact table, not handed out, are read by the trunk in one hop - it infers a composite it was
+never told, in proportion to how clean the code is (about 60-75% of the code's own purity).** Noisy codes carry correspondingly less;
+the trunk does not clean them up. Real-text codes (Re-DocRED) are the next test (tools/codetok_diag.py).
+
 ### Which selection rule writes the most right inferences: more signals (tools/fact_compress.py FC_SELECT 2, 14 November; two splits)
 
 Store of Re-DocRED + 30,000 distant documents, codes 256 dims, all candidates never stated together (base 0.095 / 0.086). Share labelled
