@@ -776,6 +776,10 @@ mechanism for the GPU cg27a_rti visit 4 pattern (right 0.09 vs wrong 0.02). In c
 inferences come from, which may be why its weights-level signal is faint: the next build should have the trunk read them. Small trunk;
 about 2-3 standard errors per seed.
 
+**Caveat added 14 November (tools/evidence_infer.py v2, below):** in this test the right pairs' evidence documents name A and C *together*
+(the relation is stated, not inferred), and the wrong inferences' C is never read at all. Both favour the right C by familiarity and by
+direct statement. With novel pairs and the familiarity matched, the effect does not appear (next section).
+
 ### Universal schema and typed, coupled inference (tools/typed_infer.py, 13 November, late; Re-DocRED + 30k distant documents)
 
 UNIVERSAL SCHEMA (Riedel et al. 2013): PPMI over 15,285 wordings x 609,864 ordered pairs (32,662 seen 2+ times), SVD 64, 64 latent
@@ -809,6 +813,26 @@ with untyped hop 2).** Single runs; treat the 30k figures as the upper end.
 Relational scorer port check (tools/relscore_check.py; held-out Re-DocRED gold, base 0.242): the package's in-store scorer top 5% 0.497
 (AUC 0.603) vs the offline learner 0.541 (0.627) - the port is sound. Its weak benchmark figures in the readout came from a tokenisation
 mismatch (benchmark records split on spaces, DocRED's with punctuation as tokens); fixed in platypus/inference/premises.py.
+
+### Does reading the premises make a novel inference stick? (tools/evidence_infer.py, 14 November, overnight; stand-in trunk, two seeds)
+
+120 SUPPORTED pairs (A-B gold in one Re-DocRED document, B-C gold in another, A and C never in the same document anywhere) and 120
+UNSUPPORTED pairs (A with a C of the same type, no chain, never together). Recall: C first among 10 same-type names, in two wordings never
+taught; GAIN FROM A ranks C by how much A (against 'someone') helps predict it, which familiarity cannot move (chance 0.10 throughout).
+
+| after 600 steps | seed 0 supported / unsupported (wording 1, wording 2, gain) | seed 1 |
+|---|---|---|
+| v1: READ the evidence (unsupported: A's documents only) | 0.21, 0.23 / 0.11, 0.11 | 0.22, 0.21 / 0.15, 0.14 |
+| **v2: READ the evidence (unsupported: A's and C's documents)** | **0.18, 0.18, 0.07 / 0.11, 0.15, 0.06** | **0.15, 0.19, 0.12 / 0.13, 0.13, 0.10** |
+| v2: taught, then evidence | 0.23, 0.23, 0.07 / 0.20, 0.20, 0.07 | 0.19, 0.22, 0.16 / 0.19, 0.18, 0.09 |
+| v2: taught, then other text | 0.14, 0.16, 0.12 / 0.07, 0.07, 0.13 | 0.16, 0.14, 0.15 / 0.12, 0.12, 0.12 |
+
+**Negative.** v1's apparent inference from reading (0.12 -> 0.21-0.23) was mostly familiarity: once the unsupported C is read as often,
+supported leads by 0.00-0.07 (about one standard error) and the gain from A stays at chance. Reading the premises does not put the A-C
+link in this trunk's weights (consistent with open question 7: the trunk does not compose at this scale), and reading the evidence after
+teaching does not keep supported inferences above unsupported ones. For GPU cg27a_rti2 this predicts no right-over-wrong separation
+from evidence replay alone; its written inferences are familiarity-matched by construction (the B-C premise names C for right and wrong
+inferences alike), so it is a clean test of the same question at scale.
 
 ### Standard baselines on the same trunk and schedule (14 November, overnight; local five-domain harness, 2 passes, seed 0; README open question 1)
 
