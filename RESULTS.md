@@ -840,6 +840,23 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### Two hops answered by reading a code in one (tools/compose_synth.py CS_PCODE 1, 14 November; synthetic, 3 layers x 192, seed 0)
+
+Every person also carries a code summarising their neighbourhood - their city's country's code, right 80% of the time, as a compressor
+of the fact table would give it ('Pebel Belsavo-qa'). Held-out people are never told their citizenship (chance 0.10; ceiling about 0.80):
+
+| | citizenship of held-out people (never taught) | new person in an old city, taught 'lives in' only (300 steps) |
+|---|---|---|
+| no person codes (earlier run) | 0.12 | 0.10-0.11 |
+| **person codes + 400 worked citizenship examples** | **0.75-0.80** (from step 1000) | **0.70-0.75** |
+| **person codes, NO citizenship examples at all** | **0.50-0.66** | (running) |
+
+Without any citizenship ever stated, the trunk reads the person's code and answers with the country it learned only from CITY codes
+('Velmora-qa lies in C'). Arms whose people carry no code stay at chance (0.08-0.12) whatever else is known. **Positive: what the trunk
+cannot compose (two hops), it reads in one hop from a code that already holds the composite.** Caveat: the code here is a token close to
+the answer (80% informative); real compressed codes are 512-dim vectors and carry 'related', not which relation - whether they can be
+attached to names as tokens the trunk reads (e.g. the nearest of k code clusters) is the next test.
+
 ### GPU cg27a_rcode2: the compressed fact table's inferences reach the weights (seed 4, 14 November, visits 2-5)
 
 One change against cg27a_rcode: the written inferences get their own question rows (8 a step; about 900-1,900 rows in play). Same
