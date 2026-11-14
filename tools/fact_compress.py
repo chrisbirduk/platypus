@@ -73,6 +73,21 @@ if int(os.environ.get('FC_SELECT', 0)):                                         
     cd_ = SC[ck]; SEL = {'code': cd_, 'code, bridged pairs only': np.where(cn_cnt > 0, cd_, -9), 'code + Adamic-Adar (rank sum)': rk_(cd_) + rk_(SC['Adamic-Adar']),
            'code + Adamic-Adar, bridged only': np.where(cn_cnt > 0, rk_(cd_) + rk_(SC['Adamic-Adar']), -9), 'code, 2+ bridges only': np.where(cn_cnt >= 2, cd_, -9),
            'Adamic-Adar': SC['Adamic-Adar']}
+    if int(os.environ.get('FC_SELECT', 0)) >= 2:                                         # 14 Nov: more signals - resource allocation, 3-paths (L3), bagged codes
+        iw1 = np.where(deg > 0, 1.0 / np.maximum(deg, 1), 0.0); ra = np.asarray(G1[XA_].multiply(G1[XB_]).multiply(iw1[None, :]).sum(1)).ravel()
+        dh = csr_matrix((1.0 / np.sqrt(np.maximum(deg, 1)), (np.arange(NN), np.arange(NN))), shape=(NN, NN)); l3 = np.zeros(len(ok))
+        for c0 in range(0, len(ok), 1000):                                                # L3: paths A-u-v-C weighted 1/sqrt(k_u k_v) (Kovacs et al. 2019)
+            X_ = (G1[XA_[c0:c0 + 1000]] @ dh) @ G1; Y_ = G1[XB_[c0:c0 + 1000]] @ dh; l3[c0:c0 + 1000] = np.asarray(X_.multiply(Y_).sum(1)).ravel()
+        P(f"   resource allocation and L3 scored  ({time.time() - T0:.0f}s)")
+        kb = int(ck.split()[1]); bag = np.zeros(len(ok)); rb = np.random.RandomState(7); kidx = np.where(keep)[0]; nb_ = int(os.environ.get('FC_BAGS', 3))
+        for b_ in range(nb_):                                                              # bagged codes: refit on 80% of the store's records, average the ranks
+            sub = np.zeros(len(Af), bool); sub[rb.choice(kidx, int(0.8 * len(kidx)), replace=False)] = True
+            Gb = csr_matrix((np.ones(int(sub.sum())), (Af[sub], Bf[sub])), shape=(NN, NN)); Gb = Gb + Gb.T; Gb.sum_duplicates(); Gb.data[:] = 1.0
+            Ub = normalize(TruncatedSVD(kb, random_state=b_ + 1).fit_transform(ppmi(Gb)).astype(np.float32)); bag += rk_(np.einsum('ij,ij->i', Ub[XA_], Ub[XB_]))
+        P(f"   bagged codes ({nb_} fits on 80% of the records)  ({time.time() - T0:.0f}s)")
+        SEL.update({'resource allocation': ra, 'L3 (3-paths)': l3, 'code + resource allocation': rk_(cd_) + rk_(ra), 'code + L3': rk_(cd_) + rk_(l3),
+                    'code + Adamic-Adar + L3': rk_(cd_) + rk_(SC['Adamic-Adar']) + rk_(l3), 'bagged code': bag, 'bagged code + Adamic-Adar': rk_(bag) + rk_(SC['Adamic-Adar']),
+                    'code + bagged code + Adamic-Adar': rk_(cd_) + rk_(bag) + 2 * rk_(SC['Adamic-Adar'])})
     P(f"SELECTION RULES ({ck}), gold among the top N written (all {len(ok)} candidates, base {yy.mean():.3f}):")
     for k_, sv in SEL.items():
         o = np.argsort(-sv + 1e-12 * np.random.RandomState(2).rand(len(sv))); P(f"   {k_:40s} " + " | ".join(f"top {n} {yy[o[:n]].mean():.3f}" for n in (50, 100, 200, 400)))
