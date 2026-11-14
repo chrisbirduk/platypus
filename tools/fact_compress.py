@@ -91,6 +91,7 @@ if os.environ.get('FC_SAVE') or os.environ.get('FC_LOAD'):                      
             i = ix.get(frozenset((a_, b_)))
             if i is None: continue
             R_.append((y_, p1, float(pb[i]), c1, float(pc[i]), a1, float(pa[i]), int(nst[ok[i]]) - n1, br1, int(cn_cnt[i])))
+        _js.dump(R_, open(os.environ['FC_LOAD'] + '.s2.json', 'w'))                       # per write: y, both1, both2, code1, code2, aa1, aa2, new stating records, bridges1, bridges2
         R_ = np.array(R_, float); y1 = R_[:, 0] > 0; top200 = np.sort(both)[-200] if len(both) >= 200 else -1
         still = np.array([both[ix[frozenset((a_, b_))]] >= top200 for a_, b_, *_ in W1 if frozenset((a_, b_)) in ix])
         a_ = lambda v: auc(v[y1], v[~y1])
@@ -98,6 +99,9 @@ if os.environ.get('FC_SAVE') or os.environ.get('FC_LOAD'):                      
           f"stage-2 rank (code + AA) {a_(R_[:, 2]):.3f}, its CHANGE {a_(R_[:, 2] - R_[:, 1]):.3f} | code alone {a_(R_[:, 4]):.3f}, change {a_(R_[:, 4] - R_[:, 3]):.3f} | "
           f"Adamic-Adar {a_(R_[:, 6]):.3f}, change {a_(R_[:, 6] - R_[:, 5]):.3f} | new bridges {a_(R_[:, 9] - R_[:, 8]):.3f} || still in the top 200: right "
           f"{still[y1].mean():.2f}, wrong {still[~y1].mean():.2f} | stated in a newly read document: right {(R_[y1, 7] > 0).mean():.2f}, wrong {(R_[~y1, 7] > 0).mean():.2f}")
+        lo_ = R_[:, 1] <= np.median(R_[:, 1])                                              # does the change add to the stage-1 rank? AUC of the change within halves of it
+        P(f"   rank change within halves of the stage-1 rank: lower half AUC {auc((R_[:, 2] - R_[:, 1])[lo_ & y1], (R_[:, 2] - R_[:, 1])[lo_ & ~y1]):.3f}, upper half "
+          f"{auc((R_[:, 2] - R_[:, 1])[~lo_ & y1], (R_[:, 2] - R_[:, 1])[~lo_ & ~y1]):.3f} | stage-1 rank alone {a_(R_[:, 1]):.3f}")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
