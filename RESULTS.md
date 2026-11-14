@@ -1007,6 +1007,10 @@ labelled share of the top 100 / 200 / 400: code + RA 0.59 / 0.59 / 0.578 overall
 AA 0.66 / 0.60 / 0.565 overall vs **0.74 / 0.74 / 0.662 among asymmetric pairs**. **The 200 written right 0.680 (cg27a_rcode5: 0.590):
 the filter replicates at GPU scale, +0.09.** Code + Adamic-Adar would have done better still under the filter (0.74). Held-out bits
 visits 1 / 2: 2.0145 / 2.0206 (cg27a_rcode5 2.0241 / 2.0322).
+Visit 3: rank taught 0.56 / 0.66 vs held back 0.08 / 0.18; open-ended 0.09 / 0.07 (cg27a_rcode5 0.14 / 0.10), dose loss to 0.350 - slower
+in the first visit. **Visit 4: the visit-2 batch open-ended 0.73 / 0.74 vs held back 0.03 / 0.03 (cg27a_rcode5: 0.54 / 0.49); rank 0.94 /
+0.96 vs 0.12 / 0.18. The second batch (visit 4) right 0.66 (cg27a_rcode5: 0.59).** Held-out bits 2.0167 / 1.9183 at visits 3 / 4
+(cg27a_rcode5 2.0137 / 1.9258). More right inferences written AND recalled better after two visits, at no cost.
 
 ### GPU cg27a_rcode5: the dose-fixed write path through pass 1 (seed 4, 14 November, visits 1-10)
 
