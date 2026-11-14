@@ -597,11 +597,18 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         for s0 in range(0, len(ks), 100000):                                  #   offline (two splits) code + RA holds precision as more is written - level with
             sl0 = slice(s0, s0 + 100000); ra_all[sl0] = np.asarray(G[XA[sl0]].multiply(G[XB[sl0]]).multiply(iw1[None, :]).sum(1)).ravel()   #   code + AA at 100, +5-7 at 200
         rkf = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable') / max(1, len(x) - 1); both = rkf(code) + rkf(aa_all); bra = rkf(code) + rkf(ra_all)
+        asy_ = np.abs(np.log((deg[XA] + 1.0) / (deg[XB] + 1.0)))              # 14 Nov ASYMMETRY (inf_rcode_asym): one name clearly more specific than the other
         top = lambda sv, n: f"{yy[np.argsort(-sv)[:n]].mean():.3f}"
         selmsg = (" || SELECTION RULES, labelled among the top 100 / 200 / 400 of all candidates: code " + " / ".join(top(code, n) for n in (100, 200, 400)) + "; Adamic-Adar "
                   + " / ".join(top(aa_all, n) for n in (100, 200, 400)) + "; code + Adamic-Adar (rank sum) " + " / ".join(top(both, n) for n in (100, 200, 400))
-                  + "; code + resource allocation (rank sum) " + " / ".join(top(bra, n) for n in (100, 200, 400)) + f" (writing by: {sel_})")
-    done = {frozenset(x) for x in W}; o = np.argsort(-(both if sel_ == 'code+aa' else bra if sel_ == 'code+ra' else code)); nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
+                  + "; code + resource allocation (rank sum) " + " / ".join(top(bra, n) for n in (100, 200, 400))
+                  + "; the same among pairs with |log degree ratio| > 1: code + AA " + " / ".join(top(np.where(asy_ > 1, both, -9), n) for n in (100, 200, 400))
+                  + ", code + RA " + " / ".join(top(np.where(asy_ > 1, bra, -9), n) for n in (100, 200, 400)) + f" (writing by: {sel_})")
+    sc_ = (both if sel_ == 'code+aa' else bra if sel_ == 'code+ra' else code); ath = float(getattr(cfg, 'inf_rcode_asym', 0.0))
+    if ath > 0:                                                               # 14 Nov ASYMMETRY FILTER (cg27a_rasym): write only pairs whose names differ in store
+        asy0 = np.abs(np.log((deg[XA] + 1.0) / (deg[XB] + 1.0)))              #   degree by more than e^ath (offline, Re-DocRED gold, two splits: top 200
+        sc_ = np.where(asy0 > ath, sc_, -np.inf)                               #   0.585 / 0.525 vs 0.395; GPU path: wrong 0.28 vs 0.42)
+    done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
         c = ks[j]
@@ -611,7 +618,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
           f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
           f"(labelled {yy.mean():.3f}) || " + " || ".join([line(np.ones(len(sub), bool), 'ALL'), line(cn_ > 0, 'WITH A BRIDGE'), line(cn_ == 0, 'NO BRIDGE')])
-          + selmsg + f" || WROTE the top {len(wr)} by {sel_}: right {np.mean(wr) if wr else float('nan'):.3f} ({len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
+          + selmsg + f" || WROTE the top {len(wr)} by {sel_}{(' among |log degree ratio| > %g' % float(getattr(cfg, 'inf_rcode_asym', 0.0))) if float(getattr(cfg, 'inf_rcode_asym', 0.0)) > 0 else ''}: right {np.mean(wr) if wr else float('nan'):.3f} ({len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
 def _rret_key_held(cfg, A_, C_, tag):

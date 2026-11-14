@@ -463,7 +463,9 @@ def _nm_readout(model, cfg, S_, S_slot, tag, n):
         try:
             with torch.no_grad(): lg = _ws_run(model, X, sl)[0]
         finally: _NM['force'] = None
-        T = min(len(txt) - 1, lg.shape[0]); return float(F.cross_entropy(lg[:T].float(), X[0, 1:T + 1], reduction='sum')) / np.log(2), T, _NM['stats'][0]
+        T = min(len(txt) - 1, lg.shape[0], X.shape[1] - 1)                    # 14 Nov: the batch may be shorter than the text (cg27a_rcode5 visit 9-10:
+        if T <= 0: return 0.0, 0, _NM['stats'][0]                              #   'Expected input batch_size (6) to match target batch_size (0)')
+        return float(F.cross_entropy(lg[:T].float(), X[0, 1:T + 1], reduction='sum')) / np.log(2), T, _NM['stats'][0]
     C = [e for e in ents if e['key'][0] == 'conclusion']; Fx = [e for e in ents if e['key'][0] == 'fact']
     C = [C[i] for i in rs.permutation(len(C))[:n]]; Fx = [Fx[i] for i in rs.permutation(len(Fx))[:n]]
     own = [ents[i] for i in rs.permutation(len(ents))[:n]]

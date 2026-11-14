@@ -649,6 +649,7 @@ class Config:
     inf_rcode_k=128                 #     code dimensions (truncated SVD of the PPMI name x name record graph)
     inf_rcode_sel='code'            #     which pairs to write: 'code' (most similar codes), 'code+aa' (rank sum of the code and Adamic-Adar; cg27a_rcode3) or 'code+ra' (code and resource allocation, shared neighbours weighted 1/degree)
     inf_rcode_selreport=0           #     readout: labelled share of the top 100 / 200 / 400 under each selection rule
+    inf_rcode_asym=0.0              #   14 Nov ASYMMETRY FILTER (MODEL CHANGE when > 0; cg27a_rasym): write only pairs with |log degree ratio| above this (one name clearly more specific)
     inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
     inf_rret=0                      #   14 Nov RETRACTION (MODEL CHANGE when on; cg27a_rret): at the next premises readout each written inference is judged by what the store
                                     #     read since (records stating the pair with 3 or fewer words between the names, and the pair's document PMI; rank sum); the least
