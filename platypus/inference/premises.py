@@ -408,6 +408,8 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
                                                                               #   the inference checkable (excluding premise documents left 4 of 300 checkable)
     isnov = lambda k: frozenset(k) not in bco and not any(k[0] in RD[i][7] and k[1] in RD[i][7] for i in PRR[k])   # inf_rti_novel 2: TAG only (write as cg27a_rti,
                                                                               #   report the novel ones apart - the filter left few checkable inferences locally)
+    if int(getattr(cfg, 'inf_rti_code', 0)):                                  # 14 Nov cg27a_rcode: choose what to write by the compressed fact table
+        return _rcode_step(model, cfg, S_slot, seen, RD, vis)
     if int(getattr(cfg, 'inf_rti_confirm', 0)):                               # 14 Nov cg27a_rtc: predict now, write only when later text confirms
         return _rtc_step(model, cfg, S_slot, seen, RD, PR, PRR, dn, NI, nbm, len(keep), vis)
     P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI and novel(k)]
@@ -529,6 +531,69 @@ def _rtc_step(model, cfg, S_slot, seen, RD, PR, PRR, dn, NI, nbm, nkeep, vis):
           f"(label-free scorer, top quarter; its AUC on distant labels {auc0:.3f}) {int(mrel.sum())}, labelled {rr([bool(x) for x, m in zip(lab_c, mrel) if m])} vs other "
           f"{rr([bool(x) for x, m in zip(lab_c, mrel) if not m])} -> CONFIRMED and WRITTEN {len(wr)} (right {rr([x[1] for x in wr])}; visits from prediction to "
           f"confirmation {dict(sorted(ages.items()))}) | UNPREDICTED control (new relational records, read only) {len(un)}, right {rr(un)} | {len(W)} in all ({time.time() - t0:.0f} s)", flush=True)
+
+
+def _rcode_step(model, cfg, S_slot, seen, RD, vis):
+    """14 Nov INFERENCE BY COMPRESSING THE FACT TABLE (inf_rti_code; THE ONE MODEL CHANGE of cg27a_rcode against cg27a_rti). The record
+    compressor codes which names go together independently given their classes, so the facts - where an inference lives (A-B, B-C make
+    A-C cheap) - are never compressed. Here every name gets a low-rank CODE of the store's name x name record graph (PPMI, truncated SVD,
+    inf_rcode_k dimensions; no labels). HELD-OUT documents (inf_rcode_hold of the distant documents read, by hash): their records leave the
+    graph, and so does every record anywhere pairing two names that co-occur in one of them, so nothing in the store states a candidate pair.
+    Candidates: pairs co-occurring in a held-out document, both names in the graph; truth: the distant labels (evaluation only). The
+    inf_rti_max candidates with the most similar codes are WRITTEN as 'A is connected to C' (a third held back, inf_rti_ctl). Offline
+    (tools/fact_compress.py, Re-DocRED, two splits): codes right 0.32-0.37 in their top 5% where a chain exists (3.8x base) against 0.24 for
+    the best chaining score; 2x base where no chain exists (chaining at chance)."""
+    import zlib
+    from scipy.sparse import csr_matrix
+    from sklearn.decomposition import TruncatedSVD
+    t0 = time.time(); LAB = _PM['LAB']; W = _PM.setdefault('rti', {}); nD = len(RD); hf = float(getattr(cfg, 'inf_rcode_hold', 0.1))
+    hold = lambda d: zlib.crc32(b'rcode%d' % int(d)) % 1000 < hf * 1000
+    HD = np.array([hold(r[0]) for r in RD], bool)
+    co = collections.defaultdict(set)                                         # held-out documents: the names they hold together
+    for i in np.where(HD)[0]: co[RD[i][0]].update((RD[i][1], RD[i][2]))
+    CAND = set()
+    for ns in co.values():
+        ns = sorted(ns)
+        if len(ns) > 60: ns = ns[:60]
+        CAND.update(frozenset((ns[x], ns[y])) for x in range(len(ns)) for y in range(x + 1, len(ns)))
+    NI = {}; ia, ib = [], []
+    for i in range(nD):
+        if HD[i] or RD[i][1] == RD[i][2] or frozenset((RD[i][1], RD[i][2])) in CAND: continue
+        ia.append(NI.setdefault(RD[i][1], len(NI))); ib.append(NI.setdefault(RD[i][2], len(NI)))
+    NN = len(NI); G = csr_matrix((np.ones(len(ia), np.float32), (np.array(ia), np.array(ib))), shape=(NN, NN)); G = G + G.T; G.sum_duplicates(); G.data[:] = 1.0
+    deg = np.asarray(G.sum(1)).ravel(); Gc = G.tocoo(); tot = float(G.sum())
+    v = np.log(tot * Gc.data / (deg[Gc.row] * deg[Gc.col]) + 1e-12); mk = v > 0
+    Pm = csr_matrix((v[mk].astype(np.float32), (Gc.row[mk], Gc.col[mk])), shape=(NN, NN))
+    k = int(getattr(cfg, 'inf_rcode_k', 128)); U = TruncatedSVD(k, random_state=int(cfg.seed)).fit_transform(Pm).astype(np.float32)
+    U /= (np.linalg.norm(U, axis=1, keepdims=True) + 1e-9); t1 = time.time() - t0
+    ks = [c for c in CAND if all(n in NI and deg[NI[n]] > 0 for n in c)]
+    if not ks:
+        print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] no candidates ({len(CAND)} held-out pairs)", flush=True); return
+    XA = np.array([NI[sorted(c)[0]] for c in ks]); XB = np.array([NI[sorted(c)[1]] for c in ks]); yy = np.array([c in LAB for c in ks])
+    code = np.einsum('ij,ij->i', U[XA], U[XB])
+    rs = np.random.RandomState(int(cfg.seed) + 31 + vis); sub = rs.permutation(len(ks))[:200000]
+    cn_ = np.asarray(G[XA[sub]].multiply(G[XB[sub]]).sum(1)).ravel()
+    iw = np.where(deg > 1, 1.0 / np.log(np.maximum(deg, 2)), 0.0).astype(np.float32)
+    aa = np.asarray(G[XA[sub]].multiply(G[XB[sub]]).multiply(iw[None, :]).sum(1)).ravel()
+    def line(mask, title):
+        yv = yy[sub][mask]
+        if yv.sum() == 0 or (~yv).sum() == 0: return f"{title}: {int(mask.sum())} pairs, labelled {yv.mean() if len(yv) else float('nan'):.3f}"
+        out = []
+        for nm, sv in (('random', rs.rand(int(mask.sum()))), ('degree product', (deg[XA[sub]] * deg[XB[sub]])[mask]), ('Adamic-Adar', aa[mask]), (f'CODE {k}', code[sub][mask])):
+            o = np.argsort(-sv + 1e-9 * rs.rand(len(sv))); out.append(f"{nm} AUC {_cg_auc(sv[yv], sv[~yv]):.3f}, top 5/10/25% "
+                                                                      + "/".join(f"{yv[o[:max(1, len(o) * q // 100)]].mean():.3f}" for q in (5, 10, 25)))
+        return f"{title}: {int(mask.sum())} pairs, labelled {yv.mean():.3f} - " + "; ".join(out)
+    done = {frozenset(x) for x in W}; o = np.argsort(-code); nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
+    for j in o:
+        if len(wr) >= nmax: break
+        c = ks[j]
+        if c in done: continue
+        A_, C_ = sorted(c); W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(G[NI[A_]].multiply(G[NI[C_]]).sum()), rank=-1, novel=True, code=float(code[j]))
+        wr.append(bool(yy[j]))
+    print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
+          f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
+          f"(labelled {yy.mean():.3f}) || " + " || ".join([line(np.ones(len(sub), bool), 'ALL'), line(cn_ > 0, 'WITH A BRIDGE'), line(cn_ == 0, 'NO BRIDGE')])
+          + f" || WROTE the top {len(wr)} by code: right {np.mean(wr) if wr else float('nan'):.3f} ({len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
 def rti_evidence(cfg, S_slot, seen):

@@ -642,6 +642,9 @@ class Config:
     bl_er=0.0                       #   > 0: stored-example replay - every step adds bl_er x the loss on a stored batch of another slot (needs replay_buffer_batches)
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
+    inf_rti_code=0                  #   14 Nov INFERENCE BY COMPRESSING THE FACT TABLE (MODEL CHANGE when on; cg27a_rcode): write the held-out pairs whose low-rank name codes agree most
+    inf_rcode_k=128                 #     code dimensions (truncated SVD of the PPMI name x name record graph)
+    inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
     inf_rti_confirm=0               #   14 Nov PREDICT, THEN CONFIRM (MODEL CHANGE when on; cg27a_rtc): inferences are held as predictions and written only when a later document
                                     #     states A and C together in a relational wording; the confirming sentence joins the real-text replay (needs inf_rti_evidence 1)
     inf_rtc_pend_max=400000         #     pending predictions kept
