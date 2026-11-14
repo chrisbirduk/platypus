@@ -78,7 +78,7 @@ for i, c in enumerate(C):
             if dA == c['di'] or A == Cn: continue
             k1, k2 = (rr_(j), side(j, B)), (rr_(i), side(i, B)); kd = (k1, k2) if k1 <= k2 else (k2, k1)
             p = PR[frozenset((A, Cn))]; p['k'].add(kd); p['docs'] |= {dA, c['di']}; p['br'].add(B)
-keys = list(PR); tr = np.array([zlib.crc32(repr(sorted(k)).encode()) % 2 == 0 for k in keys])
+keys = list(PR); tr = np.array([zlib.crc32((repr(sorted(k)) + os.environ.get('SPLIT_SEED', '')).encode()) % 2 == 0 for k in keys])
 cf = [[r for r, d_ in SREL.get(k, []) if d_ not in PR[k]['docs']] for k in keys]
 CT = collections.defaultdict(collections.Counter); KN = collections.Counter()
 for k, t, c_ in zip(keys, tr, cf):

@@ -56,7 +56,7 @@ for i, c in enumerate(C):
     if s_all[i] >= thr_rel: SREL.setdefault(frozenset((c['cA'], c['cB'])), set()).add(c['di'])
 confr = np.array([bool(SREL.get(k, set()) - PR[k]['docs']) for k in keys])
 if os.environ.get('CB_CONF', 'any') == 'rel': conf_any = conf; conf = confr        # composability learned from relational confirmations
-tr = np.array([zlib.crc32(repr(sorted(k)).encode()) % 2 == 0 for k in keys])
+tr = np.array([zlib.crc32((repr(sorted(k)) + os.environ.get('SPLIT_SEED', '')).encode()) % 2 == 0 for k in keys])
 P(f"confirmed by later reading: {conf.mean():.3f} of proposals (train pairs {conf[tr].mean():.3f})")
 # ---- composability per kind, learned on TRAIN pairs only
 kc = collections.Counter(); kn = collections.Counter()

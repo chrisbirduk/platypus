@@ -35,7 +35,7 @@ def auc(pos, neg):
     return (r[:len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
 
 
-rs0 = np.random.RandomState(0); dperm = rs0.permutation(len(docs)); TEST = set(dperm[:len(docs) // 5].tolist())   # as tools/extract_learn.py
+rs0 = np.random.RandomState(int(os.environ.get('SPLIT_SEED', 0))); dperm = rs0.permutation(len(docs)); TEST = set(dperm[:len(docs) // 5].tolist())   # as tools/extract_learn.py
 C = []
 for di, d in enumerate(docs):
     cn = [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
