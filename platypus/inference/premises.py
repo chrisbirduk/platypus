@@ -584,15 +584,19 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
                                                                       + "/".join(f"{yv[o[:max(1, len(o) * q // 100)]].mean():.3f}" for q in (5, 10, 25)))
         return f"{title}: {int(mask.sum())} pairs, labelled {yv.mean():.3f} - " + "; ".join(out)
     sel_ = str(getattr(cfg, 'inf_rcode_sel', 'code')); selmsg = ''
-    if sel_ == 'code+aa' or int(getattr(cfg, 'inf_rcode_selreport', 0)):     # 14 Nov SELECTION (cg27a_rcode3): the code and Adamic-Adar agree (rank sum);
+    if sel_ in ('code+aa', 'code+ra') or int(getattr(cfg, 'inf_rcode_selreport', 0)):   # 14 Nov SELECTION (cg27a_rcode3): the code and Adamic-Adar agree (rank sum);
         aa_all = np.zeros(len(ks), np.float32)                                #   offline (Re-DocRED gold, two splits) the top 100 right 0.42-0.45 vs 0.38-0.41
         for s0 in range(0, len(ks), 100000):                                  #   for the code alone (top 50: 0.50-0.62 vs 0.32-0.46)
             sl0 = slice(s0, s0 + 100000); aa_all[sl0] = np.asarray(G[XA[sl0]].multiply(G[XB[sl0]]).multiply(iw[None, :]).sum(1)).ravel()
-        rkf = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable') / max(1, len(x) - 1); both = rkf(code) + rkf(aa_all)
+        ra_all = np.zeros(len(ks), np.float32); iw1 = (1.0 / np.maximum(deg, 1)).astype(np.float32)   # 14 Nov RESOURCE ALLOCATION (shared neighbours weighted 1/degree):
+        for s0 in range(0, len(ks), 100000):                                  #   offline (two splits) code + RA holds precision as more is written - level with
+            sl0 = slice(s0, s0 + 100000); ra_all[sl0] = np.asarray(G[XA[sl0]].multiply(G[XB[sl0]]).multiply(iw1[None, :]).sum(1)).ravel()   #   code + AA at 100, +5-7 at 200
+        rkf = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable') / max(1, len(x) - 1); both = rkf(code) + rkf(aa_all); bra = rkf(code) + rkf(ra_all)
         top = lambda sv, n: f"{yy[np.argsort(-sv)[:n]].mean():.3f}"
-        selmsg = (" || SELECTION RULES, labelled among the top 100 / 200 of all candidates: code " + top(code, 100) + " / " + top(code, 200) + "; Adamic-Adar "
-                  + top(aa_all, 100) + " / " + top(aa_all, 200) + "; code + Adamic-Adar (rank sum) " + top(both, 100) + " / " + top(both, 200) + f" (writing by: {sel_})")
-    done = {frozenset(x) for x in W}; o = np.argsort(-(both if sel_ == 'code+aa' else code)); nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
+        selmsg = (" || SELECTION RULES, labelled among the top 100 / 200 / 400 of all candidates: code " + " / ".join(top(code, n) for n in (100, 200, 400)) + "; Adamic-Adar "
+                  + " / ".join(top(aa_all, n) for n in (100, 200, 400)) + "; code + Adamic-Adar (rank sum) " + " / ".join(top(both, n) for n in (100, 200, 400))
+                  + "; code + resource allocation (rank sum) " + " / ".join(top(bra, n) for n in (100, 200, 400)) + f" (writing by: {sel_})")
+    done = {frozenset(x) for x in W}; o = np.argsort(-(both if sel_ == 'code+aa' else bra if sel_ == 'code+ra' else code)); nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
         c = ks[j]
