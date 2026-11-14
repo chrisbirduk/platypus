@@ -16,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _rm = open(os.path.join(HERE, 'record_mdl.py')).read()
 exec(compile(_rm[:_rm.index('FITS = {}')], 'record_mdl', 'exec'))
 import torch
+import torch.nn.functional as F
 from sklearn.decomposition import TruncatedSVD
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.preprocessing import normalize
