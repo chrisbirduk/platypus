@@ -2037,12 +2037,16 @@ def distill_wake_loss(model, cfg):
             lr_ = (cs * ms).sum() / ms.sum().clamp(min=1); loss = loss + float(getattr(cfg, 'inf_distill_replay_w', 1.0)) * lr_; D['rtxl'].append(float(lr_.detach()))
         rk2 = int(getattr(cfg, 'inf_rti_rows', 0)); rp2 = D.get('rtir')
         if rk2 > 0 and rp2:                                                    # 14 Nov RTI DOSE: the written real-text inferences' own question rows
-            it2 = [rp2[int(i)] for i in rs.choice(len(rp2), min(rk2, len(rp2)), replace=False)]; sl2 = int(it2[0][2])
-            X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
-            for r9, it in enumerate(it2):
-                p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)
-                if n_ > 0: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
-            if c2: l2 = t2 / c2; loss = loss + l2; D['rtil'].append(float(l2.detach()))
+            try:                                                               #   (its own guard: a failure here must not switch off the pool's rows)
+                it2 = [rp2[int(i)] for i in rs.choice(len(rp2), min(rk2, len(rp2)), replace=False)]; sl2 = int(it2[0][2])
+                X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
+                for r9, it in enumerate(it2):
+                    p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)
+                    if n_ > 0: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
+                if c2: l2 = t2 / c2; loss = loss + l2; D['rtil'].append(float(l2.detach()))
+            except Exception as e2:
+                _fail('inference.distill:rti_dose')
+                if not D.get('err2'): D['err2'] = 1; print(f"  [REAL-TEXT INFERENCE DOSE] a step failed ({type(e2).__name__}: {e2})"[:300], flush=True)
         rtv = (D.get('rtxv') or {}).get(sl) if aw > 0 else None
         if rtv:                                                                # REAL-TEXT ALIGNMENT: a view's question state -> its declaration's (no labels)
             vv = [rtv[int(i)] for i in rs.choice(len(rtv), min(k, len(rtv)), replace=False)]
