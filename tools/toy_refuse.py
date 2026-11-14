@@ -7,6 +7,11 @@ people ('Kemora works with Talvin.'), is taught question rows for 3/4 of the fac
   distinct    refusal rows about fresh names from DIFFERENT syllables than the stored names (as cg27a_refuse)
   same        refusal rows about fresh names from the SAME syllables as the stored names
   same+forms  'same' with 12 question wordings instead of 4
+  same+fam    (14 Nov) 'same' + FAMILIARITY rows 'Have I read about A? yes.' for every READ name (the only-read ones included) and '... no.'
+              for the fresh refusal names - so a name can be asked about (familiarity) without its fact, which breaks 'not asked -> unknown'
+  fam         familiarity rows only (no fact-refusal rows)
+NAME GATE (14 Nov, readout, every condition): no training - abstain when the trunk's surprise at the subject's name (bits a byte of the name
+after 'Some say that ') is above the 95th percentile of known names'; reports the gate's AUC read vs fresh and what it refuses.
 Scored greedily in a HELD-OUT wording ('It is on record that A r ') and in a taught wording: refusal ('unknown') on fresh names from the
 stored names' syllables (never read), on fresh names from a THIRD syllable set (as the GPU probe's), and on KNOWN facts (over-refusal);
 known facts answered right; facts only read answered right (learning from reading).
@@ -68,7 +73,7 @@ def run(cond, seed):
     facts = [(people[r.randint(120)], RELS[r.randint(len(RELS))], people[r.randint(120)]) for _ in range(300)]
     facts = list({(a, rl): (a, rl, b) for a, rl, b in facts if a != b}.values())
     taught = [f for i, f in enumerate(facts) if i % 4]; readonly = [f for i, f in enumerate(facts) if not i % 4]
-    known = {(a, rl) for a, rl, b in facts}
+    known = {(a, rl) for a, rl, b in facts}; readn = sorted({a for a, rl, b in facts} | {b for a, rl, b in facts})
     forms = F12 if cond == 'same+forms' else F4
     fresh_tr = [mkname(r, S2 if cond == 'distinct' else S1, taken) for _ in range(400)]
     fresh_te1 = [mkname(r, S1, taken) for _ in range(60)]; fresh_te3 = [mkname(r, S3, taken) for _ in range(60)]
@@ -77,7 +82,10 @@ def run(cond, seed):
         for _ in range(n):
             u = r.rand()
             if u < 0.4: a, rl, b = facts[r.randint(len(facts))]; out.append(f"{a} {rl} {b}. ")
-            elif u < 0.8 or cond == 'none': a, rl, b = taught[r.randint(len(taught))]; out.append(forms[r.randint(len(forms))].format(A=a, r=rl) + b + '.')
+            elif u < 0.8 or cond == 'none' or (cond == 'fam' and False): a, rl, b = taught[r.randint(len(taught))]; out.append(forms[r.randint(len(forms))].format(A=a, r=rl) + b + '.')
+            elif 'fam' in cond and (cond == 'fam' or r.rand() < 0.5):
+                if r.rand() < 0.5: out.append(f"Have I read about {readn[r.randint(len(readn))]}? yes.")
+                else: out.append(f"Have I read about {fresh_tr[r.randint(len(fresh_tr))]}? no.")
             else: out.append(forms[r.randint(len(forms))].format(A=fresh_tr[r.randint(len(fresh_tr))], r=RELS[r.randint(len(RELS))]) + 'unknown.')
         return torch.tensor([enc(t) for t in out])
     m = LM(); op = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.01); ls = []
@@ -93,11 +101,22 @@ def run(cond, seed):
         kt = taught[:80]; ok = greedy(m, [q(a, rl) for a, rl, b in kt]); ro = greedy(m, [q(a, rl) for a, rl, b in readonly[:60]])
         res[wname] = (rf(o1), rf(o3), rf(ok), np.mean([o.strip().startswith(b) for o, (a, rl, b) in zip(ok, kt)]),
                       np.mean([o.strip().startswith(b) for o, (a, rl, b) in zip(ro, readonly[:60])]))
+    @torch.no_grad()
+    def surp(names):                                                       # NAME GATE: bits a byte of the name after a neutral cue
+        pre = 'Some say that '; X = torch.tensor([enc(pre + n + ' ') for n in names]); Xi = torch.cat([torch.full((len(names), 1), PAD), X[:, :-1]], 1)
+        lp = -F.log_softmax(m(Xi), -1).gather(-1, X[..., None])[..., 0] / math.log(2)
+        return np.array([float(lp[j, len(pre):len(pre) + len(n)].mean()) for j, n in enumerate(names)])
+    rd_names = sorted({a for a, rl, b in readonly[:60]}); kn_names = sorted({a for a, rl, b in taught[:80]})
+    sk, sr, s1, s3 = surp(kn_names), surp(rd_names), surp(fresh_te1), surp(fresh_te3); thr = np.quantile(sk, 0.95)
+    from sklearn.metrics import roc_auc_score as _auc
+    res['gate'] = (_auc(np.r_[np.ones(len(sk) + len(sr)), np.zeros(len(s1))], -np.r_[sk, sr, s1]), (s1 > thr).mean(), (s3 > thr).mean(), (sk > thr).mean(), (sr > thr).mean())
     return np.mean(ls[-100:]) / math.log(2), res
 P(f"toy_refuse: {STEPS} steps, seed {SEED}")
-for cond in ('none', 'distinct', 'same', 'same+forms'):
-    bpb, res = run(cond, SEED)
+import os
+for cond in os.environ.get('TR_CONDS', 'none,distinct,same,same+forms,same+fam,fam').split(','):
+    bpb, res = run(cond, SEED); g = res.pop('gate')
     P(f"  {cond:11s} (train {bpb:.2f} bits/byte, {time.time() - T0:.0f}s) | " + " || ".join(
         f"{w}: REFUSE fresh (stored syllables) {a:.2f}, fresh (third syllables) {b:.2f}, KNOWN {c:.2f} | known right {d:.2f}, only-read right {e:.2f}"
-        for w, (a, b, c, d, e) in res.items()))
+        for w, (a, b, c, d, e) in res.items())
+      + f" || NAME GATE: AUC read vs fresh {g[0]:.2f}; abstains on fresh (stored syl.) {g[1]:.2f}, fresh (third) {g[2]:.2f}, known {g[3]:.2f}, only-read {g[4]:.2f}")
 P(f"DONE ({time.time() - T0:.0f}s)")
