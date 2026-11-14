@@ -840,6 +840,28 @@ chain exists, chaining is at chance by definition and the codes still find relat
 of the code (32 -> 512). Earlier label-free inference filters reached 0.13-0.15 (typed composability). Caveats: gold is 'related', not the
 relation; Re-DocRED only (the 30k distant-document run needs less memory: running at 128 dimensions).
 
+### GPU cg27a_rcode2: the compressed fact table's inferences reach the weights (seed 4, 14 November, visits 2-5)
+
+One change against cg27a_rcode: the written inferences get their own question rows (8 a step; about 900-1,900 rows in play). Same
+store result (visit 4, with a chain: code AUC 0.674 vs Adamic-Adar 0.568; the 200 written right 0.255-0.32). Recall from the trunk in
+the test wording 'It is on record that A is connected to ' (never taught), inferences written at visit 2:
+
+| | taught RIGHT | taught WRONG | held back RIGHT | held back WRONG |
+|---|---|---|---|---|
+| open-ended exact, visit 3 | 0.15 (92) | 0.12 (164) | 0.00 (36) | 0.02 (108) |
+| **open-ended exact, visit 4** | **0.40** | **0.38** | **0.03** | **0.00** |
+| rank among 10 written answers, visit 3 | 0.41 (46) | 0.32 (82) | 0.11 (18) | 0.04 (54) |
+| **rank, visit 4** | **0.78** | **0.84** | **0.06** | **0.11** |
+
+(cg27a_rcode, the same inferences at about one row a visit: 0.00-0.03 open-ended. The rank readout's distractors were partly taught
+answers, which pushes the held-back figure below chance; fixed for the next build.) Cost: held-out bits on the domains read, visits
+2-4, 2.0265 / 2.0127 / 1.9263 against cg27a_rcode's 2.0281 / 2.0129 / 1.9293 - none.
+**Positive, one seed: inferences drawn from real text without labels or rules - pairs never stated together anywhere in the store,
+chosen by compressing the fact table - are recalled from the weights in a wording never taught, 0.40 open-ended (0.78 ranked) against
+0.00-0.03 (0.06-0.11) for the held-back third.** **But right and wrong ones alike (0.40 vs 0.38; 0.78 vs 0.84):** the weights take in
+whatever they are taught, so about two thirds of what is written - the wrong inferences - becomes false memories at the same rate.
+Selectivity must come before the write (the code's top, confirmation by later reading) or after it (retraction when text contradicts).
+
 ### Popularity-matched check, and which relation (tools/fact_compress.py, tools/rel_codes.py; 14 November, Re-DocRED gold, two splits)
 
 POPULARITY MATCHED (AUC within quintiles of the degree product): with a chain, code-512 0.709 / 0.706 vs Adamic-Adar 0.691 / 0.700 (raw
