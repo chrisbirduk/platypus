@@ -408,6 +408,8 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
                                                                               #   the inference checkable (excluding premise documents left 4 of 300 checkable)
     isnov = lambda k: frozenset(k) not in bco and not any(k[0] in RD[i][7] and k[1] in RD[i][7] for i in PRR[k])   # inf_rti_novel 2: TAG only (write as cg27a_rti,
                                                                               #   report the novel ones apart - the filter left few checkable inferences locally)
+    if int(getattr(cfg, 'inf_rti_confirm', 0)):                               # 14 Nov cg27a_rtc: predict now, write only when later text confirms
+        return _rtc_step(model, cfg, S_slot, seen, RD, PR, PRR, dn, NI, nbm, len(keep), vis)
     P2 = [(k, len(v)) for k, v in PR.items() if len(v) >= nbm and frozenset(k) not in done and k[0] in NI and k[1] in NI and novel(k)]
     P2.sort(key=lambda x: -x[1]); P2 = P2[:int(getattr(cfg, 'inf_rti_n', 600))]
     if not P2:
@@ -447,6 +449,88 @@ def _rti_propose(model, cfg, S_slot, seen, RD, ixd, scd, gn, NI, NAMES, nall, vi
           f"{f([r for r in wr if isnov((r[0], r[1]))])}; {len(W)} in all) ({time.time() - t0:.0f} s)", flush=True)
 
 
+def _relscorer(cfg, RD, rs):
+    """the label-free RELATIONAL-WORDING scorer of _typed_readout on the distant records alone (teachers: corroboration in another document,
+    functional and selective wordings -> a logistic learner on hashed features of the words between): returns score(indices), threshold
+    (the learner's top quarter on its training sample), and the training sample's AUC against the distant labels"""
+    import math as _m
+    from sklearn.feature_extraction.text import HashingVectorizer
+    from sklearn.linear_model import LogisticRegression
+    nD = len(RD); trip = collections.defaultdict(set); fsub = collections.defaultdict(lambda: collections.defaultdict(set))
+    fA = collections.defaultdict(collections.Counter); fB = collections.defaultdict(collections.Counter)
+    for r in RD: trip[(r[1], r[3], r[2])].add(r[0]); fsub[r[3]][r[1]].add(r[2]); fA[r[3]][_shape(r[1])] += 1; fB[r[3]][_shape(r[2])] += 1
+    FUN = {f_: float(np.mean([len(v) == 1 for v in d_.values()])) for f_, d_ in fsub.items() if len(d_) >= 3}
+    ent = lambda c_: -sum(v / sum(c_.values()) * _m.log2(v / sum(c_.values())) for v in c_.values())
+    SEL = {f_: -(ent(fA[f_]) + ent(fB[f_])) for f_ in fA if sum(fA[f_].values()) >= 5}
+    trs = rs.permutation(nD)[:int(getattr(cfg, 'inf_premises_typed_train', 200000))]
+    t1 = np.array([float(len(trip[(RD[i][1], RD[i][3], RD[i][2])] - {RD[i][0]}) > 0) for i in trs])
+    t2 = np.array([FUN.get(RD[i][3], np.nan) for i in trs]); t3 = np.array([SEL.get(RD[i][3], np.nan) for i in trs])
+    rkn = lambda x: (lambda z: np.argsort(np.argsort(z, kind='stable'), kind='stable') / max(1, len(z) - 1))(np.where(np.isnan(x), np.nanmedian(x) if np.isfinite(x).any() else 0.0, x))
+    teach = rkn(t2) + rkn(t3) + 2 * t1
+    HV = HashingVectorizer(n_features=2 ** 16, ngram_range=(1, 2), alternate_sign=False, token_pattern=r"[A-Za-z]+|[^\sA-Za-z]", norm='l2')
+    txt = lambda i: RD[i][3] + ' FIRST_' + (RD[i][3].split() or ['none'])[0] + ' LAST_' + (RD[i][3].split() or ['none'])[-1] + ' SA_' + _shape(RD[i][1]) + ' SB_' + _shape(RD[i][2])
+    lr = LogisticRegression(C=1.0, max_iter=1000).fit(HV.transform([txt(i) for i in trs]), teach >= np.percentile(teach, 75))
+    s0 = lr.decision_function(HV.transform([txt(i) for i in trs])); yy = np.array([bool(RD[i][6]) for i in trs])
+    score = lambda ix: lr.decision_function(HV.transform([txt(i) for i in ix])) if len(ix) else np.zeros(0)
+    return score, float(np.quantile(s0, 0.75)), _cg_auc(s0[yy], s0[~yy]) if yy.any() and (~yy).any() else float('nan')
+
+
+def _rtc_step(model, cfg, S_slot, seen, RD, PR, PRR, dn, NI, nbm, nkeep, vis):
+    """14 Nov PREDICT, THEN CONFIRM (inf_rti_confirm; THE ONE MODEL CHANGE of cg27a_rtc against cg27a_rti). Every A-C the store infers
+    (through a shared name, inf_rti_bridges+ bridges) is held as a PREDICTION, nothing written. When the store later reads a NEW document in
+    which A and C are stated together in a RELATIONAL wording (the label-free scorer's top quarter; not one of the premise documents), the
+    prediction is CONFIRMED: the confirming sentence joins the trunk's real-text replay and the inference is written as 'A is connected to C'
+    (a third held back by its own hash: read, not taught). Offline (tools/chain_bootstrap.py, three seeds) confirmed inferences are right
+    0.36 against 0.105 for all. READOUT controls: UNPREDICTED facts - new relational A-C records no prediction anticipated - are read the
+    same way and never taught."""
+    t0 = time.time(); rs = np.random.RandomState(int(cfg.seed) + 5151 + vis); LAB = _PM['LAB']; nD = len(RD)
+    PEND = _PM.setdefault('rtc_pend', {}); W = _PM.setdefault('rti', {}); pmax = int(getattr(cfg, 'inf_rtc_pend_max', 400000))
+    nd_now = (max(r[0] for r in RD) + 1) if RD else 0; nd_old = _PM.get('rtc_nd', nd_now)
+    newi = [i for i in range(nD) if RD[i][0] >= nd_old] if nd_old < nd_now else []
+    # ---- CONFIRM: predictions from earlier visits stated in a new document in a relational wording
+    cand = [i for i in newi if frozenset((RD[i][1], RD[i][2])) in PEND and PEND[frozenset((RD[i][1], RD[i][2]))]['vis'] < vis
+            and RD[i][0] not in PEND[frozenset((RD[i][1], RD[i][2]))]['docs']]
+    score, thr, auc0 = _relscorer(cfg, RD, rs) if newi else (None, 0.0, float('nan'))
+    sc = score(cand) if cand else np.zeros(0)
+    conf = {}
+    for i, v in zip(cand, sc):
+        k = frozenset((RD[i][1], RD[i][2]))
+        if v >= thr: conf.setdefault(k, []).append(i)
+    dsl = 1 if 1 in seen else seen[-1]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); wr = []
+    done = {frozenset(k) for k in W}
+    for k, ix in sorted(conf.items(), key=lambda kv: -len(kv[1])):
+        if k in done or len(wr) >= nmax: continue
+        A_, C_ = PEND[k]['ac']; tr = k in LAB
+        W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=tr, bridges=PEND[k]['nbr'], rank=-1, novel=False, pv=PEND[k]['vis'], ev=[RD[i][7] for i in ix[:3]])
+        wr.append((k, tr, vis - PEND[k]['vis']))
+    # ---- UNPREDICTED control: new relational A-C records that no prediction anticipated (read, never taught)
+    nun = int(getattr(cfg, 'inf_rtc_unpred', 100)); un = []
+    if newi and nun > 0:
+        pool = [i for i in rs.permutation(newi)[:20 * nun] if frozenset((RD[i][1], RD[i][2])) not in PEND and (RD[i][1], RD[i][2]) not in W and (RD[i][2], RD[i][1]) not in W]
+        sp = score(pool) if pool else np.zeros(0)
+        for i, v in zip(pool, sp):
+            if v >= thr and len(un) < nun:
+                k = frozenset((RD[i][1], RD[i][2])); W[(RD[i][1], RD[i][2])] = dict(vis=vis, d=int(dsl), truth=k in LAB, bridges=0, rank=-1, novel=False, pv=-1, unpred=True, ev=[RD[i][7]])
+                un.append(k in LAB)
+    # ---- PREDICT: this visit's inferences join the pending predictions
+    nnew = 0
+    for k_, v_ in PR.items():
+        if len(v_) < nbm or k_[0] not in NI or k_[1] not in NI: continue
+        k = frozenset(k_)
+        if k in PEND or k in done or len(PEND) >= pmax: continue
+        PEND[k] = dict(vis=vis, ac=k_, nbr=len(v_), docs={RD[i][0] for i in PRR[k_]}); nnew += 1
+    _PM['rtc_nd'] = nd_now
+    # ---- readout
+    lab_c = [RD[i][6] for i in cand]; mrel = sc >= thr if len(sc) else np.zeros(0, bool)
+    rr = lambda L: f"{np.mean(L):.3f} of {len(L)}" if len(L) else "none"
+    pv = [x[2] for x in wr]; ages = collections.Counter(pv)
+    print(f"  [REAL-TEXT CONFIRMATION | visit {vis + 1}] PREDICTIONS pending {len(PEND)} (+{nnew} this visit from {nkeep} premises, {nbm}+ bridges) | NEW documents "
+          f"{max(0, nd_now - nd_old)} ({len(newi)} records) -> {len(cand)} records state a pending A-C (labelled {rr([bool(x) for x in lab_c])}); relational wording "
+          f"(label-free scorer, top quarter; its AUC on distant labels {auc0:.3f}) {int(mrel.sum())}, labelled {rr([bool(x) for x, m in zip(lab_c, mrel) if m])} vs other "
+          f"{rr([bool(x) for x, m in zip(lab_c, mrel) if not m])} -> CONFIRMED and WRITTEN {len(wr)} (right {rr([x[1] for x in wr])}; visits from prediction to "
+          f"confirmation {dict(sorted(ages.items()))}) | UNPREDICTED control (new relational records, read only) {len(un)}, right {rr(un)} | {len(W)} in all ({time.time() - t0:.0f} s)", flush=True)
+
+
 def rti_evidence(cfg, S_slot, seen):
     """13 Nov EVIDENCE REPLAY (inf_rti_evidence; THE ONE MODEL CHANGE of cg27a_rti2): the premise statements of every written inference
     (taught and held back alike) join the real-text replay pool of the inference's slot, so the trunk reads the evidence behind what it is
@@ -470,12 +554,13 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     W = _PM.get('rti') or {}
     if not W:
         print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
-    have = {repr(e['key']) for e in ents + held}; T_, H_ = [], []
+    have = {repr(e['key']) for e in ents + held}; T_, H_, U_ = [], [], []
     for (A_, C_), w in W.items():
         e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel'))
         if repr(e['key']) in have: continue
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)
+        if w.get('unpred'): U_.append(e); continue                            # 14 Nov cg27a_rtc control: unpredicted facts are read, never taught
         (H_ if held_ else T_).append(e)
     old = lambda L, t: [e for e in L if e['rm'] < vis and e['truth'] is t]
     g = lambda d: f"{d['facts'][0]:.2f} ({d['facts'][1]})"
@@ -488,10 +573,14 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         rn = {t: (_dt_recall(model, S_slot, old(nv(T_), t)), _dt_recall(model, S_slot, old(nv(H_), t))) for t in (True, False, None)}
         print(f"  [REAL-TEXT INFERENCE WRITES, NOVEL ONLY | visit {vis + 1}] {len(nv(T_))} taught, {len(nv(H_))} held back | TAUGHT vs HELD BACK: RIGHT {g(rn[True][0])} vs "
               f"{g(rn[True][1])} | WRONG {g(rn[False][0])} vs {g(rn[False][1])} | not checkable {g(rn[None][0])} vs {g(rn[None][1])}", flush=True)
+    if U_:
+        ru = {t: _dt_recall(model, S_slot, old(U_, t)) for t in (True, False)}
+        print(f"  [REAL-TEXT CONFIRMATION RECALL | visit {vis + 1}] PREDICTED and confirmed: taught RIGHT {g(rec[True][0])} / WRONG {g(rec[False][0])} | held back (read the "
+              f"confirming sentence only) RIGHT {g(rec[True][1])} / WRONG {g(rec[False][1])} || UNPREDICTED (read only) RIGHT {g(ru[True])} / WRONG {g(ru[False])}", flush=True)
     coh = sorted({e['rm'] for e in T_ + H_ if e['rm'] < vis})                 # 13 Nov: by WHEN the inference was written (fresh ones may be recalled, then fade)
     if coh:
         by = lambda L, t, v: [e for e in L if e['truth'] is t and e['rm'] == v]
         print(f"  [REAL-TEXT INFERENCE WRITES BY AGE | visit {vis + 1}] TAUGHT vs HELD BACK, right / wrong: " + " | ".join(
             f"written at visit {v + 1}: right {g(_dt_recall(model, S_slot, by(T_, True, v)))} vs {g(_dt_recall(model, S_slot, by(H_, True, v)))}, wrong "
             f"{g(_dt_recall(model, S_slot, by(T_, False, v)))} vs {g(_dt_recall(model, S_slot, by(H_, False, v)))}" for v in coh), flush=True)
-    return ents + T_, held + H_
+    return ents + T_, held + H_ + U_

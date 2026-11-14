@@ -642,6 +642,10 @@ class Config:
     bl_er=0.0                       #   > 0: stored-example replay - every step adds bl_er x the loss on a stored batch of another slot (needs replay_buffer_batches)
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
+    inf_rti_confirm=0               #   14 Nov PREDICT, THEN CONFIRM (MODEL CHANGE when on; cg27a_rtc): inferences are held as predictions and written only when a later document
+                                    #     states A and C together in a relational wording; the confirming sentence joins the real-text replay (needs inf_rti_evidence 1)
+    inf_rtc_pend_max=400000         #     pending predictions kept
+    inf_rtc_unpred=100              #     readout control a visit: new relational facts no prediction anticipated, read and never taught
     inf_rti_evidence=0              #   13 Nov EVIDENCE REPLAY (MODEL CHANGE when on): the premise statements of written inferences join the real-text replay pool
     inf_rti_novel=0                 #     NOVELTY (A and C never together in anything the trunk reads: benchmark documents, replayed spans): 1 = write only those, 2 = tag and report apart
     inf_rti_ctl=0.0                 #     held-back share of written inferences by their own hash (0 = the question pool's fifth)
