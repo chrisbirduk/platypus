@@ -68,6 +68,14 @@ def rep(mask, title):
         sa = [(auc(sv[(bins == q) & yv], sv[(bins == q) & ~yv]), int(((bins == q) & yv).sum())) for q in range(5) if ((bins == q) & yv).sum() >= 5 and ((bins == q) & ~yv).sum() >= 5]
         pm = sum(a * n for a, n in sa) / max(1, sum(n for a, n in sa)) if sa else float('nan')
         P(f"   {k:44s} AUC {auc(sv[yv], sv[~yv]):.3f} | gold in top 5/10/25%: {pk_} | POPULARITY-MATCHED AUC (within degree-product quintiles) {pm:.3f}")
+if int(os.environ.get('FC_SELECT', 0)):                                                  # 14 Nov: which SELECTION RULE writes the most right inferences?
+    rk_ = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1); ck = max(k for k in SC if k.startswith('CODE') and 'rel' not in k)
+    cd_ = SC[ck]; SEL = {'code': cd_, 'code, bridged pairs only': np.where(cn_cnt > 0, cd_, -9), 'code + Adamic-Adar (rank sum)': rk_(cd_) + rk_(SC['Adamic-Adar']),
+           'code + Adamic-Adar, bridged only': np.where(cn_cnt > 0, rk_(cd_) + rk_(SC['Adamic-Adar']), -9), 'code, 2+ bridges only': np.where(cn_cnt >= 2, cd_, -9),
+           'Adamic-Adar': SC['Adamic-Adar']}
+    P(f"SELECTION RULES ({ck}), gold among the top N written (all {len(ok)} candidates, base {yy.mean():.3f}):")
+    for k_, sv in SEL.items():
+        o = np.argsort(-sv + 1e-12 * np.random.RandomState(2).rand(len(sv))); P(f"   {k_:40s} " + " | ".join(f"top {n} {yy[o[:n]].mean():.3f}" for n in (50, 100, 200, 400)))
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
