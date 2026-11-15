@@ -168,3 +168,206 @@ def kmem_readout(model, cfg, S_, S_slot, ents, held, vis):
         L = [e for e in fs if K['when'].get(repr(e['key'])) == a]; parts.append(f"written at visit {a + 1}: {fmt(recall(K['M'], L, te))}")
     print(f"  [KEYED MEMORY, PERSISTENT | visit {vis + 1}] kept across readouts, read with today's keys ({len(new)} new facts written, {len(old)} refreshed at "
           f"{rep_:.0%} of each batch; {len(K['M'].touched)} of {n_ * n_} slots written), open / rank in the test wording by when written: " + " | ".join(parts), flush=True)
+
+
+# ======================================================================================================================================
+# 15 Nov: THE KEYED MEMORY INTEGRATED ON THE QUESTION ROWS (inf_kmi; MODEL CHANGE of cg27a_kmi). The system's own question rows (the pool's
+# wake rows and the written inferences' dose rows) READ the memory where their answers are predicted: the read (a logit vector over bytes)
+# is ADDED to the trunk's logits there, so the model's answer to a question is trunk + memory. The address comes from the row's own bytes:
+# SUBJECT = the latest completed capitalised run of 3+ bytes in the question; WORDING = the question with that subject replaced by
+# 'someone', through the trunk (last block, mean + last byte) and a JEPA head trained on the system's own frames (warm-started at every
+# readout so the keys stay put); OFFSET = which answer byte. The memory learns from the same rows: cross-entropy of (trunk logits,
+# DETACHED, + memory read) on the answer bytes, its own optimiser - so the trunk's training is exactly as without it (its losses, its
+# gradients, its random stream) and the memory learns what the trunk does not yet know. Ordinary text never reads it.
+# Offline (tools/int_mem.py, tools/jepa_mem.py; inference.kmem readout on the GPU, cg27a_kmem): taught facts 0.68-0.92 open in an unseen
+# wording against the trunk's 0.06-0.25; erase exact.
+# ======================================================================================================================================
+import re as _re
+_KMI_RUN = _re.compile(rb"[A-Z][A-Za-z0-9'\-\.]*(?: [A-Z][A-Za-z0-9'\-\.]*)*")
+_KMI_MAXO = 31
+
+
+def _kmi_subject(pb):
+    """the latest capitalised run of 3+ bytes that is complete before the prompt's end (its next byte is read), or None"""
+    best = None
+    for m in _KMI_RUN.finditer(pb):
+        if m.end() - m.start() >= 3 and m.end() < len(pb): best = m
+    return pb[best.start():best.end()].decode('latin-1') if best else None
+
+
+def _kmi_state(model, cfg, V):
+    K = model.__dict__.get('_kmi')
+    if K is None:
+        dev = model.embed.weight.device; d = int(model.embed.weight.shape[1]); n = int(getattr(cfg, 'inf_kmi_n', 128)); g = torch.Generator(device='cpu').manual_seed(int(cfg.seed) + 5151)
+        K = dict(n=n, d=d, V=V, k1=F.normalize(torch.randn(n, _KM_DK, generator=g), dim=-1).to(dev), k2=F.normalize(torch.randn(n, _KM_DK, generator=g), dim=-1).to(dev),
+                 R1=(torch.randn(d, _KM_DK, generator=g) / math.sqrt(d)).to(dev), EOFF=F.normalize(torch.randn(_KMI_MAXO + 1, _KM_DK, generator=g), dim=-1).to(dev),
+                 v=torch.zeros(n * n, V, device=dev, requires_grad=True), head=None, mu=None, nk={}, wk={}, nmu=None, steps=0, rows=0, hit=0, loss=[], touched=set())
+        K['opt'] = torch.optim.Adam([K['v']], lr=float(getattr(cfg, 'inf_kmi_lr', 0.02))); model.__dict__['_kmi'] = K
+        K['namekey'] = str(getattr(cfg, 'inf_kmi_namekey', 'trunk')); K['HN'] = 1 << 16
+        K['HR'] = F.normalize(torch.randn(K['HN'], d, generator=g), dim=-1).to(dev) if K['namekey'] == 'hash' else None
+    return K
+
+
+def _kmi_hash_key(K, n):
+    """15 Nov: a NAME-IDENTITY key independent of the trunk: the sum of fixed random vectors of the name's byte 3-grams (lower case, with
+    boundary marks), unit length - one name always the same key, different names nearly orthogonal, spelling variants close. GPU cg27a_kmem:
+    the trunk's name codes DRIFT as it trains (facts written at visit 2 read 0.58 -> 0.49 -> 0.20 open by visit 4) and CROWD (written
+    inferences 0.57 -> 0.05 open as the trunk learned them, while the trunk itself reached 0.75-0.88 rank)"""
+    b = (' ' + n.lower() + ' ').encode('latin-1', 'replace'); ids = [((b[i] * 65599 + b[i + 1]) * 65599 + b[i + 2]) % K['HN'] for i in range(len(b) - 2)] or [0]
+    return F.normalize(K['HR'][ids].sum(0), dim=-1)
+
+
+def _kmi_name(model, K, names):
+    from platypus.inference.distill import _name_codes
+    if K.get('namekey') == 'hash':
+        for n in dict.fromkeys(names):
+            if n not in K['nk']: K['nk'][n] = _kmi_hash_key(K, n)
+        return torch.stack([K['nk'][n] for n in names])
+    new = [n for n in dict.fromkeys(names) if n not in K['nk']]
+    if new:
+        from platypus.inference.closed_form import _ws_batch, _ws_run
+        cap = {}; h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach()))
+        try:
+            for i0 in range(0, len(new), 64):
+                ch = new[i0:i0 + 64]; X, _ = _ws_batch(model, [f"About {n}.".encode('latin-1', 'replace') for n in ch])
+                with torch.no_grad(): _ws_run(model, X, 0)
+                for j, n in enumerate(ch): K['nk'][n] = cap['h'][j, 5:5 + len(n.encode('latin-1', 'replace'))].float().mean(0)
+        finally: h9.remove()
+    E = torch.stack([K['nk'][n] for n in names])
+    return F.normalize(E - (K['nmu'] if K['nmu'] is not None else E.mean(0)), dim=-1)
+
+
+def _kmi_wording(model, K, masked):
+    new = [m for m in dict.fromkeys(masked) if m not in K['wk']]
+    if new and K['head'] is not None:
+        pm, pl = _km_prefix_states(model, new); Z = torch.cat([pm, pl], -1)
+        with torch.no_grad(): W = F.normalize(K['head']((Z - K['mu'][0]) / K['mu'][1]), dim=-1)
+        for m, w in zip(new, W): K['wk'][m] = w
+    return torch.stack([K['wk'][m] for m in masked]) if all(m in K['wk'] for m in masked) else None
+
+
+def _kmi_read(K, nk, wk, offs):
+    q1 = F.normalize(nk @ K['R1'], dim=-1); w2 = F.normalize(wk + 0.5 * K['EOFF'][offs], dim=-1)
+    a1, i1 = (q1 @ K['k1'].t()).topk(_KM_KK, -1); a2, i2 = (w2 @ K['k2'].t()).topk(_KM_KK, -1); n = K['n']
+    sc = (a1[:, :, None] + a2[:, None, :]).flatten(1); ix = (i1[:, :, None] * n + i2[:, None, :]).flatten(1)
+    top, j = sc.topk(_KM_KK, -1); idx = ix.gather(-1, j); w = F.softmax(top / 0.05, -1)
+    return (w[..., None] * K['v'][idx]).sum(1), idx
+
+
+def _kmi_addr(model, K, prompts, ns):
+    """per row (prompt bytes, answer length): (name keys, wording keys, offsets, row index, position) of every addressed answer byte"""
+    rows = []
+    for r, (pb, n_) in enumerate(zip(prompts, ns)):
+        A = _kmi_subject(pb)
+        if A is None or n_ <= 0: continue
+        rows.append((r, A, pb.decode('latin-1').replace(A, 'someone'), n_))
+    if not rows: return None
+    W = _kmi_wording(model, K, [m for _, _, m, _ in rows])
+    if W is None: return None
+    N = _kmi_name(model, K, [A for _, A, _, _ in rows]); nk, wk, off, rr, pp = [], [], [], [], []
+    for k, (r, A, m, n_) in enumerate(rows):
+        for j in range(n_): nk.append(N[k]); wk.append(W[k]); off.append(min(j, _KMI_MAXO)); rr.append(r); pp.append(j)
+    return torch.stack(nk), torch.stack(wk), torch.tensor(off, device=N.device), rr, pp
+
+
+def kmi_rows_loss(model, cfg, items, lg, X):
+    """the memory learns from question rows (items: (prompt, answer, ...)); lg: the trunk's logits for X = prompt + answer; trunk untouched"""
+    if not int(getattr(cfg, 'inf_kmi', 0)): return
+    K = _kmi_state(model, cfg, int(lg.shape[-1]))
+    if K['head'] is None: return
+    try:
+        p0s = [len(it[0]) - 1 for it in items]; ns = [min(len(it[1]), lg.shape[1] - p0) for it, p0 in zip(items, p0s)]
+        a = _kmi_addr(model, K, [bytes(it[0]) if not isinstance(it[0], bytes) else it[0] for it in items], ns)
+        K['rows'] += len(items)
+        if a is None: return
+        nk, wk, off, rr, pp = a; K['hit'] += len(set(rr))
+        z = torch.stack([lg[r, p0s[r] + j].detach().float() for r, j in zip(rr, pp)]); tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
+        mv, idx = _kmi_read(K, nk, wk, off); lo = F.cross_entropy(z + mv, tg)
+        K['opt'].zero_grad(); lo.backward(); K['opt'].step(); K['steps'] += 1; K['loss'].append(float(lo.detach()))
+        if len(K['touched']) < 10 ** 6: K['touched'].update(idx.flatten().tolist())
+    except Exception:
+        from platypus.common import _fail
+        _fail('inference.kmem:kmi_rows')
+
+
+def kmi_logits(model, K, prompts_b, X, lg):
+    """the model's logits WITH the memory for rows whose question is prompts_b[r] (answer bytes after it): lg + memory read at answer positions"""
+    p0s = [len(pb) - 1 for pb in prompts_b]; ns = [lg.shape[1] - p0 for p0 in p0s]
+    a = _kmi_addr(model, K, prompts_b, [min(n, _KMI_MAXO + 1) for n in ns])
+    if a is None: return lg
+    nk, wk, off, rr, pp = a; mv, _ = _kmi_read(K, nk, wk, off); out = lg.clone().float()
+    for k, (r, j) in enumerate(zip(rr, pp)): out[r, p0s[r] + j] += mv[k]
+    return out
+
+
+def kmi_refresh(model, cfg, ents, held, vis):
+    """at every readout: the name keys (the trunk moved) and the JEPA wording head (warm start) over the pool's relations and frames"""
+    from platypus.inference.distill import _dt_forms, _DT_PARA
+    fs = [e for e in ents + held if e['key'][0] == 'fact']
+    if not fs: return None
+    K = _kmi_state(model, cfg, int(cfg.vocab)); dev = model.embed.weight.device; FR = _dt_forms(cfg); TI = len(FR)
+    rels = sorted({e['r'] for e in fs}); NR = len(rels)
+    if K.get('namekey') != 'hash':                                             # trunk name codes move with the trunk: recomputed; hashed keys never move
+        K['nk'] = {}; names = sorted({e['A'] for e in fs} | {e['ans'] for e in fs}); _kmi_name(model, K, names); K['nmu'] = torch.stack([K['nk'][n] for n in names]).mean(0)
+    tx = [f.format(A='someone', r=r) for r in rels for f in FR]; pm, pl = _km_prefix_states(model, tx); PC = torch.cat([pm, pl], -1)
+    if K['head'] is None:
+        K['mu'] = (PC.mean(0), PC.std(0) + 1e-6)
+        K['head'] = torch.nn.Sequential(torch.nn.Linear(PC.shape[1], 256), torch.nn.GELU(), torch.nn.Linear(256, _KM_DK)).to(dev); K['hopt'] = torch.optim.Adam(K['head'].parameters(), lr=1e-3)
+    PCn = (PC - K['mu'][0]) / K['mu'][1]; g = np.random.RandomState(int(cfg.seed) + 5252 + vis)
+    if NR >= 2 and TI >= 2:
+        for st in range(1500 if vis == 0 or 'trained' not in K else 300):
+            f1 = g.randint(0, TI, NR); f2 = (f1 + g.randint(1, TI, NR)) % TI
+            z1 = F.normalize(K['head'](PCn[[r * TI + int(a) for r, a in enumerate(f1)]]), dim=-1); z2 = F.normalize(K['head'](PCn[[r * TI + int(b) for r, b in enumerate(f2)]]), dim=-1)
+            lo = F.cross_entropy(z1 @ z2.t() / 0.1, torch.arange(NR, device=dev)); K['hopt'].zero_grad(); lo.backward(); K['hopt'].step()
+        K['trained'] = True
+    K['wk'] = {}
+    _kmi_wording(model, K, tx + [f"It is on record that someone {r} " for r in rels] + [f"someone {_DT_PARA[r]} " for r in rels if r in _DT_PARA])
+    return K
+
+
+def kmi_readout(model, cfg, S_slot, ents, held, vis):
+    """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
+    from platypus.inference.distill import _DT_PARA
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    K = model.__dict__.get('_kmi')
+    fs = [e for e in ents if e['key'][0] == 'fact']; hf = [e for e in held if e['key'][0] == 'fact']
+    if K is None or K['head'] is None or not fs:
+        print(f"  [INTEGRATED KEYED MEMORY | visit {vis + 1}] not yet trained", flush=True); return
+    RTI_R = 'is connected to'; rs = np.random.RandomState(int(cfg.seed) + 5353 + vis); pool = sorted({e['ans'] for e in fs + hf})
+    def score(L, form, cap=60):
+        L = L[:cap]; on, off, oon, ooff = [], [], [], []
+        for e in L:
+            pr = form(e); pb = pr.encode('latin-1', 'replace'); alts = [x for x in pool if x not in (e['ans'], e['A'])]
+            if len(alts) < 9: continue
+            cs = [e['ans']] + [alts[j] for j in rs.choice(len(alts), 9, replace=False)]; cb = [(c + '.').encode('latin-1', 'replace') for c in cs]
+            X, _ = _ws_batch(model, [pb + c for c in cb]); sl = int(S_slot(e['d']))
+            with torch.no_grad():
+                lg = _ws_run(model, X, sl).float(); lgm = kmi_logits(model, K, [pb] * len(cb), X, lg)
+                for z, acc in ((lg, off), (lgm, on)):
+                    lp = F.log_softmax(z, -1); p0 = len(pb) - 1; sc = []
+                    for j, c in enumerate(cb):
+                        n_ = min(len(c), lp.shape[1] - p0); sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else -1e9)
+                    acc.append(int(sc[0] > max(sc[1:])))
+                tb = e['ans'].encode('latin-1', 'replace'); outs = []
+                for use in (False, True):                                      # greedy, byte by byte: the exact name
+                    o = b''
+                    for _ in range(len(tb)):
+                        Xg, _ = _ws_batch(model, [pb + o + b' ']); zg = _ws_run(model, Xg, sl).float()
+                        if use: zg = kmi_logits(model, K, [pb], Xg, zg)
+                        q = len(pb) + len(o) - 1
+                        if q >= zg.shape[1]: break
+                        o += bytes([int(zg[0, q].argmax())])
+                    outs.append(int(o == tb))
+                ooff.append(outs[0]); oon.append(outs[1])
+        if not on: return "- (0)"
+        return f"WITH {np.mean(oon):.2f} / {np.mean(on):.2f} vs trunk {np.mean(ooff):.2f} / {np.mean(off):.2f} ({len(on)})"
+    te = lambda e: f"It is on record that {e['A']} {e['r']} "; pa = lambda e: f"It is on record that {e['A']} {_DT_PARA[e['r']]} "
+    kind = lambda L, t=None: [e for e in L if (e['r'] != RTI_R if t == 'fact' else (e['r'] == RTI_R and e.get('truth') is t))]
+    rs.shuffle(fs); rs.shuffle(hf)
+    lm = K['loss']; ml = f"{np.mean(lm[:50]):.3f} -> {np.mean(lm[-50:]):.3f}" if lm else "-"
+    print(f"  [INTEGRATED KEYED MEMORY | visit {vis + 1}] the model's answer = trunk + memory read (question rows only; subject key: {K.get('namekey')}; {K['steps']} memory steps, "
+          f"{K['hit']} of {K['rows']} rows addressed, {len(K['touched'])} of {K['n'] ** 2} slots used, memory loss {ml}), test wording, open (greedy exact) / "
+          f"rank among 10 (chance 0.10) || taught FACTS {score(kind(fs, 'fact'), te)} | HELD BACK facts {score(kind(hf, 'fact'), te, 30)} | taught inferences "
+          f"RIGHT {score(kind(fs, True), te)} / WRONG {score(kind(fs, False), te, 40)} | held back inferences {score(kind(hf, True) + kind(hf, False), te, 30)} | "
+          f"PARAPHRASED facts {score([e for e in kind(fs, 'fact') if e['r'] in _DT_PARA], pa, 40)}", flush=True)
+    K['loss'] = lm[-200:]

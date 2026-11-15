@@ -656,6 +656,13 @@ class Config:
     inf_kmem_rows=20                #     write rows per fact
     inf_kmem_replay=0.25            #     persistent memory: share of each write batch re-writing earlier facts
     inf_kmem_lr=0.05                #     memory values learning rate (Adam)
+    inf_kmi=0                       #   15 Nov INTEGRATED KEYED MEMORY (MODEL CHANGE when on; cg27a_kmi): the question rows read a keyed memory (subject name x JEPA
+                                    #     wording key x answer byte) where their answers are predicted - its logits ADDED to the trunk's - and it learns from them
+                                    #     (trunk logits detached: the trunk's training unchanged); readout: the model's answers with vs without it
+    inf_kmi_n=128                   #     product keys n x n slots
+    inf_kmi_lr=0.02                 #     memory values learning rate (Adam; values are logit vectors)
+    inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
+                                    #     identity key, independent of the trunk: no drift, no crowding)
     inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
     inf_rret=0                      #   14 Nov RETRACTION (MODEL CHANGE when on; cg27a_rret): at the next premises readout each written inference is judged by what the store
                                     #     read since (records stating the pair with 3 or fewer words between the names, and the pair's document PMI; rank sum); the least

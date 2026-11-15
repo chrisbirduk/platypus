@@ -1308,6 +1308,31 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### The keyed memory INTEGRATED into the forward pass (tools/int_mem.py, 15 November; 6k stand-in trunk, mixed setting, seed 0)
+
+Address from the model's own context at every byte (subject = latest completed capitalised run; wording = the bytes since, through a
+JEPA head on the trunk's middle states; offset = answer byte), the read added to the last residual; only the memory values learn, from
+the fact rows (wiki rows read but do not write). 105 facts (52 + 53), recall THROUGH THE WHOLE MODEL in the test wording:
+
+| lr | A after A (open / rank) | B after B | A after B | paraphrased | forgetting wiki / dev (after B) |
+|---|---|---|---|---|---|
+| (trunk alone) | 0.00 / 0.27 | | | 0.00 / 0.28 | |
+| 0.03 | 0.40 / **1.00** | 0.53 / **1.00** | 0.27 / **1.00** | 0.02 / **0.72** | **+0.53 / +0.62** |
+| 0.1 | **0.69** / 1.00 | **0.77** / 1.00 | 0.35 / 1.00 | 0.01 / 0.74 | **+1.29 / +1.55** |
+
+ERASE (the slots read where 30 facts' answers are predicted): retracted rank 1.00 -> 0.27-0.30 (the trunk's own level), bystanders' rank
+0.92-1.00. **Positive on learning - rank 1.00 and EXACT names 0.69-0.77 through the model's own bytes (every in-trunk method ~0), paraphrase
+0.72-0.74 - but reading the memory on ORDINARY TEXT costs +0.5 to +1.5 bits** (wiki subjects and wordings reach written slots; erasing
+the 30 facts' slots alone gives back a third of it). So the GPU build reads it on the question rows only (cg27a_kmi).
+
+**GPU cg27a_kmem, visits 4-5 (the readout memory, trunk name codes):** taught facts 0.45 / 0.61 -> 0.59 / 0.74; inferences RIGHT 0.20 /
+0.43 -> **0.05 / 0.16** while the trunk, taught them, reached rank 0.88 / 0.75; two-hop 0.09 / 0.15-0.20; persistent facts written at
+visit 2: 0.49 -> 0.20 -> 0.32 open. ERASE still exact (WRONG -> 0.00, facts unchanged). Bits 1.9185 at visit 4 (cg27a_rasym 1.9183).
+**The subject half of the address - the trunk's name code - drifts and crowds as the trunk learns the inferences; the integrated build
+uses a NAME-IDENTITY HASH (byte 3-grams) instead** (offline: memory loss 1.05 vs 1.17 with trunk codes, 6x cheaper).
+Package smoke (tools/kmi_smoke.py, tiny untrained Model, 300 memory steps): the model's rank WITH the memory 0.97-1.00 vs trunk 0.05-0.15,
+held back unchanged, still 0.95-1.00 after the trunk moved; exact names need more steps than this budget (0.00-0.02).
+
 ### GPU cg27a_kmem: the keyed memory at GPU scale (readout) + rasymaa's code + AA (seed 4, 15 November, visits 1-2)
 
 Keyed memory (name x JEPA wording key, 128 x 128 slots; inference.kmem), recall in the TEST wording, open / rank among 10 (chance 0.10):

@@ -1723,6 +1723,13 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
                 with torch.random.fork_rng(devices=dv9): kmem_readout(model, cfg, S_, S_slot, ents, held, vis)
             except Exception as e9: _fail('inference.kmem'); print(f"  [KEYED MEMORY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_kmi', 0)):                                    # 15 Nov INTEGRATED KEYED MEMORY (MODEL CHANGE, inference.kmem): keys refreshed, then the readout
+            try:
+                from platypus.inference.kmem import kmi_refresh, kmi_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9):
+                    kmi_readout(model, cfg, S_slot, ents, held, vis); kmi_refresh(model, cfg, ents, held, vis)
+            except Exception as e9: _fail('inference.kmem:kmi'); print(f"  [INTEGRATED KEYED MEMORY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
@@ -1991,6 +1998,9 @@ def distill_wake_loss(model, cfg):
         X, M = _ws_batch(model, [it[0] + it[1] for it in items])
         if aw > 0: lg, Hq = _ws_hidden(model, lambda: _ws_run(model, X, sl, grad_=True))
         else: lg = _ws_run(model, X, sl, grad_=True); Hq = None
+        if int(getattr(cfg, 'inf_kmi', 0)):                                   # 15 Nov INTEGRATED KEYED MEMORY: learns from these rows (trunk untouched)
+            from platypus.inference.kmem import kmi_rows_loss
+            kmi_rows_loss(model, cfg, items, lg, X)
         tot = 0.0; cnt = 0; ce = []
         pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
         if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
@@ -2053,6 +2063,9 @@ def distill_wake_loss(model, cfg):
             try:                                                               #   (its own guard: a failure here must not switch off the pool's rows)
                 it2 = [rp2[int(i)] for i in rs.choice(len(rp2), min(rk2, len(rp2)), replace=False)]; sl2 = int(it2[0][2])
                 X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
+                if int(getattr(cfg, 'inf_kmi', 0)):
+                    from platypus.inference.kmem import kmi_rows_loss
+                    kmi_rows_loss(model, cfg, it2, lg2, X2)
                 for r9, it in enumerate(it2):
                     p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)
                     if n_ > 0: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
