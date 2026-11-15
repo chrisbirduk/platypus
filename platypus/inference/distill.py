@@ -1717,6 +1717,12 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:
                 _fail('inference.distill:relmod_write'); print(f"  [RELATIONAL MODULE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_kmem', 0)):                                   # 15 Nov KEYED MEMORY readout (inference.kmem; training not changed)
+            try:
+                from platypus.inference.kmem import kmem_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9): kmem_readout(model, cfg, S_, S_slot, ents, held, vis)
+            except Exception as e9: _fail('inference.kmem'); print(f"  [KEYED MEMORY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check

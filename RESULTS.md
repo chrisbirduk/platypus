@@ -1260,6 +1260,9 @@ clean but leaves a third to a half. Retraction is exact because every write has 
 **With the memory nearly full (JM_RX_LATE: after about 2,400 facts; 6 runs - 4,096 slots without / with 25% refresh, 16,384 with refresh;
 seeds 0 / 1):** the retracted facts' open recall falls to **0.00 in all six** (from 0.27-0.53); bystanders' rank moves by at most 0.06,
 open by at most 0.07 in five runs and 0.16 once (the rest of A, 16k slots seed 0). **Erasure stays exact under load.**
+(Note, 15 Nov: the RANK readout counted a tie as a hit, and an erased read (all zeros) ties every candidate, so ranks AFTER erasing
+were inflated - e.g. 'rank 0.43' for erased facts. Fixed in tools/jepa_mem.py and inference.kmem (the answer must score strictly above
+every other candidate); the OPEN numbers used above are unaffected.)
 Third seed of the full test (6k s2): the same pattern (two-hop decoded 0.65 / 0.75, M 0.89 / 0.86, name only 0.15).
 
 **Capacity, 2,000 more facts (15 November; 6k trunk, JEPA key, seeds 0 / 1; about 2,380 facts in all, no replay):** rank in the test

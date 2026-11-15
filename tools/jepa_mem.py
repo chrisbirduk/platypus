@@ -264,7 +264,7 @@ class KMem:
         return s.score(val, facts)
     def score(s, val, facts):
         vn = F.normalize(val, dim=-1); op = (vn @ NK.t()).argmax(-1); oe = np.mean([NAMES[int(op[k])] == f['C'] for k, f in enumerate(facts)])
-        rk = np.mean([int(np.argmax([float(vn[k] @ NK[NI[c]]) for c in cands(f)]) == 0) for k, f in enumerate(facts)])
+        rk = np.mean([int((lambda z: z[0] > max(z[1:]))([float(vn[k] @ NK[NI[c]]) for c in cands(f)])) for k, f in enumerate(facts)])   # strict: an erased (zero) read ties and does not count
         return oe, rk
     def retract(s, facts, steps=30):
         if os.environ.get('JM_RXMODE', 'ul') == 'erase':                     # reset the slots the facts' training-frame queries reach
