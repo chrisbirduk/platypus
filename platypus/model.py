@@ -45,6 +45,9 @@ class Model(nn.Module):
         s.ngram.nh=max(1,int(cfg.ngram_hashes))
         for E in s.ngram: E.weight.data.zero_()
         s.__dict__['_ng_cur']=[torch.zeros(int(z)) for z in sz]; s.__dict__['_ng_old']=[torch.zeros(int(z)) for z in sz]
+        if int(getattr(cfg,'inf_smf',0)):                               # 16 Nov SPARSE MEMORY LAYER beside the middle block's MLP (inference.smf)
+            from platypus.inference.smf import smf_init
+            smf_init(s.blocks[len(s.blocks)//2],cfg)
         if cfg.pu_k>0:                                                  # PRIVATE TRUNK UNITS per domain
             k_=int(cfg.pu_k); ND_=_nslots(cfg)
             for b in s.blocks:

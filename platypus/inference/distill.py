@@ -581,6 +581,8 @@ def _dw_params(model, cfg):
     if only == 'mlp_out':
         keep = set(id(t) for b in model.blocks for t in (b.mlp_out.weight, b.mlp_out.bias))
         return [p for p in P if id(p) in keep], [p for p in P if id(p) not in keep]
+    if only == 'smem':                                                         # 16 Nov: the question rows write only the trunk's sparse memory layer
+        return [], P                                                           #   (inference.smf; its value rows are not model parameters)
     if only: raise ValueError(f"inf_distill_wake_params {only!r}")
     return P, []
 
@@ -591,6 +593,7 @@ def _dw_repair(model, cfg, D, vslot, oslots, vis):
     sls = [s for s in oslots if s in C and s != vslot]
     if not n or not sls: return
     t0 = time.time(); P, frz = _dw_params(model, cfg); allp = list(model.parameters()); g_saved = [p.grad for p in allp]
+    if not P: return
     for p in allp: p.grad = None
     for p in frz: p.requires_grad_(False)
     rs = np.random.RandomState(int(cfg.seed) + 9797 + vis)
@@ -2028,6 +2031,9 @@ def distill_wake_loss(model, cfg):
         X, M = _ws_batch(model, [it[0] + it[1] for it in items])
         if aw > 0: lg, Hq = _ws_hidden(model, lambda: _ws_run(model, X, sl, grad_=True))
         else: lg = _ws_run(model, X, sl, grad_=True); Hq = None
+        if str(getattr(cfg, 'inf_distill_wake_params', '')) == 'smem':        # 16 Nov SPARSE MEMORY LAYER: the slots read where the answers are predicted
+            from platypus.inference.smf import smf_note
+            sk9 = _kmc_pending(cfg, items); smf_note(model, [(r9, len(it[0]) - 1, min(len(it[1]), lg.shape[1] - len(it[0]) + 1)) for r9, it in enumerate(items) if r9 not in sk9])
         if int(getattr(cfg, 'inf_kmi', 0)):                                   # 15 Nov INTEGRATED KEYED MEMORY: learns from these rows (trunk untouched)
             from platypus.inference.kmem import kmi_rows_loss
             kmi_rows_loss(model, cfg, items, lg, X, sl)
@@ -2094,6 +2100,9 @@ def distill_wake_loss(model, cfg):
             try:                                                               #   (its own guard: a failure here must not switch off the pool's rows)
                 it2 = [rp2[int(i)] for i in rs.choice(len(rp2), min(rk2, len(rp2)), replace=False)]; sl2 = int(it2[0][2])
                 X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
+                if str(getattr(cfg, 'inf_distill_wake_params', '')) == 'smem':
+                    from platypus.inference.smf import smf_note
+                    sk8 = _kmc_pending(cfg, it2); smf_note(model, [(r9, len(it[0]) - 1, min(len(it[1]), lg2.shape[1] - len(it[0]) + 1)) for r9, it in enumerate(it2) if r9 not in sk8])
                 if int(getattr(cfg, 'inf_kmi', 0)):
                     from platypus.inference.kmem import kmi_rows_loss
                     kmi_rows_loss(model, cfg, it2, lg2, X2, sl2)
@@ -2113,6 +2122,9 @@ def distill_wake_loss(model, cfg):
             try:                                                               #   -log(1 - p(byte)), weight inf_rret_w (offline 0.1: unlearns, no bystander harm)
                 it3 = [rp3[int(i)] for i in rs.choice(len(rp3), min(rk3, len(rp3)), replace=False)]; sl3 = int(it3[0][2])
                 X3, _ = _ws_batch(model, [it[0] + it[1] for it in it3]); lg3 = _ws_run(model, X3, sl3, grad_=True); t3 = 0.0; c3 = 0
+                if str(getattr(cfg, 'inf_distill_wake_params', '')) == 'smem':
+                    from platypus.inference.smf import smf_note
+                    smf_note(model, [(r9, len(it[0]) - 1, min(len(it[1]), lg3.shape[1] - len(it[0]) + 1)) for r9, it in enumerate(it3)])
                 for r9, it in enumerate(it3):
                     p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg3.shape[1] - p0)
                     if n_ > 0:
@@ -2196,8 +2208,12 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
             for p, q in zip(allp, rq): p.requires_grad_(q)
         return
     proj = int(getattr(cfg, 'inf_distill_wake_proj', 0)); akl = float(getattr(cfg, 'inf_distill_wake_akl', 0.0))
-    P, frz = _dw_params(model, cfg)
+    P, frz = _dw_params(model, cfg); smem = str(getattr(cfg, 'inf_distill_wake_params', '')) == 'smem'
     for p in frz: p.requires_grad_(False)
+    if smem:                                                                   # 16 Nov: only the sparse memory layer's value rows take the question gradient
+        from platypus.inference.smf import smf_grad_on, smf_q_step
+        if smf_grad_on(model) is None: smem = False
+        proj = 0
     try:
         g0 = None
         if proj: g0 = [p.grad for p in P]; [setattr(p, 'grad', None) for p in P]
@@ -2230,8 +2246,12 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
                         D['st']['conf'] += 1; D['st']['cut'].append(min(1.0, (dot * dot / nn_) / max(nq, 1e-30)))   # share of |gq|^2 removed
             for p, g, q in zip(P, g0, gq):
                 p.grad = q if g is None else (g if q is None else g + q)
+        if smem: smf_q_step(model, cfg)
     finally:
         for p in frz: p.requires_grad_(True)
+        if smem:
+            from platypus.inference.smf import smf_phase
+            smf_phase(model, cfg)
 
 
 # ---------------------------------------------------------------- HINTED SELF-DISTILLATION (inf_distill_wake_hint, 11 Nov)

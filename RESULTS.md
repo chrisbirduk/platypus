@@ -3118,3 +3118,15 @@ Candidates and write-time features from premises._rcode_step at visits 2 / 4 / 6
 | rule + learned rank sum | 0.665 | 0.735 |
 | rule, then the judge (kept only) | 0.789 | 0.709 |
 - **Negative (Goodhart).** The selector predicts its own label very well (AUC 0.95) by choosing pairs ALREADY in a relational sentence (weight +3.7 to +4.1), which are re-mentioned later but are right only 0.43-0.46 of the time. The judge's verdict works as a FILTER after the rule (+0.03 to +0.06) but not as a training target over the whole pool. The best variant (rerank within the rule's shortlist, no co-mention) is +0.03 on average, within noise. Learned features that carry: resource allocation, both degrees, object type TIME negative.
+
+## Pretraining comparison, A6 vs B6 (15 Nov 2026; equal compute, d 192; the GPU path's 200 writes, 0.74 right)
+| | A6 (Wikipedia only) | B6 (TinyStories, then Wikipedia) |
+|---|---|---|
+| truth probe, read vs name-swapped spans (held-out acc) | 0.485 | 0.485 |
+| truth probe on the inferences (AUC) | 0.419 | 0.404 |
+| the trunk's likelihood of the inferences (AUC) | 0.515 | 0.537 |
+| interference with what was read (AUC) | 0.498 | 0.511 |
+| held-out gain (AUC) | 0.491 | 0.521 |
+| relation types, MTB key type-masked (NMI) | 0.455 | 0.451 |
+| jepa_mem two-hop decoded (rank) | 0.07 | 0.22 |
+- **Negative: a basic-English stage does not give a trunk that judges inferences or types relations better at this size.** No trunk signal separates right from wrong inferences (all 0.40-0.54). (jepa_mem on these trunks is far below the 6k / 18k trunks' 0.73-0.97: few slots written, 60-64 of 4,096 - these trunks' states may not suit the frame-trained head; not investigated.) sparse_mem stopped to free the CPU for builds.

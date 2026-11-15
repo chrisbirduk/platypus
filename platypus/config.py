@@ -682,6 +682,17 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_smf=0                       # 16 Nov SPARSE MEMORY CONSOLIDATION IN THE TRUNK (inference.smf): a product-key memory layer beside the middle block's MLP,
+                                    #   learning from text for the first inf_smf_pre visits, then written ONLY by the question rows (with inf_distill_wake_params
+                                    #   'smem'), only at the inf_smf_t slots with the highest TF-IDF where their answers are predicted (Lin et al. 2025)
+    inf_smf_n=256                   #     n x n value slots
+    inf_smf_k=16                    #     slots read per byte
+    inf_smf_dk=64                   #     half-query width
+    inf_smf_pre=1                   #     visits in which the layer learns from text (then frozen for text)
+    inf_smf_t=1024                  #     slots the question rows may change per step
+    inf_smf_lr=0.01                 #     row-wise Adam lr of the question rows' writes
+    inf_smf_klr=1.0                 #     keys / query lr = cfg.lr x this (text phase)
+    inf_smf_vlr=10.0                #     value rows lr = cfg.lr x this (text phase)
     inf_rtype=0                     #   15 Nov READOUT: RELATION TYPES FROM THE TRUNK every 2 visits (inference.reltype): k-means types of the trunk's pooled states over the
                                     #     premises records, rules over them, scored against Wikidata (evaluation only); the factorial's additivity on this trunk
     inf_rtype_n=60000               #     records represented

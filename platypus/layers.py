@@ -810,6 +810,9 @@ class DeltaBlock(nn.Module):
                 if _FU['st'] is not None:
                     st_=_FU['st'].setdefault(id(s),[0.0,0.0,0.0]); st_[0]+=float((u_>0).any(-1).float().sum()); st_[1]+=float(u_.sum()); st_[2]+=float(u_.shape[0]*u_.shape[1])
                 o2_=o2_+(u_@fu_['V'][:fu_['n']]).to(o2_.dtype)
+        if getattr(s,'smf_V',None) is not None and not s._smf_off:              # 16 Nov SPARSE MEMORY LAYER (inference.smf) beside this MLP
+            from platypus.inference.smf import smf_read
+            o2_=o2_+smf_read(s,hn).to(o2_.dtype)
         if cgm_ is not None and o2_.requires_grad: o2_.register_hook(cgm_)
         if gp_ is not None: o2_=_GProj.apply(o2_,*gp_)
         x=x+o2_
