@@ -1252,6 +1252,17 @@ wording of the OLDEST and NEWEST batch of 200 at the end, and of set A (the firs
 (+0.06).** At about 2,400 facts the small memory is nearly full (83% of slots written). Lin et al. use 1M slots; a lifelong store needs
 the memory to scale with what it holds, and older facts need refresh (replay of memory writes, as sleep replays the store).
 
+**Refresh by replay (JM_REPLAY: a share of every write batch re-writes earlier facts; 4,096 slots, seeds 0 / 1):**
+
+| replay | oldest batch | newest batch | set A |
+|---|---|---|---|
+| none | 0.57 / 0.59 | 0.83 / 0.95 | 0.62 / 0.65 |
+| 25% | **0.78 / 0.77** | 0.82 / 0.93 | **0.77 / 0.72** |
+| 50% | **0.79 / 0.83** | 0.81 / 0.92 | **0.78 / 0.75** |
+
+**Positive: re-writing earlier facts flattens the age curve - the oldest batch +0.18 to +0.24 at no cost to the newest - as much as four
+times the slots did.** Refresh is the memory's version of sleep replay; a quarter of each write batch is enough.
+
 **K-TEXT: a wording key learned from REAL TEXT only (15 November; 20,000 name pairs stated in 2+ different wordings within a sentence,
 50k distant documents, InfoNCE; the frames and the test wording never seen).** Relation of the test wording / of a PARAPHRASED relation
 phrase recognised by the frames' keys: K-TEXT 0.90 / **0.52**, 0.90 / 0.38, 0.95 / 0.33 (18k s0, 18k s1, 6k s0) against the frame-trained
