@@ -60,14 +60,16 @@ def views(T, pairs):
     XA = np.array([NI[sorted(pairs[i])[0]] for i in idx]); XB = np.array([NI[sorted(pairs[i])[1]] for i in idx])
     out['code'][idx] = np.einsum('ij,ij->i', U[XA], U[XB])
     iw = np.where(deg > 1, 1.0 / np.log(np.maximum(deg, 2)), 0.0).astype(np.float32); iw1 = (1.0 / np.maximum(deg, 1)).astype(np.float32)
-    for s0 in range(0, len(idx), 50000):
-        sl = slice(s0, s0 + 50000); GA = G[XA[sl]]; GB = G[XB[sl]]; m = GA.multiply(GB)
+    Gn = G.multiply(iw1[:, None]).tocsr()
+    for s0 in range(0, len(idx), 2000):
+        sl = slice(s0, s0 + 2000); GA = G[XA[sl]]; GB = G[XB[sl]]; m = GA.multiply(GB)
         out['aa'][idx[sl]] = np.asarray(m.multiply(iw[None, :]).sum(1)).ravel(); out['ra'][idx[sl]] = np.asarray(m.multiply(iw1[None, :]).sum(1)).ravel()
-        Gn = G.multiply(iw1[:, None]).tocsr()                                  # 3-hop: A-x-y-C, each hop's degree normalised
         out['l3'][idx[sl]] = np.asarray((GA @ Gn).multiply(GB).sum(1)).ravel()
     return out
 rk = lambda x: (lambda z: np.argsort(np.argsort(z, kind='stable'), kind='stable') / max(1, len(z) - 1))(np.where(np.isnan(x), -np.inf, x))
-CL = sorted(CAND, key=lambda c: tuple(sorted(c))); WI = {p: i for i, p in enumerate(CL)}; wi = np.array([WI[p] for p in WK])
+CL0 = sorted(CAND - set(WK), key=lambda c: tuple(sorted(c)))                 # percentiles among a fixed sample of 20,000 candidates + the writes (memory)
+CL = [CL0[i] for i in np.random.RandomState(9).choice(len(CL0), min(20000, len(CL0)), replace=False)] + WK
+WI = {p: i for i, p in enumerate(CL)}; wi = np.array([WI[p] for p in WK])
 def percentiles(T):
     """the written pairs' percentiles among ALL candidates under each view and under the write rule (code + AA rank sum)"""
     V = views(T, CL); R_ = {k: rk(v) for k, v in V.items()}; both = R_['code'] + R_['aa']; R_['rule'] = rk(both)
