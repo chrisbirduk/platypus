@@ -1400,6 +1400,15 @@ Byte edit (copy): WRONG 0.50 -> 0.03, RIGHT 0.60 -> 0.57, facts 0.85 -> 0.85. Le
 WITH the memory **+0.026 on Wikipedia (gate open 17.2 per 1000; known names +0.026)**, +0.0045 / +0.0013 / +0.0033 on the others - the cost
 grows as the memory fills (cg27a_kmt's stricter gate). Trunk bits 1.9239 (cg27a_kmc 1.9438, cg27a_kmem 1.9185).
 
+Visit 5 (cg27a_kmb): **the trunk learned the KEPT inferences and not the flagged ones** - trunk alone, KEPT right 0.87 / KEPT wrong 0.83
+(visit 4: 0.33 / 0.07), FLAGGED right 0.20 / wrong 0.29, awaiting 0.27 - consolidation as designed (and the judge lets 38 wrong ones
+through). WITH the memory: facts 0.70 / 0.78 vs trunk 0.53 / 0.73; inferences RIGHT 0.67 / 0.97 vs 0.22 / 0.47; never-read names 0.00. The
+readout's FLAGGED groups mixed retracted with flagged controls (still taught, kept in the memory) - a RETRACTED group is added for
+cg27a_kmt. Byte edit (copy): WRONG 0.95 -> 0.20 (292 bytes left above the margin: the kept wrong ones are in the trunk now), RIGHT 0.95,
+facts 0.75. Learning speed 0.48-0.52 (negative, third time). ALL TEXT: **Wikipedia +0.033 (gate open 23.9 per 1000)**, Gutenberg +0.009,
+others +0.001-0.004 - growing each visit with the memory (kmt). Trunk bits **1.8570** (cg27a_kmem 1.8624, cg27a_kmi 1.8788, cg27a_kmc 1.8910):
+no trunk cost - the earlier gaps were run-to-run noise.
+
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
 After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
