@@ -3199,3 +3199,16 @@ USEFULNESS AS THE SELECTOR (label-free): keep a write only if it saved bits on t
 | F1 connected to | 181 | 24 | **0.833 / 0.675** | -0.86 -> +0.22 |
 | F2 typed | 171 | 37 | 0.730 / 0.709 | +0.09 -> +0.34 |
 - **Positive.** (1) The GPU's finding reproduces offline ('connected to' costs bits even where the pair is stated) and **typing turns it into a saving where the pair is stated (+10.4 per 1,000 bytes vs -1.9)**, with a quarter of the cost elsewhere. (2) **Usefulness - bits saved on later text, no labels - is a selector: it keeps writes that help on held-out text (+0.22 / +0.34 vs -0.86 / +0.09) and, for the untyped form, writes that are more often right (0.83 vs 0.68)**: a prediction-gain signal that, unlike re-mention, the system cannot satisfy without predicting the text better.
+
+## Improving typed inference (16 Nov 2026, tools/typed_plus.py; round 2 = visit 4 on distant_50k, batch = the rule's ranks 0-200 (right 0.730), NEXT TIER = ranks 200-400 (right 0.545, as the GPU's second batch); composition table from round 1's 286 confirmations; A6 stand-in trunk; usefulness from the first half of the later text, scored on the second)
+| typing of the batch | typed claim right exact / 'is in' as one | bits saved per 1,000 bytes (second half) |
+|---|---|---|
+| F1 'connected to' | 0 / 0 | -0.56 |
+| F2 class pair (route 1, = cg27a_kty) | 0.365 / 0.615 | -0.12 |
+| **F3 composition wording where the table types it (18%), else class pair** | **0.400 / 0.575** | **+0.69** |
+| F4 usefulness chooses among 4 class-pair wordings + the composition one | 0.215 / 0.305 | +0.40 |
+| precision | all | kept by usefulness | composition-supported | either | neither |
+|---|---|---|---|---|---|
+| batch (0-200) | 0.730 | 0.795 (39) | 0.833 (54) | 0.797 (79) | 0.686 |
+| **next tier (200-400)** | 0.545 | **0.735 (34)** | 0.667 (18) | 0.708 (48) | 0.493 |
+- **Combined typing (F3) is the best form**: more exact relations (0.40) and the most bits saved (+0.69 vs -0.12 for route 1 alone). **Usefulness should keep or drop, not choose the wording**: chosen by bits it picks wordings that predict text ('state of', "'s") but name the wrong relation (0.215 exact). **Usefulness keeps precision on the next tier where the GPU judge failed (0.735 vs 0.545 for all; the relational judge 0.52 on GPU)** - the label-free filter for later batches. Fix: list wordings in quotes ('" and "', 9 writes) now excluded from the class-pair table in the package.

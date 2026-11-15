@@ -640,7 +640,8 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
             if d1 == d2: continue
             hd_, tl_, fw_ = (r[1], r[2], 1) if d1 < d2 else (r[2], r[1], 0)
             w_ = ' '.join(t for t in r[3].split() if t not in ('the', 'a', 'an'))
-            if w_ and any(ch.isalpha() for ch in w_): TT_[(TYP_.get(hd_, 'X'), TYP_.get(tl_, 'X'))][(w_, fw_)] += 1
+            w9_ = ' '.join(t for t in w_.replace('"', ' ').split()).strip(' ,;()')
+            if w_ and any(ch.isalpha() for ch in w_) and w9_ not in _RRET_LISTW and w9_ not in ('and', 'or'): TT_[(TYP_.get(hd_, 'X'), TYP_.get(tl_, 'X'))][(w_, fw_)] += 1
     done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
