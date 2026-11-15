@@ -1392,6 +1392,23 @@ domain +0.0029 - a real cost on Wikipedia, larger than cg27a_kma's +0.0030 at th
 written subjects in ordinary Wikipedia text and the read hurts there (known names +0.014). The stricter-gate readout (0.85 / 0.95) was
 added after kmb started; it rides on the next build. Trunk bits 2.0157 (cg27a_kma 2.0161).
 
+Visit 4 (cg27a_kmb): trigger AUC 0.636 (as kmc); KEPT 160 (right 0.76), flagged 40, 11 retracted - the byte edit acts on the real memory
+after this readout. BY STATUS (WITH the memory vs trunk, rank): KEPT right 0.97 vs 0.33, KEPT wrong 0.97 vs 0.07, FLAGGED right 1.00 vs 0.00,
+FLAGGED wrong 0.86 vs 0.14 (not yet edited), AWAITING (written at visit 4) 0.10 vs 0.07 - the visit-2 writes 1.00 vs 0.20. Taught facts WITH
+**0.78 / 0.93** vs trunk 0.38 / 0.90; BARE wording 0.75 / 0.88 vs 0.47 / 0.82; held back 0.07 / 0.53 vs 0.07 / 0.60; never-read 0.00.
+Byte edit (copy): WRONG 0.50 -> 0.03, RIGHT 0.60 -> 0.57, facts 0.85 -> 0.85. Learning speed AUC 0.50-0.51 again (negative). ALL TEXT: bits
+WITH the memory **+0.026 on Wikipedia (gate open 17.2 per 1000; known names +0.026)**, +0.0045 / +0.0013 / +0.0033 on the others - the cost
+grows as the memory fills (cg27a_kmt's stricter gate). Trunk bits 1.9239 (cg27a_kmc 1.9438, cg27a_kmem 1.9185).
+
+Visit 5 (cg27a_kmb): **the trunk learned the KEPT inferences and not the flagged ones** - trunk alone, KEPT right 0.87 / KEPT wrong 0.83
+(visit 4: 0.33 / 0.07), FLAGGED right 0.20 / wrong 0.29, awaiting 0.27 - consolidation as designed (and the judge lets 38 wrong ones
+through). WITH the memory: facts 0.70 / 0.78 vs trunk 0.53 / 0.73; inferences RIGHT 0.67 / 0.97 vs 0.22 / 0.47; never-read names 0.00. The
+readout's FLAGGED groups mixed retracted with flagged controls (still taught, kept in the memory) - a RETRACTED group is added for
+cg27a_kmt. Byte edit (copy): WRONG 0.95 -> 0.20 (292 bytes left above the margin: the kept wrong ones are in the trunk now), RIGHT 0.95,
+facts 0.75. Learning speed 0.48-0.52 (negative, third time). ALL TEXT: **Wikipedia +0.033 (gate open 23.9 per 1000)**, Gutenberg +0.009,
+others +0.001-0.004 - growing each visit with the memory (kmt). Trunk bits **1.8570** (cg27a_kmem 1.8624, cg27a_kmi 1.8788, cg27a_kmc 1.8910):
+no trunk cost - the earlier gaps were run-to-run noise.
+
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
 After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
@@ -1512,6 +1529,48 @@ pooled states 0.50 / 0.52 (chance 0.08); with the NAME subspace of part A projec
 block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic phrases span too little of real relations). Relation
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
+
+### Rules by composing relation maps between name codes (tools/rel_ops.py, 15 November; after Hernandez et al., ICLR 2024)
+
+Types as rel_mtb's best (type-masked Matching-the-Blanks key, 64 types over 30,000 records); name codes from the store's record graph
+(PPMI-SVD 128, 167,022 names); per type and direction a ridge map code(A) -> code(C) (128 with 40+ records; held-out cosine median 0.52,
+best 0.71). RULES: of 16,128 compositions W(t2) W(t1), 1,482 match some W(t3) above a shuffled-type null's 99th percentile (0.719; top
+0.859) - but every top rule is 'X then <co-mention> => X' (',' / 'and' / '-' types: siblings P3373, spouses P26): the co-occurrence codes
+put related names NEAR each other, so the maps are close to a scaled identity and composing with one changes nothing. TYPING the GPU path's
+200 writes (0.74 right): the best map's type is the pair's relation 0.22 (0.30 among pairs with one); as a JUDGE, best map fit AUC 0.478,
+best composed-rule fit 0.498. **Negative: relation maps over CO-OCCURRENCE codes are near-identity - rules found are trivial, typing and
+judging at chance.** Maps need name codes that carry attributes (what a name IS), not only who it appears with.
+
+### Typed entailment graph from the records' name pairs (tools/ent_graph.py, 15 November; after Hosseini et al., TACL 2018)
+
+Typed predicates (wording + the names' entity types) with 5+ name pairs, documents 0 -> 2/10: 3,579 predicates over 146,183 pairs, but
+only 5,504 predicate pairs share ANY name pair. Paraphrase groups (inclusion both ways >= 0.3 / 0.5): 3 / 2 groups of 2+ predicates -
+punctuation variants (') for the' ~ '( mlb ) for the'); the 'types' are then the predicates themselves (purity 0.79 over 3,576 types,
+covering 0.53 of the labelled records: not comparable). ENTAILMENT edges (one way): 285 / 97, specific -> generic wording (', d.c. ,' =>
+','; 'in washington ,' => 'in'); new typed facts right 0.095 / 0.161 against the stated predicate's own 0.224 / 0.351. **Negative: the
+distant set (Wikipedia leads) rarely restates one name pair in different wordings - entailment by argument-pair inclusion needs the
+redundancy of many sources reporting the same events (news, as Hosseini et al.).** The representation (MTB key) generalises across pairs;
+counts over pairs cannot.
+
+### Relation types with the names MASKED and a Matching-the-Blanks key (tools/rel_mtb.py, 15 November; 18k stand-in trunk, 30,000 real records)
+
+After Peng et al. (EMNLP 2020: models lean on names; mask them) and Baldini Soares et al. (ACL 2019, Matching the Blanks: two sentences of
+the same name pair are positives). Pooled states (middle + last block) of each record, 64 k-means types, scored against Wikidata only
+(3,228 records with one relation); the MTB key: a 2-layer head, InfoNCE over 15,660 name pairs stated in two different documents.
+
+| record read as | purity | NMI |
+|---|---|---|
+| surface wordings (baseline) | 0.343 | 0.290 |
+| 'A <words> C.' (names) | 0.377 | 0.318 |
+| 'someone <words> something.' (names MASKED) | 0.432 | 0.378 |
+| MTB key, masked | 0.397 | 0.359 |
+| 'a person <words> a place.' (names masked, ENTITY TYPES as placeholders) | 0.486 | 0.463 |
+| **MTB key, type-masked** | **0.574** | **0.568** |
+
+**Positive: masking the names, putting their entity types in their place and training a Matching-the-Blanks key label-free types real
+records far better than their wordings - purity 0.34 -> 0.57, NMI 0.29 -> 0.57 (twice).** Rules over the types remain unusable on 30,000
+records (1-6 rules, typed proposals right 0.00-0.05): typing is no longer the bottleneck - rule discovery by counting chains is (sparsity).
+Next: typed entailment graphs (argument-pair inclusion; Hosseini et al. TACL 2018) and rules by composing relation operators.
 
 ### Relation types from the representation, then rules over them (tools/rel_types.py, 15 November; 18k stand-in trunk, 30,000 real records)
 

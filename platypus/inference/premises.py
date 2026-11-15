@@ -34,12 +34,12 @@ def _load_distant(cfg):
     import os
     if not os.path.exists(p):
         print(f"  [PREMISES AT SCALE] distant set not found at {p}: benchmark documents only (the notebook downloads it)", flush=True); return
-    t0 = time.time(); D = json.load(gzip.open(p, 'rt') if p.endswith('.gz') else open(p)); R = []; TY = collections.defaultdict(collections.Counter); LAB = set()
+    t0 = time.time(); D = json.load(gzip.open(p, 'rt') if p.endswith('.gz') else open(p)); R = []; TY = collections.defaultdict(collections.Counter); LAB = set(); PRD = {}
     for di in range(len(D)):
         d = D[di]; D[di] = None
         cn = [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
         lab = {(l['h'], l['t']) for l in d['labels']} | {(l['t'], l['h']) for l in d['labels']}
-        for l in d['labels']: LAB.add(frozenset((cn[l['h']], cn[l['t']])))
+        for l in d['labels']: LAB.add(frozenset((cn[l['h']], cn[l['t']]))); PRD.setdefault((cn[l['h']], cn[l['t']]), set()).add(l['r'])   # PRD: ordered relations (evaluation only)
         bys = collections.defaultdict(list)
         for ei, vs in enumerate(d['vertexSet']):
             for m in vs: bys[m['sent_id']].append((m['pos'][0], m['pos'][1], ei)); TY[cn[ei]][m.get('type', 'X')] += 1
@@ -52,7 +52,7 @@ def _load_distant(cfg):
                     sp = ' '.join(toks[a0:b1])
                     if len(sp) > 60: continue
                     mid = toks[a1:b0]; R.append((di, cn[ea], cn[eb], ' '.join(mid).lower(), mid[-1].lower() if mid else '', len(mid), (ea, eb) in lab, sp))
-    _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1)
+    _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1, PRD=PRD)
     print(f"  [PREMISES AT SCALE] distant set read: {_PM['ND']} documents, {len(R)} records ({time.time() - t0:.0f} s)", flush=True)
 
 

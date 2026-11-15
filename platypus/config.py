@@ -678,6 +678,10 @@ class Config:
     inf_kma=0                       #   15 Nov ALL-TEXT ADDRESS (MODEL CHANGE when on; cg27a_kma): the memory's address computed at EVERY byte of any text from the trunk's
                                     #     own forward (middle block, in context; subject = latest completed capitalised run, hashed); the model reads it on all text (gated);
                                     #     it writes only on question rows' answer bytes; readout: PREQUENTIAL BITS WITH THE MEMORY
+    inf_rtype=0                     #   15 Nov READOUT: RELATION TYPES FROM THE TRUNK every 2 visits (inference.reltype): k-means types of the trunk's pooled states over the
+                                    #     premises records, rules over them, scored against Wikidata (evaluation only); the factorial's additivity on this trunk
+    inf_rtype_n=60000               #     records represented
+    inf_rtype_k=64                  #     types
     inf_kmi_gatew=0.5               #     the gate: share of the read weight that must lie on written slots
     inf_kmi_train=1                 #     0 = CONTROL: every memory computation as usual but its values never move (the bits question: kmi / kmg vs kmem)
     inf_rcode_hold=0.1             #     share of distant documents held out (their pairs are the candidates; no record states a candidate)

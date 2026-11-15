@@ -1733,6 +1733,12 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                         from platypus.inference.kmem import kmc_retract
                         kmc_retract(model, cfg, S_slot, ents, vis)
             except Exception as e9: _fail('inference.kmem:kmi'); print(f"  [INTEGRATED KEYED MEMORY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_rtype', 0)) and vis % 2 == 1:                 # 15 Nov RELATION TYPES FROM THE TRUNK (inference.reltype; readout, every 2 visits)
+            try:
+                from platypus.inference.reltype import reltype_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9): reltype_readout(model, cfg, S_slot, vis)
+            except Exception as e9: _fail('inference.reltype'); print(f"  [RELATION TYPES FROM THE TRUNK] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check

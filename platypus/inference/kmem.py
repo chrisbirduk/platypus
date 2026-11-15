@@ -550,7 +550,8 @@ def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
     inf_ = [e for e in fs if e['r'] == _RTI_R and (e['A'], e['ans']) in W]
     st = lambda e: W[(e['A'], e['ans'])]
     grp = [('KEPT right', lambda w: w.get('judged') is not None and not w.get('flag') and w['truth']), ('KEPT wrong', lambda w: w.get('judged') is not None and not w.get('flag') and not w['truth']),
-           ('FLAGGED right', lambda w: w.get('flag') and w['truth']), ('FLAGGED wrong', lambda w: w.get('flag') and not w['truth']),
+           ('FLAGGED right', lambda w: w.get('flag') and not w.get('ret') and w['truth']), ('FLAGGED wrong', lambda w: w.get('flag') and not w.get('ret') and not w['truth']),
+           ('RETRACTED (removed from the memory)', lambda w: bool(w.get('ret'))),
            ('AWAITING (memory only)', lambda w: w.get('judged') is None)]
     parts = [f"{nm} {score([e for e in inf_ if f(st(e))], te, 30, False)}" for nm, f in grp]
     vs = sorted({st(e).get('vis') for e in inf_ if st(e).get('vis') is not None})
