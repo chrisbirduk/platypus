@@ -1456,6 +1456,19 @@ signals reach 0.70-0.75 here and 0.61-0.64 on the GPU path's own writes because 
 Adamic-Adar, so the path evidence is already spent in the selection and what remains to separate them is weaker. The 0.64 ceiling on the
 GPU path is therefore real. Rank-sum combinations are worse than the best single signal (3-hop is noise here and drags them down).
 
+### Choose with one signal, judge with another (tools/select_judge.py, 15 November; the GPU path's write step, 200 writes at document 2/10, judged on 2/10 -> 4/10)
+
+| writes chosen by | written right | best judge (AUC) | TO THE TRUNK with the lowest 20% flagged | oracle |
+|---|---|---|---|---|
+| the code alone | 0.475 | restatement + RA 0.631-0.634 (restated later: right 0.38 / wrong 0.15) | 0.53 (160 kept); kept only if restated: 0.69 (52 kept) | 95 right |
+| **code + Adamic-Adar (GPU now)** | **0.740** | RA 0.654, restatement + RA 0.652, documents 0.639 | **0.762-0.772** (160 kept) | 148 right |
+| code + resource allocation | 0.680 | restatement + RA 0.640 | 0.725-0.730 | 136 right |
+
+**Negative: choosing by the code alone and keeping path support for the judge loses** - the writes fall from 0.74 to 0.475 right and no
+judge recovers it (best end to end 0.53, or 0.69 on only 52 kept). Path evidence does more good choosing than judging; the current
+pipeline (code + AA, judged by documents) is the best of these, 0.77 to the trunk. The judge ceiling on these writes is ~0.65 whatever
+the signal. Further gains must come from a new kind of evidence (the Go-CLS learning-speed readout rides on cg27a_kma), not a re-split.
+
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 
 200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is
