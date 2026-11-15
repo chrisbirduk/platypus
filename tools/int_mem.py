@@ -21,7 +21,7 @@ read where 30 facts' training rows predict their answers set to zero - their rec
 memory too: the memory also learns from text) and FACT ROWS WRITE (wiki rows read but do not write).
 IM_GATE=1 (15 Nov): at evaluation the memory is read only where its address was written - the subject is one the fact rows wrote for AND
 half the read weight is on slots they read (= wrote) - on ALL text: does the gate remove the cost on ordinary text?
-Usage: TG_D=192 TG_CKPT=<model file> python3 tools/int_mem.py   env IM_N (128), IM_STEPS (400), IM_LR (0.01,0.03), IM_SEED (0), IM_ARMS, IM_GATE"""
+Usage: TG_D=192 TG_CKPT=<model file> python3 tools/int_mem.py   env IM_N (128), IM_STEPS (400), IM_LR (0.01,0.03), IM_SEED (0), IM_ARMS, IM_GATE, IM_LGATE (1: a LEARNED gate trained by the trunk's loss on all rows), IM_LGREG (0.02)"""
 import os, re, json, math, time, collections
 import numpy as np
 import torch
@@ -31,7 +31,7 @@ P = lambda *a: print(*a, flush=True); T0 = time.time()
 SCR = '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpad'
 DW = int(os.environ.get('TG_D', 192)); CK = os.environ['TG_CKPT']; torch.set_num_threads(int(os.environ.get('IM_THREADS', 1)))
 L = 128; PAD = 256; V = 257; SEED = int(os.environ.get('IM_SEED', 0)); rs = np.random.RandomState(SEED); torch.manual_seed(SEED)
-NS = int(os.environ.get('IM_N', 128)); KK = 8; DK = 32; STEPS = int(os.environ.get('IM_STEPS', 400)); MAXW, MAXO = 48, 31
+LGATE = int(os.environ.get('IM_LGATE', 0)); LGREG = float(os.environ.get('IM_LGREG', 0.02)); NS = int(os.environ.get('IM_N', 128)); KK = 8; DK = 32; STEPS = int(os.environ.get('IM_STEPS', 400)); MAXW, MAXO = 48, 31
 FORMS = ("In short, {A} {r} ", "Notes on {A}: {A} {r} ", "{A}, as noted before, {r} ", "As for {A}, people say {A} {r} ",
          "Q: {A} {r} whom? A: ", "{A}, whose name came up earlier in the report, {r} ", "From the notes: {A} {r} ")
 TEST = "It is on record that {A} {r} "
@@ -166,6 +166,10 @@ class IMem:
     def __init__(s, lr):
         s.v = torch.zeros(NS * NS, DW, requires_grad=True); s.opt = torch.optim.Adam([s.v], lr=lr)
         s.gate = False; s.wmask = torch.zeros(NS * NS, dtype=torch.bool); s.subj = set(); s.opened = [0, 0]   # 15 Nov GATE (IM_GATE)
+        s.lg = None                                                        # 15 Nov LEARNED GATE (IM_LGATE): features of the read -> open (0..1), trained by the
+        if LGATE:                                                          #   trunk's own loss on ALL rows (does reading here help the prediction?)
+            s.lg = nn.Sequential(nn.Linear(6, 32), nn.GELU(), nn.Linear(32, 1)); nn.init.constant_(s.lg[2].bias, -2.0)
+            s.lgo = torch.optim.Adam(s.lg.parameters(), lr=3e-3); s.gsum = []
     def logits(s, seqs, write_rows=None, rec=None):
         X, hs, G = feats(seqs); xl = hs[-1].clone()
         if G:
@@ -181,7 +185,12 @@ class IMem:
             if write_rows is not None:                                     # rows that may not write: their reads carry no gradient
                 wm = torch.tensor([float(g_[0] in write_rows) for g_ in G])[:, None, None]; vv = vv * wm + vv.detach() * (1 - wm)
             val = (w[..., None] * vv).sum(1)
-            if s.gate:                                                     # read only where the address was written: the subject, and half the weight
+            if s.lg is not None:                                           # LEARNED GATE: written-slot weight, subject written, read confidence, offset
+                wf = (w * s.wmask[idx].float()).sum(-1); sw = torch.tensor([float(g_[2] in s.subj) for g_ in G])
+                fe = torch.stack([wf, sw, w.max(-1)[0], top.mean(-1), torch.tensor([g_[4] / MAXO for g_ in G], dtype=torch.float32), wf * sw], -1)
+                gv = torch.sigmoid(s.lg(fe.detach()))[:, 0]; val = val * gv[:, None]; s.gsum.append(gv)
+                if rec is not None and rec and isinstance(rec[0], str): pass
+            elif s.gate:                                                   # read only where the address was written: the subject, and half the weight
                 op = torch.tensor([float(g_[2] in s.subj) for g_ in G]) * ((w * s.wmask[idx].float()).sum(-1) >= 0.5).float()
                 val = val * op[:, None]; s.opened[0] += int(op.sum()); s.opened[1] += len(G)
             if rec is not None: rec.extend((g_[0], g_[1], idx[k].tolist()) for k, g_ in enumerate(G))
@@ -225,7 +234,27 @@ def teach(M, facts, rr, fact_only):
     for st in range(STEPS):
         fb = [facts[rr.randint(len(facts))] for _ in range(8)]
         seqs = [(FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) + f['C'] + '.').encode('latin-1') for f in fb] + wb(rr, 24)
-        lo = M.loss(seqs, write_rows=set(range(8)) if fact_only else None); M.opt.zero_grad(); lo.backward(); M.opt.step()
+        if M.lg is not None: M.gsum = []
+        lo = M.loss(seqs, write_rows=set(range(8)) if fact_only else None)
+        if M.lg is not None and M.gsum: lo = lo + LGREG * torch.cat(M.gsum).mean()   # a small price for opening: open only where it pays
+        M.opt.zero_grad()
+        if M.lg is not None: M.lgo.zero_grad()
+        lo.backward(); M.opt.step()
+        if M.lg is not None: M.lgo.step()
+NEVER = None
+@torch.no_grad()
+def abstain(M, n=60):
+    """questions about NEVER-READ names (syllables) in the test wording: the share of answer-start reads the gate opens (learned: g > 0.5)"""
+    rr = np.random.RandomState(SEED + 77); syl = ['ka', 'lo', 'mi', 'ner', 'tas', 'vol', 'ru', 'den', 'sa', 'por', 'el', 'ith']; op = []
+    for k in range(n):
+        nm = (''.join(rr.choice(syl, 2)) + ' ' + ''.join(rr.choice(syl, 3))).title(); f = FACTS[rr.randint(len(FACTS))]
+        pb = TEST.format(A=nm, r=f['rel']).encode('latin-1'); rec = []
+        if M.lg is not None:
+            M.gsum = []; M.logits([pb + b'Xx.'], rec=rec)
+            if M.gsum and rec: op.append(float(M.gsum[-1][[i for i, (r_, t_, ix_) in enumerate(rec) if t_ == len(pb)] or [0]].max() > 0.5))
+        else:
+            M.gate = True; M.opened = [0, 0]; M.logits([pb + b'Xx.']); op.append(float(M.opened[0] > 0)); M.gate = False
+    return float(np.mean(op)) if op else float('nan')
 fmt = lambda x: f"open {x[0]:.2f} rank {x[1]:.2f}"
 M0 = IMem(0.01); b0w, b0d = bits(M0, EV_W), bits(M0, EV_D)
 P(f"before writing (the memory empty = the trunk): A {fmt(recall(M0, SET_A[:30]))} | held-out bits wiki {b0w:.3f}, dev {b0d:.3f}  ({time.time() - T0:.0f}s)")
@@ -238,7 +267,8 @@ for arm, lr in ARMS:
     pa = recall(M, SET_A + SET_B, para=True)
     P(f"   {arm:16s} lr {lr:g}: A after A {fmt(ra)} | B after B {fmt(rb)} | A after B {fmt(raa)} | PARAPHRASED (A+B) {fmt(pa)} || FORGETTING (bits added) "
       f"wiki {w1 - b0w:+.3f} -> {w2 - b0w:+.3f}, dev {d1 - b0d:+.3f} -> {d2 - b0d:+.3f} | slots written {int((M.v.detach().abs().sum(1) > 0).sum())} of {NS * NS}"
-      + (f" | GATE: open on {M.opened[0] / max(1, M.opened[1]):.3f} of the dev-text positions with a subject ({len(M.subj)} subjects, {int(M.wmask.sum())} slots written)" if GATE else '')
+      + (f" | GATE: open on {M.opened[0] / max(1, M.opened[1]):.3f} of the dev-text positions with a subject ({len(M.subj)} subjects, {int(M.wmask.sum())} slots written)" if GATE and not LGATE else '')
+      + (f" | LEARNED GATE: never-read names open {abstain(M):.2f}" if LGATE else (f" | never-read names open {abstain(M):.2f}" if GATE else ''))
       + f"  ({time.time() - T0:.0f}s)")
     RX, KEEP = SET_A[:30], SET_A[30:]; snap = M.v.detach().clone(); b4 = [recall(M, x) for x in (RX, KEEP, SET_B)]; rec = []
     with torch.no_grad():
