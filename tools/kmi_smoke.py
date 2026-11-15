@@ -31,6 +31,8 @@ people = list(dict.fromkeys(nm() for _ in range(400))); ents, held = [], []
 for i, A in enumerate(people[:120]):
     for r in rs.choice(rels, 2, replace=False):
         C = people[160 + rs.randint(200)]; e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=0); (held if i % 5 == 0 else ents).append(e)
+for e0 in [e for e in list(ents) if e['r'] != 'is connected to'][:40]:     # chains: some answers are subjects of their own facts (two-hop readout)
+    r = rs.choice(rels); C = people[360 + rs.randint(40)]; ents.append(dict(key=('fact', e0['ans'], r, C), A=e0['ans'], r=r, ans=C, d=0))
 for i in range(80):
     A, C = people[rs.randint(400)], people[rs.randint(400)]
     if A != C:

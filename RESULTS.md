@@ -1369,7 +1369,28 @@ Visit 2: **reading the memory on ALL held-out text costs nothing - bits +0.0000 
 with the in-context key: taught facts WITH 0.42 / 0.45 vs trunk 0.07 / 0.42 (kmc 0.40 / 0.50 vs 0.10 / 0.47); BARE wording ('A r ', no frame)
 0.45 / 0.45 vs 0.20 / 0.45; paraphrased 0.15 / 0.30 vs 0.03 / 0.25; held back = trunk (gate open 0.03); never-read names 0.00. Wording head
 (in context, 16 relations) loss 0.00. Counter-write (copy): WRONG -> 0.00, RIGHT 0.12 -> 0.95 (re-written), facts kept. Trunk bits 2.0375 /
-2.0358 (cg27a_kmc 2.0325 / 2.0324). Check at visit 3: the two read domains' bits WITH the memory print the same (2.0359) - confirm they differ.
+2.0358 (cg27a_kmc 2.0325 / 2.0324). (Visit 2's two read domains printed the same bits with the memory, 2.0359: at visit 3 they differ - a
+coincidence.)
+Visit 3: **the in-context address gives far better EXACT recall** - taught inferences RIGHT WITH **0.68 / 0.98** vs trunk 0.00 / 0.10
+(cg27a_kmc 0.32 / 0.93), WRONG 0.67 / 0.90 vs 0.00 / 0.13; taught facts WITH **0.60 / 0.80** vs trunk 0.28 / 0.78 (kmc 0.42 / 0.77); BARE
+wording 0.53 / 0.78 vs 0.30 / 0.80; paraphrased 0.07 / 0.38 vs 0.03 / 0.35; held back 0.03 / 0.53 = trunk 0.00 / 0.53 (gate open 0.03);
+never-read names 0.00; 15,016 of 65,536 slots used. ALL TEXT: bits WITH the memory +0.0007 / **+0.0030** / +0.0003 (Gutenberg / Wikipedia /
+ArXiv; gate open 0.6 / 4.7 / 0.4 per 1000 bytes), next domain +0.0003 - a small cost where the gate opens on Wikipedia (where the facts'
+names live), no gain yet on known names. Counter-write (margin, copy): WRONG 0.92 -> 0.77 (cg27a_kmb's byte edit replaces it). Trunk bits
+2.0161 (cg27a_kmc 2.0201, cg27a_kmi 2.0203).
+
+### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
+
+Visit 3 (the memory now holds the visit-2 inferences): **BYTE EDIT (oracle, on a copy): WRONG rank 0.92 -> 0.03, RIGHT 1.00 -> 0.97, facts
+0.70 -> 0.70, undone exactly** (24 answer bytes still above the margin) - against the margin counter-write at the same point, 0.92 -> 0.56
+(cg27a_kmc) and 0.92 -> 0.77 (cg27a_kma). **The GPU's partial retraction is solved.** LEARNING SPEED AS A JUDGE (Go-CLS; 136 inferences
+learned 4+ times, right 0.71): memory loss at first learning AUC 0.514, now 0.489, the drop 0.483, the trunk's own loss at first 0.503 -
+**negative: how fast the memory learns an inference says nothing about whether it is right.** Recall as cg27a_kma (facts WITH 0.55 / 0.78
+vs trunk 0.30 / 0.77; inferences RIGHT 0.68 / 0.98 vs 0.00 / 0.08; never-read names 0.00; awaiting inferences WITH 0.97 vs trunk 0.13).
+ALL TEXT: **bits WITH the memory +0.0044 / +0.0173 / +0.0007 (Gutenberg / Wikipedia / ArXiv; gate open 3.0 / 10.6 / 0.8 per 1000), next
+domain +0.0029 - a real cost on Wikipedia, larger than cg27a_kma's +0.0030 at the same visit (gate open 4.7)**: the gate (0.7) opens on
+written subjects in ordinary Wikipedia text and the read hurts there (known names +0.014). The stricter-gate readout (0.85 / 0.95) was
+added after kmb started; it rides on the next build. Trunk bits 2.0157 (cg27a_kma 2.0161).
 
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
@@ -1468,6 +1489,84 @@ GPU path is therefore real. Rank-sum combinations are worse than the best single
 judge recovers it (best end to end 0.53, or 0.69 on only 52 kept). Path evidence does more good choosing than judging; the current
 pipeline (code + AA, judged by documents) is the best of these, 0.77 to the trunk. The judge ceiling on these writes is ~0.65 whatever
 the signal. Further gains must come from a new kind of evidence (the Go-CLS learning-speed readout rides on cg27a_kma), not a re-split.
+
+### Does the relation word give a direction of its own? (tools/rel_direction.py, 15 November; 18k stand-in trunk, d 192)
+
+The author's hypothesis: in a plain pooled (JEPA-style) representation of 'A r C', the relation adds a direction roughly orthogonal to what
+names and numbers add. PART A, factorial (16 subjects x 12 relation phrases x 16 objects, and x 5 years), trunk states pooled over the
+sentence (mean; middle / last block):
+
+| | variance share subject / RELATION / object / year | additive R^2 | subspace overlap RELATION-subject / RELATION-object / subject-object / RELATION-year (random ~0.04) |
+|---|---|---|---|
+| middle block, mean | 0.40 / 0.22 / 0.38 | 1.00 | 0.12 / 0.11 / **0.42** |
+| last block, mean | 0.33 / 0.32 / 0.33 | 0.99 | 0.17 / 0.18 / **0.32** |
+| middle, with years | 0.37 / 0.21 / 0.39 / 0.02 | 0.99 | 0.12 / 0.13 / 0.44 / **0.05** |
+| last, with years | 0.31 / 0.31 / 0.33 / 0.03 | 0.98 | 0.18 / 0.18 / 0.34 / 0.21 |
+
+**Positive for the hypothesis: the pooled representation is almost exactly ADDITIVE (R^2 0.98-1.00) - subject + relation + object (+ year)
+- and the relation's effects lie in a subspace largely apart from the names' (overlap 0.11-0.18, against 0.32-0.44 between subject and
+object, which share a 'name' subspace) and from the year's (0.05 in the middle block).** (At the relation phrase's last byte the state is
+~all relation: 0.99-1.00 of the variance.)
+PART B, real records ('A <words> C', one Wikidata relation, the 12 commonest; evaluation only): 5-nearest-neighbour relation accuracy of the
+pooled states 0.50 / 0.52 (chance 0.08); with the NAME subspace of part A projected out **0.54 / 0.54**, k-means NMI 0.27 -> 0.30 (last
+block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic phrases span too little of real relations). Relation
+type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
+learned from real text (not from 12 phrases) before it can type records label-free.
+
+### Relation types from the representation, then rules over them (tools/rel_types.py, 15 November; 18k stand-in trunk, 30,000 real records)
+
+Label-free: real records 'A <words> C.' (documents 0 -> 2/10) as the trunk's pooled state; k-means into 64 types; AMIE rules over the
+types. Scored only: type purity / NMI against Wikidata (3,228 records with one relation), and typed proposals (the head type's commonest
+relation holds for x-z).
+
+| types from | purity | NMI | rules | typed proposals | TYPED right | untyped right |
+|---|---|---|---|---|---|---|
+| the 63 commonest SURFACE wordings | 0.343 | 0.290 | 0 | 0 | - | - |
+| raw pooled states | **0.397** | 0.322 | 5 | 140 | 0.400 | 0.414 |
+| names out (name subspace learned from REAL per-name means) | 0.361 | 0.283 | 10 | 295 | 0.119 | 0.180 |
+| names out (name subspace from a SYNTHETIC factorial, 8 dims) | 0.394 | **0.337** | 5 | 50 | **0.440** | 0.500 |
+| the same, 16 dims | 0.397 | 0.336 | 9 | 150 | 0.287 | 0.320 |
+
+**Partly positive: the representation types real records better than their wordings (purity 0.40 vs 0.34, NMI 0.32-0.34 vs 0.29), and
+removing a synthetic name subspace helps a little; but a name subspace learned from real per-name means is confounded with relations
+(overlap with the wording subspace 0.61 - a name's records share its relations) and hurts. Rules over the types are too sparse on 30,000
+records and typed precision 0.20-0.44 is far below the untyped path's 0.74 - not usable at this trunk and sample size.** The stand-in trunk
+is small (d 192); the test belongs on the GPU trunk, over all records, as a readout.
+
+### Typed real-text inference by rule mining over surface wordings (tools/typed_rules.py, 15 November; distant documents 0 -> 2/10)
+
+AMIE-style closed-path rules r1(x,y) & r2(y,z) => r3(x,z) over typed records (the 150 commonest specific wordings between two names, 1-6
+words apart, typed by the names' entity types), label-free; proposals = body pairs never stated; scored against Wikidata (evaluation only):
+
+| relations | typed facts | rules kept | proposals | untyped right | TYPED right (the head's relation) |
+|---|---|---|---|---|---|
+| full wording | 54,059 | 12 (paraphrase pairs) | 24 | 0.42 | 0.42 |
+| last word | 124,251 | 102 (sentence templates: 'born' TIME & 'in' LOC => TIME 'in' LOC) | 13,554 | 0.04 (best bin 0.21) | 0.04 (best bin 0.30) |
+| last word, entities only, body facts from different documents | 67,031 | 17 | 1,609 | 0.10 | 0.08 |
+| full wording, entities only, different documents | 24,389 | 5 | 128 | 0.16 | 0.09 |
+
+**Negative: rules over SURFACE wordings do not give typed inference** - surface wordings are not relations (one relation has many
+wordings, one wording - 'in', 'of' - many relations), so the rules found are paraphrase pairs or one sentence's template, and the typed
+proposals are right 0.04-0.42 against the untyped path's 0.74. Typed inference needs records typed by RELATION, not by wording.
+
+### Invariance across environments as the judge (tools/env_judge.py, 15 November; after Lopez-Paz, 'Against All Likelihood', arXiv 2611.09385)
+
+Environments made without labels: the 40,749 documents read by 4/10 clustered by the names they mention (TF-IDF -> SVD 64 -> k-means, K =
+8 / 16 / 32). For the GPU path's 200 writes (code + AA, 0.740 right; code + RA, 0.680): environments restating A-C later, environments with
+a bridge path A-x-C inside them, the share of environments mentioning both in which they are linked (invariance), environments mentioning both.
+
+| signal (AUC right vs wrong; code + AA / code + RA) | K = 8 | K = 16 | K = 32 |
+|---|---|---|---|
+| environments restating A-C later | 0.566 / 0.578 | 0.544 / 0.578 | 0.541 / 0.557 |
+| environments with a path A-x-C inside | 0.545 / 0.551 | 0.504 / 0.544 | 0.508 / 0.552 |
+| invariance share (linked wherever both occur) | 0.504 / 0.479 | 0.471 / 0.449 | 0.443 / 0.412 |
+| environments mentioning both | 0.533 / 0.563 | 0.509 / 0.578 | 0.523 / 0.589 |
+
+To the trunk with the lowest 20% flagged: 0.725-0.756 (code + AA) - no better than flagging nothing (0.740) and below the current judge (0.772).
+**Negative: invariance across label-free document environments is WORSE than the counts it was meant to replace (documents 0.639, resource
+allocation 0.654), and the invariance share is below chance.** The errors here are not repeated falsehoods but ASSOCIATED pairs without the
+relation (wrong = no Wikidata relation between names that do co-occur): such pairs are linked in many environments, often more than right
+ones. Invariance of an association cannot tell 'related' from 'holds this relation' - a typed claim is needed before invariance can judge it.
 
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 

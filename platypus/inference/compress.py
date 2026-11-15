@@ -385,6 +385,14 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
                                     lgm, _, na, no = kma_logits(model, KM, x, lgf, cap['h'].float()); lgm = lgm[:, -Ts:]
                                     nlm = (F.cross_entropy(lgm.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape).cpu().numpy()
                                     accm['addr'] += na; accm['open'] += no; accm['bytes'] += int(x.numel())
+                                    gw0 = KM.get('gatew', 0.5)                           # STRICTER GATES on the same bytes (readout): the cost by gate weight
+                                    for gw in (0.85, 0.95):
+                                        KM['gatew'] = gw
+                                        try:
+                                            lg2, _, _, no2 = kma_logits(model, KM, x, lgf, cap['h'].float()); lg2 = lg2[:, -Ts:]
+                                            nl2 = (F.cross_entropy(lg2.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape)
+                                            accm.setdefault(gw, [0.0, 0, 0]); accm[gw][0] += float(nl2.sum()); accm[gw][1] += int(yy.numel()); accm[gw][2] += no2
+                                        finally: KM['gatew'] = gw0
                                 except Exception:
                                     _fail('inference.compress:preq_kma'); KM = None
                             yb = yy.cpu().numpy().astype(np.uint8)
@@ -401,7 +409,8 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
                 parts.append((d, kind, f('all'), f('known'), acc['known'][1], f('unknown'), acc['unknown'][1]))
                 if accm['bytes']:
                     fm = lambda k: accm[k][0] / max(1, accm[k][1])
-                    mparts.append((d, kind, fm('all') - f('all'), fm('known') - f('known'), fm('unknown') - f('unknown'), 1000.0 * accm['addr'] / accm['bytes'], 1000.0 * accm['open'] / accm['bytes'], fm('all')))
+                    mparts.append((d, kind, fm('all') - f('all'), fm('known') - f('known'), fm('unknown') - f('unknown'), 1000.0 * accm['addr'] / accm['bytes'], 1000.0 * accm['open'] / accm['bytes'], fm('all'),
+                                   ' '.join(f"gate {gw}: {accm[gw][0] / max(1, accm[gw][1]) - f('all'):+.4f} (open {1000.0 * accm[gw][2] / accm['bytes']:.1f})" for gw in (0.85, 0.95) if gw in accm)))
         finally:
             if had: _INFM['force'] = sv
             else: _INFM.pop('force', None)
@@ -415,6 +424,6 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
         if mparts:                                                             # 15 Nov ALL-TEXT MEMORY (inf_kma): the model = trunk + gated memory on the same bytes
             print(f"  [PREQUENTIAL BITS, WITH THE MEMORY | {tag}] the same held-out bytes, trunk + gated keyed memory (all-text address), change in bits per byte "
                   f"(negative = the memory helps) || " + " | ".join(f"domain {p[0]} ({p[1]}): all {p[7]:.4f} ({p[2]:+.4f}), KNOWN names {p[3]:+.3f}, unknown names {p[4]:+.3f}; "
-                  f"addressed {p[5]:.0f} / gate open {p[6]:.1f} per 1000 bytes" for p in mparts), flush=True)
+                  f"addressed {p[5]:.0f} / gate open {p[6]:.1f} per 1000 bytes" + (f"; STRICTER {p[8]}" if p[8] else '') for p in mparts), flush=True)
     except Exception as e:
         _fail('inference.compress:preq'); print(f"  [PREQUENTIAL BITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

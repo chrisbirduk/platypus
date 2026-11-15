@@ -569,6 +569,55 @@ def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
               f"(label-free signals; 0.5 = none; the current judge 0.64): " + " | ".join(f"{k} {_cg_auc(v[y], v[~y]):.3f}" for k, v in sig.items()), flush=True)
 
 
+def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30):
+    """15 Nov READOUT, TWO-HOP THROUGH THE MEMORY (after REMERGE, Kumaran & McClelland 2012: the hippocampus's output fed back as the next
+    query): chains of TAUGHT facts A r1 B, B r2 C never taught as a chain. The model decodes B greedily after 'It is on record that A r1 ', then
+    is asked 'So B' r2 ' with its OWN decoded B' - with the all-text address the decoded name becomes the next subject. WITH the memory (gated)
+    vs the trunk alone (each decodes its own B'): first hop exact, and C's rank among 10 (chance 0.10); also with the TRUE B given (ceiling)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.premises import _RTI_R
+    F_ = [e for e in fs if e['r'] != _RTI_R]; byA = {}
+    for e in F_: byA.setdefault(e['A'], []).append(e)
+    ch = [(e1, e2) for e1 in F_ for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
+    if len(ch) < 5:
+        print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP | visit {vis + 1}] too few chains of taught facts ({len(ch)})", flush=True); return
+    rs = np.random.RandomState(int(cfg.seed) + 5858 + vis); ch = [ch[i] for i in rs.choice(len(ch), min(cap, len(ch)), replace=False)]
+    def dec(pb, sl, use, n):
+        o = b''
+        for _ in range(n):
+            Xg, _ = _ws_batch(model, [pb + o + b' ']); zg = _ws_run(model, Xg, sl).float()
+            if use: zg = kmi_logits(model, K, [pb + o], Xg, zg, sl)
+            q = len(pb) + len(o) - 1
+            if q >= zg.shape[1]: break
+            o += bytes([int(zg[0, q].argmax())])
+        return o
+    def rank(pb, C, sl, use):
+        alts = [x for x in pool if x != C]
+        if len(alts) < 9: return None
+        cs = [C] + [alts[j] for j in rs.choice(len(alts), 9, replace=False)]; cb = [(c + '.').encode('latin-1', 'replace') for c in cs]
+        X, _ = _ws_batch(model, [pb + c for c in cb]); z = _ws_run(model, X, sl).float()
+        if use: z = kmi_logits(model, K, [pb] * len(cb), X, z, sl)
+        lp = F.log_softmax(z, -1); p0 = len(pb) - 1; sc = []
+        for j, c in enumerate(cb):
+            n_ = min(len(c), lp.shape[1] - p0); sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else -1e9)
+        return int(sc[0] > max(sc[1:]))
+    res = {True: [[], [], []], False: [[], [], []]}
+    with torch.no_grad():
+        for e1, e2 in ch:
+            sl = int(S_slot(e1['d'])); pb = te(e1).encode('latin-1', 'replace'); B = e1['ans'].encode('latin-1', 'replace')
+            for use in (True, False):
+                o = dec(pb, sl, use, len(B)); res[use][0].append(int(o == B))
+                b2 = o.decode('latin-1').strip() or 'someone'
+                r2 = rank(f"It is on record that {b2} {e2['r']} ".encode('latin-1', 'replace'), e2['ans'], int(S_slot(e2['d'])), use)
+                r3 = rank(te(e2).encode('latin-1', 'replace'), e2['ans'], int(S_slot(e2['d'])), use)
+                if r2 is not None: res[use][1].append(r2)
+                if r3 is not None: res[use][2].append(r3)
+    m = lambda L: f"{np.mean(L):.2f}" if L else '-'
+    print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP | visit {vis + 1}] {len(ch)} chains of taught facts (A r1 B, B r2 C; never taught as a chain), the model's OWN decoded B "
+          f"asked next: WITH the memory first hop exact {m(res[True][0])}, C rank among 10 {m(res[True][1])} (true B given {m(res[True][2])}) | trunk alone "
+          f"{m(res[False][0])}, {m(res[False][1])} (true B {m(res[False][2])}) (chance 0.10)", flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -619,6 +668,11 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
           f"PARAPHRASED facts {score([e for e in kind(fs, 'fact') if e['r'] in _DT_PARA], pa, 40)}" +
           (f" | BARE wording 'A r ' facts {score(kind(fs, 'fact'), bw, 40)} || ALL-TEXT address (middle block, in context; wording head "
            f"loss {K.get('hloss', float('nan')):.2f} over {K.get('hrels', 0)} relations; gate weight {K.get('gatew')})" if K.get('allt') else ''), flush=True)
+    if K.get('allt'):                                                          # 15 Nov TWO-HOP THROUGH THE MEMORY (REMERGE-style chaining; readout)
+        try: _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
+        except Exception as e9:
+            from platypus.common import _fail
+            _fail('inference.kmem:twohop'); print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     if K.get('gate'):                                                          # ABSTENTION: questions about names the system never read
         from platypus.inference.distill import _DT_REFUSE_SYL
         rels = sorted({e['r'] for e in fs}); g9 = np.random.RandomState(int(cfg.seed) + 5454 + vis); op9 = []
