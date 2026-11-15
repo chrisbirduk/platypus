@@ -553,6 +553,8 @@ def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
            ('FLAGGED right', lambda w: w.get('flag') and not w.get('ret') and w['truth']), ('FLAGGED wrong', lambda w: w.get('flag') and not w.get('ret') and not w['truth']),
            ('RETRACTED (removed from the memory)', lambda w: bool(w.get('ret'))),
            ('AWAITING (memory only)', lambda w: w.get('judged') is None)]
+    seen = {(e['A'], e['ans']) for e in inf_}                                  # retracted inferences leave the taught pool: take them from the ledger
+    inf_ = inf_ + [dict(key=('fact', A, _RTI_R, C), A=A, r=_RTI_R, ans=C, d=w['d']) for (A, C), w in W.items() if w.get('ret') and (A, C) not in seen]
     parts = [f"{nm} {score([e for e in inf_ if f(st(e))], te, 30, False)}" for nm, f in grp]
     vs = sorted({st(e).get('vis') for e in inf_ if st(e).get('vis') is not None})
     parts += [f"written at visit {v + 1}: {score([e for e in inf_ if st(e).get('vis') == v], te, 30, False)}" for v in vs[-2:]]

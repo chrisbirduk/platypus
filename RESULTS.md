@@ -1401,6 +1401,12 @@ wording 0.78 / 0.90 vs 0.57 / 0.90; held back 0.07 / 0.57 vs 0.07 / 0.60; never-
 flagged, 11 retracted - the RETRACTED group is empty at this readout: the byte edit acts after it; visit 5). Byte edit (copy): WRONG 0.55 ->
 0.05. TWO-HOP (30 taught chains): WITH 0.93 vs trunk 1.00 (the trunk knows these chains). RELATION TYPES (documents < 40,749): MTB key
 type-masked 0.565 / 0.544 (wordings 0.339 / 0.267) - stable; rules over types still fail (typed right 0.00-0.21). Trunk bits 1.9425.
+Visit 5: the trunk learned the KEPT inferences (trunk alone RIGHT 0.90, WRONG 0.76; flagged 0.00 / 0.14; awaiting 0.20). Facts WITH 0.72 /
+0.78 vs trunk 0.37 / 0.73; never-read names 0.00. ALL TEXT: **Wikipedia +0.0076 (gate open 10.7 per 1000) - the cost creeps up again as the
+memory fills (visits 3-5: +0.0023, +0.0034, +0.0076), still 4x below cg27a_kmb's +0.033; at 0.95: +0.0032 (open 4.2)**; others +0.0004-0.0018.
+The RETRACTED group read 0 at visits 4-5: retracted inferences leave the taught pool, which the readout sampled - fixed (taken from the ledger)
+for cg27a_kmf. Two-hop (taught chains) WITH 0.87 vs trunk 0.97. Byte edit (copy) WRONG 0.95 -> 0.23 (the kept wrong ones are in the trunk).
+Trunk bits 1.8869.
 
 ### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
 
