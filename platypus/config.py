@@ -667,6 +667,7 @@ class Config:
     inf_kmc=0                       #   15 Nov CONSOLIDATION THROUGH THE MEMORY (MODEL CHANGE when on; cg27a_kmc): written inferences teach the keyed memory at once but the
                                     #     TRUNK only once judged on later reading and kept (inf_rret's judge); flagged ones are counter-written OUT of the memory
                                     #     and never reach the trunk
+    inf_kmc_steps=60                #     counter-write steps (32 retracted rows + 32 kept rows each)
     inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
     inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram

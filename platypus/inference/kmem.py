@@ -616,7 +616,7 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
             hit.append(int(sc[0] > max(sc[1:])))
         return (np.mean(hit) if hit else float('nan'), np.mean(sup) if sup else float('nan'))
     b4 = [evalg(x) for x in (wrong, right, facts)]; snap = K['v'].detach().clone(); st0 = K['opt'].state_dict()
-    for st in range(60):
+    for st in range(int(getattr(cfg, 'inf_kmc_steps', 60))):
         for L, ul in ((wrong, True), (right, False)):
             it, X, lg = rows(L, 32); p0s = [len(a) - 1 for a, b, c in it]; ns = [min(len(b), lg.shape[1] - p0) for (a, b, c), p0 in zip(it, p0s)]
             a = _kma_addr_rows(model, K, X, it[0][2], p0s, ns) if K.get('allt') else _kmi_addr(model, K, [a for a, b, c in it], ns)
@@ -631,7 +631,7 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
     af = [evalg(x) for x in (wrong, right, facts)]
     with torch.no_grad(): K['v'].copy_(snap)
     K['opt'].load_state_dict(st0)
-    print(f"  [INTEGRATED KEYED MEMORY, COUNTER-WRITE | visit {vis + 1}] ORACLE on a copy (the labels pick them): 60 steps unlearning the WRONG inferences while "
+    print(f"  [INTEGRATED KEYED MEMORY, COUNTER-WRITE | visit {vis + 1}] ORACLE on a copy (the labels pick them): {int(getattr(cfg, 'inf_kmc_steps', 60))} steps unlearning the WRONG inferences while "
           f"re-writing the RIGHT ones; rank WITH the memory (chance 0.10) and the MEMORY'S SUPPORT for the answer (bits per answer byte the memory adds; 0 = none): "
           f"WRONG {b4[0][0]:.2f}, {b4[0][1]:+.2f} -> {af[0][0]:.2f}, {af[0][1]:+.2f} | RIGHT {b4[1][0]:.2f}, {b4[1][1]:+.2f} -> {af[1][0]:.2f}, {af[1][1]:+.2f} | "
           f"facts {b4[2][0]:.2f}, {b4[2][1]:+.2f} -> {af[2][0]:.2f}, {af[2][1]:+.2f}", flush=True)
@@ -670,7 +670,7 @@ def kmc_retract(model, cfg, S_slot, ents, vis):
         z0 = torch.stack([lg[r, p0s[r] + j] for r, j in zip(rr, pp)]); z = z0 + mv; tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
         lo = (F.log_softmax(z, -1).gather(-1, tg[:, None]) - F.log_softmax(z0, -1).gather(-1, tg[:, None]) + mg).clamp(min=0).mean() if ul else F.cross_entropy(z, tg)
         K['opt'].zero_grad(); lo.backward(); K['opt'].step()
-    for st in range(60):
+    for st in range(int(getattr(cfg, 'inf_kmc_steps', 60))):
         step(RX, True)
         if RT: step(RT, False)
     for k, w in new: w['kmc_done'] = vis
