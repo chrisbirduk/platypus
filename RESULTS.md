@@ -3158,3 +3158,12 @@ The 14 Nov firings were decided from the whole token list (a NAME fired only at 
 | DATE + NUMBER on top of NAME | - | +3.60 |
 | FACT / PLACE on top of NAME | -1.86 / -0.56 | +1.10 / -0.10 |
 - **DATE and NUMBER survive the causal check** (+5% on top of NAME with the gate, as on 14 Nov: +1.29 / +0.30 on NAME's 30). NAME alone is the bulk. Expected on a stronger trunk: smaller in absolute terms (the 18k / 6k comparison: savings scale with the trunk's bits).
+
+## Build B smoke: the sparse memory layer in the package (16 Nov 2026, tools/smf_smoke.py; d 64, 3 blocks, 64 x 64 slots, top 8; 400 + 400 steps)
+Visit 1 (text, the layer learning with the trunk): held-out wiki 2.315 bits per byte, layer OFF 2.338 (+0.023: the trunk uses it), 2,660 of 4,096 slots used by text. Visit 2, text training continues + 8 question rows a step (60 facts x 7 wordings, the test wording never used):
+| question rows written to | test wording rank (of 10) | held-out wiki | forgetting vs no questions | question loss |
+|---|---|---|---|---|
+| nothing (control) | 0.12 | 2.181 | - | - |
+| the layer only (smem, lr 0.01, 256 slots a step) | 0.15 | 2.198 | **+0.018** | 3.76 -> 3.55 |
+| every block's mlp_out (the GPU builds so far) | 0.10 | 2.267 | **+0.086** | 3.00 -> 3.79 |
+- The path works end to end (1,277 slots written; the trunk untouched by the questions) and forgets 5x less than mlp_out at this scale, but neither learns these facts in 400 steps on a d-64 trunk (rank ~ chance 0.10-0.15). A grid of the write lr and slots (0.03-0.3, 256-1,024) is running.

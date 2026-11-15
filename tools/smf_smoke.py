@@ -38,11 +38,16 @@ def bits(m, off=False):
 def text_step(m, op, r):
     X = wb(r); lg = m(X[:, :-1], 0); loss = F.cross_entropy(lg.reshape(-1, 256).float(), X[:, 1:].reshape(-1)); op.zero_grad(); loss.backward(); return loss
 # 1. visit 1: text, the layer learns with the trunk
-op = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=cfg.lr); r1 = np.random.RandomState(1)
-for st in range(int(os.environ.get('SS_PRE', 600))):
-    l = text_step(model, op, r1); smf_text_step(model, cfg); op.step()
-    if (st + 1) % 200 == 0: P(f"   visit 1 step {st + 1}: train {float(l) / math.log(2):.3f} bits per byte  ({time.time() - T0:.0f}s)")
-smf_visit(model, cfg, 0)
+CACHE = os.environ.get('SS_CACHE', '')
+if CACHE and os.path.exists(CACHE):
+    ck = torch.load(CACHE, weights_only=False); model.load_state_dict(ck['sd']); model.__dict__['_smf_st'] = ck['st']; smf_visit(model, cfg, 0); P(f"visit 1 loaded from {CACHE}")
+else:
+    op = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=cfg.lr); r1 = np.random.RandomState(1)
+    for st in range(int(os.environ.get('SS_PRE', 600))):
+        l = text_step(model, op, r1); smf_text_step(model, cfg); op.step()
+        if (st + 1) % 200 == 0: P(f"   visit 1 step {st + 1}: train {float(l.detach()) / math.log(2):.3f} bits per byte  ({time.time() - T0:.0f}s)")
+    smf_visit(model, cfg, 0)
+    if CACHE: model.__dict__['_smf_st']['kopt'] = None; torch.save(dict(sd=model.state_dict(), st=model.__dict__['_smf_st']), CACHE)
 b0, b0off = bits(model), bits(model, True); st0 = model.__dict__['_smf_st']
 P(f"after visit 1: held-out wiki {b0:.3f} bits per byte, layer OFF {b0off:.3f} ({b0off - b0:+.3f}: the trunk uses it) | slots used by text {int((st0['bg'] > 0).sum())} of {cfg.inf_smf_n ** 2}")
 # 2. the facts and their question rows
@@ -79,6 +84,12 @@ def run(mode):
       f"slots written {int(s['wrote'].sum())} ({s['steps_q']} steps) | {time.time() - t0:.0f}s")
     return b1
 P("visit 2: text training continues, + the question rows each step (8 a step), written to:")
-bn = run('none'); bs = run('smem'); bm = run('mlp_out')
-P(f"FORGETTING against the control (bits added on held-out wiki by the question rows): smem {bs - bn:+.4f}, mlp_out {bm - bn:+.4f}")
+GRID = [tuple(x.split(':')) for x in os.environ.get('SS_GRID', '').split(',') if x]   # e.g. 0.03:256,0.1:1024 (lr:slots) - smem runs only
+if GRID:
+    bn = run('none')
+    for lr_, t_ in GRID:
+        cfg.inf_smf_lr = float(lr_); cfg.inf_smf_t = int(t_); P(f"   smem lr {lr_} slots {t_}:"); bs = run('smem'); P(f"      forgetting against the control {bs - bn:+.4f}")
+else:
+    bn = run('none'); bs = run('smem'); bm = run('mlp_out')
+    P(f"FORGETTING against the control (bits added on held-out wiki by the question rows): smem {bs - bn:+.4f}, mlp_out {bm - bn:+.4f}")
 P(f"DONE ({time.time() - T0:.0f}s)")
