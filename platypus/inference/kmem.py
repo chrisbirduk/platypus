@@ -846,6 +846,18 @@ def kmc_retract(model, cfg, S_slot, ents, vis):
           f"{sum(1 for w in W.values() if w.get('flag'))} flagged (never taught to the trunk; right {np.mean([bool(w['truth']) for w in W.values() if w.get('flag')]) if any(w.get('flag') for w in W.values()) else float('nan'):.2f}), "
           f"{sum(1 for w in W.values() if w.get('ret'))} of them retracted from the memory ({len(new)} now) | WITH AN ORACLE the trunk would receive "
           f"{sum(1 for k, w in kept if w['truth'])} right and 0 wrong; it receives {sum(1 for k, w in kept if w['truth'])} right and {sum(1 for k, w in kept if not w['truth'])} wrong", flush=True)
+    try:                                                                       # 15 Nov INFERENCE LEDGER (readout): epistemic state and provenance of each inference
+        from platypus.inference.compress import _cg_auc
+        stt = lambda w: 'retracted' if w.get('ret') else 'flagged' if w.get('flag') else 'kept (judged)' if w.get('judged') is not None else 'inferred (awaiting)'
+        cnt = collections.Counter(stt(w) for w in W.values()); pv = [(k, w) for k, w in W.items() if w.get('prem')]
+        ex = " | ".join(f"{k[0]} ~ {k[1]}: premises {', '.join(w['prem'][:3])} ({w['bridges']} bridges), rule {w.get('rule')}, score {w.get('score', float('nan')):.3f}, "
+                        f"written at visit {w['vis'] + 1}, {stt(w)}" for k, w in pv[:2])
+        yv = np.array([bool(w['truth']) for k, w in pv]); sv = np.array([w.get('score', 0.0) for k, w in pv]); bv = np.array([w['bridges'] for k, w in pv], float)
+        au = lambda x: _cg_auc(x[yv], x[~yv]) if len(yv) >= 20 and yv.any() and (~yv).any() else float('nan')
+        print(f"  [INFERENCE LEDGER | visit {vis + 1}] {len(W)} inferences: " + ", ".join(f"{k} {v}" for k, v in sorted(cnt.items())) + f" | with provenance {len(pv)} "
+              f"(premises, rule, score) - e.g. {ex} || provenance as evidence (evaluation only): AUC of the write score {au(sv):.3f}, of the number of bridges {au(bv):.3f}", flush=True)
+    except Exception as e9:
+        print(f"  [INFERENCE LEDGER] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
     if not new: return
     FR = _dt_forms(cfg); g = np.random.RandomState(int(cfg.seed) + 5757 + vis); mg = float(getattr(cfg, 'inf_kmc_margin', 1.0))
     RX = [ent(k, w) for k, w in new]; RT = [ent(k, w) for k, w in kept] or [ent(k, w) for k, w in pend if not w.get('flag')]

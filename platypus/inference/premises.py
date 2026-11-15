@@ -613,7 +613,10 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         if len(wr) >= nmax: break
         c = ks[j]
         if c in done: continue
-        A_, C_ = sorted(c); W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(G[NI[A_]].multiply(G[NI[C_]]).sum()), rank=-1, novel=True, code=float(code[j]), ndv=int(ndv_))
+        A_, C_ = sorted(c); cm_ = G[NI[A_]].multiply(G[NI[C_]]).indices
+        if 'INV' not in _PM or len(_PM['INV']) != len(NI): _PM['INV'] = {i: n for n, i in NI.items()}
+        W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(len(cm_)), rank=len(wr), novel=True, code=float(code[j]), ndv=int(ndv_),
+                           prem=[_PM['INV'][int(x)] for x in cm_[:5]], rule=str(sel_), score=float(sc_[j]), state='inferred')   # 15 Nov PROVENANCE: premises (bridges), rule, score
         wr.append(bool(yy[j]))
     print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
           f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
