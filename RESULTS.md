@@ -1574,6 +1574,20 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### A LEARNED gate (tools/int_mem.py IM_LGATE=1, 15 November; 18k stand-in trunk, the integrated memory, lr 0.1, fact rows write)
+
+A small network on the read's features (written-slot weight, subject written, read confidence, address scores, byte offset) gates the read,
+trained by the trunk's own loss on fact rows AND ordinary wiki rows (+0.02 x the mean gate: a price for opening), against the fixed gate:
+
+| gate | A after A | B after B | A after B | paraphrased | bits wiki / dev (after B) | never-read names open |
+|---|---|---|---|---|---|---|
+| fixed (subject written, half the weight on written slots) | 0.81 / 1.00 | 0.89 / 1.00 | 0.56 / 0.98 | 0.03 / 0.66 | -0.000 / +0.016 | 0.00 |
+| LEARNED | 0.79 / 1.00 | 0.92 / 1.00 | 0.52 / 0.98 | 0.03 / 0.65 | -0.000 / +0.015 | 0.00 |
+
+**Neutral: the learned gate matches the fixed one (recall, abstention) but does not lower the cost on dev text (+0.015 vs +0.016).** The
+features it sees cannot tell a helpful read from a harmful one here; on the GPU the cost is traced to the untyped inferences' slots
+(cg27a_kmf memory feedback), which the gate-rule readout of cg27a_kmr measures directly. Keep the fixed gate.
+
 ### A discriminating test: relational support or only lists? (tools/readiness.py part 1, 15 November; the GPU path's 200 writes)
 
 After an outside review: judge an inference by the plausible ALTERNATIVE that explains the same evidence - our errors are mostly associated
