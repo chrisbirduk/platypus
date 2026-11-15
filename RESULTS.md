@@ -1174,6 +1174,10 @@ for a GPU build: a product-key memory layer in the trunk, question rows writing 
 about 1e-2.
 Seed 1 replicates (different facts and order): full 0.47 / 0.52 / 0.38 (+0.005), mlp_out 0.40 / 0.42 / 0.33 (+0.009), sparse answer
 slots lr 1e-2 **0.72 / 0.70 / 0.58** (+0.023), lr 3e-2 **0.88 / 0.87 / 0.60** (+0.071).
+**Refresh (SM_REPLAY 0.25: while B is taught, a quarter of the fact rows re-teach A; lr 1e-2, seeds 0 / 1):** A after B **0.70 / 0.68**
+(without refresh 0.62 / 0.58), B after B 0.70 / 0.68 (0.73 / 0.70), forgetting +0.030 / +0.025 (+0.029 / +0.023). **Refresh holds the
+old facts at their learned level for a small cost to the new ones and none in text** - as in the keyed memory. The GPU build already
+re-asks earlier written inferences across visits, which is this refresh.
 
 **Exact retraction inside the trunk? (SM_RETRACT, mixed setting, lr 3e-2):** after B, 30 facts of A retracted by restoring the answer slots
 their questions use most to their pre-teaching values. Rank (before teaching 0.30):
