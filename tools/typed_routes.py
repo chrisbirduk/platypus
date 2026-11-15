@@ -27,14 +27,18 @@ h = lambda v: int(round(ND * min(1.0, (v + 1) / 10)))
 STOP = {'the', 'a', 'an'}
 norm = lambda w: ' '.join(t for t in w.split() if t not in STOP)
 isrel = lambda r: 1 <= r[5] <= 8 and not pm._rret_listlike(r)
-def rels(X, Y): return set(PRD.get((X, Y), ())) | {x + '^-1' for x in PRD.get((Y, X), ())}
+GRP = int(os.environ.get('TR_GROUP', 0)); CONT = {'P131', 'P17', 'P30', 'P706', 'P276', 'P361'}   # TR_GROUP 1: 'is in' relations scored as one
+def cg(x):
+    if not GRP: return x
+    b, inv = (x[:-3], '^-1') if x.endswith('^-1') else (x, ''); return ('CONTAINED' + inv) if b in CONT else x
+def rels(X, Y): return {cg(x) for x in PRD.get((X, Y), ())} | {cg(x + '^-1') for x in PRD.get((Y, X), ())}
 def relmap(upto):
     """each normalised wording's commonest Wikidata relation over the labelled relational records (evaluation only)"""
     c = collections.defaultdict(collections.Counter)
     for r in R:
         if r[0] < upto and r[6] and isrel(r):
             for x in rels(r[1], r[2]): c[norm(r[3])][x] += 1
-    return {w: k.most_common(1)[0][0] for w, k in c.items()}
+    return {w: cg(k.most_common(1)[0][0]) for w, k in c.items()}
 def writes(v):
     pm._PM['rti'] = {}; pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
     return dict(pm._PM['rti'])
@@ -129,6 +133,15 @@ if ST == '3':
                 p1 = TC[(r['tA'], r['tC'])].most_common(1)[0][0] if TC.get((r['tA'], r['tC'])) else None
                 if p3 is not None: m3.append(p3 == r['cf']); g3.append(right(r, p3))
                 m1.append(p1 == r['cf']); g1.append(right(r, p1))
+            a3, a1 = [], []                                                    # at WRITE time, on every write (confirmed or not)
+            for r in rows:
+                votes = collections.Counter()
+                for p in r['prem']:
+                    if p[0] and p[1]: votes.update(T3.get((p[0], p[1]), {}))
+                if votes: a3.append((right(r, votes.most_common(1)[0][0]), r['truth']))
+                p1 = TC[(r['tA'], r['tC'])].most_common(1)[0][0] if TC.get((r['tA'], r['tC'])) else None; a1.append(right(r, p1))
+            P(f"ROUND {k + 1} AT WRITE TIME, all {len(rows)} writes (right as pairs {np.mean([r['truth'] for r in rows]):.3f}): composition table types {len(a3)}, typed claim right "
+              f"{np.mean([x for x, _ in a3]) if a3 else float('nan'):.3f} (those pairs right {np.mean([t for _, t in a3]) if a3 else float('nan'):.3f}); class-pair table {np.mean(a1):.3f}")
             P(f"ROUND {k + 1}: {len(cf)} confirmed writes | COMPOSITION TABLE (premise wordings -> confirming wording, from earlier rounds' confirmations): predicts {n3} "
               f"({n3 / max(1, len(cf)):.2f}); exact wording {np.mean(m3) if m3 else float('nan'):.3f}, relation right {np.mean(g3) if g3 else float('nan'):.3f} || CLASS-PAIR TABLE "
               f"(same rounds): exact {np.mean(m1):.3f}, relation right {np.mean(g1):.3f} || the confirming wording itself (route 2) right {np.mean([right(r, r['cf']) for r in cf]):.3f}")
