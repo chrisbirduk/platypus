@@ -23,7 +23,8 @@ Second version (14 Nov, late): JM_SEED (fact order, memory and head seeds), and 
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/jepa_mem.py   env JM_N (64), JM_KK (8), JM_STEPS (150 per set), JM_LR (0.05), JM_SEED (0),
   JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME; add K-TEXT with JM_TEXT), JM_TEXT (a DocRED distant .json.gz: K-TEXT, a wording head
   trained on REAL TEXT only - two different wordings that link the same pair of names in one sentence are one statement; InfoNCE; the
-  frames and the test wording never seen), JM_PAIRS (20000)"""
+  frames and the test wording never seen), JM_PAIRS (20000), JM_RX (30: retraction steps); ABSTAIN also by the read's norm (unwritten
+  slots hold zeros)"""
 import os, json, math, time, collections
 import numpy as np
 import torch
@@ -254,7 +255,7 @@ class KMem:
     @torch.no_grad()
     def confid(s, facts):
         nk = NK[[NI[f['A']] for f in facts]]; wk = torch.stack([s.wkey(f['rel'], TI) for f in facts]); val, _ = s.read(nk, wk)
-        return (F.normalize(val, dim=-1) @ NK.t()).max(-1).values.numpy()
+        return (F.normalize(val, dim=-1) @ NK.t()).max(-1).values.numpy(), val.norm(dim=-1).numpy()
     @torch.no_grad()
     def two_hop(s):
         f1s = [c[0] for c in CHAINS]; f2s = [c[1] for c in CHAINS]
@@ -278,11 +279,12 @@ for arm in os.environ.get('JM_ARMS', 'K-JEPA,K-RAW,K-NAME').split(','):
     taught = SET_A + SET_B + SET_M + HOPS
     P(f"           PARAPHRASED test wording (relation phrase never taught): A {fmt(M.recall(SET_A, 'P'))}, B {fmt(M.recall(SET_B, 'P'))}, M {fmt(M.recall(SET_M, 'P'))} "
       f"(the test wording: A {fmt(M.recall(SET_A))}, B {fmt(M.recall(SET_B))}, M {fmt(M.recall(SET_M))})")
-    P(f"           ABSTAIN: best cosine to a known name, taught vs never-taught subjects AUC {auc(M.confid(taught), M.confid(UNSEEN)):.3f} "
+    ct, cu = M.confid(taught), M.confid(UNSEEN)
+    P(f"           ABSTAIN: taught vs never-taught subjects, AUC of the best cosine to a known name {auc(ct[0], cu[0]):.3f}, of the read's norm {auc(ct[1], cu[1]):.3f} "
       f"(never-taught read 'right' by chance: {fmt(M.recall(UNSEEN))})")
     snap = M.v.detach().clone(); RX, KEEP = SET_A[:30], SET_A[30:]; b4 = [M.recall(x) for x in (RX, KEEP, SET_B, SET_M)]
-    M.retract(RX); af = [M.recall(x) for x in (RX, KEEP, SET_B, SET_M)]
-    P("           RETRACT 30 of A (memory only): retracted " + f"{fmt(b4[0])} -> {fmt(af[0])} | bystanders: rest of A {fmt(b4[1])} -> {fmt(af[1])}, "
+    M.retract(RX, int(os.environ.get('JM_RX', 30))); af = [M.recall(x) for x in (RX, KEEP, SET_B, SET_M)]
+    P(f"           RETRACT 30 of A (memory only, {os.environ.get('JM_RX', 30)} steps): retracted " + f"{fmt(b4[0])} -> {fmt(af[0])} | bystanders: rest of A {fmt(b4[1])} -> {fmt(af[1])}, "
       f"B {fmt(b4[2])} -> {fmt(af[2])}, M {fmt(b4[3])} -> {fmt(af[3])}")
     with torch.no_grad(): M.v.copy_(snap)
     if CAPF:
