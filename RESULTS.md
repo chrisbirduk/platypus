@@ -1141,6 +1141,21 @@ selection over the whole batch picks slots used by the rare frame words, not whe
 chosen on the answer bytes only, and more of them (1,024 / 4,096). Note the key memory outside the trunk (next section) learns the same
 facts at rank 0.93-1.00 with no trunk forgetting by construction.
 
+**Round 2 (15 November): slots chosen by TF-IDF counted only where the ANSWER bytes are predicted:**
+
+| sparse memory | lr | A after A | B after B | A after B | forgetting after A -> after B (wiki) |
+|---|---|---|---|---|---|
+| answer bytes, top 1,024 | 1e-2 | **0.78** | **0.77** | **0.72** | **+0.07 -> +0.15** |
+| answer bytes, top 1,024 | 3e-2 | **0.87** | **0.92** | **0.87** | +0.26 -> +0.44 |
+| answer bytes, top 4,096 | 1e-2 / 3e-3 | 0.83 / 0.57 | 0.92 / 0.68 | 0.75 / 0.53 | +0.36 -> +0.67 / +0.07 -> +0.18 |
+| whole batch, top 4,096 | 1e-2 | 0.82 | 0.88 | 0.78 | +0.31 -> +0.56 |
+
+**Positive: choosing slots where the answer is predicted fixes the learning, and sparse memory then beats every dense method at equal
+forgetting** - at about +0.15 bits it learns 0.78 (all memory values 0.58, mlp_out 0.35 at +0.22; full fine-tuning needs +0.76 for 0.70),
+and at 0.87-0.92 it costs +0.44 bits against full fine-tuning's +1.59 for 0.95 (3.6 times less). The paper's ordering holds at this
+scale; the absolute forgetting is still large because the batches are facts only, with no replay. Open-ended exact recall stays near 0
+for every in-trunk method (multi-word real names, byte by byte), while the key memory decodes them at 0.80-0.98.
+
 ### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
 
 The author's design: a sparse memory (Lin et al. 2025) whose address is (the subject's NAME KEY, a JEPA WORDING KEY of the name-masked
