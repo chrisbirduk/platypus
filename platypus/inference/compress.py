@@ -354,7 +354,7 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
     try:
         from platypus.inference.store import _INFM
         from platypus.capacity import apply_delta, domain_delta
-        idx = set((S_ or {}).get('idx', {}).keys()); Ts = int(model.cfg.seq_len); parts = []
+        idx = set((S_ or {}).get('idx', {}).keys()); Ts = int(model.cfg.seq_len); parts = []; mparts = []
         doms = [(d, 'read') for d in seen_d] + ([(next_d, 'NEXT, not yet read')] if next_d is not None and next_d not in seen_d else [])
         had = 'force' in _INFM; sv = _INFM.get('force'); _INFM['force'] = False
         try:
@@ -364,22 +364,44 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
                 if hasattr(g, 'reset'): g.reset()
                 dd = domain_delta(model, sl) if (getattr(model, '_spec', None) and sl != getattr(model, '_live_dom', None)) else {}
                 apply_delta(model, dd, +1); model.eval(); acc = {'all': [0.0, 0], 'known': [0.0, 0], 'unknown': [0.0, 0]}
+                KM = model.__dict__.get('_kmi') if int(getattr(cfg, 'inf_kma', 0)) else None   # 15 Nov ALL-TEXT MEMORY: the same bytes WITH the memory
+                KM = KM if KM is not None and KM.get('head') is not None and KM.get('allt') else None
+                accm = {'all': [0.0, 0], 'known': [0.0, 0], 'unknown': [0.0, 0], 'addr': 0, 'open': 0, 'bytes': 0}
                 try:
                     with torch.no_grad():
                         for _ in range(nb):
                             x, y = g()
-                            lg = model(x, sl)[:, -Ts:]; yy = y[:, -Ts:]
+                            cap = {}
+                            h9 = model.blocks[len(model.blocks) // 2].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', (o_[0] if isinstance(o_, tuple) else o_).detach())) if KM is not None else None
+                            try: lgf = model(x, sl)
+                            finally:
+                                if h9 is not None: h9.remove()
+                            lg = lgf[:, -Ts:]; yy = y[:, -Ts:]
                             nl = (F.cross_entropy(lg.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape).cpu().numpy()
+                            nlm = None
+                            if KM is not None:
+                                try:
+                                    from platypus.inference.kmem import kma_logits
+                                    lgm, _, na, no = kma_logits(model, KM, x, lgf, cap['h'].float()); lgm = lgm[:, -Ts:]
+                                    nlm = (F.cross_entropy(lgm.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape).cpu().numpy()
+                                    accm['addr'] += na; accm['open'] += no; accm['bytes'] += int(x.numel())
+                                except Exception:
+                                    _fail('inference.compress:preq_kma'); KM = None
                             yb = yy.cpu().numpy().astype(np.uint8)
                             for r in range(yb.shape[0]):
                                 row = bytes(yb[r]); acc['all'][0] += float(nl[r].sum()); acc['all'][1] += len(row)
+                                if nlm is not None: accm['all'][0] += float(nlm[r].sum()); accm['all'][1] += len(row)
                                 for m in _PQ_NAME.finditer(row):
                                     k = 'known' if m.group(0) in idx else 'unknown'
                                     acc[k][0] += float(nl[r, m.start():m.end()].sum()); acc[k][1] += m.end() - m.start()
+                                    if nlm is not None: accm[k][0] += float(nlm[r, m.start():m.end()].sum()); accm[k][1] += m.end() - m.start()
                 finally:
                     apply_delta(model, dd, -1); model.train()
                 f = lambda k: acc[k][0] / max(1, acc[k][1])
                 parts.append((d, kind, f('all'), f('known'), acc['known'][1], f('unknown'), acc['unknown'][1]))
+                if accm['bytes']:
+                    fm = lambda k: accm[k][0] / max(1, accm[k][1])
+                    mparts.append((d, kind, fm('all') - f('all'), fm('known') - f('known'), fm('unknown') - f('unknown'), 1000.0 * accm['addr'] / accm['bytes'], 1000.0 * accm['open'] / accm['bytes'], fm('all')))
         finally:
             if had: _INFM['force'] = sv
             else: _INFM.pop('force', None)
@@ -390,5 +412,9 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
         if nx:
             p = nx[0]; msg += f" || NEXT domain {p[0]} (not yet read): all bytes {p[2]:.4f} | KNOWN names {p[3]:.3f} ({p[4]} bytes) | unknown names {p[5]:.3f} ({p[6]} bytes)"
         print(f"  [PREQUENTIAL BITS | {tag}] held-out text never trained on, replayed or dreamed; weights only; bits per byte || {msg} | store knows {len(idx)} names", flush=True)
+        if mparts:                                                             # 15 Nov ALL-TEXT MEMORY (inf_kma): the model = trunk + gated memory on the same bytes
+            print(f"  [PREQUENTIAL BITS, WITH THE MEMORY | {tag}] the same held-out bytes, trunk + gated keyed memory (all-text address), change in bits per byte "
+                  f"(negative = the memory helps) || " + " | ".join(f"domain {p[0]} ({p[1]}): all {p[7]:.4f} ({p[2]:+.4f}), KNOWN names {p[3]:+.3f}, unknown names {p[4]:+.3f}; "
+                  f"addressed {p[5]:.0f} / gate open {p[6]:.1f} per 1000 bytes" for p in mparts), flush=True)
     except Exception as e:
         _fail('inference.compress:preq'); print(f"  [PREQUENTIAL BITS] unavailable ({type(e).__name__}: {e})"[:240], flush=True)

@@ -671,7 +671,12 @@ class Config:
     inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
-    inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
+    inf_kma=0                       #   15 Nov ALL-TEXT ADDRESS (MODEL CHANGE when on; cg27a_kma): the memory's address computed at EVERY byte of any text from the trunk's
+                                    #     own forward (middle block, in context; subject = latest completed capitalised run, hashed); the model reads it on all text (gated);
+                                    #     it writes only on question rows' answer bytes; readout: PREQUENTIAL BITS WITH THE MEMORY
+    inf_kmi_gatew=0.5               #     the gate: share of the read weight that must lie on written slots
+    inf_kmi_train=1                 #     0 = CONTROL: every memory computation as usual but its values never move (the bits question: kmi / kmg vs kmem)
+    inf_rcode_hold=0.1             #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
     inf_rret=0                      #   14 Nov RETRACTION (MODEL CHANGE when on; cg27a_rret): at the next premises readout each written inference is judged by what the store
                                     #     read since (records stating the pair with 3 or fewer words between the names, and the pair's document PMI; rank sum); the least
                                     #     confirmed inf_rret_q are flagged, and flagged TAUGHT ones are retracted (no longer taught; unlikelihood rows) unless held as control

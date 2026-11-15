@@ -1728,7 +1728,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 from platypus.inference.kmem import kmi_refresh, kmi_readout
                 dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
                 with torch.random.fork_rng(devices=dv9):
-                    kmi_readout(model, cfg, S_slot, ents, held, vis); kmi_refresh(model, cfg, ents, held, vis)
+                    kmi_readout(model, cfg, S_slot, ents, held, vis); kmi_refresh(model, cfg, ents, held, vis, S_slot)
                     if int(getattr(cfg, 'inf_kmc', 0)):
                         from platypus.inference.kmem import kmc_retract
                         kmc_retract(model, cfg, S_slot, ents, vis)
@@ -2020,7 +2020,7 @@ def distill_wake_loss(model, cfg):
         else: lg = _ws_run(model, X, sl, grad_=True); Hq = None
         if int(getattr(cfg, 'inf_kmi', 0)):                                   # 15 Nov INTEGRATED KEYED MEMORY: learns from these rows (trunk untouched)
             from platypus.inference.kmem import kmi_rows_loss
-            kmi_rows_loss(model, cfg, items, lg, X)
+            kmi_rows_loss(model, cfg, items, lg, X, sl)
         tot = 0.0; cnt = 0; ce = []
         pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
         if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
@@ -2086,7 +2086,7 @@ def distill_wake_loss(model, cfg):
                 X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
                 if int(getattr(cfg, 'inf_kmi', 0)):
                     from platypus.inference.kmem import kmi_rows_loss
-                    kmi_rows_loss(model, cfg, it2, lg2, X2)
+                    kmi_rows_loss(model, cfg, it2, lg2, X2, sl2)
                 kmc2 = _kmc_pending(cfg, it2)
                 for r9, it in enumerate(it2):
                     p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)

@@ -1337,6 +1337,12 @@ rank 0.15 -> **0.00**, support -0.05 -> **-4.34 bits per byte** (cg27a_kmg's sup
 re-write teaches them on the copy); facts 0.53 -> 0.42 (a cost to bystanders, -0.07 bits support). At this visit the memory had not yet
 learned the inferences, so the counter-write suppresses rather than removes; the test that matters is visit 3-4. Bits 2.0325 / 2.0324
 (cg27a_kmg 2.0342 / 2.0434, cg27a_kmi 2.0292 / 2.0304, cg27a_kmem 2.0277 / 2.0266: within noise).
+Visit 3: **the trunk has NOT learned the unjudged inferences - RIGHT 0.00 / 0.08, WRONG 0.00 / 0.10 alone (cg27a_kmg at visit 3: 0.15 / 0.52
+and 0.15 / 0.62)** - while the model answers them through the memory: RIGHT **0.32 / 0.93**, WRONG 0.36 / 0.87 (gate open 1.00 / 0.92).
+Consolidation holds them out of the trunk exactly as designed. Taught facts WITH 0.42 / 0.77 vs trunk 0.27 / 0.73; held back 0.03 / 0.53 =
+trunk (gate open 0.23); never-read names 0.00. COUNTER-WRITE (oracle, copy; now the memory holds the inferences): WRONG rank 0.92 -> **0.56**,
+support +1.63 -> -1.44 bits; RIGHT 0.95 -> 0.97; facts 0.72 -> 0.72 (cg27a_kmg: wrong stayed 0.90, the trunk held them). Better than kmg, no
+bystander cost, but only partial removal at 60 steps. Bits 2.0201 (cg27a_kmg 2.0319, cg27a_kmi 2.0203, cg27a_kmem 2.0105).
 
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 
