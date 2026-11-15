@@ -19,7 +19,7 @@ for k, v in _CONFIG_DEFAULTS.items(): setattr(Config, k, v)
 cfg = Config(); cfg.seed = 0
 for k, v in ALLPILE_CONFIG.items(): setattr(cfg, k, v)
 cfg.d_model = int(os.environ.get('SS_D', 96)); cfg.d_state = cfg.d_model; cfg.n_layers = 3; cfg.seq_len = 128
-cfg.inf_smf = 1; cfg.inf_smf_n = int(os.environ.get('SS_N', 64)); cfg.inf_smf_k = 8; cfg.inf_smf_t = int(os.environ.get('SS_T', 256)); cfg.inf_smf_lr = float(os.environ.get('SS_LR', 0.01))
+cfg.inf_smf = 1; cfg.inf_smf_blk = int(os.environ.get('SS_BLK', -1)); cfg.inf_smf_n = int(os.environ.get('SS_N', 64)); cfg.inf_smf_k = 8; cfg.inf_smf_t = int(os.environ.get('SS_T', 256)); cfg.inf_smf_lr = float(os.environ.get('SS_LR', 0.01))
 cfg.inf_distill_wake = 1.0; cfg.inf_distill_wake_rows = 8; cfg.inf_kmi = 0; cfg.inf_kmc = 0; cfg.inf_rti_rows = 0; cfg.inf_rret = 0; cfg.lr = 1e-3
 from platypus.model import Model
 from platypus.inference.closed_form import _ws_batch, _ws_run

@@ -694,6 +694,7 @@ class Config:
                                     #   learning from text for the first inf_smf_pre visits, then written ONLY by the question rows (with inf_distill_wake_params
                                     #   'smem'), only at the inf_smf_t slots with the highest TF-IDF where their answers are predicted (Lin et al. 2025)
     inf_smf_n=256                   #     n x n value slots
+    inf_smf_blk=-1                  #     the block it sits beside (-1 = the middle block)
     inf_smf_k=16                    #     slots read per byte
     inf_smf_dk=64                   #     half-query width
     inf_smf_pre=1                   #     visits in which the layer learns from text (then frozen for text)
