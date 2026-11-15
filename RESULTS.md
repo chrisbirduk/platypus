@@ -1477,6 +1477,22 @@ judge recovers it (best end to end 0.53, or 0.69 on only 52 kept). Path evidence
 pipeline (code + AA, judged by documents) is the best of these, 0.77 to the trunk. The judge ceiling on these writes is ~0.65 whatever
 the signal. Further gains must come from a new kind of evidence (the Go-CLS learning-speed readout rides on cg27a_kma), not a re-split.
 
+### Typed real-text inference by rule mining over surface wordings (tools/typed_rules.py, 15 November; distant documents 0 -> 2/10)
+
+AMIE-style closed-path rules r1(x,y) & r2(y,z) => r3(x,z) over typed records (the 150 commonest specific wordings between two names, 1-6
+words apart, typed by the names' entity types), label-free; proposals = body pairs never stated; scored against Wikidata (evaluation only):
+
+| relations | typed facts | rules kept | proposals | untyped right | TYPED right (the head's relation) |
+|---|---|---|---|---|---|
+| full wording | 54,059 | 12 (paraphrase pairs) | 24 | 0.42 | 0.42 |
+| last word | 124,251 | 102 (sentence templates: 'born' TIME & 'in' LOC => TIME 'in' LOC) | 13,554 | 0.04 (best bin 0.21) | 0.04 (best bin 0.30) |
+| last word, entities only, body facts from different documents | 67,031 | 17 | 1,609 | 0.10 | 0.08 |
+| full wording, entities only, different documents | 24,389 | 5 | 128 | 0.16 | 0.09 |
+
+**Negative: rules over SURFACE wordings do not give typed inference** - surface wordings are not relations (one relation has many
+wordings, one wording - 'in', 'of' - many relations), so the rules found are paraphrase pairs or one sentence's template, and the typed
+proposals are right 0.04-0.42 against the untyped path's 0.74. Typed inference needs records typed by RELATION, not by wording.
+
 ### Invariance across environments as the judge (tools/env_judge.py, 15 November; after Lopez-Paz, 'Against All Likelihood', arXiv 2611.09385)
 
 Environments made without labels: the 40,749 documents read by 4/10 clustered by the names they mention (TF-IDF -> SVD 64 -> k-means, K =
