@@ -33,16 +33,19 @@ for r in R:
     all_n[fk] += 1; rel_n[fk] += int(rl)
     for a, b in ((r[1], r[2]), (r[2], r[1])):
         if a in WN: nb_any[a].add(b); (nb_rel[a].add(b) if rl else None)
-y = np.array([t for _, t in WR]); s1, s2, s3, s4, s5 = [], [], [], [], []
+TYPx = pm._PM['TY']; ent = lambda n: TYPx.get(n, 'X') not in ('TIME', 'NUM')   # bridges that are entities (not dates or numbers: they attach to neighbours)
+y = np.array([t for _, t in WR]); s1, s2, s3, s4, s5, s6, s7 = [], [], [], [], [], [], []
 for (a, c), t in WR:
     fk = frozenset((a, c)); s1.append(rel_n[fk]); s2.append(rel_n[fk] / all_n[fk] if all_n[fk] else np.nan)
     s3.append(len(nb_rel[a] & nb_rel[c])); s4.append(len(nb_rel[a] & nb_rel[c]) / max(1, len(nb_any[a] & nb_any[c]))); s5.append(-int(all_n[fk] > 0 and rel_n[fk] == 0))
+    s6.append(sum(1 for x in nb_any[a] & nb_any[c] if ent(x))); s7.append(sum(1 for x in nb_rel[a] & nb_rel[c] if ent(x)))
 au = lambda s: (lambda s_: _cg_auc(s_[y], s_[~y]))(np.nan_to_num(np.array(s, float), nan=-1.0))
 lo = np.array([x == -1 for x in s5])
 P(f"1 DISCRIMINATING TEST on {len(WR)} writes (right {y.mean():.3f}), records of documents < {n2}: LIST-ONLY pairs (co-occur, never relationally) {lo.mean():.2f} "
   f"(right among them {y[lo].mean() if lo.any() else float('nan'):.2f}, among the rest {y[~lo].mean():.2f})")
 for nm, s in (('relational records of the pair', s1), ('share of the pair\'s records that are relational', s2), ('bridges linked RELATIONALLY on both sides', s3),
-              ('share of the bridges linked relationally', s4), ('not list-only', s5)):
+              ('share of the bridges linked relationally', s4), ('not list-only', s5), ('bridges that are ENTITIES (no dates / numbers)', s6),
+              ('entity bridges linked relationally on both sides', s7), ('all bridges (any link; for comparison)', [len(nb_any[a] & nb_any[c]) for (a, c), _ in WR])):
     P(f"   {nm:52s} AUC {au(s):.3f}")
 P(f"   (the current judge: documents stating the pair 0.639)  ({time.time() - T0:.0f}s)")
 # 2 READINESS, 3 MERGING
