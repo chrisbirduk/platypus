@@ -1379,6 +1379,17 @@ ArXiv; gate open 0.6 / 4.7 / 0.4 per 1000 bytes), next domain +0.0003 - a small 
 names live), no gain yet on known names. Counter-write (margin, copy): WRONG 0.92 -> 0.77 (cg27a_kmb's byte edit replaces it). Trunk bits
 2.0161 (cg27a_kmc 2.0201, cg27a_kmi 2.0203).
 
+### GPU cg27a_kmt: stricter gate (0.85) + relation types from the GPU trunk (seed 4, 15 November, visits 1-2)
+
+RELATION TYPES FROM THE TRUNK (visit 2, 60,000 premises records, 6,595 with one Wikidata relation): the factorial on the GPU trunk is
+ADDITIVE (R^2 0.97; variance subject / relation / object 0.60 / 0.20 / 0.18) with the relation's subspace apart from the names' (overlap
+0.11 / 0.13, subject-object 0.12; random 0.01). Types (64) against Wikidata: surface wordings 0.352 / 0.273 (purity / NMI), raw 0.355 /
+0.288, names out 0.382 / 0.305, type-masked 0.491 / 0.424, **MTB key type-masked 0.562 / 0.534** - the offline ranking reproduced at GPU
+scale. Rules over the types: 8-21 rules, typed proposals right 0.00-0.23 - **rule discovery fails at scale too.** TWO-HOP through the memory
+(10 chains): WITH the memory first hop exact 0.40, C rank 0.90; trunk alone 0.20, 0.90 (true B 0.90 / 0.80) - no gain yet (few chains;
+both hops taught to the trunk too). Memory as cg27a_kmb (facts WITH 0.42 / 0.48 vs trunk 0.18 / 0.43; never-read 0.00; bits WITH the
+memory +0.0000 at visit 2, gate open 0.0 per 1000). Trunk bits 2.0160 / 2.0278.
+
 ### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
 
 Visit 3 (the memory now holds the visit-2 inferences): **BYTE EDIT (oracle, on a copy): WRONG rank 0.92 -> 0.03, RIGHT 1.00 -> 0.97, facts
