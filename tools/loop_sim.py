@@ -57,7 +57,8 @@ def bits(claims, idx, TXT, PT, EN):
     st = mem(claims); s = 0.0; n = 0
     for i in idx: s += _row_bits(st, TXT[i], PT[i], EN[i], ('NAME',), 'NAME', 0.05)[0]; n += len(TXT[i])
     return 1000 * s / max(1, n)
-POL = ('JUDGE', 'USEFUL', 'JUDGE+USE', 'ALL BATCH'); KEPT = {p: {} for p in POL}; T3 = {p: collections.defaultdict(collections.Counter) for p in POL}
+POL = tuple(os.environ.get('LS_POL', 'JUDGE,USEFUL,JUDGE+USE,ALL BATCH').split(','));   # also EITHER (judge or useful, all 400), USEFUL>t (gain above t bits per 1,000 bytes)
+ KEPT = {p: {} for p in POL}; T3 = {p: collections.defaultdict(collections.Counter) for p in POL}
 pm._PM['rti'] = {}
 for rd, v in enumerate((1, 3, 5), 1):
     before = set(pm._PM['rti']); pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
@@ -99,14 +100,17 @@ for rd, v in enumerate((1, 3, 5), 1):
                 cw = votes.most_common(1)[0][0]; rv = cw.endswith(' ^R'); w0 = cw[:-3] if rv else cw; typed[(A, C)] = (C, w0, A) if rv else (A, w0, C)
             elif tab.get(cp):
                 (w, fw), _ = tab[cp].most_common(1)[0]; typed[(A, C)] = (hd, w, tl) if fw else (tl, w, hd)
-        def useful(k):
+        def useful(k, t=0.0):
             c = typed.get(k)
             if c is None or not first.get(c[0]): return False
-            return bits([c], first[c[0]], TXT, PT, EN) > 0
+            return bits([c], first[c[0]], TXT, PT, EN) > t
         judged = lambda k: bool(conf.get(k))
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE+USE': keep = [k for k in W if (tier[k] and judged(k)) or (not tier[k] and useful(k))]
+        elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
+        elif p == 'EITHER-BATCH': keep = [k for k in W if tier[k] and (judged(k) or useful(k))]
+        elif p.startswith('USEFUL>'): keep = [k for k in W if useful(k, float(p[7:]))]
         else: keep = [k for k in W if tier[k]]
         for k in keep:
             if k in typed: KEPT[p][k] = typed[k]
