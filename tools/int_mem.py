@@ -19,7 +19,9 @@ frame): RANK (the answer's bytes most likely among 10 of its type, by mean bits;
 the PARAPHRASED relation phrase; FORGETTING = bits added on held-out wiki and Re-DocRED dev text (the memory active); ERASE: the slots
 read where 30 facts' training rows predict their answers set to zero - their recall and the bystanders'. Arms: ALL ROWS WRITE (wiki rows' gradients reach the
 memory too: the memory also learns from text) and FACT ROWS WRITE (wiki rows read but do not write).
-Usage: TG_D=192 TG_CKPT=<model file> python3 tools/int_mem.py   env IM_N (128), IM_STEPS (400), IM_LR (0.01,0.03), IM_SEED (0), IM_ARMS"""
+IM_GATE=1 (15 Nov): at evaluation the memory is read only where its address was written - the subject is one the fact rows wrote for AND
+half the read weight is on slots they read (= wrote) - on ALL text: does the gate remove the cost on ordinary text?
+Usage: TG_D=192 TG_CKPT=<model file> python3 tools/int_mem.py   env IM_N (128), IM_STEPS (400), IM_LR (0.01,0.03), IM_SEED (0), IM_ARMS, IM_GATE"""
 import os, re, json, math, time, collections
 import numpy as np
 import torch
@@ -161,7 +163,9 @@ g = torch.Generator().manual_seed(SEED + 3)
 K1 = F.normalize(torch.randn(NS, DK, generator=g), dim=-1); K2 = F.normalize(torch.randn(NS, DK, generator=g), dim=-1)
 R1 = torch.randn(DW, DK, generator=g) / DW ** 0.5; EOFF = F.normalize(torch.randn(MAXO + 1, DK, generator=g), dim=-1)
 class IMem:
-    def __init__(s, lr): s.v = torch.zeros(NS * NS, DW, requires_grad=True); s.opt = torch.optim.Adam([s.v], lr=lr)
+    def __init__(s, lr):
+        s.v = torch.zeros(NS * NS, DW, requires_grad=True); s.opt = torch.optim.Adam([s.v], lr=lr)
+        s.gate = False; s.wmask = torch.zeros(NS * NS, dtype=torch.bool); s.subj = set(); s.opened = [0, 0]   # 15 Nov GATE (IM_GATE)
     def logits(s, seqs, write_rows=None, rec=None):
         X, hs, G = feats(seqs); xl = hs[-1].clone()
         if G:
@@ -171,9 +175,15 @@ class IMem:
             sc = (a1[:, :, None] + a2[:, None, :]).flatten(1); ix = (i1[:, :, None] * NS + i2[:, None, :]).flatten(1)
             top, j = sc.topk(KK, -1); idx = ix.gather(-1, j); w = F.softmax(top / 0.05, -1)
             vv = s.v[idx]
+            if write_rows is not None:                                     # what the writing rows read is what they write: the gate's index
+                for k, g_ in enumerate(G):
+                    if g_[0] in write_rows: s.wmask[idx[k]] = True; s.subj.add(g_[2])
             if write_rows is not None:                                     # rows that may not write: their reads carry no gradient
                 wm = torch.tensor([float(g_[0] in write_rows) for g_ in G])[:, None, None]; vv = vv * wm + vv.detach() * (1 - wm)
             val = (w[..., None] * vv).sum(1)
+            if s.gate:                                                     # read only where the address was written: the subject, and half the weight
+                op = torch.tensor([float(g_[2] in s.subj) for g_ in G]) * ((w * s.wmask[idx].float()).sum(-1) >= 0.5).float()
+                val = val * op[:, None]; s.opened[0] += int(op.sum()); s.opened[1] += len(G)
             if rec is not None: rec.extend((g_[0], g_[1], idx[k].tolist()) for k, g_ in enumerate(G))
             rows = torch.tensor([g_[0] for g_ in G]); ts = torch.tensor([g_[1] for g_ in G])
             xl = xl.index_put((rows, ts), val, accumulate=True)
@@ -201,6 +211,16 @@ def recall(M, facts, form=TEST, para=False):
         oe.append(int(out[:-1] == tb[:-1]))
     return float(np.mean(oe)), float(np.mean(rk))
 wb = lambda rr, n: [bytes(WK[i0:i0 + L]) for i0 in rr.randint(0, HO - L - 1, n)]
+GATE = int(os.environ.get('IM_GATE', 0))
+_bits0, _recall0 = bits, recall
+def bits(M, seqs):
+    M.gate = bool(GATE); M.opened = [0, 0]
+    try: return _bits0(M, seqs)
+    finally: M.gate = False
+def recall(M, facts, form=TEST, para=False):
+    M.gate = bool(GATE)
+    try: return _recall0(M, facts, form, para)
+    finally: M.gate = False
 def teach(M, facts, rr, fact_only):
     for st in range(STEPS):
         fb = [facts[rr.randint(len(facts))] for _ in range(8)]
@@ -211,12 +231,15 @@ M0 = IMem(0.01); b0w, b0d = bits(M0, EV_W), bits(M0, EV_D)
 P(f"before writing (the memory empty = the trunk): A {fmt(recall(M0, SET_A[:30]))} | held-out bits wiki {b0w:.3f}, dev {b0d:.3f}  ({time.time() - T0:.0f}s)")
 ARMS = [(a, float(lr)) for a in os.environ.get('IM_ARMS', 'FACT ROWS WRITE,ALL ROWS WRITE').split(',') for lr in os.environ.get('IM_LR', '0.01,0.03').split(',')]
 for arm, lr in ARMS:
-    M = IMem(lr); rr = np.random.RandomState(SEED + 11); fo = arm.startswith('FACT')
+    M = IMem(lr); rr = np.random.RandomState(SEED + 11); fo = arm.startswith('FACT') or GATE
+    _bits, _recall = bits, recall
     teach(M, SET_A, rr, fo); ra = recall(M, SET_A); w1, d1 = bits(M, EV_W), bits(M, EV_D)
     teach(M, SET_B, rr, fo); rb = recall(M, SET_B); raa = recall(M, SET_A); w2, d2 = bits(M, EV_W), bits(M, EV_D)
     pa = recall(M, SET_A + SET_B, para=True)
     P(f"   {arm:16s} lr {lr:g}: A after A {fmt(ra)} | B after B {fmt(rb)} | A after B {fmt(raa)} | PARAPHRASED (A+B) {fmt(pa)} || FORGETTING (bits added) "
-      f"wiki {w1 - b0w:+.3f} -> {w2 - b0w:+.3f}, dev {d1 - b0d:+.3f} -> {d2 - b0d:+.3f} | slots written {int((M.v.detach().abs().sum(1) > 0).sum())} of {NS * NS}  ({time.time() - T0:.0f}s)")
+      f"wiki {w1 - b0w:+.3f} -> {w2 - b0w:+.3f}, dev {d1 - b0d:+.3f} -> {d2 - b0d:+.3f} | slots written {int((M.v.detach().abs().sum(1) > 0).sum())} of {NS * NS}"
+      + (f" | GATE: open on {M.opened[0] / max(1, M.opened[1]):.3f} of the dev-text positions with a subject ({len(M.subj)} subjects, {int(M.wmask.sum())} slots written)" if GATE else '')
+      + f"  ({time.time() - T0:.0f}s)")
     RX, KEEP = SET_A[:30], SET_A[30:]; snap = M.v.detach().clone(); b4 = [recall(M, x) for x in (RX, KEEP, SET_B)]; rec = []
     with torch.no_grad():
         ids = set()
