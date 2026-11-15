@@ -203,7 +203,7 @@ def _kmi_state(model, cfg, V):
                  R1=(torch.randn(d, _KM_DK, generator=g) / math.sqrt(d)).to(dev), EOFF=F.normalize(torch.randn(_KMI_MAXO + 1, _KM_DK, generator=g), dim=-1).to(dev),
                  v=torch.zeros(n * n, V, device=dev, requires_grad=True), head=None, mu=None, nk={}, wk={}, nmu=None, steps=0, rows=0, hit=0, loss=[], touched=set())
         K['opt'] = torch.optim.Adam([K['v']], lr=float(getattr(cfg, 'inf_kmi_lr', 0.02))); model.__dict__['_kmi'] = K
-        K['namekey'] = str(getattr(cfg, 'inf_kmi_namekey', 'trunk')); K['HN'] = 1 << 16
+        K['namekey'] = str(getattr(cfg, 'inf_kmi_namekey', 'trunk')); K['HN'] = 1 << 16; K['gate'] = int(getattr(cfg, 'inf_kmi_gate', 0))
         K['HR'] = F.normalize(torch.randn(K['HN'], d, generator=g), dim=-1).to(dev) if K['namekey'] == 'hash' else None
     return K
 
@@ -251,6 +251,7 @@ def _kmi_read(K, nk, wk, offs):
     a1, i1 = (q1 @ K['k1'].t()).topk(_KM_KK, -1); a2, i2 = (w2 @ K['k2'].t()).topk(_KM_KK, -1); n = K['n']
     sc = (a1[:, :, None] + a2[:, None, :]).flatten(1); ix = (i1[:, :, None] * n + i2[:, None, :]).flatten(1)
     top, j = sc.topk(_KM_KK, -1); idx = ix.gather(-1, j); w = F.softmax(top / 0.05, -1)
+    K['_w'] = w                                                                 # the read weights of the last read (the gate uses them)
     return (w[..., None] * K['v'][idx]).sum(1), idx
 
 
@@ -264,9 +265,9 @@ def _kmi_addr(model, K, prompts, ns):
     if not rows: return None
     W = _kmi_wording(model, K, [m for _, _, m, _ in rows])
     if W is None: return None
-    N = _kmi_name(model, K, [A for _, A, _, _ in rows]); nk, wk, off, rr, pp = [], [], [], [], []
+    N = _kmi_name(model, K, [A for _, A, _, _ in rows]); nk, wk, off, rr, pp = [], [], [], [], []; K['_subj'] = []
     for k, (r, A, m, n_) in enumerate(rows):
-        for j in range(n_): nk.append(N[k]); wk.append(W[k]); off.append(min(j, _KMI_MAXO)); rr.append(r); pp.append(j)
+        for j in range(n_): nk.append(N[k]); wk.append(W[k]); off.append(min(j, _KMI_MAXO)); rr.append(r); pp.append(j); K['_subj'].append(A)
     return torch.stack(nk), torch.stack(wk), torch.tensor(off, device=N.device), rr, pp
 
 
@@ -284,6 +285,9 @@ def kmi_rows_loss(model, cfg, items, lg, X):
         z = torch.stack([lg[r, p0s[r] + j].detach().float() for r, j in zip(rr, pp)]); tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
         mv, idx = _kmi_read(K, nk, wk, off); lo = F.cross_entropy(z + mv, tg)
         K['opt'].zero_grad(); lo.backward(); K['opt'].step(); K['steps'] += 1; K['loss'].append(float(lo.detach()))
+        K.setdefault('subj', set()).update(K['_subj'])                          # 15 Nov GATE: the subjects written, and the slots written
+        if 'wmask' not in K: K['wmask'] = torch.zeros(K['n'] ** 2, dtype=torch.bool, device=idx.device)
+        K['wmask'][idx.flatten()] = True
         if len(K['touched']) < 10 ** 6: K['touched'].update(idx.flatten().tolist())
     except Exception:
         from platypus.common import _fail
@@ -295,7 +299,16 @@ def kmi_logits(model, K, prompts_b, X, lg):
     p0s = [len(pb) - 1 for pb in prompts_b]; ns = [lg.shape[1] - p0 for p0 in p0s]
     a = _kmi_addr(model, K, prompts_b, [min(n, _KMI_MAXO + 1) for n in ns])
     if a is None: return lg
-    nk, wk, off, rr, pp = a; mv, _ = _kmi_read(K, nk, wk, off); out = lg.clone().float()
+    nk, wk, off, rr, pp = a; mv, idx = _kmi_read(K, nk, wk, off); out = lg.clone().float(); subj = K['_subj']
+    if K.get('gate'):                                                           # 15 Nov GATE (inf_kmi_gate): read only where the address is one the memory has
+        wm = K.get('wmask'); wf = (K['_w'] * wm[idx].float()).sum(-1) if wm is not None else torch.zeros(len(rr), device=out.device)   # written: the
+        ok = [(s_ in K.get('subj', ())) and float(wf[k]) >= 0.5 for k, s_ in enumerate(subj)]   #   subject was written AND half the read weight is on written slots
+        first = {}
+        for k, r in enumerate(rr): first.setdefault(r, ok[k])                   # the decision is the answer's FIRST byte's, for the whole answer
+        K['_open'] = first
+        for k, (r, j) in enumerate(zip(rr, pp)):
+            if first[r]: out[r, p0s[r] + j] += mv[k]
+        return out
     for k, (r, j) in enumerate(zip(rr, pp)): out[r, p0s[r] + j] += mv[k]
     return out
 
@@ -334,22 +347,22 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
     if K is None or K['head'] is None or not fs:
         print(f"  [INTEGRATED KEYED MEMORY | visit {vis + 1}] not yet trained", flush=True); return
     RTI_R = 'is connected to'; rs = np.random.RandomState(int(cfg.seed) + 5353 + vis); pool = sorted({e['ans'] for e in fs + hf})
-    def score(L, form, cap=60):
-        L = L[:cap]; on, off, oon, ooff = [], [], [], []
+    def score(L, form, cap=60, greedy=True):
+        L = L[:cap]; on, off, oon, ooff, gop = [], [], [], [], []
         for e in L:
             pr = form(e); pb = pr.encode('latin-1', 'replace'); alts = [x for x in pool if x not in (e['ans'], e['A'])]
             if len(alts) < 9: continue
             cs = [e['ans']] + [alts[j] for j in rs.choice(len(alts), 9, replace=False)]; cb = [(c + '.').encode('latin-1', 'replace') for c in cs]
             X, _ = _ws_batch(model, [pb + c for c in cb]); sl = int(S_slot(e['d']))
             with torch.no_grad():
-                lg = _ws_run(model, X, sl).float(); lgm = kmi_logits(model, K, [pb] * len(cb), X, lg)
+                lg = _ws_run(model, X, sl).float(); K['_open'] = {}; lgm = kmi_logits(model, K, [pb] * len(cb), X, lg); gop.append(int(bool(K['_open'].get(0, False))))
                 for z, acc in ((lg, off), (lgm, on)):
                     lp = F.log_softmax(z, -1); p0 = len(pb) - 1; sc = []
                     for j, c in enumerate(cb):
                         n_ = min(len(c), lp.shape[1] - p0); sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else -1e9)
                     acc.append(int(sc[0] > max(sc[1:])))
                 tb = e['ans'].encode('latin-1', 'replace'); outs = []
-                for use in (False, True):                                      # greedy, byte by byte: the exact name
+                for use in ((False, True) if greedy else ()):                                      # greedy, byte by byte: the exact name
                     o = b''
                     for _ in range(len(tb)):
                         Xg, _ = _ws_batch(model, [pb + o + b' ']); zg = _ws_run(model, Xg, sl).float()
@@ -358,9 +371,11 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
                         if q >= zg.shape[1]: break
                         o += bytes([int(zg[0, q].argmax())])
                     outs.append(int(o == tb))
-                ooff.append(outs[0]); oon.append(outs[1])
+                if outs: ooff.append(outs[0]); oon.append(outs[1])
         if not on: return "- (0)"
-        return f"WITH {np.mean(oon):.2f} / {np.mean(on):.2f} vs trunk {np.mean(ooff):.2f} / {np.mean(off):.2f} ({len(on)})"
+        g_ = f", gate open {np.mean(gop):.2f}" if K.get('gate') else ''
+        if not oon: return f"WITH - / {np.mean(on):.2f} vs trunk - / {np.mean(off):.2f} ({len(on)}{g_})"
+        return f"WITH {np.mean(oon):.2f} / {np.mean(on):.2f} vs trunk {np.mean(ooff):.2f} / {np.mean(off):.2f} ({len(on)}{g_})"
     te = lambda e: f"It is on record that {e['A']} {e['r']} "; pa = lambda e: f"It is on record that {e['A']} {_DT_PARA[e['r']]} "
     kind = lambda L, t=None: [e for e in L if (e['r'] != RTI_R if t == 'fact' else (e['r'] == RTI_R and e.get('truth') is t))]
     rs.shuffle(fs); rs.shuffle(hf)
@@ -370,4 +385,68 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
           f"rank among 10 (chance 0.10) || taught FACTS {score(kind(fs, 'fact'), te)} | HELD BACK facts {score(kind(hf, 'fact'), te, 30)} | taught inferences "
           f"RIGHT {score(kind(fs, True), te)} / WRONG {score(kind(fs, False), te, 40)} | held back inferences {score(kind(hf, True) + kind(hf, False), te, 30)} | "
           f"PARAPHRASED facts {score([e for e in kind(fs, 'fact') if e['r'] in _DT_PARA], pa, 40)}", flush=True)
+    if K.get('gate'):                                                          # ABSTENTION: questions about names the system never read
+        from platypus.inference.distill import _DT_REFUSE_SYL
+        rels = sorted({e['r'] for e in fs}); g9 = np.random.RandomState(int(cfg.seed) + 5454 + vis); op9 = []
+        for k in range(60):
+            nm = ''.join(g9.choice(_DT_REFUSE_SYL, 2)).title() + ' ' + ''.join(g9.choice(_DT_REFUSE_SYL, 3)).title()
+            pb = f"It is on record that {nm} {rels[g9.randint(len(rels))]} ".encode('latin-1'); X, _ = _ws_batch(model, [pb + b'Xx.'])
+            with torch.no_grad(): lg = _ws_run(model, X, 0).float(); K['_open'] = {}; kmi_logits(model, K, [pb], X, lg)
+            op9.append(int(bool(K['_open'].get(0, False))))
+        print(f"  [INTEGRATED KEYED MEMORY, GATE | visit {vis + 1}] the memory answers only where its address was written ({len(K.get('subj', ()))} subjects written, "
+              f"{int(K['wmask'].sum()) if 'wmask' in K else 0} slots): gate OPEN on questions about NEVER-READ names {np.mean(op9):.2f} (60; the memory abstains on the rest - "
+              f"the trunk answers these with a stored name, false-memory probe a)", flush=True)
+    if int(getattr(cfg, 'inf_kmi_counter', 0)):                                # COUNTER-WRITE (oracle, on a copy): unlearn the WRONG inferences, re-write the rest
+        try: _kmi_counter_readout(model, cfg, K, S_slot, kind(fs, True), kind(fs, False), kind(fs, 'fact'), vis)
+        except Exception as e9:
+            from platypus.common import _fail
+            _fail('inference.kmem:counter'); print(f"  [INTEGRATED KEYED MEMORY, COUNTER-WRITE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     K['loss'] = lm[-200:]
+
+
+def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
+    """ORACLE (the labels pick the wrong inferences - the mechanism, not a trigger), on a COPY of the memory: 60 steps driving the memory's
+    support for the WRONG inferences' answer bytes (log-probability with it minus without) to zero while re-writing the RIGHT ones (same subjects share slots) - offline (tools/jepa_mem.py JM_M2) this
+    removed the retracted (open 0.00) and kept the sibling (0.85-0.95); zeroing the slots killed both"""
+    from platypus.inference.distill import _dt_forms
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    if not wrong or not right: return
+    FR = _dt_forms(cfg); g = np.random.RandomState(int(cfg.seed) + 5555 + vis)
+    def rows(L, n):
+        it = [(FR[g.randint(len(FR))].format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), int(S_slot(e['d']))) for e in (L[g.randint(len(L))] for _ in range(n))]
+        X, _ = _ws_batch(model, [a + b for a, b, c in it])
+        with torch.no_grad(): lg = _ws_run(model, X, it[0][2]).float()
+        return it, X, lg
+    def evalg(L):                                                              # rank among 10 by mean answer-byte log-probability, WITH the memory (no gate)
+        hit, sup = [], []; pool = sorted({e['ans'] for e in right + wrong + facts}); rr = np.random.RandomState(int(cfg.seed) + 5656)
+        for e in L[:40]:
+            alts = [x for x in pool if x not in (e['ans'], e['A'])]
+            if len(alts) < 9: continue
+            cs = [e['ans']] + [alts[j] for j in rr.choice(len(alts), 9, replace=False)]; pb = f"It is on record that {e['A']} {e['r']} ".encode('latin-1', 'replace')
+            cb = [(c + '.').encode('latin-1', 'replace') for c in cs]; X, _ = _ws_batch(model, [pb + c for c in cb])
+            with torch.no_grad():
+                lg = _ws_run(model, X, int(S_slot(e['d']))).float(); gt = K.get('gate'); K['gate'] = 0; z = kmi_logits(model, K, [pb] * len(cb), X, lg); K['gate'] = gt
+                lp = F.log_softmax(z, -1); l0 = F.log_softmax(lg, -1); p0 = len(pb) - 1; n0 = min(len(cb[0]), lp.shape[1] - p0); ar = torch.arange(p0, p0 + n0, device=lp.device)
+                sc = [float(lp[j, torch.arange(p0, p0 + min(len(c), lp.shape[1] - p0), device=lp.device), X[j, p0 + 1:p0 + 1 + min(len(c), lp.shape[1] - p0)]].mean()) for j, c in enumerate(cb)]
+                sup.append(float((lp[0, ar, X[0, p0 + 1:p0 + 1 + n0]] - l0[0, ar, X[0, p0 + 1:p0 + 1 + n0]]).mean()) / math.log(2))
+            hit.append(int(sc[0] > max(sc[1:])))
+        return (np.mean(hit) if hit else float('nan'), np.mean(sup) if sup else float('nan'))
+    b4 = [evalg(x) for x in (wrong, right, facts)]; snap = K['v'].detach().clone(); st0 = K['opt'].state_dict()
+    for st in range(60):
+        for L, ul in ((wrong, True), (right, False)):
+            it, X, lg = rows(L, 32); p0s = [len(a) - 1 for a, b, c in it]; ns = [min(len(b), lg.shape[1] - p0) for (a, b, c), p0 in zip(it, p0s)]
+            a = _kmi_addr(model, K, [a for a, b, c in it], ns)
+            if a is None: continue
+            nk, wk, off, rr, pp = a; mv, _ = _kmi_read(K, nk, wk, off)
+            z0 = torch.stack([lg[r, p0s[r] + j] for r, j in zip(rr, pp)]); z = z0 + mv; tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
+            if ul:                                                              # unlearn: the memory's SUPPORT for the wrong answer's bytes driven to zero or below
+                lo = (F.log_softmax(z, -1).gather(-1, tg[:, None]) - F.log_softmax(z0, -1).gather(-1, tg[:, None])).clamp(min=0).mean()
+            else: lo = F.cross_entropy(z, tg)
+            K['opt'].zero_grad(); lo.backward(); K['opt'].step()
+    af = [evalg(x) for x in (wrong, right, facts)]
+    with torch.no_grad(): K['v'].copy_(snap)
+    K['opt'].load_state_dict(st0)
+    print(f"  [INTEGRATED KEYED MEMORY, COUNTER-WRITE | visit {vis + 1}] ORACLE on a copy (the labels pick them): 60 steps unlearning the WRONG inferences while "
+          f"re-writing the RIGHT ones; rank WITH the memory (chance 0.10) and the MEMORY'S SUPPORT for the answer (bits per answer byte the memory adds; 0 = none): "
+          f"WRONG {b4[0][0]:.2f}, {b4[0][1]:+.2f} -> {af[0][0]:.2f}, {af[0][1]:+.2f} | RIGHT {b4[1][0]:.2f}, {b4[1][1]:+.2f} -> {af[1][0]:.2f}, {af[1][1]:+.2f} | "
+          f"facts {b4[2][0]:.2f}, {b4[2][1]:+.2f} -> {af[2][0]:.2f}, {af[2][1]:+.2f}", flush=True)

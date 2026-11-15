@@ -1308,6 +1308,13 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### The gate and the counter-write in the package (tools/kmi_smoke.py KM_PRESET=cg27a_kmg, 15 November)
+
+Tiny untrained Model, fabricated pool, 300 memory steps: GATE open on taught facts and inferences 1.00, on held-back facts 0.15-0.17, on
+questions about never-read names 0.00. COUNTER-WRITE (oracle, on a copy, 60 steps): driving the memory's SUPPORT for the wrong answers
+(bits per answer byte it adds) to zero took WRONG from +5.8-6.0 to -2.7 to -3.6 (rank 1.00 -> 0.30-0.50) with RIGHT inferences and facts
+unchanged; an unlikelihood loss reached only +2.3. Built as cg27a_kmg.
+
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 
 200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is

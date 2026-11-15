@@ -661,6 +661,9 @@ class Config:
                                     #     (trunk logits detached: the trunk's training unchanged); readout: the model's answers with vs without it
     inf_kmi_n=128                   #     product keys n x n slots
     inf_kmi_lr=0.02                 #     memory values learning rate (Adam; values are logit vectors)
+    inf_kmi_gate=0                  #   15 Nov GATE (MODEL CHANGE when on; cg27a_kmg): the memory answers only where its address was written (the subject was
+                                    #     written and half the read weight falls on written slots); elsewhere the trunk answers alone; readout: abstention
+    inf_kmi_counter=0               #     readout: counter-write retraction of the WRONG inferences on a copy of the memory (oracle)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
     inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)

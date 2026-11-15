@@ -12,7 +12,7 @@ from platypus.presets import ALLPILE_CONFIG
 for k, v in _CONFIG_DEFAULTS.items(): setattr(Config, k, v)
 cfg = Config(); cfg.seed = 0
 for k, v in ALLPILE_CONFIG.items(): setattr(cfg, k, v)
-ovr = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'configs', 'presets', 'cg27a_kmi.overrides.json')))
+ovr = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'configs', 'presets', os.environ.get('KM_PRESET', 'cg27a_kmi') + '.overrides.json')))
 for k, v in ovr.items():
     if not k.startswith('_'): setattr(cfg, k, tuple(v) if isinstance(v, list) else v)
 cfg.d_model = 64; cfg.n_layers = 2; cfg.seq_len = 128
