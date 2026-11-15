@@ -1308,6 +1308,21 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
+
+As the integrated test above (the memory read inside the forward pass at every byte with a subject), but at evaluation the read counts only
+where its address was written (the subject is one the fact rows wrote for AND half the read weight is on slots they wrote):
+
+| lr | A after A (open / rank) | B after B | A after B | paraphrased | forgetting wiki / dev, after A -> after B | ungated (same lr) |
+|---|---|---|---|---|---|---|
+| 0.03 | 0.40 / 1.00 | 0.53 / 1.00 | 0.27 / 1.00 | 0.02 / 0.71 | **+0.000 -> +0.000 / +0.011 -> +0.015** | +0.27 -> +0.53 / +0.34 -> +0.62 |
+| 0.1 | **0.69** / 1.00 | **0.77** / 1.00 | 0.35 / 1.00 | 0.01 / 0.71 | **+0.001 -> +0.001 / +0.026 -> +0.036** | +0.78 -> +1.29 / +1.03 -> +1.55 |
+
+**Positive: the gate removes the cost of reading the memory on ordinary text - wiki +0.000-0.001 bits (from +0.5 to +1.3) and dev text
++0.015-0.036 (from +0.6 to +1.5) - with recall unchanged (rank 1.00, exact names 0.69-0.77, paraphrase 0.71).** The residual dev cost: the
+gate's subject index also took in capitalised frame words ('From', 'Notes') and the answers themselves, since every position of a fact row
+wrote; restricting writes to the answer bytes should close it. The memory can be read on all text.
+
 ### The gate and the counter-write in the package (tools/kmi_smoke.py KM_PRESET=cg27a_kmg, 15 November)
 
 Tiny untrained Model, fabricated pool, 300 memory steps: GATE open on taught facts and inferences 1.00, on held-back facts 0.15-0.17, on
