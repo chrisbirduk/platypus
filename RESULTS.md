@@ -1308,6 +1308,19 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### GPU cg27a_kmem: the keyed memory at GPU scale (readout) + rasymaa's code + AA (seed 4, 15 November, visits 1-2)
+
+Keyed memory (name x JEPA wording key, 128 x 128 slots; inference.kmem), recall in the TEST wording, open / rank among 10 (chance 0.10):
+taught facts **0.92 / 0.94** at visit 1, **0.72 / 0.83** at visit 2 (held back 0.00 / 0.23, 0.03 / 0.09; the trunk answers taught facts
+right 0.06 open at visit 2, false-memory probe c); real-text inferences RIGHT **0.57 / 0.81**, WRONG 0.51 / 0.69 (held back 0.00 / 0.18,
+0.00 / 0.23); TWO-HOP 0.19 / 0.44 (32 chains; first hop decoded right 0.50). Wording head on the GPU trunk: the test wording's relation
+0.95 / 0.98, a PARAPHRASED relation 0.76 / 0.88 (better than offline) - but paraphrased recall of facts only 0.21-0.26 / 0.25-0.34
+(inferences via 'is tied to' 0.50 / 0.71). ERASE (oracle, the WRONG inferences): 0.51 -> **0.00**, facts 0.72 -> 0.73, RIGHT inferences
+0.57 -> 0.42 (same subject, same wording - as warned). PERSISTENT: facts written at visit 1 read at visit 2 with the drifted keys **0.73 /
+0.88** (0.96 / 1.00 when written). Code + AA wrote **0.740** right at visit 2 (cg27a_rasym 0.680), as its readout predicted. Bits 2.0277 /
+2.0266 (cg27a_rasym 2.0145 / 2.0206; visit 1 precedes any change: seed noise). **Positive so far: at GPU scale the memory holds the real
+facts in an unseen wording far better than the trunk, survives one visit of key drift, and erases exactly.**
+
 ### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
 
 The author's idea: 4-6 generic KEYED units like NAME, indexable, extracted from local context, each with its own memory, kept only if they
