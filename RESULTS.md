@@ -1327,6 +1327,32 @@ Visit 4 (stopped there for cg27a_kmc): facts WITH **0.52 / 0.85** vs trunk 0.42 
 +5.7-5.8 -> -4.9 to -7.0 bits per byte (rank 0.86-1.00 -> 0.00-0.20), RIGHT and facts unchanged; consolidation masked 27 of 60 inference rows
 (unjudged or flagged) from the trunk; the 7 retracted were counter-written out of the real memory.
 
+### GPU cg27a_kmc: consolidation through the memory (seed 4, 15 November, visits 1-2 so far)
+
+Visit 2 (the memory as cg27a_kmg; the 200 written inferences are held from the trunk until judged): taught facts WITH 0.40 / 0.50 vs trunk
+0.10 / 0.47 (gate open 0.42; cg27a_kmg 0.42 / 0.50 vs 0.10 / 0.48); held back 0.00 / 0.33 = trunk (gate open 0.07); never-read names gate
+open 0.00; inferences not yet in the memory (gate open 0.00 - they are written this visit and learned next). CONSOLIDATION: 200 awaiting
+judgement, the trigger has nothing to judge yet (expected: it judges from visit 4). COUNTER-WRITE WITH THE MARGIN (oracle, on a copy): WRONG
+rank 0.15 -> **0.00**, support -0.05 -> **-4.34 bits per byte** (cg27a_kmg's support-to-zero loss stopped near 0); RIGHT 0.20 -> 0.97 (the
+re-write teaches them on the copy); facts 0.53 -> 0.42 (a cost to bystanders, -0.07 bits support). At this visit the memory had not yet
+learned the inferences, so the counter-write suppresses rather than removes; the test that matters is visit 3-4. Bits 2.0325 / 2.0324
+(cg27a_kmg 2.0342 / 2.0434, cg27a_kmi 2.0292 / 2.0304, cg27a_kmem 2.0277 / 2.0266: within noise).
+Visit 3: **the trunk has NOT learned the unjudged inferences - RIGHT 0.00 / 0.08, WRONG 0.00 / 0.10 alone (cg27a_kmg at visit 3: 0.15 / 0.52
+and 0.15 / 0.62)** - while the model answers them through the memory: RIGHT **0.32 / 0.93**, WRONG 0.36 / 0.87 (gate open 1.00 / 0.92).
+Consolidation holds them out of the trunk exactly as designed. Taught facts WITH 0.42 / 0.77 vs trunk 0.27 / 0.73; held back 0.03 / 0.53 =
+trunk (gate open 0.23); never-read names 0.00. COUNTER-WRITE (oracle, copy; now the memory holds the inferences): WRONG rank 0.92 -> **0.56**,
+support +1.63 -> -1.44 bits; RIGHT 0.95 -> 0.97; facts 0.72 -> 0.72 (cg27a_kmg: wrong stayed 0.90, the trunk held them). Better than kmg, no
+bystander cost, but only partial removal at 60 steps. Bits 2.0201 (cg27a_kmg 2.0319, cg27a_kmi 2.0203, cg27a_kmem 2.0105).
+Visit 4 - THE FIRST VERDICTS: the trigger [signal docs] judged the visit-2 writes at AUC **0.637** (offline 0.639); flagged 40, wrong 0.35
+(unflagged 0.24); 11 retracted (and counter-written out of the memory), 12 flagged taught kept as control. CONSOLIDATION: 160 judged and KEPT
+(right **0.76**; written 0.74) now go to the trunk; 40 flagged never will (right 0.65). **The trunk receives 122 right and 38 wrong; an
+oracle would pass 122 and 0** - 14 of 52 wrong ones kept out at the price of 26 right ones held back: the judge purifies only a little, as
+offline. A further 200 written at visit 4 now wait in the memory alone. The readout's inference groups now mix the visit-2 writes (learned)
+and the visit-4 writes (not yet learned): RIGHT WITH 0.02 / 0.52 vs trunk 0.00 / 0.13 (gate open 0.57), WRONG 0.00 / 0.53 vs 0.00 / 0.07 -
+a readout artefact, not a loss (a by-age split is needed). Facts WITH **0.57 / 0.90** vs trunk 0.37 / 0.88; held back 0.07 / 0.47 vs trunk
+0.03 / 0.57 (gate open 0.30: the small leak, as cg27a_kmg); paraphrased 0.12 / 0.68 = trunk; never-read names 0.00. Counter-write (copy):
+WRONG 0.50 -> 0.45, RIGHT 0.55 -> 0.75 (mixed groups). Bits 1.9438 (cg27a_kmg 1.9398, cg27a_kmi 1.9354, cg27a_kmem 1.9185).
+
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 
 As the integrated test above (the memory read inside the forward pass at every byte with a subject), but at evaluation the read counts only
@@ -1348,6 +1374,48 @@ Tiny untrained Model, fabricated pool, 300 memory steps: GATE open on taught fac
 questions about never-read names 0.00. COUNTER-WRITE (oracle, on a copy, 60 steps): driving the memory's SUPPORT for the wrong answers
 (bits per answer byte it adds) to zero took WRONG from +5.8-6.0 to -2.7 to -3.6 (rank 1.00 -> 0.30-0.50) with RIGHT inferences and facts
 unchanged; an unlikelihood loss reached only +2.3. Built as cg27a_kmg.
+
+### Label-free triggers from CONSISTENCY (tools/stab_trigger.py, 15 November; the GPU path's 200 writes, 0.740 right, distant labels)
+
+Research routes (semantic entropy / SelfCheckGPT: stability under resampling; CAGED / CKRL / KGTtm: agreement across views and path
+evidence; temporal stability as evidence accumulates). AUC right vs wrong, and the lowest 20% flagged (wrong among them; base 0.26):
+
+| signal | AUC | wrong among flagged | kept right |
+|---|---|---|---|
+| (restatement: later documents stating the pair, tools/trigger_retest.py) | 0.639 | 0.35 | 0.76 |
+| 1 BOOTSTRAP STABILITY: mean / worst percentile over 5 resamples (70% of documents) / minus spread | 0.547 / 0.528 / 0.504 | 0.30 / 0.25 / 0.18 | 0.72-0.75 |
+| 2 VIEWS at write time: code / Adamic-Adar / resource allocation / 3-hop paths | 0.399 / 0.606 / 0.632 / 0.631 | 0.22 / 0.30 / 0.40 / 0.40 | 0.73-0.78 |
+| 2 the WORST view (all must support) / minus the views' spread | 0.623 / 0.607 | 0.40 / 0.40 | 0.775 |
+| 3 TEMPORAL: percentile after the next 2/10 of reading (indirect support only) / its change / 3-hop change | 0.612 / 0.608 / 0.596 | 0.32 / 0.29 / **0.43** | 0.75-0.78 |
+| combined: bootstrap worst + view worst + temporal change | 0.628 | 0.40 | 0.775 |
+
+(The resample and later tables are 256-dimensional - memory; the write-time rule at 256 dims scores 0.572.) **Negative as a trigger: no
+consistency signal passes AUC 0.64; the best flag sets hold wrong 0.40-0.43 against 0.26 (kept precision 0.74 -> 0.78).** Bootstrap stability
+is no help (the written pairs are stable whether right or wrong); path support (resource allocation, 3-hop) and its growth carry a little.
+Caveat: AUCs against the DISTANT labels (Wikidata), which agree with human labels only 0.85 (tools/trigger_retest.py part 2); offline against
+Re-DocRED human labels the restatement trigger reached 0.72-0.73 - part of the ceiling here may be the labels.
+
+### Are the triggers weak, or are the labels? (tools/human_trigger.py, 15 November; Re-DocRED writes, HUMAN and distant labels side by side)
+
+The same signals on the Re-DocRED writes of tools/fact_compress.py (200 per split; human-labelled right 0.37 / 0.41; distant labels agree with
+the human ones 0.85 / 0.87). Later reading = distant documents 0-30,000; path views on the distant graph with every record stating a written
+pair left out (indirect support only). AUC against HUMAN | DISTANT labels, split s0 / s1:
+
+| signal | HUMAN | distant |
+|---|---|---|
+| restatement: documents stating the pair | 0.702 / 0.707 | 0.698 / 0.736 |
+| restatement: short-gap records (3 or fewer words between) | **0.719 / 0.714** | 0.693 / 0.734 |
+| path: Adamic-Adar | 0.645 / 0.608 | 0.661 / 0.643 |
+| path: resource allocation | **0.745 / 0.713** | 0.768 / 0.738 |
+| path: 3-hop | 0.481 / 0.481 | 0.481 / 0.542 |
+| temporal: change of resource allocation (documents 10,000 -> 30,000) / of 3-hop | 0.741 / 0.696; 0.487 / 0.490 | 0.765 / 0.709; 0.493 / 0.548 |
+| combined: restatement + RA + 3-hop / all | 0.677 / 0.658; 0.681 / 0.654 | 0.689 / 0.707; 0.692 / 0.698 |
+
+Flagging the lowest 20% of short-gap restatement or resource allocation: wrong among flagged 0.80-0.86 (human base 0.59-0.63).
+**The labels do not hide the trigger: on the same writes the human and distant AUCs agree within about 0.03 (human slightly lower).** The
+signals reach 0.70-0.75 here and 0.61-0.64 on the GPU path's own writes because the WRITES differ: the GPU path selects its writes by code +
+Adamic-Adar, so the path evidence is already spent in the selection and what remains to separate them is weaker. The 0.64 ceiling on the
+GPU path is therefore real. Rank-sum combinations are worse than the best single signal (3-hop is noise here and drags them down).
 
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 

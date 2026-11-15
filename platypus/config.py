@@ -667,11 +667,20 @@ class Config:
     inf_kmc=0                       #   15 Nov CONSOLIDATION THROUGH THE MEMORY (MODEL CHANGE when on; cg27a_kmc): written inferences teach the keyed memory at once but the
                                     #     TRUNK only once judged on later reading and kept (inf_rret's judge); flagged ones are counter-written OUT of the memory
                                     #     and never reach the trunk
+    inf_kmc_mode='margin'           #     retraction: 'margin' (counter-write, cg27a_kmc) | 'byte' / 'wide' (only the retracted answer's bytes lowered in the slots it reads -
+                                    #     the 8 read or the 64 of the product neighbourhood - recorded so it can be undone)
+    inf_kmc_passes=8                #     byte edit: passes over the retracted rows until every answer byte is below -margin
+    inf_kmc_steps=60                #     counter-write steps (32 retracted rows + 32 kept rows each)
     inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
     inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
-    inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
+    inf_kma=0                       #   15 Nov ALL-TEXT ADDRESS (MODEL CHANGE when on; cg27a_kma): the memory's address computed at EVERY byte of any text from the trunk's
+                                    #     own forward (middle block, in context; subject = latest completed capitalised run, hashed); the model reads it on all text (gated);
+                                    #     it writes only on question rows' answer bytes; readout: PREQUENTIAL BITS WITH THE MEMORY
+    inf_kmi_gatew=0.5               #     the gate: share of the read weight that must lie on written slots
+    inf_kmi_train=1                 #     0 = CONTROL: every memory computation as usual but its values never move (the bits question: kmi / kmg vs kmem)
+    inf_rcode_hold=0.1             #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
     inf_rret=0                      #   14 Nov RETRACTION (MODEL CHANGE when on; cg27a_rret): at the next premises readout each written inference is judged by what the store
                                     #     read since (records stating the pair with 3 or fewer words between the names, and the pair's document PMI; rank sum); the least
                                     #     confirmed inf_rret_q are flagged, and flagged TAUGHT ones are retracted (no longer taught; unlikelihood rows) unless held as control

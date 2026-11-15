@@ -39,12 +39,19 @@ for ns in co.values():
     ns = sorted(ns)[:60]; CAND.update(frozenset((ns[x], ns[y])) for x in range(len(ns)) for y in range(x + 1, len(ns)))
 P(f"{len(CAND)} candidate pairs (the written ones among them: {sum(1 for k in WK if k in CAND)})")
 
-def table(recs, seed, k=512):
-    """the store's name x name graph without held-out documents and without any record stating a candidate pair; codes; per-name degree"""
-    NI = {}; ia, ib = [], []
+NAMEID = {}
+def compact(recs):
+    """records as arrays (document, name id, name id), held-out documents and candidate-stating records already dropped (memory)"""
+    d, a, b = [], [], []
     for r in recs:
         if hold(r[0]) or r[1] == r[2] or frozenset((r[1], r[2])) in CAND: continue
-        ia.append(NI.setdefault(r[1], len(NI))); ib.append(NI.setdefault(r[2], len(NI)))
+        d.append(r[0]); a.append(NAMEID.setdefault(r[1], len(NAMEID))); b.append(NAMEID.setdefault(r[2], len(NAMEID)))
+    return np.array(d, np.int32), np.array(a, np.int32), np.array(b, np.int32)
+def table(recs, seed, k=512):
+    """the store's name x name graph without held-out documents and without any record stating a candidate pair; codes; per-name degree"""
+    d_, a_, b_ = recs; ua = np.unique(np.concatenate([a_, b_])); loc = {int(x): i for i, x in enumerate(ua)}
+    inv = {i: n for n, i in NAMEID.items()}; NI = {inv[int(x)]: i for i, x in enumerate(ua)}
+    ia = np.searchsorted(ua, a_); ib = np.searchsorted(ua, b_)
     NN = len(NI); G = csr_matrix((np.ones(len(ia), np.float32), (np.array(ia), np.array(ib))), shape=(NN, NN)); G = G + G.T; G.sum_duplicates(); G.data[:] = 1.0
     deg = np.asarray(G.sum(1)).ravel(); Gc = G.tocoo(); tot = float(G.sum())
     v = np.log(tot * Gc.data / (deg[Gc.row] * deg[Gc.col]) + 1e-12); mk = v > 0
@@ -74,33 +81,34 @@ def percentiles(T):
     """the written pairs' percentiles among ALL candidates under each view and under the write rule (code + AA rank sum)"""
     V = views(T, CL); R_ = {k: rk(v) for k, v in V.items()}; both = R_['code'] + R_['aa']; R_['rule'] = rk(both)
     return {k: v[wi] for k, v in R_.items()}
-R2 = [r for r in R if r[0] < n2 and frozenset((r[1], r[2])) not in CAND]   # later reading (built now, then the full record list is freed: memory)
-del R; pm._PM['R'] = None; import gc; gc.collect()
+R2 = compact([r for r in R if r[0] < n2])                                     # later reading (built now, then the full record list is freed: memory)
+R1 = compact(R1); del R; pm._PM['R'] = None; import gc; gc.collect()
 # write time (all documents read)
-P0 = percentiles(table(R1, 4)); P(f"write-time table rebuilt  ({time.time() - T0:.0f}s)")
+KB = int(os.environ.get('ST_K', 256))                                           # resample / later tables at 256 dims (memory: the 512-dim SVD peaks ~3 GB)
+P0 = percentiles(table(R1, 4)); P0b = percentiles(table(R1, 4, KB)); P(f"write-time table rebuilt  ({time.time() - T0:.0f}s)")
 # 1 bootstrap: 70% of the documents read
 NB = int(os.environ.get('ST_NB', 5)); docs = np.arange(n1); BS = []
 for b in range(NB):
     keep = set(np.random.RandomState(100 + b).choice(docs, int(0.7 * n1), replace=False).tolist())
-    BS.append(percentiles(table([r for r in R1 if r[0] in keep], 100 + b))['rule']); P(f"   bootstrap {b + 1} of {NB}  ({time.time() - T0:.0f}s)")
+    km = np.isin(R1[0], np.fromiter(keep, np.int32)); BS.append(percentiles(table((R1[0][km], R1[1][km], R1[2][km]), 100 + b, KB))['rule']); gc.collect(); P(f"   bootstrap {b + 1} of {NB}  ({time.time() - T0:.0f}s)")
 BS = np.array(BS)
 # 3 temporal: after the next 2/10 of the documents, records stating a written or candidate pair left out
-P2 = percentiles(table(R2, 4)); P(f"later table (documents < {n2})  ({time.time() - T0:.0f}s)")
+P2 = percentiles(table(R2, 4, KB)); P(f"later table (documents < {n2})  ({time.time() - T0:.0f}s)")
 def report(name, s):
     m = ~np.isnan(s); s_, y_ = s[m], y[m]
     if m.sum() < 20 or y_.all() or (~y_).all(): P(f"   {name}: too few"); return
     auc = _cg_auc(s_[y_], s_[~y_]); q = np.quantile(s_, 0.2); fl = s_ <= q
     P(f"   {name:58s} AUC {auc:.3f} (n {m.sum()}) | lowest 20% flagged: wrong among them {1 - y_[fl].mean():.2f} (overall {1 - y_.mean():.2f}), kept right {y_[~fl].mean():.3f}")
 P("SIGNALS vs the distant labels (higher = right):")
-report('write-time rule percentile (code + AA)', P0['rule'])
+report('write-time rule percentile (code + AA)', P0['rule']); report(f'write-time rule percentile at {KB} dims', P0b['rule'])
 P(" 1 BOOTSTRAP STABILITY")
 report('mean percentile over resamples', BS.mean(0)); report('worst percentile over resamples', BS.min(0)); report('minus spread over resamples', -BS.std(0))
 P(" 2 VIEW AGREEMENT (write time)")
 for k in ('code', 'aa', 'ra', 'l3'): report(f'view {k}', P0[k])
 VV = np.stack([P0[k] for k in ('code', 'aa', 'ra', 'l3')]); report('WORST view (all must support)', VV.min(0)); report('minus spread of the views', -VV.std(0))
 P(" 3 TEMPORAL STABILITY (indirect support only)")
-report('rule percentile after more reading', P2['rule']); report('change of the rule percentile', P2['rule'] - P0['rule'])
-for k in ('code', 'l3'): report(f'change of view {k}', P2[k] - P0[k])
+report('rule percentile after more reading', P2['rule']); report('change of the rule percentile (same dims)', P2['rule'] - P0b['rule'])
+for k in ('code', 'l3'): report(f'change of view {k} (same dims)', P2[k] - P0b[k])
 P(" COMBINED")
-comb = rk(BS.min(0)) + rk(VV.min(0)) + rk(P2['rule'] - P0['rule']); report('bootstrap worst + view worst + temporal change', comb)
+comb = rk(BS.min(0)) + rk(VV.min(0)) + rk(P2['rule'] - P0b['rule']); report('bootstrap worst + view worst + temporal change', comb)
 P(f"DONE ({time.time() - T0:.0f}s)")

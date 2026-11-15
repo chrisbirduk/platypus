@@ -16,6 +16,9 @@ ovr = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'configs', 'p
 for k, v in ovr.items():
     if not k.startswith('_'): setattr(cfg, k, tuple(v) if isinstance(v, list) else v)
 cfg.d_model = 64; cfg.n_layers = 2; cfg.seq_len = 128
+if os.environ.get('KM_CSTEPS'): cfg.inf_kmc_steps = int(os.environ['KM_CSTEPS'])
+if os.environ.get('KM_MODE'): cfg.inf_kmc_mode = os.environ['KM_MODE']
+if os.environ.get('KM_MARGIN'): cfg.inf_kmc_margin = float(os.environ['KM_MARGIN'])
 from platypus.model import Model
 from platypus.inference.distill import _dt_forms
 from platypus.inference.closed_form import _ws_batch, _ws_run
@@ -34,13 +37,13 @@ for i in range(80):
         e = dict(key=('fact', A, 'is connected to', C), A=A, r='is connected to', ans=C, d=0, truth=bool(i % 3)); (held if i % 4 == 0 else ents).append(e)
 S_slot = lambda d: 0; FR = _dt_forms(cfg)
 kmi_readout(model, cfg, S_slot, ents, held, 0); K = kmi_refresh(model, cfg, ents, held, 0)
-print(f"refreshed: {len(K['nk'])} name keys, {len(K['wk'])} wording keys, V {K['V']}  ({time.time() - T0:.0f}s)", flush=True)
+print(f"refreshed: {len(K['nk'])} name keys, {len(K['wk'])} wording keys, V {K['V']}, all-text {K.get('allt')} (head loss {K.get('hloss', float('nan')):.2f})  ({time.time() - T0:.0f}s)", flush=True)
 fs = [e for e in ents if e['key'][0] == 'fact']
 for st in range(int(sys.argv[1]) if len(sys.argv) > 1 else 300):
     items = [(FR[rs.randint(len(FR))].format(A=e['A'], r=e['r']).encode('latin-1'), (e['ans'] + '.').encode('latin-1'), 0, repr(e['key'])) for e in (fs[rs.randint(len(fs))] for _ in range(16))]
     X, _ = _ws_batch(model, [it[0] + it[1] for it in items])
     with torch.no_grad(): lg = _ws_run(model, X, 0)
-    kmi_rows_loss(model, cfg, items, lg, X)
+    kmi_rows_loss(model, cfg, items, lg, X, 0)
 print(f"memory steps {K['steps']}, rows addressed {K['hit']} of {K['rows']}, loss {np.mean(K['loss'][:20]):.3f} -> {np.mean(K['loss'][-20:]):.3f}  ({time.time() - T0:.0f}s)", flush=True)
 kmi_readout(model, cfg, S_slot, ents, held, 1)
 if int(os.environ.get('KM_KMC', 0)):                                  # consolidation through the memory: judged / kept / retracted inferences
@@ -58,6 +61,19 @@ if int(os.environ.get('KM_KMC', 0)):                                  # consolid
     _kmi_counter_readout(model, cfg, K, S_slot, KP, RX, [e for e in fs if e['r'] != 'is connected to'], 9)   # on a copy: before -> after
     kmc_retract(model, cfg, S_slot, ents, 1)
     print(f"retracted marked done: {sum(1 for w in W.values() if w.get('kmc_done') is not None)} of {sum(1 for w in W.values() if w.get('ret'))}", flush=True)
+if K.get('allt'):                                                     # 15 Nov ALL-TEXT: bits on ordinary text and on fact sentences, trunk vs trunk + gated memory
+    from platypus.inference.kmem import kma_logits, _kma_run
+    import torch.nn.functional as F9
+    def tb(texts, gate=None):
+        X, M = _ws_batch(model, texts); lg, H = _kma_run(model, X, 0); lm, opn, na, no = kma_logits(model, K, X, lg, H, gate)
+        m = M[:, 1:lg.shape[1] + 1]; f = lambda z: float((F9.cross_entropy(z.reshape(-1, z.shape[-1]).float(), X[:, 1:lg.shape[1] + 1].reshape(-1), reduction='none') * m.reshape(-1)).sum() / m.sum() / np.log(2))
+        return f(lg), f(lm), 1000 * na / float(m.sum()), 1000 * no / float(m.sum())
+    plain = [b'The weather was mild and the river ran slowly past the old mill, where Thomas Grey kept his accounts in a ledger. ' * 2] * 8
+    plain += [f"Yesterday {people[300 + q]} said the road to {people[350 + q]} was closed. ".encode('latin-1') for q in range(8)]
+    factsent = [f"Notes say that {e['A']} {e['r']} {e['ans']}. Nothing more.".encode('latin-1') for e in fs[:16]]
+    for nm_, T_ in (('ordinary text (unwritten names)', plain), ('sentences stating TAUGHT facts', factsent)):
+        for g_ in ((1, 0) if K.get('gate') else (0,)):
+            a0, a1, na, no = tb(T_, g_); print(f"ALL TEXT | {nm_} | gate {g_}: bits {a0:.4f} -> {a1:.4f} ({a1 - a0:+.4f}); addressed {na:.0f}, open {no:.1f} per 1000 bytes", flush=True)
 for p in model.parameters(): p.data += 0.01 * torch.randn_like(p)   # the trunk moves; keys refreshed (drift), read again
 kmi_refresh(model, cfg, ents, held, 1); kmi_readout(model, cfg, S_slot, ents, held, 2)
 print(f"DONE ({time.time() - T0:.0f}s)")
