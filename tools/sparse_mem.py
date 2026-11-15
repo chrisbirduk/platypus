@@ -19,7 +19,7 @@ finetuning), 71% (LoRA), 11% (sparse memory), at the same learning. Here, small:
   after A, of B after B and of A after B (retention); held-out bits per byte on wiki and on Re-DocRED dev text (read in training) before
   and after: FORGETTING = the bits added.
 Second round (15 Nov): runs 12-16 select slots by TF-IDF counted only where the ANSWER bytes are predicted ('answer'), and with more slots
-(t = 1024 / 4096): the first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
+(t = 1024 / 4096); SM_MIX=k: k fact rows + (32 - k) wiki rows a step (the GPU's setting). The first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/sparse_mem.py   env SM_PRE (1500), SM_STEPS (150 per set), SM_T (256), SM_RUNS"""
 import os, sys, json, math, time, collections
 import numpy as np
@@ -146,12 +146,14 @@ P(f"held-out wiki bits per byte: memory untrained {b_tr:.3f} | memory model {b0w
   f"slots used by background {int((cnt_bg > 0).sum())} of {NS * NS}  ({time.time() - T0:.0f}s)")
 BASE = {k: v.clone() for k, v in m.state_dict().items()}
 
-ANS = False
+ANS = False; MIX = int(os.environ.get('SM_MIX', 0))
 def teach(mm, facts, params, lr, sparse, rr):
     op = torch.optim.AdamW(params, lr=lr, weight_decay=0.0, betas=(0.9, 0.999))
     for st in range(STEPS):
-        fb = [facts[rr.randint(len(facts))] for _ in range(32)]; pre = [FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) for f in fb]
+        nf = MIX if MIX > 0 else 32
+        fb = [facts[rr.randint(len(facts))] for _ in range(nf)]; pre = [FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) for f in fb]
         seqs = [(q + f['C'] + '.').encode('latin-1') for q, f in zip(pre, fb)]
+        if MIX > 0: seqs += wiki_batch(rr, 32 - nf)                           # mixed with ordinary text, as on the GPU
         l = loss_of(mm, seqs); op.zero_grad(); l.backward()
         if sparse:                                                            # TF-IDF over slot accesses in this batch; only the top TOPT keep their gradient
             acc = mm.mem.last
@@ -181,13 +183,13 @@ def run(tag, method, lr):
     P(f"   {tag:24s} lr {lr:g}: A after A open {ra[0]:.2f} rank {ra[1]:.2f} | B after B open {rb[0]:.2f} rank {rb[1]:.2f} | A after B open {raa[0]:.2f} "
       f"rank {raa[1]:.2f} || FORGETTING (bits added) wiki {w1 - b0w:+.3f} -> {w2 - b0w:+.3f}, dev {d1 - b0d:+.3f} -> {d2 - b0d:+.3f}{tch}  ({time.time() - T0:.0f}s)")
 r0a, r0b = recall(m, SET_A), recall(m, SET_B)
-P(f"before teaching: A open {r0a[0]:.2f} rank {r0a[1]:.2f} | B open {r0b[0]:.2f} rank {r0b[1]:.2f} | {STEPS} steps of 32 fact rows per set "
-  f"(about {STEPS * 32 / 60:.0f} rows per fact), facts only")
+P(f"before teaching: A open {r0a[0]:.2f} rank {r0a[1]:.2f} | B open {r0b[0]:.2f} rank {r0b[1]:.2f} | {STEPS} steps of {MIX or 32} fact rows per set "
+  f"(about {STEPS * (MIX or 32) / 60:.0f} rows per fact), " + (f"mixed with {32 - MIX} rows of wiki text" if MIX else "facts only"))
 RUNS = [('FULL', 'FULL', 3e-5), ('FULL', 'FULL', 1e-4), ('LORA', 'LORA', 3e-4), ('LORA', 'LORA', 1e-3), ('MLP_OUT', 'MLP_OUT', 3e-5),
         ('MLP_OUT', 'MLP_OUT', 1e-4), ('MEM_ALL', 'MEM_ALL', 1e-3), ('MEM_ALL', 'MEM_ALL', 1e-2), ('MEM_SPARSE', 'MEM_SPARSE', 1e-3),
         ('MEM_SPARSE', 'MEM_SPARSE', 1e-2), (f'MEM_SPARSE t={4 * TOPT}', 'MEM_SPARSE', 1e-2),
         ('SPARSE answer t=1024', 'MEM_SPARSE', 1e-2), ('SPARSE answer t=1024', 'MEM_SPARSE', 3e-2), ('SPARSE answer t=4096', 'MEM_SPARSE', 1e-2),
-        ('SPARSE all t=4096', 'MEM_SPARSE', 1e-2), ('SPARSE answer t=4096', 'MEM_SPARSE', 3e-3)]
+        ('SPARSE all t=4096', 'MEM_SPARSE', 1e-2), ('SPARSE answer t=4096', 'MEM_SPARSE', 3e-3), ('SPARSE answer t=1024', 'MEM_SPARSE', 1e-1)]
 SEL = os.environ.get('SM_RUNS', ''); T00 = TOPT
 for k, (tag, meth, lr) in enumerate(RUNS):
     if SEL and str(k + 1) not in SEL.split(','): continue
