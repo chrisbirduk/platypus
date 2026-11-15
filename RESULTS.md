@@ -1327,6 +1327,17 @@ Visit 4 (stopped there for cg27a_kmc): facts WITH **0.52 / 0.85** vs trunk 0.42 
 +5.7-5.8 -> -4.9 to -7.0 bits per byte (rank 0.86-1.00 -> 0.00-0.20), RIGHT and facts unchanged; consolidation masked 27 of 60 inference rows
 (unjudged or flagged) from the trunk; the 7 retracted were counter-written out of the real memory.
 
+### GPU cg27a_kmc: consolidation through the memory (seed 4, 15 November, visits 1-2 so far)
+
+Visit 2 (the memory as cg27a_kmg; the 200 written inferences are held from the trunk until judged): taught facts WITH 0.40 / 0.50 vs trunk
+0.10 / 0.47 (gate open 0.42; cg27a_kmg 0.42 / 0.50 vs 0.10 / 0.48); held back 0.00 / 0.33 = trunk (gate open 0.07); never-read names gate
+open 0.00; inferences not yet in the memory (gate open 0.00 - they are written this visit and learned next). CONSOLIDATION: 200 awaiting
+judgement, the trigger has nothing to judge yet (expected: it judges from visit 4). COUNTER-WRITE WITH THE MARGIN (oracle, on a copy): WRONG
+rank 0.15 -> **0.00**, support -0.05 -> **-4.34 bits per byte** (cg27a_kmg's support-to-zero loss stopped near 0); RIGHT 0.20 -> 0.97 (the
+re-write teaches them on the copy); facts 0.53 -> 0.42 (a cost to bystanders, -0.07 bits support). At this visit the memory had not yet
+learned the inferences, so the counter-write suppresses rather than removes; the test that matters is visit 3-4. Bits 2.0325 / 2.0324
+(cg27a_kmg 2.0342 / 2.0434, cg27a_kmi 2.0292 / 2.0304, cg27a_kmem 2.0277 / 2.0266: within noise).
+
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 
 As the integrated test above (the memory read inside the forward pass at every byte with a subject), but at evaluation the read counts only
