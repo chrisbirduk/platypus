@@ -1379,6 +1379,19 @@ ArXiv; gate open 0.6 / 4.7 / 0.4 per 1000 bytes), next domain +0.0003 - a small 
 names live), no gain yet on known names. Counter-write (margin, copy): WRONG 0.92 -> 0.77 (cg27a_kmb's byte edit replaces it). Trunk bits
 2.0161 (cg27a_kmc 2.0201, cg27a_kmi 2.0203).
 
+### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
+
+Visit 3 (the memory now holds the visit-2 inferences): **BYTE EDIT (oracle, on a copy): WRONG rank 0.92 -> 0.03, RIGHT 1.00 -> 0.97, facts
+0.70 -> 0.70, undone exactly** (24 answer bytes still above the margin) - against the margin counter-write at the same point, 0.92 -> 0.56
+(cg27a_kmc) and 0.92 -> 0.77 (cg27a_kma). **The GPU's partial retraction is solved.** LEARNING SPEED AS A JUDGE (Go-CLS; 136 inferences
+learned 4+ times, right 0.71): memory loss at first learning AUC 0.514, now 0.489, the drop 0.483, the trunk's own loss at first 0.503 -
+**negative: how fast the memory learns an inference says nothing about whether it is right.** Recall as cg27a_kma (facts WITH 0.55 / 0.78
+vs trunk 0.30 / 0.77; inferences RIGHT 0.68 / 0.98 vs 0.00 / 0.08; never-read names 0.00; awaiting inferences WITH 0.97 vs trunk 0.13).
+ALL TEXT: **bits WITH the memory +0.0044 / +0.0173 / +0.0007 (Gutenberg / Wikipedia / ArXiv; gate open 3.0 / 10.6 / 0.8 per 1000), next
+domain +0.0029 - a real cost on Wikipedia, larger than cg27a_kma's +0.0030 at the same visit (gate open 4.7)**: the gate (0.7) opens on
+written subjects in ordinary Wikipedia text and the read hurts there (known names +0.014). The stricter-gate readout (0.85 / 0.95) was
+added after kmb started; it rides on the next build. Trunk bits 2.0157 (cg27a_kma 2.0161).
+
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
 After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
