@@ -1173,6 +1173,19 @@ rows per fact):**
 for a GPU build: a product-key memory layer in the trunk, question rows writing only the answer slots (TF-IDF on the answer bytes), lr
 about 1e-2.
 
+**Exact retraction inside the trunk? (SM_RETRACT, mixed setting, lr 3e-2):** after B, 30 facts of A retracted by restoring the answer slots
+their questions use most to their pre-teaching values. Rank (before teaching 0.30):
+
+| slots restored | retracted | rest of A | B | wiki bits added |
+|---|---|---|---|---|
+| top 1,024 | 0.60 -> **0.30** | 0.70 -> 0.63 | 0.87 -> **0.65** | +0.079 -> +0.068 |
+| top 256 | 0.60 -> 0.50 | 0.70 -> 0.70 | 0.87 -> 0.82 | +0.079 -> +0.077 |
+
+**Not clean: inside a byte-level trunk the answer slots are SHARED between facts (the bytes of one answer's name are predicted by slots
+other answers use), so restoring enough slots to remove the facts takes bystanders with them (B -0.22).** The key memory, addressed by
+(subject name, wording), retracts exactly with bystanders held (0.03-0.04). For the design: facts and inferences that may need retracting
+belong in the KEYED memory; the in-trunk sparse memory is for absorbing what is settled, at low forgetting.
+
 ### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
 
 The author's design: a sparse memory (Lin et al. 2025) whose address is (the subject's NAME KEY, a JEPA WORDING KEY of the name-masked
