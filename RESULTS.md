@@ -1207,6 +1207,22 @@ Keyed units on the (overfit) 18k trunk, gate, on top of NAME: DATE +5.4 / +4.6, 
 (bits per 1,000 bytes, late, first / second set): the same ranking as on the 6k trunk (DATE and NUMBER replicate, FACT unreliable, PLACE
 negative); the larger savings reflect the worse trunk (NAME alone 80-83 vs 30-33).
 
+**Retraction by ERASING SLOTS (15 November; 6k trunk, seeds 0 / 1 / 2): the slots that a retracted fact's own training-frame queries
+reach are set to zero - no gradient, no search.** Open recall in the test wording, retracted 30 of set A -> after; largest bystander
+change (open, rest of A / B / M):
+
+| key | retracted | largest bystander change | slots erased |
+|---|---|---|---|
+| JEPA key | 0.57 -> **0.00**, 0.67 -> **0.03**, 0.57 -> **0.00** | 0.04, 0.04, 0.03 | 295-324 |
+| raw key | 0.73 -> 0.00, 0.50 -> 0.00, 0.50 -> 0.00 | 0.04, **0.12**, **0.10** | 762-858 |
+| (gradient, -log(1 - p), 30-150 steps) | 0.53-0.73 -> 0.23-0.47 | 0.00-0.04 | - |
+| (gradient, margin 0.1, 150 steps) | 0.57 -> 0.23, 0.67 -> 0.37 | 0.02 | - |
+
+**Positive: erasing a fact's slots retracts it completely while bystanders hold - and the JEPA key does it with 2.5 times fewer slots and
+no collateral damage, where the raw key spreads facts wider and costs bystanders up to 0.12.** Gradient unlearning in the memory is
+clean but leaves a third to a half. Retraction is exact because every write has an address - the property a dense trunk lacks.
+Third seed of the full test (6k s2): the same pattern (two-hop decoded 0.65 / 0.75, M 0.89 / 0.86, name only 0.15).
+
 **K-TEXT: a wording key learned from REAL TEXT only (15 November; 20,000 name pairs stated in 2+ different wordings within a sentence,
 50k distant documents, InfoNCE; the frames and the test wording never seen).** Relation of the test wording / of a PARAPHRASED relation
 phrase recognised by the frames' keys: K-TEXT 0.90 / **0.52**, 0.90 / 0.38, 0.95 / 0.33 (18k s0, 18k s1, 6k s0) against the frame-trained
