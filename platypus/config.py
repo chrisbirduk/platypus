@@ -664,6 +664,11 @@ class Config:
     inf_kmi_gate=0                  #   15 Nov GATE (MODEL CHANGE when on; cg27a_kmg): the memory answers only where its address was written (the subject was
                                     #     written and half the read weight falls on written slots); elsewhere the trunk answers alone; readout: abstention
     inf_kmi_counter=0               #     readout: counter-write retraction of the WRONG inferences on a copy of the memory (oracle)
+    inf_kmc=0                       #   15 Nov CONSOLIDATION THROUGH THE MEMORY (MODEL CHANGE when on; cg27a_kmc): written inferences teach the keyed memory at once but the
+                                    #     TRUNK only once judged on later reading and kept (inf_rret's judge); flagged ones are counter-written OUT of the memory
+                                    #     and never reach the trunk
+    inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
+    inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
     inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)

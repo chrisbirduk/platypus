@@ -1308,6 +1308,21 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### GPU cg27a_kmg: the gated memory (seed 4, 15 November, visits 1-3)
+
+Visit 2: taught facts WITH 0.42 / 0.50 vs trunk 0.10 / 0.48 (gate open 0.42 - the memory had written 60 subjects); HELD-BACK facts 0.00 /
+0.37 = trunk 0.00 / 0.37 (gate open 0.07); never-read names: gate open 0.00. Visit 3: taught inferences RIGHT **0.57 / 0.97** vs 0.15 / 0.52
+(gate open 1.00), WRONG 0.59 / 0.95 vs 0.15 / 0.62; facts 0.27 / 0.68 vs 0.25 / 0.63; HELD-BACK facts 0.00 / **0.50 = trunk 0.50** (gate open
+0.27); never-read names 0.00. **The gate removes the cost (cg27a_kmi: held back 0.63 vs 0.80) and keeps the gains; the memory abstains on
+never-read names.** COUNTER-WRITE (oracle, on a copy, support driven to zero): WRONG support +0.31 -> -0.20 bits but rank 0.92 -> 0.90 -
+**the TRUNK has learned the wrong inferences too (0.62 alone): retraction in the memory cannot undo the trunk's copy.** Hence cg27a_kmc:
+the trunk is taught an inference only once judged and kept. Bits 2.0342 / 2.0434 / 2.0319 (four identical-training runs at visit 1 span
+2.0145-2.0342: run-to-run noise about 0.02).
+
+**Package smoke for cg27a_kmc** (tools/kmi_smoke.py KM_KMC=1): counter-write with a MARGIN (support below -1 nat per byte) took WRONG support
++5.7-5.8 -> -4.9 to -7.0 bits per byte (rank 0.86-1.00 -> 0.00-0.20), RIGHT and facts unchanged; consolidation masked 27 of 60 inference rows
+(unjudged or flagged) from the trunk; the 7 retracted were counter-written out of the real memory.
+
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 
 As the integrated test above (the memory read inside the forward pass at every byte with a subject), but at evaluation the read counts only

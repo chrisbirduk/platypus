@@ -43,6 +43,21 @@ for st in range(int(sys.argv[1]) if len(sys.argv) > 1 else 300):
     kmi_rows_loss(model, cfg, items, lg, X)
 print(f"memory steps {K['steps']}, rows addressed {K['hit']} of {K['rows']}, loss {np.mean(K['loss'][:20]):.3f} -> {np.mean(K['loss'][-20:]):.3f}  ({time.time() - T0:.0f}s)", flush=True)
 kmi_readout(model, cfg, S_slot, ents, held, 1)
+if int(os.environ.get('KM_KMC', 0)):                                  # consolidation through the memory: judged / kept / retracted inferences
+    from platypus.inference.premises import _PM, _RTI_R
+    from platypus.inference.distill import _kmc_pending
+    from platypus.inference.kmem import kmc_retract, _kmi_counter_readout
+    inf_ = [e for e in fs if e['r'] == 'is connected to']; W = {}
+    for i, e in enumerate(inf_):
+        W[(e['A'], e['ans'])] = dict(vis=0, d=0, truth=e['truth'], judged=(None if i % 3 == 0 else 1), flag=(i % 3 == 1 and not e['truth']), ret=(i % 3 == 1 and not e['truth']))
+    _PM['rti'] = W; cfg.inf_kmc = 1
+    items = [(FR[0].format(A=e['A'], r=e['r']).encode('latin-1'), (e['ans'] + '.').encode('latin-1'), 0, repr(('fact', e['A'], e['r'], e['ans']))) for e in inf_]
+    sk = _kmc_pending(cfg, items)
+    print(f"consolidation: {len(items)} inference rows, {len(sk)} memory-only (unjudged or flagged), {len(items) - len(sk)} taught to the trunk too", flush=True)
+    RX = [e for e in inf_ if W[(e['A'], e['ans'])]['ret']]; KP = [e for e in inf_ if not W[(e['A'], e['ans'])]['flag']]
+    _kmi_counter_readout(model, cfg, K, S_slot, KP, RX, [e for e in fs if e['r'] != 'is connected to'], 9)   # on a copy: before -> after
+    kmc_retract(model, cfg, S_slot, ents, 1)
+    print(f"retracted marked done: {sum(1 for w in W.values() if w.get('kmc_done') is not None)} of {sum(1 for w in W.values() if w.get('ret'))}", flush=True)
 for p in model.parameters(): p.data += 0.01 * torch.randn_like(p)   # the trunk moves; keys refreshed (drift), read again
 kmi_refresh(model, cfg, ents, held, 1); kmi_readout(model, cfg, S_slot, ents, held, 2)
 print(f"DONE ({time.time() - T0:.0f}s)")

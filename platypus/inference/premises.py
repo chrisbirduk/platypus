@@ -655,12 +655,14 @@ def _rret_judge(cfg, RD, ndv_, vis):
         short = np.array([byp[frozenset(k)][1] if frozenset(k) in byp else 0 for k in ks], float)
         pmi = np.array([np.log((len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0) + 0.5) + np.log(nd) - np.log(df[k[0]] + 1) - np.log(df[k[1]] + 1) for k in ks])
         rk = lambda x: np.argsort(np.argsort(x + 1e-9 * np.random.RandomState(7).rand(len(x)), kind='stable'), kind='stable') / max(1, len(x) - 1)
-        sc = rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr
+        docs = np.array([len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0 for k in ks], float)
+        sig_ = str(getattr(cfg, 'inf_rret_sig', 'short+pmi'))                  # 15 Nov: 'docs' = documents stating the pair since the write (offline on the
+        sc = rk(docs) if sig_ == 'docs' else rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr   #   current writes: AUC 0.639, the best label-free signal)
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
         for j, k in enumerate(ks): W[k].update(judged=vis, flag=bool(fl[j]), ret=bool(ret[j]), rscore=float(sc[j]))
         a_ = _cg_auc(sc[y], sc[~y]) if y.any() and (~y).any() else float('nan')
-        out.append(f"written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
+        out.append(f"[signal {sig_}] written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
                    f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "
                    f"| no confirming record {int((short == 0).sum())} | RETRACTED {int(ret.sum())} (wrong {1 - y[ret].mean() if ret.any() else float('nan'):.2f}), flagged taught kept as control "
                    f"{int((fl & taught & ctl_).sum())}")

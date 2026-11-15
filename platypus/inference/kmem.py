@@ -406,7 +406,8 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
 
 def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
     """ORACLE (the labels pick the wrong inferences - the mechanism, not a trigger), on a COPY of the memory: 60 steps driving the memory's
-    support for the WRONG inferences' answer bytes (log-probability with it minus without) to zero while re-writing the RIGHT ones (same subjects share slots) - offline (tools/jepa_mem.py JM_M2) this
+    support for the WRONG inferences' answer bytes (log-probability with it minus without) below -inf_kmc_margin while re-writing the RIGHT ones
+    (GPU cg27a_kmg visit 3: driving it only to zero left the wrong ones ranked 0.90) (same subjects share slots) - offline (tools/jepa_mem.py JM_M2) this
     removed the retracted (open 0.00) and kept the sibling (0.85-0.95); zeroing the slots killed both"""
     from platypus.inference.distill import _dt_forms
     from platypus.inference.closed_form import _ws_batch, _ws_run
@@ -439,8 +440,9 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
             if a is None: continue
             nk, wk, off, rr, pp = a; mv, _ = _kmi_read(K, nk, wk, off)
             z0 = torch.stack([lg[r, p0s[r] + j] for r, j in zip(rr, pp)]); z = z0 + mv; tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
-            if ul:                                                              # unlearn: the memory's SUPPORT for the wrong answer's bytes driven to zero or below
-                lo = (F.log_softmax(z, -1).gather(-1, tg[:, None]) - F.log_softmax(z0, -1).gather(-1, tg[:, None])).clamp(min=0).mean()
+            if ul:                                                              # unlearn: the memory's SUPPORT for the wrong answer's bytes pushed below -margin
+                mg = float(getattr(cfg, 'inf_kmc_margin', 1.0))
+                lo = (F.log_softmax(z, -1).gather(-1, tg[:, None]) - F.log_softmax(z0, -1).gather(-1, tg[:, None]) + mg).clamp(min=0).mean()
             else: lo = F.cross_entropy(z, tg)
             K['opt'].zero_grad(); lo.backward(); K['opt'].step()
     af = [evalg(x) for x in (wrong, right, facts)]
@@ -450,3 +452,42 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
           f"re-writing the RIGHT ones; rank WITH the memory (chance 0.10) and the MEMORY'S SUPPORT for the answer (bits per answer byte the memory adds; 0 = none): "
           f"WRONG {b4[0][0]:.2f}, {b4[0][1]:+.2f} -> {af[0][0]:.2f}, {af[0][1]:+.2f} | RIGHT {b4[1][0]:.2f}, {b4[1][1]:+.2f} -> {af[1][0]:.2f}, {af[1][1]:+.2f} | "
           f"facts {b4[2][0]:.2f}, {b4[2][1]:+.2f} -> {af[2][0]:.2f}, {af[2][1]:+.2f}", flush=True)
+
+
+
+def kmc_retract(model, cfg, S_slot, ents, vis):
+    """15 Nov CONSOLIDATION THROUGH THE MEMORY (inf_kmc): inferences the retraction trigger has RETRACTED since the last readout are counter-
+    written OUT of the real memory - 60 steps pushing the memory's support for their answers below -inf_kmc_margin while re-writing the kept
+    inferences (they share subjects and wording, hence slots). They are no longer taught (inf_rret) and never reached the trunk (inf_kmc)."""
+    from platypus.inference.premises import _PM, _RTI_R
+    from platypus.inference.distill import _dt_forms
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    K = model.__dict__.get('_kmi'); W = _PM.get('rti') or {}
+    if K is None or K['head'] is None or not W: return
+    new = [(k, w) for k, w in W.items() if w.get('ret') and not w.get('kmc_done')]
+    kept = [(k, w) for k, w in W.items() if w.get('judged') is not None and not w.get('flag')]
+    pend = [(k, w) for k, w in W.items() if w.get('judged') is None]
+    ent = lambda k, w: dict(A=k[0], r=_RTI_R, ans=k[1], d=w['d'])
+    print(f"  [CONSOLIDATION THROUGH THE MEMORY | visit {vis + 1}] written inferences: {len(pend)} awaiting judgement (memory only), {len(kept)} judged and KEPT "
+          f"(now taught to the trunk too: right {np.mean([bool(w['truth']) for k, w in kept]) if kept else float('nan'):.2f}), "
+          f"{sum(1 for w in W.values() if w.get('flag'))} flagged (never taught to the trunk; right {np.mean([bool(w['truth']) for w in W.values() if w.get('flag')]) if any(w.get('flag') for w in W.values()) else float('nan'):.2f}), "
+          f"{sum(1 for w in W.values() if w.get('ret'))} of them retracted from the memory ({len(new)} now) | WITH AN ORACLE the trunk would receive "
+          f"{sum(1 for k, w in kept if w['truth'])} right and 0 wrong; it receives {sum(1 for k, w in kept if w['truth'])} right and {sum(1 for k, w in kept if not w['truth'])} wrong", flush=True)
+    if not new: return
+    FR = _dt_forms(cfg); g = np.random.RandomState(int(cfg.seed) + 5757 + vis); mg = float(getattr(cfg, 'inf_kmc_margin', 1.0))
+    RX = [ent(k, w) for k, w in new]; RT = [ent(k, w) for k, w in kept] or [ent(k, w) for k, w in pend if not w.get('flag')]
+    def step(L, ul):
+        it = [(FR[g.randint(len(FR))].format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), int(S_slot(e['d']))) for e in (L[g.randint(len(L))] for _ in range(32))]
+        X, _ = _ws_batch(model, [a + b for a, b, c in it])
+        with torch.no_grad(): lg = _ws_run(model, X, it[0][2]).float()
+        p0s = [len(a) - 1 for a, b, c in it]; ns = [min(len(b), lg.shape[1] - p0) for (a, b, c), p0 in zip(it, p0s)]
+        a = _kmi_addr(model, K, [a for a, b, c in it], ns)
+        if a is None: return
+        nk, wk, off, rr, pp = a; mv, _ = _kmi_read(K, nk, wk, off)
+        z0 = torch.stack([lg[r, p0s[r] + j] for r, j in zip(rr, pp)]); z = z0 + mv; tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
+        lo = (F.log_softmax(z, -1).gather(-1, tg[:, None]) - F.log_softmax(z0, -1).gather(-1, tg[:, None]) + mg).clamp(min=0).mean() if ul else F.cross_entropy(z, tg)
+        K['opt'].zero_grad(); lo.backward(); K['opt'].step()
+    for st in range(60):
+        step(RX, True)
+        if RT: step(RT, False)
+    for k, w in new: w['kmc_done'] = vis
