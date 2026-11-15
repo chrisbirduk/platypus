@@ -1156,6 +1156,23 @@ and at 0.87-0.92 it costs +0.44 bits against full fine-tuning's +1.59 for 0.95 (
 scale; the absolute forgetting is still large because the batches are facts only, with no replay. Open-ended exact recall stays near 0
 for every in-trunk method (multi-word real names, byte by byte), while the key memory decodes them at 0.80-0.98.
 
+**Round 3, the GPU's setting (15 November): facts MIXED with ordinary text, 8 fact rows + 24 wiki rows a step, 400 steps a set (about 53
+rows per fact):**
+
+| method | lr | A after A | B after B | A after B | forgetting after A -> after B (wiki / dev) |
+|---|---|---|---|---|---|
+| full | 3e-5 | 0.50 | 0.52 | 0.43 | +0.012 -> +0.018 / +0.005 |
+| MLP_OUT (the GPU build's choice) | 3e-5 / 1e-4 | 0.32 / 0.37 | 0.35 / 0.42 | 0.32 / 0.37 | +0.009 / +0.020 |
+| all memory values | 1e-3 | 0.50 | 0.50 | 0.47 | -0.001 |
+| **SPARSE memory, answer slots, top 1,024** | 1e-2 | **0.70** | **0.73** | **0.62** | +0.019 -> +0.029 / +0.033 |
+| **SPARSE memory, answer slots, top 1,024** | 3e-2 | **0.88** | **0.87** | **0.68** | +0.064 -> +0.079 / +0.098 |
+| SPARSE memory, answer slots, top 1,024 | 1e-1 | 0.88 | 0.88 | 0.67 | +0.21 -> +0.22 |
+
+**Positive in the GPU's setting: with text mixed in, every method forgets little, and sparse memory learns far more for it - 0.70 at
++0.03 bits where full fine-tuning reaches 0.50 at +0.02 and the GPU build's mlp_out only 0.37 at +0.02; 0.88 at +0.08.** A candidate
+for a GPU build: a product-key memory layer in the trunk, question rows writing only the answer slots (TF-IDF on the answer bytes), lr
+about 1e-2.
+
 ### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
 
 The author's design: a sparse memory (Lin et al. 2025) whose address is (the subject's NAME KEY, a JEPA WORDING KEY of the name-masked
