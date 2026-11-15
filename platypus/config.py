@@ -678,6 +678,9 @@ class Config:
     inf_kma=0                       #   15 Nov ALL-TEXT ADDRESS (MODEL CHANGE when on; cg27a_kma): the memory's address computed at EVERY byte of any text from the trunk's
                                     #     own forward (middle block, in context; subject = latest completed capitalised run, hashed); the model reads it on all text (gated);
                                     #     it writes only on question rows' answer bytes; readout: PREQUENTIAL BITS WITH THE MEMORY
+    inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
+                                    #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
+    inf_kmfb_n=4000                 #     spans per readout
     inf_rtype=0                     #   15 Nov READOUT: RELATION TYPES FROM THE TRUNK every 2 visits (inference.reltype): k-means types of the trunk's pooled states over the
                                     #     premises records, rules over them, scored against Wikidata (evaluation only); the factorial's additivity on this trunk
     inf_rtype_n=60000               #     records represented

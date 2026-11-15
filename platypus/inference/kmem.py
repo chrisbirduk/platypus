@@ -25,7 +25,7 @@ PARAPHRASED relation phrase, TWO-HOP chains of taught facts (decoded through the
 memory, the slots reached by the WRONG inferences' (ORACLE: the labels pick them - the mechanism, not a trigger) and, if any, the
 retraction trigger's FLAGGED inferences' training-frame questions are set to zero: their recall before -> after, and the bystanders'.
 Training is not changed (own parameters, forked RNG)."""
-import math
+import math, collections
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -856,3 +856,71 @@ def kmc_retract(model, cfg, S_slot, ents, vis):
         step(RX, True)
         if RT: step(RT, False)
     for k, w in new: w['kmc_done'] = vis
+
+
+def kmfb_readout(model, cfg, S_slot, ents, vis):
+    """15 Nov READOUT, MEMORY FEEDBACK FROM READING (inf_kmfb; the trunk's experience grades the hippocampus, label-free). The all-text
+    memory predicts bytes wherever its gate opens; real text read since the first writes then CONFIRMS or CONTRADICTS each entry in use:
+    spans of the distant documents read since 2/10 ('A <words> B', <= 60 characters) whose first name is a written subject; on the second
+    name's bytes, the bits the gated memory saves (trunk - trunk + memory). The entry credited is the subject's entry whose answer's first
+    byte the memory's read favours at the name's first byte; CONFIRM = the text's name is that answer, else the gain is the entry's
+    CONTRADICTION in that context (the address includes the wording key, so the gate opens only for compatible relations). Per written
+    inference: spans, mean gain, confirmations - contradictions; their AUC right vs wrong (labels only score; the current judge 0.64),
+    coverage, and how well the write-time features (rank, bridges) predict the feedback (could it guide selection?)."""
+    from platypus.inference.premises import _PM, _RTI_R
+    from platypus.inference.closed_form import _ws_batch
+    from platypus.inference.compress import _cg_auc
+    K = model.__dict__.get('_kmi'); W = _PM.get('rti') or {}; R = _PM.get('R') or []
+    if K is None or K.get('head') is None or not K.get('allt') or not R:
+        print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] needs the all-text memory and the distant records", flush=True); return
+    nv = max(1, int(getattr(cfg, 'inf_premises_visits', 10))); ND = int(_PM.get('ND', 0)); lo_, hi_ = int(round(ND * 0.2)), int(round(ND * min(1.0, (vis + 1) / nv)))
+    if hi_ <= lo_:
+        print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] no text read since the first writes yet", flush=True); return
+    ent = collections.defaultdict(dict)                                        # subject -> {answer: kind}
+    for e in ents:
+        if e['key'][0] == 'fact' and e['r'] != _RTI_R: ent[e['A']][e['ans']] = 'fact'
+    for (A, C), w in W.items(): ent[A][C] = ('inf', bool(w['truth']))
+    subj = set(ent) & set(K.get('subj', ()))
+    sp = [r for r in R if lo_ <= r[0] < hi_ and r[1] in subj and r[7].startswith(r[1])]
+    rs = np.random.RandomState(int(cfg.seed) + 6161 + vis); cap = int(getattr(cfg, 'inf_kmfb_n', 4000))
+    sp = [sp[i] for i in rs.choice(len(sp), min(cap, len(sp)), replace=False)] if sp else []
+    if not sp:
+        print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] no spans name a written subject (documents {lo_}-{hi_})", flush=True); return
+    try: sl = int(S_slot(1))
+    except Exception: sl = 0
+    fb = collections.defaultdict(lambda: [0, 0.0, 0, 0]); opened = 0; tot = collections.Counter(); L2 = math.log(2)
+    for i0 in range(0, len(sp), 64):
+        ch = sp[i0:i0 + 64]; tb = [(r[7] + '.').encode('latin-1', 'replace') for r in ch]
+        X, _ = _ws_batch(model, [b + b' ' for b in tb])
+        with torch.no_grad():
+            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H)
+            l0 = F.log_softmax(lg.float(), -1); l1 = F.log_softmax(lm, -1); mv = lm - lg.float()
+        for k, (r, b) in enumerate(zip(ch, tb)):
+            runs = [(m.start(), m.end()) for m in _KMI_RUN.finditer(b)]
+            if len(runs) < 2: continue
+            s0, e0 = runs[-1]
+            if s0 < 1 or e0 > l0.shape[1]: continue
+            pos = [i for i in range(s0 - 1, e0 - 1) if opn.get((k, i))]
+            if not pos: continue
+            opened += 1; ix = torch.tensor(pos, device=l0.device); tg = X[k, ix + 1]
+            gain = float((l1[k, ix].gather(-1, tg[:, None]) - l0[k, ix].gather(-1, tg[:, None])).sum()) / L2
+            A = r[1]; ans = list(ent[A]); first = mv[k, s0 - 1]
+            pick = max(ans, key=lambda a: float(first[a.encode('latin-1', 'replace')[0]])) if ans else None
+            if pick is None: continue
+            name = b[s0:e0].decode('latin-1').rstrip('.'); hit = name == pick or name.startswith(pick) or pick.startswith(name)
+            f = fb[(A, pick)]; f[0] += 1; f[1] += gain; f[2] += int(hit); f[3] += int(not hit)
+            kd = ent[A][pick]; tot[('fact' if kd == 'fact' else ('inference right' if kd[1] else 'inference wrong'), 'gain')] += gain; tot[(kd if kd == 'fact' else 'inf', 'n')] += 1
+    inf = [(k, v) for k, v in fb.items() if isinstance(ent[k[0]].get(k[1]), tuple)]
+    y = np.array([ent[k[0]][k[1]][1] for k, v in inf]); mg = np.array([v[1] / v[0] for k, v in inf]); cc = np.array([(v[2] - v[3]) / v[0] for k, v in inf])
+    auc = lambda s: _cg_auc(s[y], s[~y]) if len(y) >= 10 and y.any() and (~y).any() else float('nan')
+    nW = sum(1 for (A, C) in W if A in subj); rk = []
+    for (A, C), v in inf:
+        w = W.get((A, C)) or {}
+        if w.get('rank') is not None: rk.append((float(w['rank']), v[1] / v[0]))
+    from scipy.stats import spearmanr
+    rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
+    print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
+          f"{opened} | bits SAVED by the memory on those names (negative = it hurt): facts {tot[('fact', 'gain')]:+.1f} ({tot[('fact', 'n')]} spans), inferences RIGHT "
+          f"{tot[('inference right', 'gain')]:+.1f}, WRONG {tot[('inference wrong', 'gain')]:+.1f} ({tot[('inf', 'n')]} spans) || WRITTEN INFERENCES with feedback: {len(inf)} of {nW} "
+          f"({len(inf) / max(1, nW):.2f}); AUC right vs wrong (label-free feedback; the current judge 0.64): mean bits saved {auc(mg):.3f}, confirmations - contradictions "
+          f"{auc(cc):.3f} | SELECTION: write-time rank vs feedback, Spearman {rho:+.2f} (n {len(rk)})", flush=True)

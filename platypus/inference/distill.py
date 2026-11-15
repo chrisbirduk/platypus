@@ -1729,6 +1729,10 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
                 with torch.random.fork_rng(devices=dv9):
                     kmi_readout(model, cfg, S_slot, ents, held, vis); kmi_refresh(model, cfg, ents, held, vis, S_slot)
+                    if int(getattr(cfg, 'inf_kmfb', 0)):                       # 15 Nov MEMORY FEEDBACK FROM READING (readout; before the retraction)
+                        from platypus.inference.kmem import kmfb_readout
+                        try: kmfb_readout(model, cfg, S_slot, ents, vis)
+                        except Exception as e8: _fail('inference.kmem:kmfb'); print(f"  [MEMORY FEEDBACK FROM READING] unavailable ({type(e8).__name__}: {e8})"[:240], flush=True)
                     if int(getattr(cfg, 'inf_kmc', 0)):
                         from platypus.inference.kmem import kmc_retract
                         kmc_retract(model, cfg, S_slot, ents, vis)
