@@ -1318,6 +1318,10 @@ never-read names.** COUNTER-WRITE (oracle, on a copy, support driven to zero): W
 **the TRUNK has learned the wrong inferences too (0.62 alone): retraction in the memory cannot undo the trunk's copy.** Hence cg27a_kmc:
 the trunk is taught an inference only once judged and kept. Bits 2.0342 / 2.0434 / 2.0319 (four identical-training runs at visit 1 span
 2.0145-2.0342: run-to-run noise about 0.02).
+Visit 4 (stopped there for cg27a_kmc): facts WITH **0.52 / 0.85** vs trunk 0.42 / 0.75 (gate open 0.78); held back 0.03 / 0.57 vs 0.07 /
+0.60 (gate open 0.37 - a small leak where the subject has other facts); paraphrased 0.10 / 0.57 = trunk; never-read names 0.00; COUNTER-WRITE
+(oracle, copy): WRONG support -0.97 -> -2.04 bits yet rank 0.55 -> 0.57 - the trunk alone ranks the taught wrong inferences 0.92. Bits
+1.9398 (cg27a_kmi 1.9354, cg27a_kmem 1.9185: kmi and kmg agree, both 0.017-0.021 above kmem - borderline).
 
 **Package smoke for cg27a_kmc** (tools/kmi_smoke.py KM_KMC=1): counter-write with a MARGIN (support below -1 nat per byte) took WRONG support
 +5.7-5.8 -> -4.9 to -7.0 bits per byte (rank 0.86-1.00 -> 0.00-0.20), RIGHT and facts unchanged; consolidation masked 27 of 60 inference rows
