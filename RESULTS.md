@@ -1352,6 +1352,45 @@ and the visit-4 writes (not yet learned): RIGHT WITH 0.02 / 0.52 vs trunk 0.00 /
 a readout artefact, not a loss (a by-age split is needed). Facts WITH **0.57 / 0.90** vs trunk 0.37 / 0.88; held back 0.07 / 0.47 vs trunk
 0.03 / 0.57 (gate open 0.30: the small leak, as cg27a_kmg); paraphrased 0.12 / 0.68 = trunk; never-read names 0.00. Counter-write (copy):
 WRONG 0.50 -> 0.45, RIGHT 0.55 -> 0.75 (mixed groups). Bits 1.9438 (cg27a_kmg 1.9398, cg27a_kmi 1.9354, cg27a_kmem 1.9185).
+Visit 5 - THE TRUNK LEARNS THE KEPT INFERENCES: trunk alone, taught inferences RIGHT 0.17 / 0.48 (visit 3: 0.00 / 0.08), WRONG 0.07 / 0.40
+(the 38 wrong ones the judge kept are now taught too); WITH the memory 0.10 / 0.88 and 0.05 / 0.68 (groups mix kept, flagged and awaiting -
+the by-status readout is added for the next build). Facts WITH 0.52 / 0.77 vs trunk 0.47 / 0.73 (the trunk catching up); held back 0.00 /
+0.60 vs 0.10 / 0.63 and paraphrased 0.12 / 0.62 vs 0.20 / 0.68 - **a small cost now where the gate opens (0.33 / 0.68)**; exact (greedy)
+recall WITH the memory below the trunk's on inferences (0.10 vs 0.17); memory loss rising 0.144 -> 0.169 with 9181 of 16384 slots used -
+the memory is filling (cg27a_kma doubles it to 65,536). Never-read names 0.00. Counter-write (copy): WRONG 0.57 -> 0.57 - the trunk now holds
+the kept wrong ones. Bits 1.8910 (cg27a_kmi 1.8788, cg27a_kmem 1.8624). **The memory series' bits gap to cg27a_kmem grows from visit 4
+(kmc +0.005 / +0.006 / +0.010 / +0.025 / +0.029; kmi +0.002 / +0.004 / +0.010 / +0.017 / +0.016)** - common to kmi, kmg and kmc, so not
+consolidation; cg27a_kmgctl (memory frozen, every computation kept) separates the memory's learning from the extra computation.
+
+### GPU cg27a_kma: the keyed memory addressed at every byte of any text (seed 4, 15 November, visits 1-2)
+
+Visit 2: **reading the memory on ALL held-out text costs nothing - bits +0.0000 / +0.0001 per domain (trunk 2.0358), the memory addressed at
+59-84% of bytes but the gate open at 0.0-0.1 per 1000** (it opens only where a written subject meets written slots). Recall as cg27a_kmc
+with the in-context key: taught facts WITH 0.42 / 0.45 vs trunk 0.07 / 0.42 (kmc 0.40 / 0.50 vs 0.10 / 0.47); BARE wording ('A r ', no frame)
+0.45 / 0.45 vs 0.20 / 0.45; paraphrased 0.15 / 0.30 vs 0.03 / 0.25; held back = trunk (gate open 0.03); never-read names 0.00. Wording head
+(in context, 16 relations) loss 0.00. Counter-write (copy): WRONG -> 0.00, RIGHT 0.12 -> 0.95 (re-written), facts kept. Trunk bits 2.0375 /
+2.0358 (cg27a_kmc 2.0325 / 2.0324). Check at visit 3: the two read domains' bits WITH the memory print the same (2.0359) - confirm they differ.
+
+### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
+
+After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
+retracted answer byte reads in its TRAINING frames are retrieved and only that byte's logit is lowered in them (the name's bytes, not the
+shared final '.'; one change per slot and byte - the largest asked, not the sum) until the memory's support is below -1 nat; every edit is
+recorded and can be UNDONE. Package smoke (tiny model, 300 memory steps), rank among 10 in the TEST wording (never edited) WITH the memory:
+
+| | WRONG (retracted) | RIGHT (siblings: same relation, shared wording slots) | facts | undo |
+|---|---|---|---|---|
+| margin counter-write, 60 steps (cg27a_kmc) | 1.00 -> 0.20; 0.86 -> 0.00; **after the trunk moved 0.65 -> 0.45** | 0.97-1.00 | 1.00 | - |
+| margin, 200 steps | 1.00 -> 0.15; 0.86 -> 0.00; after the move 0.65 -> 0.30 | 0.97-1.00 | 1.00 | - |
+| BYTE EDIT (first version: summed, final '.' included) | -> 0.00 (support -52 to -80 bits) | 0.97 -> 0.70-0.75 | 1.00 | exact |
+| BYTE EDIT (wide: 64-slot neighbourhood) | -> 0.00-0.05 | 0.97 -> 0.33-0.47 | 0.97 | exact |
+| **BYTE EDIT (name bytes, one change per slot and byte)** | **1.00 -> 0.05; 0.86 -> 0.00; after the move 0.65 -> 0.10** | **0.93-0.95** | **1.00** | **exact** |
+
+**Positive: the byte edit removes the retracted inference to the trunk's level - also after the trunk moved, where the margin counter-write
+reproduced the GPU's partial removal (0.45) - at a cost of 0.02-0.04 to siblings, no cost to facts, and is exactly reversible** (forgetting as
+lost access: a retraction by the weak judge - 65% of the GPU's flagged inferences were right - can be undone if later reading supports it).
+The first version over-shot (the same slots edited once per frame) and lowered the final '.' every answer shares; the 64-slot version
+reaches unseen wordings but costs siblings too much.
 
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 
@@ -1416,6 +1455,19 @@ Flagging the lowest 20% of short-gap restatement or resource allocation: wrong a
 signals reach 0.70-0.75 here and 0.61-0.64 on the GPU path's own writes because the WRITES differ: the GPU path selects its writes by code +
 Adamic-Adar, so the path evidence is already spent in the selection and what remains to separate them is weaker. The 0.64 ceiling on the
 GPU path is therefore real. Rank-sum combinations are worse than the best single signal (3-hop is noise here and drags them down).
+
+### Choose with one signal, judge with another (tools/select_judge.py, 15 November; the GPU path's write step, 200 writes at document 2/10, judged on 2/10 -> 4/10)
+
+| writes chosen by | written right | best judge (AUC) | TO THE TRUNK with the lowest 20% flagged | oracle |
+|---|---|---|---|---|
+| the code alone | 0.475 | restatement + RA 0.631-0.634 (restated later: right 0.38 / wrong 0.15) | 0.53 (160 kept); kept only if restated: 0.69 (52 kept) | 95 right |
+| **code + Adamic-Adar (GPU now)** | **0.740** | RA 0.654, restatement + RA 0.652, documents 0.639 | **0.762-0.772** (160 kept) | 148 right |
+| code + resource allocation | 0.680 | restatement + RA 0.640 | 0.725-0.730 | 136 right |
+
+**Negative: choosing by the code alone and keeping path support for the judge loses** - the writes fall from 0.74 to 0.475 right and no
+judge recovers it (best end to end 0.53, or 0.69 on only 52 kept). Path evidence does more good choosing than judging; the current
+pipeline (code + AA, judged by documents) is the best of these, 0.77 to the trunk. The judge ceiling on these writes is ~0.65 whatever
+the signal. Further gains must come from a new kind of evidence (the Go-CLS learning-speed readout rides on cg27a_kma), not a re-split.
 
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 
