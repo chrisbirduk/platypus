@@ -3185,3 +3185,17 @@ Route 1 proposes the class pair's 8 commonest relational wordings; the trunk pic
 | last block | frozen | 0.35 / 0.48 | +1.12 / +2.16 | 3.57 -> 1.23 / 3.11 -> 0.82 |
 **Negative as built: the training trunk undoes the writes wherever the layer sits; with the trunk frozen the layer learns the frames (test wording rank 0.35-0.52, open 0.00) but drowns text** (only ~800-900 slots written; the written rows grow far past the text-trained ones - Adam at these rates moves a row by up to lr per step). The bigger memory fixes the collision only while nothing is learned. A row-norm cap (written rows <= the 99th percentile norm of text-trained rows) is being tested.
 - Row-norm cap (written rows <= the 99th percentile norm of text-trained rows), middle block, 128 x 128: frozen trunk forgetting +0.10 (from +1.3) but no learning (rank 0.12-0.15, loss 3.49 -> 2.73); training trunk +0.002 and no learning (rank 0.08). **Build B parked: in this package's continually trained trunk, sparse memory finetuning either does not stick (training trunk) or drowns text (frozen); capped, it learns nothing.** Lin et al.'s result rests on a frozen, large model with ~1M slots. Facts stay in the keyed memory (0.97 with it on GPU); consolidation into the trunk's own weights remains open.
+
+## Does a written inference improve the model? Typed writes and usefulness as the selector (16 Nov 2026, tools/useful_writes.py; distant_50k, the GPU path's 200 writes at visit 2, right 0.690; A6 stand-in trunk)
+The writes stored in a keyed continuation memory (key: the head name; continuation: the claim's rest) mixed with the trunk by the learned gate (inference.kunits, prequential); scored on 16,350 later relational spans whose first name is a written name (397 state a written pair), bits saved against the trunk alone (2.422 bits per byte):
+| form | all later spans | spans stating a written pair | spans of a written name with another partner |
+|---|---|---|---|
+| F1 'A is connected to C.' (as the GPU) | **-0.42** | **-1.90** | -0.48 |
+| F2 typed, route 1 ('head <class-pair wording> tail', head = the more specific name) | +0.06 | **+10.41** | -0.13 |
+(bits saved per 1,000 bytes; negative = the memory costs bits)
+USEFULNESS AS THE SELECTOR (label-free): keep a write only if it saved bits on the first half of the later text; score on the second half:
+| form | writes with later text | kept | right: kept / dropped | second half, all writes -> kept only |
+|---|---|---|---|---|
+| F1 connected to | 181 | 24 | **0.833 / 0.675** | -0.86 -> +0.22 |
+| F2 typed | 171 | 37 | 0.730 / 0.709 | +0.09 -> +0.34 |
+- **Positive.** (1) The GPU's finding reproduces offline ('connected to' costs bits even where the pair is stated) and **typing turns it into a saving where the pair is stated (+10.4 per 1,000 bytes vs -1.9)**, with a quarter of the cost elsewhere. (2) **Usefulness - bits saved on later text, no labels - is a selector: it keeps writes that help on held-out text (+0.22 / +0.34 vs -0.86 / +0.09) and, for the untyped form, writes that are more often right (0.83 vs 0.68)**: a prediction-gain signal that, unlike re-mention, the system cannot satisfy without predicting the text better.
