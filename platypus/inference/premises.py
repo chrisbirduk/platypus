@@ -28,6 +28,7 @@ _SENT = re.compile(r'[^.!?]+[.!?]*')
 def _load_distant(cfg):
     """records of the distant set, once: (doc, A, B, words between, last word, n words, labelled, record text); names' automatic types"""
     p = str(getattr(cfg, 'inf_premises_path', '') or '')
+    _PM['list2'] = bool(int(getattr(cfg, 'inf_rret_list2', 0)))
     if _PM.get('path') == p: return
     _PM.update(path=p, R=[], TY={}, LAB=set(), ND=0)
     if not p: return
@@ -679,7 +680,11 @@ _RRET_LISTW = {',', 'and', 'or', '(', ')', '-', ', and', ', or', ') and', ') ,',
 
 def _rret_listlike(r):
     """15 Nov: a record whose names are linked only by a list or coordination ('A, B and C'), not by relational wording"""
-    return r[3] in _RRET_LISTW or r[3] == '' or str(r[7]).count(',') >= 2
+    if r[3] in _RRET_LISTW or r[3] == '' or str(r[7]).count(',') >= 2: return True
+    if _PM.get('list2'):                                                       # 16 Nov WIDER LIST FILTER (inf_rret_list2): 'X , Y and Z' (one comma + and / or)
+        w = ' ' + r[3] + ' '
+        return bool(re.search(r' , .*\b(and|or)\b', w)) or bool(re.search(r'\b(and|or)\b.* , ', w)) or r[3].strip() in ('and', 'or', ', and', ', or', 'as well as', 'and the')
+    return False
 
 
 def _rret_judge(cfg, RD, ndv_, vis):

@@ -682,6 +682,8 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_rret_list2=0                # 16 Nov WIDER LIST FILTER for the judge and typing: one comma + 'and' / 'or' ('X , Y and Z') is a list too (offline +0.02-0.03 AUC;
+                                    #   with the usefulness rule the kept memory 0.80-0.83 right against 0.73-0.77)
     inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved
                                     #   bits on the inference's answer in later text naming its subject (the memory-feedback readout, inf_kmfb 1, measures it)
     inf_kmc_useful_thr=0.0          #     mean bits saved per span above which it is useful
