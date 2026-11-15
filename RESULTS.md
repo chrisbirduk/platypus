@@ -1230,7 +1230,11 @@ head 1.00 / 0.38, 1.00 / 0.33, 1.00 / 0.43. In the memory it is WORSE than the f
 0.83-0.87; set A at the end 0.55-0.70 vs 0.92-0.93; paraphrased wording 0.40-0.58 vs 0.53-0.60) - it spreads facts over more slots
 (2,364-2,935 vs 1,716-1,759) and interferes more. **Negative as built: co-occurrence of a name pair in two sentences is too weak and too
 noisy a synonymy signal (most pairs are 'X, Y' lists and loose associations), and it costs the sharpness the memory needs.** A head trained
-on text pairs AND frames (K-BOTH) keeps the test wording at 1.00 and reaches 0.48 on paraphrase (6k s0); its memory runs are queued.
+on text pairs AND frames (K-BOTH) keeps the test wording at 1.00 and reaches 0.48 / 0.33 on paraphrase (6k s0 / s1, frame head 0.43 / 0.29).
+In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 / 0.97), paraphrased wording, set A 0.65 / 0.43 (JEPA 0.43 /
+0.45), set A after 600 more facts 0.72 / 0.42 (JEPA 0.68 / 0.70). **Mixed across the two seeds, no reliable gain: the paraphrase gap stays
+open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
+or the trunk's own predictions (the wording after which the object is equally expected).
 
 ### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
 
