@@ -1352,6 +1352,36 @@ and the visit-4 writes (not yet learned): RIGHT WITH 0.02 / 0.52 vs trunk 0.00 /
 a readout artefact, not a loss (a by-age split is needed). Facts WITH **0.57 / 0.90** vs trunk 0.37 / 0.88; held back 0.07 / 0.47 vs trunk
 0.03 / 0.57 (gate open 0.30: the small leak, as cg27a_kmg); paraphrased 0.12 / 0.68 = trunk; never-read names 0.00. Counter-write (copy):
 WRONG 0.50 -> 0.45, RIGHT 0.55 -> 0.75 (mixed groups). Bits 1.9438 (cg27a_kmg 1.9398, cg27a_kmi 1.9354, cg27a_kmem 1.9185).
+Visit 5 - THE TRUNK LEARNS THE KEPT INFERENCES: trunk alone, taught inferences RIGHT 0.17 / 0.48 (visit 3: 0.00 / 0.08), WRONG 0.07 / 0.40
+(the 38 wrong ones the judge kept are now taught too); WITH the memory 0.10 / 0.88 and 0.05 / 0.68 (groups mix kept, flagged and awaiting -
+the by-status readout is added for the next build). Facts WITH 0.52 / 0.77 vs trunk 0.47 / 0.73 (the trunk catching up); held back 0.00 /
+0.60 vs 0.10 / 0.63 and paraphrased 0.12 / 0.62 vs 0.20 / 0.68 - **a small cost now where the gate opens (0.33 / 0.68)**; exact (greedy)
+recall WITH the memory below the trunk's on inferences (0.10 vs 0.17); memory loss rising 0.144 -> 0.169 with 9181 of 16384 slots used -
+the memory is filling (cg27a_kma doubles it to 65,536). Never-read names 0.00. Counter-write (copy): WRONG 0.57 -> 0.57 - the trunk now holds
+the kept wrong ones. Bits 1.8910 (cg27a_kmi 1.8788, cg27a_kmem 1.8624). **The memory series' bits gap to cg27a_kmem grows from visit 4
+(kmc +0.005 / +0.006 / +0.010 / +0.025 / +0.029; kmi +0.002 / +0.004 / +0.010 / +0.017 / +0.016)** - common to kmi, kmg and kmc, so not
+consolidation; cg27a_kmgctl (memory frozen, every computation kept) separates the memory's learning from the extra computation.
+
+### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
+
+After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
+retracted answer byte reads in its TRAINING frames are retrieved and only that byte's logit is lowered in them (the name's bytes, not the
+shared final '.'; one change per slot and byte - the largest asked, not the sum) until the memory's support is below -1 nat; every edit is
+recorded and can be UNDONE. Package smoke (tiny model, 300 memory steps), rank among 10 in the TEST wording (never edited) WITH the memory:
+
+| | WRONG (retracted) | RIGHT (siblings: same relation, shared wording slots) | facts | undo |
+|---|---|---|---|---|
+| margin counter-write, 60 steps (cg27a_kmc) | 1.00 -> 0.20; 0.86 -> 0.00; **after the trunk moved 0.65 -> 0.45** | 0.97-1.00 | 1.00 | - |
+| margin, 200 steps | 1.00 -> 0.15; 0.86 -> 0.00; after the move 0.65 -> 0.30 | 0.97-1.00 | 1.00 | - |
+| BYTE EDIT (first version: summed, final '.' included) | -> 0.00 (support -52 to -80 bits) | 0.97 -> 0.70-0.75 | 1.00 | exact |
+| BYTE EDIT (wide: 64-slot neighbourhood) | -> 0.00-0.05 | 0.97 -> 0.33-0.47 | 0.97 | exact |
+| **BYTE EDIT (name bytes, one change per slot and byte)** | **1.00 -> 0.05; 0.86 -> 0.00; after the move 0.65 -> 0.10** | **0.93-0.95** | **1.00** | **exact** |
+
+**Positive: the byte edit removes the retracted inference to the trunk's level - also after the trunk moved, where the margin counter-write
+reproduced the GPU's partial removal (0.45) - at a cost of 0.02-0.04 to siblings, no cost to facts, and is exactly reversible** (forgetting as
+lost access: a retraction by the weak judge - 65% of the GPU's flagged inferences were right - can be undone if later reading supports it).
+The first version over-shot (the same slots edited once per frame) and lowered the final '.' every answer shares; the 64-slot version
+reaches unseen wordings but costs siblings too much.
 
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 

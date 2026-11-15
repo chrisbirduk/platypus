@@ -383,6 +383,25 @@ def _kma_addr_rows(model, K, X, sl, p0s, ns):
     return a['nk'], a['wk'], a['offt'], [int(r) for r in a['r']], [int(i) - p0s[int(r)] for r, i in zip(a['r'], a['i'])]
 
 
+def _kmi_track(K, items, rr, z, mv, tg):
+    """15 Nov READOUT (Go-CLS, Sun et al. 2023: consolidate what is PREDICTABLE; learning speed as its estimate): per written inference,
+    the memory's loss on its answer bytes each time it is learned, and the trunk's own loss on them (how predictable it was without it)"""
+    try:
+        from platypus.inference.premises import _RTI_R
+        with torch.no_grad():
+            cm = F.cross_entropy(z.detach() + mv.detach(), tg, reduction='none'); ct = F.cross_entropy(z.detach(), tg, reduction='none')
+        acc = {}
+        for q, r in enumerate(rr): acc.setdefault(r, []).append(q)
+        L = K.setdefault('ls', {})
+        for r, qs in acc.items():
+            k = str(items[r][3]) if len(items[r]) > 3 else ''
+            if _RTI_R not in k: continue
+            key = __import__('ast').literal_eval(k); kk = (key[1], key[3])
+            if len(L.get(kk, ())) < 64: L.setdefault(kk, []).append((K['steps'], float(cm[qs].mean()), float(ct[qs].mean())))
+    except Exception:
+        pass
+
+
 def kmi_rows_loss(model, cfg, items, lg, X, sl=None):
     """the memory learns from question rows (items: (prompt, answer, ...)); lg: the trunk's logits for X = prompt + answer; trunk untouched"""
     if not int(getattr(cfg, 'inf_kmi', 0)): return
@@ -396,7 +415,7 @@ def kmi_rows_loss(model, cfg, items, lg, X, sl=None):
             nk, wk, off, rr, pp = a; K['hit'] += len(set(rr)); dev = lg.device
             rt = torch.as_tensor(rr, device=dev); it_ = torch.as_tensor([p0s[r] + j for r, j in zip(rr, pp)], device=dev)
             z = lg[rt, it_].detach().float(); tg = X[rt, it_ + 1]
-            mv, idx = _kmi_read(K, nk, wk, off); lo = F.cross_entropy(z + mv, tg)
+            mv, idx = _kmi_read(K, nk, wk, off); lo = F.cross_entropy(z + mv, tg); _kmi_track(K, items, rr, z, mv, tg)
             K['opt'].zero_grad(); lo.backward()
             if int(getattr(cfg, 'inf_kmi_train', 1)): K['opt'].step()          # 15 Nov CONTROL (inf_kmi_train 0): everything computed, the values never move
             K['steps'] += 1; K['loss'].append(float(lo.detach())); K.setdefault('subj', set()).update(K['_subj'])
@@ -414,7 +433,7 @@ def kmi_rows_loss(model, cfg, items, lg, X, sl=None):
         if a is None: return
         nk, wk, off, rr, pp = a; K['hit'] += len(set(rr))
         z = torch.stack([lg[r, p0s[r] + j].detach().float() for r, j in zip(rr, pp)]); tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
-        mv, idx = _kmi_read(K, nk, wk, off); lo = F.cross_entropy(z + mv, tg)
+        mv, idx = _kmi_read(K, nk, wk, off); lo = F.cross_entropy(z + mv, tg); _kmi_track(K, items, rr, z, mv, tg)
         K['opt'].zero_grad(); lo.backward()
         if int(getattr(cfg, 'inf_kmi_train', 1)): K['opt'].step()              # 15 Nov CONTROL (inf_kmi_train 0): everything computed, the values never move
         K['steps'] += 1; K['loss'].append(float(lo.detach()))
@@ -518,6 +537,38 @@ def kmi_refresh(model, cfg, ents, held, vis, S_slot=None):
     return K
 
 
+def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
+    """15 Nov READOUTS. BY STATUS: the written inferences split by consolidation status (judged and KEPT - taught to the trunk; FLAGGED - never
+    taught; AWAITING judgement - memory only) and by truth, WITH the memory vs the trunk: kept ones should reach the trunk, flagged and
+    awaiting ones should not; also by the visit written (a fresh batch is not yet in the memory). LEARNING SPEED AS A JUDGE (Go-CLS):
+    per inference, the memory's loss at its first and latest learning and the trunk's own loss at its first (predictability), AUC right vs
+    wrong (label-free signals; the labels only score them)"""
+    from platypus.inference.premises import _PM, _RTI_R
+    from platypus.inference.compress import _cg_auc
+    W = _PM.get('rti') or {}
+    if not W: return
+    inf_ = [e for e in fs if e['r'] == _RTI_R and (e['A'], e['ans']) in W]
+    st = lambda e: W[(e['A'], e['ans'])]
+    grp = [('KEPT right', lambda w: w.get('judged') is not None and not w.get('flag') and w['truth']), ('KEPT wrong', lambda w: w.get('judged') is not None and not w.get('flag') and not w['truth']),
+           ('FLAGGED right', lambda w: w.get('flag') and w['truth']), ('FLAGGED wrong', lambda w: w.get('flag') and not w['truth']),
+           ('AWAITING (memory only)', lambda w: w.get('judged') is None)]
+    parts = [f"{nm} {score([e for e in inf_ if f(st(e))], te, 30, False)}" for nm, f in grp]
+    vs = sorted({st(e).get('vis') for e in inf_ if st(e).get('vis') is not None})
+    parts += [f"written at visit {v + 1}: {score([e for e in inf_ if st(e).get('vis') == v], te, 30, False)}" for v in vs[-2:]]
+    print(f"  [INTEGRATED KEYED MEMORY, BY STATUS | visit {vis + 1}] written inferences, rank among 10 WITH the memory vs the trunk alone || " + " | ".join(parts), flush=True)
+    L = K.get('ls') or {}; rows = []
+    for kk, h in L.items():
+        if kk in W and len(h) >= 4: rows.append((bool(W[kk]['truth']), h))
+    if len(rows) >= 20 and any(t for t, h in rows) and any(not t for t, h in rows):
+        y = np.array([t for t, h in rows])
+        sig = {'memory loss at first learning (low = predictable)': np.array([-np.mean([x[1] for x in h[:2]]) for t, h in rows]),
+               'memory loss now (low = learned)': np.array([-np.mean([x[1] for x in h[-2:]]) for t, h in rows]),
+               'LEARNING SPEED (loss first - now)': np.array([np.mean([x[1] for x in h[:2]]) - np.mean([x[1] for x in h[-2:]]) for t, h in rows]),
+               "TRUNK's own loss at first (predictability)": np.array([-np.mean([x[2] for x in h[:2]]) for t, h in rows])}
+        print(f"  [LEARNING SPEED AS A JUDGE (Go-CLS) | visit {vis + 1}] {len(rows)} written inferences learned 4+ times (right {y.mean():.2f}); AUC right vs wrong "
+              f"(label-free signals; 0.5 = none; the current judge 0.64): " + " | ".join(f"{k} {_cg_auc(v[y], v[~y]):.3f}" for k, v in sig.items()), flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -579,6 +630,10 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         print(f"  [INTEGRATED KEYED MEMORY, GATE | visit {vis + 1}] the memory answers only where its address was written ({len(K.get('subj', ()))} subjects written, "
               f"{int(K['wmask'].sum()) if 'wmask' in K else 0} slots): gate OPEN on questions about NEVER-READ names {np.mean(op9):.2f} (60; the memory abstains on the rest - "
               f"the trunk answers these with a stored name, false-memory probe a)", flush=True)
+    try: _kmi_status_readout(model, cfg, K, fs, score, te, vis)              # 15 Nov READOUTS: by consolidation status and age; learning speed as a judge
+    except Exception as e9:
+        from platypus.common import _fail
+        _fail('inference.kmem:status'); print(f"  [INTEGRATED KEYED MEMORY, BY STATUS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     if int(getattr(cfg, 'inf_kmi_counter', 0)):                                # COUNTER-WRITE (oracle, on a copy): unlearn the WRONG inferences, re-write the rest
         try: _kmi_counter_readout(model, cfg, K, S_slot, kind(fs, True), kind(fs, False), kind(fs, 'fact'), vis)
         except Exception as e9:
@@ -615,7 +670,8 @@ def _kmc_byte_edit(model, cfg, K, S_slot, L, rec=None):
                     nk, wk, off, rr, pp = ad; mv, idx = _kmi_read(K, nk, wk, off); w = K['_w']
                     z0 = torch.stack([lg[r, p0s[r] + j] for r, j in zip(rr, pp)]); tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
                     sup = F.log_softmax(z0 + mv, -1).gather(-1, tg[:, None])[:, 0] - F.log_softmax(z0, -1).gather(-1, tg[:, None])[:, 0]
-                    bad = sup > -mg
+                    nm9 = torch.tensor([j < len(ch[r][1]) - 1 for r, j in zip(rr, pp)], device=sup.device)   # the NAME's bytes only (not the final '.', shared by all)
+                    bad = (sup > -mg) & nm9
                     if not bool(bad.any()): continue
                     left += int(bad.sum()); ex = (sup[bad] + mg + 0.5)
                     if wide:                                                  # the whole product neighbourhood of the read: 8 x 8 slots
@@ -625,7 +681,10 @@ def _kmc_byte_edit(model, cfg, K, S_slot, L, rec=None):
                     else:
                         ix = idx[bad]; wb = w[bad]; dl = -ex[:, None] * wb / (wb * wb).sum(-1, keepdim=True)
                     tb = tg[bad][:, None].expand(-1, ix.shape[1])
-                    K['v'].index_put_((ix.flatten(), tb.flatten()), dl.flatten(), accumulate=True)
+                    fl = ix.flatten() * K['V'] + tb.flatten(); u, inv = torch.unique(fl, return_inverse=True)   # one change per (slot, byte): the
+                    dmin = torch.zeros(len(u), device=dl.device).scatter_reduce(0, inv, dl.flatten(), 'amin', include_self=True)   #   largest asked, not the sum
+                    K['v'].view(-1).index_add_(0, u, dmin)
+                    dl = dmin[inv].view_as(dl) * (torch.arange(len(fl), device=dl.device) == torch.zeros(len(u), dtype=torch.long, device=dl.device).scatter_reduce(0, inv, torch.arange(len(fl), device=dl.device), 'amin', include_self=False)[inv]).view_as(dl).float()
                     if rec is not None:
                         bk = [ch[r][3] for r, q in zip(rr, bad.tolist()) if q]
                         for q, kk in enumerate(bk): rec.setdefault(kk, []).append((ix[q].detach().cpu(), int(tb[q, 0]), dl[q].detach().cpu()))
