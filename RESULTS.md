@@ -1389,6 +1389,12 @@ scale. Rules over the types: 8-21 rules, typed proposals right 0.00-0.23 - **rul
 (10 chains): WITH the memory first hop exact 0.40, C rank 0.90; trunk alone 0.20, 0.90 (true B 0.90 / 0.80) - no gain yet (few chains;
 both hops taught to the trunk too). Memory as cg27a_kmb (facts WITH 0.42 / 0.48 vs trunk 0.18 / 0.43; never-read 0.00; bits WITH the
 memory +0.0000 at visit 2, gate open 0.0 per 1000). Trunk bits 2.0160 / 2.0278.
+Visit 3: **THE STRICTER GATE CUTS THE ALL-TEXT COST ~7x - Wikipedia +0.0023 (gate open 2.4 per 1000) against cg27a_kmb's +0.0173 (10.6) at
+the same visit**; Gutenberg +0.0006, ArXiv +0.0004, next domain +0.0005; at 0.95: Wikipedia +0.0014 (open 1.0). Recall nearly kept: taught
+inferences RIGHT WITH 0.65 / 0.98 vs trunk 0.00 / 0.10 (kmb 0.68 / 0.98); facts WITH 0.50 / 0.72 vs trunk 0.27 / 0.70 (kmb 0.55 / 0.78);
+BARE wording 0.53 / 0.78 vs 0.40 / 0.75; held back = trunk (gate open 0.03); never-read names 0.00. Byte edit (copy): WRONG 0.92 -> 0.08,
+RIGHT 0.97 kept, facts kept. TWO-HOP (30 chains): WITH the memory C rank 0.90 = trunk 0.90 (first hop exact 0.37 vs 0.23) - the trunk
+knows these chains' facts too, so no gain shows. Learning speed 0.48-0.51 (negative). Trunk bits 2.0182.
 
 ### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
 
