@@ -1559,6 +1559,17 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### Do the existing weights say an inference is false? (tools/weights_judge.py, 15 November; 18k stand-in trunk, the GPU path's 200 writes)
+
+1 TRUTH DIRECTION (Marks & Tegmark 2023; CCS): a probe on read spans vs the same spans with the second name swapped (same entity type) -
+held-out accuracy **0.477 (chance 0.50): the stand-in trunk cannot tell a read fact from a swapped one at all**; on the writes, probe AUC
+0.448-0.453, the trunk's likelihood 0.539. 2 INTERFERENCE (3 SGD steps on the inference, MLPs; loss on what was read about A and C): AUC
+0.489 - learning ANY inference LOWERS that loss (right -0.361, wrong -0.375 nats: shared names and wordings); gradient cosine 0.452 (+0.73
+both). 3 HELD-OUT GAIN (Go-CLS validation; Mattar & Daw's gain: loss on text read AFTER the write naming A or C): AUC 0.500 (+0.278 vs
++0.284 nats). **Negative - but the prerequisite is missing: a trunk that cannot distinguish read facts from swapped ones (0.48) has no
+knowledge to judge with.** These signals need a trunk that knows facts: repeated on the pretrained trunk (B) and to be measured on the
+GPU trunk.
+
 ### Rules by composing relation maps between name codes (tools/rel_ops.py, 15 November; after Hernandez et al., ICLR 2024)
 
 Types as rel_mtb's best (type-masked Matching-the-Blanks key, 64 types over 30,000 records); name codes from the store's record graph
