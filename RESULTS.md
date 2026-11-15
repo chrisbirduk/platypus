@@ -1521,6 +1521,26 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### Relation types with the names MASKED and a Matching-the-Blanks key (tools/rel_mtb.py, 15 November; 18k stand-in trunk, 30,000 real records)
+
+After Peng et al. (EMNLP 2020: models lean on names; mask them) and Baldini Soares et al. (ACL 2019, Matching the Blanks: two sentences of
+the same name pair are positives). Pooled states (middle + last block) of each record, 64 k-means types, scored against Wikidata only
+(3,228 records with one relation); the MTB key: a 2-layer head, InfoNCE over 15,660 name pairs stated in two different documents.
+
+| record read as | purity | NMI |
+|---|---|---|
+| surface wordings (baseline) | 0.343 | 0.290 |
+| 'A <words> C.' (names) | 0.377 | 0.318 |
+| 'someone <words> something.' (names MASKED) | 0.432 | 0.378 |
+| MTB key, masked | 0.397 | 0.359 |
+| 'a person <words> a place.' (names masked, ENTITY TYPES as placeholders) | 0.486 | 0.463 |
+| **MTB key, type-masked** | **0.574** | **0.568** |
+
+**Positive: masking the names, putting their entity types in their place and training a Matching-the-Blanks key label-free types real
+records far better than their wordings - purity 0.34 -> 0.57, NMI 0.29 -> 0.57 (twice).** Rules over the types remain unusable on 30,000
+records (1-6 rules, typed proposals right 0.00-0.05): typing is no longer the bottleneck - rule discovery by counting chains is (sparsity).
+Next: typed entailment graphs (argument-pair inclusion; Hosseini et al. TACL 2018) and rules by composing relation operators.
+
 ### Relation types from the representation, then rules over them (tools/rel_types.py, 15 November; 18k stand-in trunk, 30,000 real records)
 
 Label-free: real records 'A <words> C.' (documents 0 -> 2/10) as the trunk's pooled state; k-means into 64 types; AMIE rules over the
