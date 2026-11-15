@@ -19,7 +19,7 @@ finetuning), 71% (LoRA), 11% (sparse memory), at the same learning. Here, small:
   after A, of B after B and of A after B (retention); held-out bits per byte on wiki and on Re-DocRED dev text (read in training) before
   and after: FORGETTING = the bits added.
 Second round (15 Nov): runs 12-16 select slots by TF-IDF counted only where the ANSWER bytes are predicted ('answer'), and with more slots
-(t = 1024 / 4096); SM_RETRACT=1: after B, 30 facts of A retracted by restoring the SM_RX_T (1024) answer slots their questions use most (TF-IDF); SM_MIX=k: k fact rows + (32 - k) wiki rows a step (the GPU's setting). The first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
+(t = 1024 / 4096); SM_REPLAY=x: while B is taught, a share x of the fact rows re-teach A; SM_RETRACT=1: after B, 30 facts of A retracted by restoring the SM_RX_T (1024) answer slots their questions use most (TF-IDF); SM_MIX=k: k fact rows + (32 - k) wiki rows a step (the GPU's setting). The first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/sparse_mem.py   env SM_PRE (1500), SM_STEPS (150 per set), SM_T (256), SM_RUNS"""
 import os, sys, json, math, time, collections
 import numpy as np
@@ -146,12 +146,13 @@ P(f"held-out wiki bits per byte: memory untrained {b_tr:.3f} | memory model {b0w
   f"slots used by background {int((cnt_bg > 0).sum())} of {NS * NS}  ({time.time() - T0:.0f}s)")
 BASE = {k: v.clone() for k, v in m.state_dict().items()}
 
-ANS = False; MIX = int(os.environ.get('SM_MIX', 0))
+ANS = False; MIX = int(os.environ.get('SM_MIX', 0)); REP = float(os.environ.get('SM_REPLAY', 0)); OLD = []
 def teach(mm, facts, params, lr, sparse, rr):
     op = torch.optim.AdamW(params, lr=lr, weight_decay=0.0, betas=(0.9, 0.999))
     for st in range(STEPS):
         nf = MIX if MIX > 0 else 32
-        fb = [facts[rr.randint(len(facts))] for _ in range(nf)]; pre = [FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) for f in fb]
+        nrp = int(nf * REP) if OLD else 0                                     # refresh: a share of the fact rows re-teach earlier sets
+        fb = [facts[rr.randint(len(facts))] for _ in range(nf - nrp)] + [OLD[rr.randint(len(OLD))] for _ in range(nrp)]; pre = [FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) for f in fb]
         seqs = [(q + f['C'] + '.').encode('latin-1') for q, f in zip(pre, fb)]
         if MIX > 0: seqs += wiki_batch(rr, 32 - nf)                           # mixed with ordinary text, as on the GPU
         l = loss_of(mm, seqs); op.zero_grad(); l.backward()
@@ -178,7 +179,8 @@ def run(tag, method, lr):
     for p in ps: p.requires_grad_(True)
     sp = method == 'MEM_SPARSE'
     teach(mm, SET_A, ps, lr, sp, rr); ra = recall(mm, SET_A); w1, d1 = bits(mm, EV_W), bits(mm, EV_D)
-    teach(mm, SET_B, ps, lr, sp, rr); rb = recall(mm, SET_B); raa = recall(mm, SET_A); w2, d2 = bits(mm, EV_W), bits(mm, EV_D)
+    global OLD; OLD = list(SET_A) if REP > 0 else []
+    teach(mm, SET_B, ps, lr, sp, rr); OLD = []; rb = recall(mm, SET_B); raa = recall(mm, SET_A); w2, d2 = bits(mm, EV_W), bits(mm, EV_D)
     tch = f" | slots changed {len(mm._touched)}" if sp else ''
     P(f"   {tag:24s} lr {lr:g}: A after A open {ra[0]:.2f} rank {ra[1]:.2f} | B after B open {rb[0]:.2f} rank {rb[1]:.2f} | A after B open {raa[0]:.2f} "
       f"rank {raa[1]:.2f} || FORGETTING (bits added) wiki {w1 - b0w:+.3f} -> {w2 - b0w:+.3f}, dev {d1 - b0d:+.3f} -> {d2 - b0d:+.3f}{tch}  ({time.time() - T0:.0f}s)")

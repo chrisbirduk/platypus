@@ -24,7 +24,8 @@ Usage: TG_D=192 TG_CKPT=<model file> python3 tools/jepa_mem.py   env JM_N (64), 
   JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME; add K-TEXT with JM_TEXT), JM_TEXT (a DocRED distant .json.gz: K-TEXT, a wording head
   trained on REAL TEXT only - two different wordings that link the same pair of names in one sentence are one statement; InfoNCE; the
   frames and the test wording never seen), JM_PAIRS (20000; with JM_TEXT also arm K-BOTH: the head trained on the text pairs AND the frames), JM_RX (30: retraction steps), JM_NULL (0: rows a write step that push reads for names never
-  used as subjects - a disjoint set from the abstention test's - toward zero), JM_REPLAY (0: share of each
+  used as subjects - a disjoint set from the abstention test's - toward zero), JM_RX_LATE (1: erase-retract 30 of A again after the capacity
+  batches, with the memory nearly full), JM_REPLAY (0: share of each
   write batch spent re-writing earlier facts, as sleep replays the store), JM_RXMODE (ul: -log(1 - p); margin: the object pushed 0.1 below the best other name; erase: the
   slots the facts' training-frame queries reach set to zero); ABSTAIN also by the read's norm (unwritten
   slots hold zeros)"""
@@ -320,6 +321,11 @@ for arm in os.environ.get('JM_ARMS', 'K-JEPA,K-RAW,K-NAME').split(','):
     if CAPF:
         bs = [CAPF[k:k + 200] for k in range(0, len(CAPF), 200)]
         for b_ in bs: M.teach(b_, rr)
+        if os.environ.get('JM_RX_LATE'):                                       # retraction again, now with the memory full
+            os.environ['JM_RXMODE'] = 'erase'; RX2, KEEP2 = SET_A[:30], SET_A[30:]; b5 = [M.recall(x) for x in (RX2, KEEP2, SET_B, SET_M, bs[-1])]
+            M.retract(RX2); a5 = [M.recall(x) for x in (RX2, KEEP2, SET_B, SET_M, bs[-1])]
+            P("           RETRACT WITH THE MEMORY FULL (erase): retracted " + f"{fmt(b5[0])} -> {fmt(a5[0])} | rest of A {fmt(b5[1])} -> {fmt(a5[1])}, "
+              f"B {fmt(b5[2])} -> {fmt(a5[2])}, M {fmt(b5[3])} -> {fmt(a5[3])}, newest batch {fmt(b5[4])} -> {fmt(a5[4])} | slots erased {M.erased}")
         P("           CAPACITY: +" + f"{len(CAPF)} facts in batches of 200 -> each batch at the end " + " | ".join(fmt(M.recall(b_)) for b_ in bs)
           + f" || A {fmt(M.recall(SET_A))}, B {fmt(M.recall(SET_B))}, M {fmt(M.recall(SET_M))} | slots written {len(M.touched)} of {NS * NS}  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")
