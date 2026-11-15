@@ -1369,6 +1369,28 @@ is no help (the written pairs are stable whether right or wrong); path support (
 Caveat: AUCs against the DISTANT labels (Wikidata), which agree with human labels only 0.85 (tools/trigger_retest.py part 2); offline against
 Re-DocRED human labels the restatement trigger reached 0.72-0.73 - part of the ceiling here may be the labels.
 
+### Are the triggers weak, or are the labels? (tools/human_trigger.py, 15 November; Re-DocRED writes, HUMAN and distant labels side by side)
+
+The same signals on the Re-DocRED writes of tools/fact_compress.py (200 per split; human-labelled right 0.37 / 0.41; distant labels agree with
+the human ones 0.85 / 0.87). Later reading = distant documents 0-30,000; path views on the distant graph with every record stating a written
+pair left out (indirect support only). AUC against HUMAN | DISTANT labels, split s0 / s1:
+
+| signal | HUMAN | distant |
+|---|---|---|
+| restatement: documents stating the pair | 0.702 / 0.707 | 0.698 / 0.736 |
+| restatement: short-gap records (3 or fewer words between) | **0.719 / 0.714** | 0.693 / 0.734 |
+| path: Adamic-Adar | 0.645 / 0.608 | 0.661 / 0.643 |
+| path: resource allocation | **0.745 / 0.713** | 0.768 / 0.738 |
+| path: 3-hop | 0.481 / 0.481 | 0.481 / 0.542 |
+| temporal: change of resource allocation (documents 10,000 -> 30,000) / of 3-hop | 0.741 / 0.696; 0.487 / 0.490 | 0.765 / 0.709; 0.493 / 0.548 |
+| combined: restatement + RA + 3-hop / all | 0.677 / 0.658; 0.681 / 0.654 | 0.689 / 0.707; 0.692 / 0.698 |
+
+Flagging the lowest 20% of short-gap restatement or resource allocation: wrong among flagged 0.80-0.86 (human base 0.59-0.63).
+**The labels do not hide the trigger: on the same writes the human and distant AUCs agree within about 0.03 (human slightly lower).** The
+signals reach 0.70-0.75 here and 0.61-0.64 on the GPU path's own writes because the WRITES differ: the GPU path selects its writes by code +
+Adamic-Adar, so the path evidence is already spent in the selection and what remains to separate them is weaker. The 0.64 ceiling on the
+GPU path is therefore real. Rank-sum combinations are worse than the best single signal (3-hop is noise here and drags them down).
+
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 
 200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is
