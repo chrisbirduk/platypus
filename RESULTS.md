@@ -1343,6 +1343,15 @@ Consolidation holds them out of the trunk exactly as designed. Taught facts WITH
 trunk (gate open 0.23); never-read names 0.00. COUNTER-WRITE (oracle, copy; now the memory holds the inferences): WRONG rank 0.92 -> **0.56**,
 support +1.63 -> -1.44 bits; RIGHT 0.95 -> 0.97; facts 0.72 -> 0.72 (cg27a_kmg: wrong stayed 0.90, the trunk held them). Better than kmg, no
 bystander cost, but only partial removal at 60 steps. Bits 2.0201 (cg27a_kmg 2.0319, cg27a_kmi 2.0203, cg27a_kmem 2.0105).
+Visit 4 - THE FIRST VERDICTS: the trigger [signal docs] judged the visit-2 writes at AUC **0.637** (offline 0.639); flagged 40, wrong 0.35
+(unflagged 0.24); 11 retracted (and counter-written out of the memory), 12 flagged taught kept as control. CONSOLIDATION: 160 judged and KEPT
+(right **0.76**; written 0.74) now go to the trunk; 40 flagged never will (right 0.65). **The trunk receives 122 right and 38 wrong; an
+oracle would pass 122 and 0** - 14 of 52 wrong ones kept out at the price of 26 right ones held back: the judge purifies only a little, as
+offline. A further 200 written at visit 4 now wait in the memory alone. The readout's inference groups now mix the visit-2 writes (learned)
+and the visit-4 writes (not yet learned): RIGHT WITH 0.02 / 0.52 vs trunk 0.00 / 0.13 (gate open 0.57), WRONG 0.00 / 0.53 vs 0.00 / 0.07 -
+a readout artefact, not a loss (a by-age split is needed). Facts WITH **0.57 / 0.90** vs trunk 0.37 / 0.88; held back 0.07 / 0.47 vs trunk
+0.03 / 0.57 (gate open 0.30: the small leak, as cg27a_kmg); paraphrased 0.12 / 0.68 = trunk; never-read names 0.00. Counter-write (copy):
+WRONG 0.50 -> 0.45, RIGHT 0.55 -> 0.75 (mixed groups). Bits 1.9438 (cg27a_kmg 1.9398, cg27a_kmi 1.9354, cg27a_kmem 1.9185).
 
 ### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
 
