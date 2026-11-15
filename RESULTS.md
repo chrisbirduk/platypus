@@ -1386,6 +1386,13 @@ are nearly tied, 1.99), bridges 0.563**; premises are often DATES (Nashville ~ T
 chains - the written inferences ('connected to', subject = the alphabetically first name) rarely chain with each other or with the taught
 facts (planted names): the readout needs symmetric chains over inferences (fix for the next build). Memory as kmt (facts WITH 0.40 / 0.50
 vs trunk 0.05 / 0.45; never-read 0.00; bits WITH the memory +0.0000-0.0001). Trunk bits 2.0296 / 2.0292.
+Visits 3-4: **MEMORY FEEDBACK FROM READING - negative as a judge: AUC 0.623 / 0.466 (bits saved), 0.538 / 0.518 (confirmations -
+contradictions), coverage 0.39 / 0.49; selection Spearman -0.10 / +0.07.** And telling: on real spans naming an inference's subject the
+memory HURTS - bits saved on the second name: inferences RIGHT -721 / -3112, WRONG -352 / -880 (178 / 369 spans; about -8 bits a span): an
+UNTYPED 'connected to' answer is the wrong continuation in almost every real sentence about the subject, right or wrong as a link. Untyped
+inferences should not be read on general text at all (and they feed the all-text cost: Wikipedia +0.0072 at visit 4). RETRACTED group
+(visit 4, before this visit's byte edit): WITH the memory 0.91 vs trunk 0.09 - the edit runs after the readout; visit 5 shows it. Ledger:
+write score 0.495, bridges 0.474. Memory-only chains 0 (as predicted). Facts WITH 0.80 / 0.92 vs trunk 0.45 / 0.90; never-read 0.00.
 
 ### GPU cg27a_kmt: stricter gate (0.85) + relation types from the GPU trunk (seed 4, 15 November, visits 1-2)
 
