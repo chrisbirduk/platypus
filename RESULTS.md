@@ -1521,6 +1521,17 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### Typed entailment graph from the records' name pairs (tools/ent_graph.py, 15 November; after Hosseini et al., TACL 2018)
+
+Typed predicates (wording + the names' entity types) with 5+ name pairs, documents 0 -> 2/10: 3,579 predicates over 146,183 pairs, but
+only 5,504 predicate pairs share ANY name pair. Paraphrase groups (inclusion both ways >= 0.3 / 0.5): 3 / 2 groups of 2+ predicates -
+punctuation variants (') for the' ~ '( mlb ) for the'); the 'types' are then the predicates themselves (purity 0.79 over 3,576 types,
+covering 0.53 of the labelled records: not comparable). ENTAILMENT edges (one way): 285 / 97, specific -> generic wording (', d.c. ,' =>
+','; 'in washington ,' => 'in'); new typed facts right 0.095 / 0.161 against the stated predicate's own 0.224 / 0.351. **Negative: the
+distant set (Wikipedia leads) rarely restates one name pair in different wordings - entailment by argument-pair inclusion needs the
+redundancy of many sources reporting the same events (news, as Hosseini et al.).** The representation (MTB key) generalises across pairs;
+counts over pairs cannot.
+
 ### Relation types with the names MASKED and a Matching-the-Blanks key (tools/rel_mtb.py, 15 November; 18k stand-in trunk, 30,000 real records)
 
 After Peng et al. (EMNLP 2020: models lean on names; mask them) and Baldini Soares et al. (ACL 2019, Matching the Blanks: two sentences of

@@ -75,6 +75,29 @@ def reltype_readout(model, cfg, S_slot, vis):
         return sum(v.most_common(1)[0][1] for v in ct.values()) / max(1, has.sum()), normalized_mutual_info_score(lab[has], c[has])
     KT = int(getattr(cfg, 'inf_rtype_k', 64)); TY = {}
     for nm, Zr in (('raw', X), ('names out', Xo)): TY[nm] = MiniBatchKMeans(KT, random_state=0, n_init=3, batch_size=4096).fit_predict(Zr)
+    # 15 Nov: names MASKED with their entity types as placeholders, and a MATCHING-THE-BLANKS key (offline, tools/rel_mtb.py: purity 0.34 ->
+    # 0.49 type-masked, 0.57 with the key; NMI 0.29 -> 0.57): two records of the same name pair in different documents are positives
+    ETY = _PM.get('TY') or {}; TN = {'PER': 'a person', 'LOC': 'a place', 'ORG': 'an organisation', 'TIME': 'a date', 'NUM': 'a number', 'MISC': 'a thing'}
+    tm = lambda r: f"{TN.get(ETY.get(r[1]), 'a thing')} {r[3]} {TN.get(ETY.get(r[2]), 'a thing')}."
+    Xt = _rt_pooled(model, [tm(r) for r in S], sl, blk); TY['type-masked'] = MiniBatchKMeans(KT, random_state=0, n_init=3, batch_size=4096).fit_predict(Xt - Xt.mean(0))
+    byp = collections.defaultdict(list)
+    for r in early: byp[frozenset((r[1], r[2]))].append(r)
+    mp = []
+    for L_ in byp.values():
+        o = [r for r in L_[1:] if r[0] != L_[0][0]]
+        if o: mp.append((L_[0], o[0]))
+    mp = [mp[i] for i in g.choice(len(mp), min(20000, len(mp)), replace=False)] if mp else []
+    if len(mp) >= 512:
+        import torch.nn.functional as F_
+        dev = model.embed.weight.device; A_ = _rt_pooled(model, [tm(a) for a, b in mp], sl, blk); B_ = _rt_pooled(model, [tm(b) for a, b in mp], sl, blk)
+        mu = np.concatenate([A_, B_]).mean(0); sd = np.concatenate([A_, B_]).std(0) + 1e-6
+        A_ = torch.tensor((A_ - mu) / sd, dtype=torch.float32, device=dev); B_ = torch.tensor((B_ - mu) / sd, dtype=torch.float32, device=dev)
+        head = torch.nn.Sequential(torch.nn.Linear(A_.shape[1], 256), torch.nn.GELU(), torch.nn.Linear(256, 64)).to(dev); opt = torch.optim.Adam(head.parameters(), lr=1e-3)
+        for st in range(3000):
+            ix = torch.as_tensor(g.choice(len(A_), 256, replace=False), device=dev); z1 = F_.normalize(head(A_[ix]), dim=-1); z2 = F_.normalize(head(B_[ix]), dim=-1); ar = torch.arange(256, device=dev)
+            lo = 0.5 * (F_.cross_entropy(z1 @ z2.t() / 0.1, ar) + F_.cross_entropy(z2 @ z1.t() / 0.1, ar)); opt.zero_grad(); lo.backward(); opt.step()
+        with torch.no_grad(): Zk = F_.normalize(head(torch.tensor((Xt - mu) / sd, dtype=torch.float32, device=dev)), dim=-1).cpu().numpy()
+        TY[f'MTB key, type-masked ({len(mp)} pairs, loss {float(lo.detach()):.2f})'] = MiniBatchKMeans(KT, random_state=0, n_init=3, batch_size=4096).fit_predict(Zk)
     wc = collections.Counter(r[3] for r in S); tw = {w: i for i, (w, _) in enumerate(wc.most_common(KT - 1))}; TY['surface wordings'] = np.array([tw.get(r[3], KT - 1) for r in S])
     def mine(c):
         OUT = collections.defaultdict(lambda: collections.defaultdict(set)); HEAD = {}
