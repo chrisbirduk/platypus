@@ -23,7 +23,8 @@ Second version (14 Nov, late): JM_SEED (fact order, memory and head seeds), and 
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/jepa_mem.py   env JM_N (64), JM_KK (8), JM_STEPS (150 per set), JM_LR (0.05), JM_SEED (0),
   JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME; add K-TEXT with JM_TEXT), JM_TEXT (a DocRED distant .json.gz: K-TEXT, a wording head
   trained on REAL TEXT only - two different wordings that link the same pair of names in one sentence are one statement; InfoNCE; the
-  frames and the test wording never seen), JM_PAIRS (20000; with JM_TEXT also arm K-BOTH: the head trained on the text pairs AND the frames), JM_RX (30: retraction steps), JM_REPLAY (0: share of each
+  frames and the test wording never seen), JM_PAIRS (20000; with JM_TEXT also arm K-BOTH: the head trained on the text pairs AND the frames), JM_RX (30: retraction steps), JM_NULL (0: rows a write step that push reads for names never
+  used as subjects - a disjoint set from the abstention test's - toward zero), JM_REPLAY (0: share of each
   write batch spent re-writing earlier facts, as sleep replays the store), JM_RXMODE (ul: -log(1 - p); margin: the object pushed 0.1 below the best other name; erase: the
   slots the facts' training-frame queries reach set to zero); ABSTAIN also by the read's norm (unwritten
   slots hold zeros)"""
@@ -250,7 +251,11 @@ class KMem:
             fb = [facts[rr.randint(len(facts))] for _ in range(32 - nrp)] + [hist[rr.randint(len(hist))] for _ in range(nrp)]; fis = rr.randint(0, TI, 32)
             nk = NK[[NI[f['A']] for f in fb]]; wk = torch.stack([s.wkey(f['rel'], int(fi)) for f, fi in zip(fb, fis)])
             val, idx = s.read(nk, wk); lg = F.normalize(val, dim=-1) @ NK.t() / 0.05
-            lo = F.cross_entropy(lg, torch.tensor([NI[f['C']] for f in fb])); s.opt.zero_grad(); lo.backward(); s.opt.step(); s.touched.update(idx.flatten().tolist())
+            lo = F.cross_entropy(lg, torch.tensor([NI[f['C']] for f in fb]))
+            if NUL > 0:                                                         # 15 Nov: names never taught as subjects should read ~nothing
+                nn_ = NULLN[rr.randint(len(NULLN), size=NUL)]; wn = torch.stack([s.wkey(RELS[rr.randint(len(RELS))], int(rr.randint(TI))) for _ in range(NUL)])
+                vn, _ = s.read(NK[nn_], wn); lo = lo + vn.pow(2).sum(-1).mean()
+            s.opt.zero_grad(); lo.backward(); s.opt.step(); s.touched.update(idx.flatten().tolist())
         s.hist = hist + [f for f in facts if f not in hist]
     @torch.no_grad()
     def recall(s, facts, fi=None):
@@ -288,6 +293,9 @@ class KMem:
         for k, (a, b) in enumerate(CHAINS): CAND[(a['A'], b['rel'], b['C'])] = cands(b)              # the final answer's candidates = hop 2's
         return s.score(lat, fin), s.score(dec, fin)
 fmt = lambda x: f"open {x[0]:.2f} rank {x[1]:.2f}"
+NUL = int(os.environ.get('JM_NULL', 0))                                       # rows a step that teach 'no fact here' on inventory names never used as subjects
+_subj = {f['A'] for f in SET_A + SET_B + SET_M + HOPS + CAPF + UNSEEN}
+NULLN = np.array([NI[n] for n in NAMES if n not in _subj])
 def auc(pos, neg):
     pos, neg = np.asarray(pos, float), np.asarray(neg, float); return float(((pos[:, None] > neg[None, :]).mean() + 0.5 * (pos[:, None] == neg[None, :]).mean()))
 P(f"seed {SEED}; capacity facts {len(CAPF)}; never-taught subjects {len(UNSEEN)}")
