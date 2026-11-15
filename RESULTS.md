@@ -1345,6 +1345,10 @@ side effects).
 The cost: where nothing was written, the memory's read still adds logits - held-back facts lose rank (0.80 -> 0.63) and paraphrases
 (0.72 -> 0.65). The memory needs a GATE: read only when its address is one it has written.** Wrong inferences are recalled as strongly
 (0.68 / 0.95): retraction still matters, and its trigger is not solved.
+Visit 6 (a write visit: the sampled 'taught' inferences include the 200 written at this readout): facts WITH **0.63 / 0.90** vs trunk 0.60 /
+0.82; inferences RIGHT 0.43 / 0.68 vs 0.28 / 0.60, WRONG 0.47 / 0.72 vs 0.40 / 0.68; HELD-BACK facts 0.00 / 0.47 vs 0.07 / 0.60 (the cost
+again); paraphrased 0.10 / 0.57 vs 0.07 / 0.62. Memory: 3,591 steps, 98% of rows addressed, 10,490 of 16,384 slots used. Bits 1.9100
+(cg27a_rasym 1.8840 at visit 6; cg27a_kmem stopped before visit 6). The readout memory with trunk codes: inferences 0.21 / 0.57.
 
 ### Retraction for the integrated memory: trigger and precise erase (15 November, local)
 
