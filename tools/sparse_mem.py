@@ -29,7 +29,7 @@ import torch.nn.functional as F
 P = lambda *a: print(*a, flush=True); T0 = time.time()
 SCR = '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpad'
 DW = int(os.environ.get('TG_D', 192)); NL = 3; CK = os.environ['TG_CKPT']; torch.set_num_threads(int(os.environ.get('SM_THREADS', 1)))
-L = 128; PAD = 256; V = 257; rs = np.random.RandomState(0); torch.manual_seed(0)
+L = 128; PAD = 256; V = 257; SMS = int(os.environ.get("SM_SEED", 0)); rs = np.random.RandomState(SMS); torch.manual_seed(SMS)
 NS = int(os.environ.get('SM_N', 128)); KK = 16; DK = 64
 PRE = int(os.environ.get('SM_PRE', 1500)); STEPS = int(os.environ.get('SM_STEPS', 150)); TOPT = int(os.environ.get('SM_T', 256))
 SMCK = os.environ.get('SM_CKPT', SCR + f'/sm_memr_{DW}_{NS}_{PRE}.pt')
@@ -166,7 +166,7 @@ def teach(mm, facts, params, lr, sparse, rr):
         op.step()
         if sparse: mm._touched.update(keep.tolist())
 def run(tag, method, lr):
-    mm = LM(); mm.load_state_dict(BASE); mm._touched = set(); rr = np.random.RandomState(11)
+    mm = LM(); mm.load_state_dict(BASE); mm._touched = set(); rr = np.random.RandomState(11 + SMS)
     for p in mm.parameters(): p.requires_grad_(False)
     if method == 'FULL': ps = list(mm.parameters())
     elif method == 'MLP_OUT': ps = [mm.b[k].m[2].weight for k in (0, 2)] + [mm.b[k].m[2].bias for k in (0, 2)]
