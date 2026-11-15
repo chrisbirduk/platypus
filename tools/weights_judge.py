@@ -9,6 +9,7 @@ of the weights, scored on the GPU path's 200 written inferences (tools/select_ju
   2 INTERFERENCE      learning the inference (a few SGD steps on 'A is connected to C.' and the substituted statements, on a copy) and the
                       change of the trunk's loss on what it read about A and C (their spans): consistent knowledge should not suffer;
                       signal = minus the loss rise; also the cosine between the inference's gradient and the known spans' gradient
+  3 HELD-OUT GAIN      the same steps' effect on text read AFTER the write (documents 2/10 -> 4/10) naming A or C: does learning it help predict the world?
 AUC right vs wrong for each (the current judge 0.64; likelihood alone ~0.50), and the trunk's own likelihood of the statements as the baseline.
 Usage: TG_D=192 TG_CKPT=<model> python3 tools/weights_judge.py <train_distant.json.gz> <writes .json>   env WJ_N (200), WJ_LR (3e-4), WJ_STEPS (3)"""
 import os, sys, json, time, types, copy, collections
@@ -56,6 +57,12 @@ WR = [(tuple(k), bool(t)) for k, t in json.load(open(sys.argv[2]))][:int(os.envi
 spans = [r for r in R if r[0] < n1 and r[1] != r[2] and r[7].startswith(r[1]) and r[7].endswith(r[2]) and len(r[7]) <= 60]
 byT = collections.defaultdict(list)
 for r in spans: byT[TYP.get(r[2], 'X')].append(r[2])
+later = collections.defaultdict(list)                                         # text read AFTER the write (documents 2/10 -> 4/10) naming A or C
+n2 = int(round(ND * 0.4))
+for r in R:
+    if n1 <= r[0] < n2 and r[1] != r[2] and len(r[7]) <= 60:
+        if r[1] in WN: later[r[1]].append(r[7])
+        if r[2] in WN: later[r[2]].append(r[7])
 about = collections.defaultdict(list)
 for r in spans:
     if r[1] in WN: about[r[1]].append(r)
@@ -85,21 +92,25 @@ au = lambda s, m=None: (lambda s_, y_: _cg_auc(s_[y_], s_[~y_]) if y_.any() and 
 P(f"   on the {len(WR)} written inferences (right {y.mean():.3f}; {hasctx.mean():.2f} with read contexts): TRUTH PROBE mean AUC {au(pm_):.3f}, max {au(px_):.3f} | "
   f"the trunk's LIKELIHOOD of the same statements {au(lk_):.3f} || with contexts only (n {hasctx.sum()}): probe {au(pm_, hasctx):.3f}, likelihood {au(lk_, hasctx):.3f}  ({time.time() - T0:.0f}s)")
 # 2 INTERFERENCE: a few SGD steps on the inference's statements; the loss change on what was read about A and C
-LR, NS = float(os.environ.get('WJ_LR', 3e-4)), int(os.environ.get('WJ_STEPS', 3)); base = copy.deepcopy(lm.state_dict()); dl, cs = [], []
+LR, NS = float(os.environ.get('WJ_LR', 3e-4)), int(os.environ.get('WJ_STEPS', 3)); base = copy.deepcopy(lm.state_dict()); dl, cs, fg = [], [], []
 params = [p for n, p in lm.named_parameters() if '.m.' in n]                     # the MLPs (where facts are thought to live)
 for (a, c), t in WR:
     known = [r[7] + '.' for r in (about.get(a, [])[:8] + about.get(c, [])[:8])]
     S_ = [s + '.' for s in (stmts(a, c) or [f"{a} is connected to {c}"])] + [f"{a} is connected to {c}."]
-    if not known: dl.append(np.nan); cs.append(np.nan); continue
+    if not known: dl.append(np.nan); cs.append(np.nan); fg.append(np.nan); continue
     lm.train(); g1 = torch.autograd.grad(loss(lm, S_), params); g2 = torch.autograd.grad(loss(lm, known), params)
     cs.append(float(sum((x * z).sum() for x, z in zip(g1, g2)) / (torch.sqrt(sum((x * x).sum() for x in g1)) * torch.sqrt(sum((z * z).sum() for z in g2)) + 1e-12)))
-    with torch.no_grad(): l0 = float(loss(lm, known))
+    fut = [x + '.' for x in (later.get(a, [])[:8] + later.get(c, [])[:8])]
+    with torch.no_grad(): l0 = float(loss(lm, known)); f0 = float(loss(lm, fut)) if fut else np.nan
     opt = torch.optim.SGD(params, lr=LR * 100)
     for _ in range(NS): opt.zero_grad(); loss(lm, S_).backward(); opt.step()
-    with torch.no_grad(): dl.append(float(loss(lm, known)) - l0)
+    with torch.no_grad(): dl.append(float(loss(lm, known)) - l0); fg.append(f0 - float(loss(lm, fut)) if fut else np.nan)
     lm.load_state_dict(base); lm.eval()
 dl, cs = np.array(dl), np.array(cs); m = ~np.isnan(dl)
 P(f"INTERFERENCE ({NS} SGD steps on the inference, lr {LR * 100:g}, MLPs only; {m.sum()} inferences with read spans about A or C): loss rise on what was read "
   f"about A and C - AUC of minus the rise {au(-dl, m):.3f} (right: {np.nanmean(dl[y]):+.4f}, wrong: {np.nanmean(dl[~y]):+.4f} nats) | gradient cosine with the "
   f"known spans {au(cs, m):.3f} (right {np.nanmean(cs[y]):+.3f}, wrong {np.nanmean(cs[~y]):+.3f})  ({time.time() - T0:.0f}s)")
+fg = np.array(fg); mf = ~np.isnan(fg)
+P(f"HELD-OUT GAIN (Go-CLS validation; Mattar & Daw 'gain'): the loss change on text read AFTER the write naming A or C when the trunk learns the "
+  f"inference ({mf.sum()} with such text): AUC of the gain {au(fg, mf):.3f} (right {np.nanmean(fg[y]):+.4f}, wrong {np.nanmean(fg[~y]):+.4f} nats)")
 P(f"DONE ({time.time() - T0:.0f}s)")
