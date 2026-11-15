@@ -1513,6 +1513,26 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### Relation types from the representation, then rules over them (tools/rel_types.py, 15 November; 18k stand-in trunk, 30,000 real records)
+
+Label-free: real records 'A <words> C.' (documents 0 -> 2/10) as the trunk's pooled state; k-means into 64 types; AMIE rules over the
+types. Scored only: type purity / NMI against Wikidata (3,228 records with one relation), and typed proposals (the head type's commonest
+relation holds for x-z).
+
+| types from | purity | NMI | rules | typed proposals | TYPED right | untyped right |
+|---|---|---|---|---|---|---|
+| the 63 commonest SURFACE wordings | 0.343 | 0.290 | 0 | 0 | - | - |
+| raw pooled states | **0.397** | 0.322 | 5 | 140 | 0.400 | 0.414 |
+| names out (name subspace learned from REAL per-name means) | 0.361 | 0.283 | 10 | 295 | 0.119 | 0.180 |
+| names out (name subspace from a SYNTHETIC factorial, 8 dims) | 0.394 | **0.337** | 5 | 50 | **0.440** | 0.500 |
+| the same, 16 dims | 0.397 | 0.336 | 9 | 150 | 0.287 | 0.320 |
+
+**Partly positive: the representation types real records better than their wordings (purity 0.40 vs 0.34, NMI 0.32-0.34 vs 0.29), and
+removing a synthetic name subspace helps a little; but a name subspace learned from real per-name means is confounded with relations
+(overlap with the wording subspace 0.61 - a name's records share its relations) and hurts. Rules over the types are too sparse on 30,000
+records and typed precision 0.20-0.44 is far below the untyped path's 0.74 - not usable at this trunk and sample size.** The stand-in trunk
+is small (d 192); the test belongs on the GPU trunk, over all records, as a readout.
+
 ### Typed real-text inference by rule mining over surface wordings (tools/typed_rules.py, 15 November; distant documents 0 -> 2/10)
 
 AMIE-style closed-path rules r1(x,y) & r2(y,z) => r3(x,z) over typed records (the 150 commonest specific wordings between two names, 1-6

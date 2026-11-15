@@ -10,7 +10,7 @@ SURFACE wordings fail (a wording is not a relation). Here, label-free:
 Scored (EVALUATION ONLY): the types' purity / NMI against Wikidata relations (records with one), against surface-wording identity and
 raw clustering; the rules' typed proposals - the head type's commonest Wikidata relation holds for (x, z) - and untyped (some relation).
 Usage: TG_D=192 TG_CKPT=<model> python3 tools/rel_types.py <train_distant.json.gz>   env RT_N (30000 records), RT_K (64 types), RT_NS (24),
-RT_WS (24), RT_SUP (5), RT_CONF (0.3), RT_HUB (60)"""
+RT_WS (24), RT_SYNTH (0: name subspace from real per-name means; 1: from a synthetic factorial), RT_SUP (5), RT_CONF (0.3), RT_HUB (60)"""
 import os, sys, json, gzip, time, types, collections
 import numpy as np
 import torch, torch.nn as nn
@@ -66,6 +66,13 @@ def pcs(groups, k):
 byn = collections.defaultdict(list); byw = collections.defaultdict(list)
 for i, r in enumerate(S): byn[r[1]].append(i); byn[r[2]].append(i); byw[r[3]].append(i)
 Bn, nn_ = pcs(byn, NS); Bw, nw_ = pcs(byw, WSD)
+if int(os.environ.get('RT_SYNTH', 0)):                                         # the NAME subspace from a factorial of synthetic sentences instead
+    REL9 = ['was born in', 'died in', 'is a citizen of', 'worked for', 'played for', 'is a member of', 'is located in', 'was written by', 'was directed by', 'is part of', 'comes from', 'is based in']
+    syl = ['ka', 'lo', 'mi', 'ner', 'tas', 'vol', 'ru', 'den', 'sa', 'por', 'el', 'ith', 'qua', 'bren', 'dor', 'fen']; g2 = np.random.RandomState(1)
+    nmf = lambda: (''.join(g2.choice(syl, 2)) + ' ' + ''.join(g2.choice(syl, 3))).title(); SB = [nmf() for _ in range(16)]; OB = [nmf() for _ in range(16)]
+    rows = [(a_, r_, o_) for a_ in range(16) for r_ in range(12) for o_ in range(16)]; Zs = pooled([f"{SB[a_]} {REL9[r_]} {OB[o_]}." for a_, r_, o_ in rows]); Zs -= Zs.mean(0); ix = np.array(rows)
+    Ms = [np.array([Zs[ix[:, c] == v].mean(0) for v in range(16)]) for c in (0, 2)]
+    Bn = np.linalg.qr(np.concatenate([np.linalg.svd(M - M.mean(0), full_matrices=False)[2][:NS // 2].T for M in Ms], 1))[0]; nn_ = 'synthetic 16 + 16'
 ov = float(np.mean(np.linalg.svd(Bn.T @ Bw, compute_uv=False) ** 2))
 P(f"NAME subspace from {nn_} names (top {NS}), WORDING subspace from {nw_} wordings (top {WSD}); their overlap (mean cos^2) {ov:.2f} (random ~{max(NS, WSD) / DW:.2f})")
 Xo = X - (X @ Bn) @ Bn.T; Xw = Xo @ Bw
