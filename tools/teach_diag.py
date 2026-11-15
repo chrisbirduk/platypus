@@ -100,6 +100,13 @@ def run(tag, facts, byt, k, rel_of, read=False, steps=300):
     P(f"   {tag:44s} rows per fact {steps * k / len(facts):5.1f} | before: {b0} || taught: {b1} || +300 steps other text: {recall(m, facts, rel_of, byt)}  ({time.time() - T0:.0f}s)")
 CONN = lambda f: 'is connected to'; GOLD = lambda f: f['rel']
 P(f"facts: {len(UNF)} unfamiliar (Re-DocRED training documents), {len(FAM)} familiar (dev documents, read by this trunk); 300 teaching steps, batches of 32")
+import os as _os
+_SEL = _os.environ.get('TD_RUNS', '')                                        # 14 Nov: TD_RUNS=comma list of run numbers (1-7) to do only those
+_run0 = run
+def run(*a, **k):
+    run.n = getattr(run, 'n', 0) + 1
+    if _SEL and str(run.n) not in _SEL.split(','): return
+    return _run0(*a, **k)
 run('BASE: GPU-like dose, connected, unfamiliar', UNF, BYT_U, 1.0, CONN)
 run('DOSE x4 (4 rows a step)', UNF, BYT_U, 4.0, CONN)
 run('DOSE x16 (16 rows a step)', UNF, BYT_U, 16.0, CONN)

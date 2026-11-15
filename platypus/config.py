@@ -649,6 +649,28 @@ class Config:
     inf_rcode_k=128                 #     code dimensions (truncated SVD of the PPMI name x name record graph)
     inf_rcode_sel='code'            #     which pairs to write: 'code' (most similar codes), 'code+aa' (rank sum of the code and Adamic-Adar; cg27a_rcode3) or 'code+ra' (code and resource allocation, shared neighbours weighted 1/degree)
     inf_rcode_selreport=0           #     readout: labelled share of the top 100 / 200 / 400 under each selection rule
+    inf_rcode_asym=0.0              #   14 Nov ASYMMETRY FILTER (MODEL CHANGE when > 0; cg27a_rasym): write only pairs with |log degree ratio| above this (one name clearly more specific)
+    inf_kmem=0                      #   15 Nov KEYED MEMORY (readout; inference.kmem): a sparse key-to-key memory addressed by the subject's name code and a JEPA
+                                    #     wording key, written from the question pool; recall in the test wording, paraphrase, two-hop, erase-retraction, persistence
+    inf_kmem_n=128                  #     product keys n x n slots
+    inf_kmem_rows=20                #     write rows per fact
+    inf_kmem_replay=0.25            #     persistent memory: share of each write batch re-writing earlier facts
+    inf_kmem_lr=0.05                #     memory values learning rate (Adam)
+    inf_kmi=0                       #   15 Nov INTEGRATED KEYED MEMORY (MODEL CHANGE when on; cg27a_kmi): the question rows read a keyed memory (subject name x JEPA
+                                    #     wording key x answer byte) where their answers are predicted - its logits ADDED to the trunk's - and it learns from them
+                                    #     (trunk logits detached: the trunk's training unchanged); readout: the model's answers with vs without it
+    inf_kmi_n=128                   #     product keys n x n slots
+    inf_kmi_lr=0.02                 #     memory values learning rate (Adam; values are logit vectors)
+    inf_kmi_gate=0                  #   15 Nov GATE (MODEL CHANGE when on; cg27a_kmg): the memory answers only where its address was written (the subject was
+                                    #     written and half the read weight falls on written slots); elsewhere the trunk answers alone; readout: abstention
+    inf_kmi_counter=0               #     readout: counter-write retraction of the WRONG inferences on a copy of the memory (oracle)
+    inf_kmc=0                       #   15 Nov CONSOLIDATION THROUGH THE MEMORY (MODEL CHANGE when on; cg27a_kmc): written inferences teach the keyed memory at once but the
+                                    #     TRUNK only once judged on later reading and kept (inf_rret's judge); flagged ones are counter-written OUT of the memory
+                                    #     and never reach the trunk
+    inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
+    inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)
+    inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
+                                    #     identity key, independent of the trunk: no drift, no crowding)
     inf_rcode_hold=0.1              #     share of distant documents held out (their pairs are the candidates; no record states a candidate)
     inf_rret=0                      #   14 Nov RETRACTION (MODEL CHANGE when on; cg27a_rret): at the next premises readout each written inference is judged by what the store
                                     #     read since (records stating the pair with 3 or fewer words between the names, and the pair's document PMI; rank sum); the least

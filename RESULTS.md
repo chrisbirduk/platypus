@@ -942,6 +942,676 @@ Visit 4: the visit-2 batch, after two visits of teaching, open-ended taught righ
 code + AA 0.635). Held-out bits visit 4: 1.9246 (cg27a_rcode3: 1.9186). The dose loss is a mean over its rows, so 16 rows at weight 1
 pushed each row half as hard as 8 did: learning was slower (visit 3), not capped (visit 4). inf_rti_rows_ref (added) restores the push.
 
+### Is relation orthogonal to the trunk's main structure? NEGATIVE here (tools/relation_ortho.py, 14 November; stand-in trunk 3 x 192)
+
+The stand-in trunk reads the held-out Re-DocRED relation records (names masked; 600 queries x 30 candidates; same relation 0.084); its state
+averaged over the wording between the names, per layer. Relation identity (nearest candidate of the same relation / AUC) with the top k
+principal directions of ORDINARY TEXT removed, and the share of the between-relation variance (20 commonest relations) in those directions:
+
+| layer | k = 0 | 5 | 10 | 20 | 50 | 100 | between-relation vs all variance in the top 5 / 10 / 20 directions |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.133 / 0.539 | 0.155 / 0.523 | 0.160 / 0.532 | 0.150 / 0.533 | 0.157 / 0.572 | 0.128 / 0.551 | 0.79 vs 0.69 / 0.86 vs 0.79 / 0.92 vs 0.88 |
+| 2 | 0.140 / 0.531 | 0.147 / 0.528 | 0.143 / 0.516 | 0.143 / 0.516 | 0.140 / 0.518 | 0.135 / 0.519 | 0.40 vs 0.30 / 0.60 vs 0.46 / 0.68 vs 0.58 |
+| 3 | 0.142 / 0.519 | 0.148 / 0.519 | 0.135 / 0.519 | 0.140 / 0.520 | 0.142 / 0.517 | 0.115 / 0.515 | 0.58 vs 0.40 / 0.70 vs 0.57 / 0.81 vs 0.71 |
+
+**Negative: removing the main structure does not reveal a relation signal** (AUC 0.52-0.57 at every k; removing the records' own top
+directions makes it worse), and **what differs between relations lies MORE in the top directions than the average variance does**
+(ratio 1.05-1.44), not orthogonal to them. In this small trunk relations are barely represented at all over the wording (AUC ~0.53, frame
+words alone 0.63). Caveat: 3 x 192, wiki-trained; a 171M trunk may hold relations differently - the same measurement as a GPU readout
+would settle it for the real model.
+
+### Is there a tipping point? Recycling inferences as premises (tools/fact_compress.py FC_RECYCLE, 14 November; two splits)
+
+Re-DocRED gold + 30k distant documents, codes 256. The first batch (top 200 by code + Adamic-Adar) is right 0.395 / 0.385. 200 inferences
+from the top 2,000 are added to the store graph as if read, at a SET precision; codes and chaining are recomputed; the NEXT 200 written
+(the added pairs excluded) against the same next batch without recycling, split 0 / split 1:
+
+| recycled at | next batch with recycling | without | change |
+|---|---|---|---|
+| the actual first batch (0.40 / 0.39) | 0.200 / 0.185 | 0.195 / 0.170 | +0.005 / +0.015 |
+| 0.6 | 0.315 / 0.270 | 0.305 / 0.270 | +0.010 / 0.000 |
+| 0.7 | 0.300 / 0.290 | 0.305 / 0.280 | -0.005 / +0.010 |
+| 0.8 | 0.305 / 0.270 | 0.305 / 0.275 | 0.000 / -0.005 |
+| 0.9 | 0.270 / 0.240 | 0.270 / 0.245 | 0.000 / -0.005 |
+| 1.0 | 0.280 / 0.245 | 0.280 / 0.245 | 0.000 / 0.000 |
+
+**No tipping point through the store: even perfectly right recycled inferences do not change the next batch (within +-0.015).** 200
+edges among some 600,000 read name pairs do not move the codes or the chaining scores; next-batch pairs touching a recycled name are right
+more often (0.45-0.49 at precision 1.0 vs 0.07 for the rest), but they were ranked there anyway. What limits the next batch is DEPLETION
+(the first batch takes the best pairs: 0.39 -> 0.17-0.31) and what the store has READ, not its premises. A self-reinforcing loop would
+have to run through reading (more and better records), not through recycling conclusions.
+
+### Contradiction by surprise? Confirmation by prediction (tools/surprise_trigger.py, 14 November; stand-in trunk, two seeds)
+
+The stand-in trunk is taught 120 RIGHT claims (gold relation phrase, gold object), 120 WRONG ones (same phrase, a random object of the
+right type) and leaves 120 untaught, in two arms: the gold phrase (typed) or 'is connected to'. Later reading: each pair's real Re-DocRED
+sentence (A before C, the TRUE object in the document's words). Change in the trunk's surprise at the true object after teaching (bits),
+seed 0 / seed 1:
+
+| arm | right | wrong | control | AUC wrong vs right | flagged above the control's 90th percentile: wrong / right |
+|---|---|---|---|---|---|
+| gold phrase (typed) | -7.42 / -9.07 | +1.04 / +0.52 | +0.72 / +1.24 | **0.797 / 0.816** | 0.13 / 0.01, 0.09 / 0.02 |
+| 'is connected to' | -7.30 / -8.57 | +0.83 / +0.29 | +0.75 / +1.26 | **0.805 / 0.800** | 0.12 / 0.01, 0.08 / 0.01 |
+
+**Positive, but as CONFIRMATION, not contradiction: a right taught claim makes the true object far cheaper when later text names it
+after A (-7 to -9 bits); a wrong one leaves it where an untaught pair is (+0.3 to +1.0 vs +0.7 to +1.3).** Typing does not matter here:
+the trunk learns 'C follows A' whatever phrase it was taught. The trigger it suggests: a written inference whose object the trunk does not
+predict when later text names A with a name of the object's class is unconfirmed. It applies where wrong claims have a true competitor
+(functional relations - the subset compression can type, tools/compress_typing.py); it cannot catch associations that later text keeps
+pairing (the GPU's wrong writes, tools/trigger_retest.py), which the trunk would 'confirm' too.
+
+### GPU cg27a_rasym: the asymmetry write filter (seed 4, 14 November, visits 1-6)
+
+cg27a_rcode5 + inf_rcode_asym 1.0 (write only pairs with |log degree ratio| > 1). Visit 2 (the same store and candidates as cg27a_rcode5),
+labelled share of the top 100 / 200 / 400: code + RA 0.59 / 0.59 / 0.578 overall vs **0.67 / 0.68 / 0.642 among asymmetric pairs**; code +
+AA 0.66 / 0.60 / 0.565 overall vs **0.74 / 0.74 / 0.662 among asymmetric pairs**. **The 200 written right 0.680 (cg27a_rcode5: 0.590):
+the filter replicates at GPU scale, +0.09.** Code + Adamic-Adar would have done better still under the filter (0.74). Held-out bits
+visits 1 / 2: 2.0145 / 2.0206 (cg27a_rcode5 2.0241 / 2.0322).
+Visit 3: rank taught 0.56 / 0.66 vs held back 0.08 / 0.18; open-ended 0.09 / 0.07 (cg27a_rcode5 0.14 / 0.10), dose loss to 0.350 - slower
+in the first visit. **Visit 4: the visit-2 batch open-ended 0.73 / 0.74 vs held back 0.03 / 0.03 (cg27a_rcode5: 0.54 / 0.49); rank 0.94 /
+0.96 vs 0.12 / 0.18. The second batch (visit 4) right 0.66 (cg27a_rcode5: 0.59).** Held-out bits 2.0167 / 1.9183 at visits 3 / 4
+(cg27a_rcode5 2.0137 / 1.9258). More right inferences written AND recalled better after two visits, at no cost.
+Visits 5-6 against cg27a_rcode5 at the same visits:
+
+| | cg27a_rasym | cg27a_rcode5 |
+|---|---|---|
+| batches written right (visits 2 / 4 / 6) | **0.680 / 0.660 / 0.670** | 0.590 / 0.590 / 0.570 |
+| visit 6, open-ended, taught right / wrong vs held back | **0.68 / 0.69** vs 0.03 / 0.00 | 0.40 / 0.39 vs 0.02 / 0.00 |
+| visit 6, by batch (visit 2; visit 4), taught right | **0.74; 0.62** | 0.44; 0.37 |
+| visit 6, rank, taught right / wrong vs held back | 0.95 / 0.99 vs 0.21 / 0.05 | 0.85 / 0.77 vs 0.14 / 0.14 |
+| visit 6, taught facts answered right (false memory probe c) | 0.52 | 0.36 |
+| held-out bits visits 4 / 5 / 6 | 1.9183 / 1.8624 / 1.8840 | 1.9258 / 1.8645 / 1.8980 |
+
+**Positive through visit 6: the precision gain holds on every batch (+0.08 to +0.10, the third batch not falling), and recall from the
+weights is about 1.7 times cg27a_rcode5's - about 91 right inferences recalled per batch against 47.** Wrong writes are recalled as
+strongly (0.69), so false memories also rise (about 45 per batch against 32); the right-to-wrong ratio among recalled inferences improves
+from 1.5 to 2.0. Held-back controls stay at 0.00-0.03. Bits slightly better at every visit (within seed noise). The candidate table again
+favours code + AA under the filter: top 200 0.740 / 0.700 / 0.730 against code + RA 0.680 / 0.670 / 0.700 (visits 2 / 4 / 6).
+
+### GPU cg27a_rcode5: the dose-fixed write path through pass 1 (seed 4, 14 November, visits 1-10)
+
+cg27a_rcode4 + inf_rti_rows_ref 8 (the dose loss weighted by rows / 8). Four batches of 200 written (visits 2 / 4 / 6 / 8): right 0.59 /
+0.59 / 0.57 / **0.425** - the best pairs run out by the fourth. Recall from the weights in the test wording (never taught), by batch,
+taught vs held back, right / wrong:
+
+| visit | batch of visit 2 | batch of visit 4 | batch of visit 6 | batch of visit 8 | rank, taught vs held back (right / wrong) |
+|---|---|---|---|---|---|
+| 4 | 0.54 / 0.49 vs 0.05 / 0.07 | - | - | - | 0.94 / 0.93 vs 0.11 / 0.25 |
+| 6 | 0.44 / 0.40 vs 0.04 / 0.00 | 0.37 / 0.38 vs 0.00 / 0.00 | - | - | 0.85 / 0.77 vs 0.14 / 0.14 |
+| 8 | 0.57 / 0.55 vs 0.01 / 0.02 | 0.56 / 0.52 vs 0.00 / 0.00 | 0.42 / 0.34 vs 0.00 / 0.00 | - | 0.86 / 0.76 vs 0.21 / 0.13 |
+| 9 | 0.51 / 0.47 vs 0.01 / 0.05 | 0.47 / 0.40 vs 0.02 / 0.00 | 0.38 / 0.29 vs 0.01 / 0.00 | 0.21 / 0.21 vs 0.02 / 0.00 | 0.80 / 0.65 vs 0.19 / 0.10 |
+
+**Every batch is kept through pass 1 (the first at about 0.5 open-ended seven visits after it was written), held back stays at 0.00-0.05,
+and from visit 6 right inferences are held more firmly than wrong ones (rank 0.80-0.86 vs 0.65-0.77).** Held-out bits visits 1-9:
+2.0241 / 2.0322 / 2.0137 / 1.9258 / 1.8645 / 1.8980 / 1.8720 / 1.8076 / 1.7635 (cg27a_rcode2 to visit 6: ... 1.8710 / 1.8986) - no cost
+visible. A readout error late in the run ([NAME MEMORY READOUT] stale unavailable, ValueError, 4 times; caught, the run continued; fixed
+in cg27a_rasym).
+Visit 10: batches 0.42 / 0.36, 0.42 / 0.38, 0.31 / 0.25, 0.28 / 0.26 (taught right / wrong) vs held back 0.00-0.04; rank 0.79 / 0.66 vs
+0.22 / 0.10. **End of pass 1 (weights only): forgetting +0.037, final BPC 1.779** - against cg27a_replay seed 4 +0.026 / 1.767 (no
+real-text replay, no written inferences) and the real-text replay builds before the Wikipedia-slot fix +0.077-0.088 / 1.807-1.818. Per
+domain: Gutenberg +0.068, StackExchange +0.090, USPTO +0.094, PubMed +0.044, FreeLaw +0.041; Wikipedia -0.034, ArXiv -0.017, EuroParl 0.000.
+The whole write path costs about +0.011 forgetting / +0.012 BPC against the cleanest seed-4 run, most of the real-text replay cost gone.
+
+### An exclusivity trigger, and asymmetry as a write filter (tools/exclusive_trigger.py, 14 November; the GPU write path, distant set)
+
+400 written by the package's own path at 20,375 distant documents (right 0.578), judged on documents 20,375-40,749. The subject S is the
+name with the lower store degree; the object O's CLASS is a k-means class of the names' compressed codes (no labels). Trigger: in later
+reading S is tied to a competitor of O's class at least as often as to O, or O's share of S's later partners of that class is below 0.25.
+
+| writes | n (wrong) | competitor >= object: flagged wrong, LR | object's share < 0.25: flagged wrong, LR |
+|---|---|---|---|
+| all | 400 (0.42) | 0.51, 1.4 | **0.58, 1.9** |
+| subject read again with that class (2+) | 346 (0.40) | 0.51, 1.6 | **0.58, 2.0** (AUC of the share 0.636) |
+| asymmetry > 1 (subject clearly more specific) | **200 (0.28)** | 0.18, 0.6 | 0.12, 0.3 |
+
+**Weak positive for the trigger: AUC 0.64 and a likelihood ratio of about 2 (the re-mention trigger: 0.52, about 1) - not enough to
+retract on at a 0.4 wrong base (the flagged set would be about 58% wrong).** Restricting to functional-like writes REVERSES it.
+**Unexpected and more useful: asymmetry selects.** Writes whose subject is clearly more specific than the object are wrong 0.28 against
+0.42 overall (200 of 400): a label-free WRITE filter, not a retraction trigger. One write set, one seed; to be checked on more writes and
+on Re-DocRED gold before it is built.
+Checked on Re-DocRED gold (tools/fact_compress.py FC_ASYM, + 30k distant documents, two splits): the top 200 by code + Adamic-Adar are
+right 0.395 / 0.395; among them, pairs with |log degree ratio| > 1 right 0.672 / 0.667 (dropped 0.256 / 0.261), > 2 right 0.750 / 0.783;
+**writing the top 200 among pairs with |log degree ratio| > 1: right 0.585 / 0.525 against 0.395** (top 400: 0.515 / 0.453 against 0.30).
+**Positive, two splits and the GPU path agree: asymmetry is a label-free write filter worth about +0.13 to +0.19 precision.**
+
+### Typing from the literature: typed predicates, entailment back-off, relation discovery (tools/typed_research.py, 14 November; two splits)
+
+Re-DocRED gold + 30k distant documents. T1 types RECORDS READ in held-out documents (the pair stated, in its own wording); T2 also types
+pairs NEVER STATED in the store (an inference). Probe as tools/compress_typing.py; 'coverage' = share typed at 80% precision. Split 0 / 1:
+
+| typing a READ record by (commonest relation 0.32 / 0.31) | exact: typed, right | exact coverage | family coverage |
+|---|---|---|---|
+| **the wording alone** | 0.85 / 0.83, **0.518 / 0.516** | **0.149 / 0.204** | **0.445 / 0.468** |
+| latent wording cluster (universal schema) | 1.00, 0.392 / 0.382 | 0.036 / 0.000 | 0.221 / 0.203 |
+| compressed class pair alone | 0.41 / 0.38, 0.421 / 0.446 | 0.001 / 0.016 | 0.111 / 0.147 |
+| TYPED PREDICATE (class A, wording, class B) | 0.17 / 0.14, 0.581 / 0.704 | 0.000 / 0.105 | 0.125 / 0.122 |
+| typed predicate + ENTAILMENT BACK-OFF (directional inclusion) | 0.18 / 0.16, 0.548 / 0.682 | 0.000 / 0.095 | 0.121 / 0.126 |
+| T2 encoder (relation discovery by reconstructing arguments) | 1.00, 0.386 / - | 0.000 / - | 0.000 / - |
+
+| typing a NEVER-STATED pair (commonest relation 0.476) | exact right | coverage |
+|---|---|---|
+| class pair alone | 0.445 | 0.002 |
+| T2 decoder (the latent relation that best links A and C) | 0.475 | 0.000 |
+
+(Split 1's T2 was killed for memory; one split.)
+**Negative for the literature methods at this volume: typed predicates are precise but sparse (only 14-17% of held-out records have one
+seen 3+ times), entailment back-off rescues 1%, and joint relation discovery types worse than the raw wording and no better than the
+commonest relation for unstated pairs.** **What does type: the wording a pair is READ in** - 0.52 exact, a sixth to a fifth of records at
+80% precision, nearly half by family. Typing comes from a sentence that states the pair, not from inference; a typed inference has to be
+confirmed by such a sentence (predict, then type on confirmation, as cg27a_rtc confirmed pairs).
+
+### A three-times longer-trained stand-in trunk (18k steps; 14 November, night)
+
+The stand-in trunk (3 x 192, wiki + Re-DocRED dev) trained 18,000 steps instead of 6,000: 1.70 bits per byte against 1.92. The same tests:
+
+| test | 6k trunk | 18k trunk |
+|---|---|---|
+| relation identity over the wording, layers 1 / 2 / 3 (nearest same / AUC; chance 0.084) | 0.133 / 0.539, 0.140 / 0.531, 0.142 / 0.519 | 0.137 / 0.539, 0.132 / 0.533, 0.128 / 0.524 |
+| teaching, rank after teaching: dose x4 / x16 / read too | 0.44 / 0.74 / 0.53 | **0.61 / 0.82 / 0.64** |
+| the same after 300 steps of other text | 0.37 / 0.47 / 0.40 | 0.39 / 0.51 / 0.40 |
+| confirmation by prediction, AUC typed / untyped (seed 0) | 0.797 / 0.805 | 0.792 / 0.762 |
+
+**CORRECTION (15 November, 00:10): the 18k trunk is OVERFIT, not better trained.** Its 1.70 is on its own training text (wiki.bin is
+10.8 MB; 18k steps x 32 x 128 bytes is about 7 passes over it). On Re-DocRED documents it never read it is WORSE: 2.503 / 2.493 bits per
+byte against the 6k trunk's 2.246 / 2.235 (tools/keyed_units.py, the two document sets). So the table compares a fitted trunk with an
+overfit one: faster learning of taught facts with the same retention, no relation structure and no better confirmation is what
+memorisation would give, and it says nothing about a trunk trained longer on FRESH text. The question 'does more training on new text
+help' stays open; a GPU run with fresh data per pass (pass_fresh_data 1) is the test that can answer it.
+
+### Sparse memory finetuning inside the trunk (tools/sparse_mem.py, 14-15 November; 6k stand-in trunk, Lin et al. 2025 at small scale)
+
+Block 2's MLP replaced by a product-key memory (16,384 slots, top 16 per byte), 2,500 steps on wiki: held-out wiki 2.055 bits per byte
+(2.272 with the memory switched off: the model uses it; 11,812 slots used by background text). (A first version that added the memory
+BESIDE the MLP left it unused - equal bits with it off - and was stopped.) Then 120 never-read Re-DocRED facts in batches of facts only
+(no replay, the paper's stress test), set A then set B, 150 steps each; recall in the test wording (rank among 10) and bits added on
+held-out wiki / dev text:
+
+| method | lr | A after A | B after B | A after B | forgetting after A -> after B (wiki) |
+|---|---|---|---|---|---|
+| full | 3e-5 / 1e-4 | 0.70 / 0.95 | 0.77 / 0.95 | 0.67 / 0.78 | +0.46 -> +0.76 / **+1.17 -> +1.59** |
+| LoRA | 3e-4 / 1e-3 | 0.50 / 0.87 | 0.58 / 0.92 | 0.42 / 0.67 | +0.54 -> +0.86 / +1.43 -> +1.97 |
+| MLP_OUT (the GPU build's choice) | 3e-5 / 1e-4 | 0.35 / 0.57 | 0.40 / 0.62 | 0.37 / 0.50 | +0.13 -> +0.22 / +0.37 -> +0.61 |
+| all memory values | 1e-3 / 1e-2 | 0.58 / **0.93** | 0.58 / **0.98** | 0.55 / **0.90** | **+0.07 -> +0.17** / +1.01 -> +1.60 |
+| SPARSE memory, TF-IDF top 256 | 1e-3 / 1e-2 | 0.30 / 0.30 | 0.33 / 0.33 | 0.30 / 0.32 | +0.000 -> +0.001 / +0.007 -> +0.020 |
+| SPARSE memory, top 1,024 | 1e-2 | 0.47 | 0.58 | 0.43 | +0.035 -> +0.072 |
+
+**As the paper: dense finetuning on facts alone is catastrophic (+1.2 to +2.0 bits), and memory-only updates forget far less at the same
+learning rate. But sparse memory finetuning as built here barely LEARNS (rank 0.30-0.58 against 0.93 for all memory values): the TF-IDF
+selection over the whole batch picks slots used by the rare frame words, not where the answer is predicted.** Second round queued: slots
+chosen on the answer bytes only, and more of them (1,024 / 4,096). Note the key memory outside the trunk (next section) learns the same
+facts at rank 0.93-1.00 with no trunk forgetting by construction.
+
+**Round 2 (15 November): slots chosen by TF-IDF counted only where the ANSWER bytes are predicted:**
+
+| sparse memory | lr | A after A | B after B | A after B | forgetting after A -> after B (wiki) |
+|---|---|---|---|---|---|
+| answer bytes, top 1,024 | 1e-2 | **0.78** | **0.77** | **0.72** | **+0.07 -> +0.15** |
+| answer bytes, top 1,024 | 3e-2 | **0.87** | **0.92** | **0.87** | +0.26 -> +0.44 |
+| answer bytes, top 4,096 | 1e-2 / 3e-3 | 0.83 / 0.57 | 0.92 / 0.68 | 0.75 / 0.53 | +0.36 -> +0.67 / +0.07 -> +0.18 |
+| whole batch, top 4,096 | 1e-2 | 0.82 | 0.88 | 0.78 | +0.31 -> +0.56 |
+
+**Positive: choosing slots where the answer is predicted fixes the learning, and sparse memory then beats every dense method at equal
+forgetting** - at about +0.15 bits it learns 0.78 (all memory values 0.58, mlp_out 0.35 at +0.22; full fine-tuning needs +0.76 for 0.70),
+and at 0.87-0.92 it costs +0.44 bits against full fine-tuning's +1.59 for 0.95 (3.6 times less). The paper's ordering holds at this
+scale; the absolute forgetting is still large because the batches are facts only, with no replay. Open-ended exact recall stays near 0
+for every in-trunk method (multi-word real names, byte by byte), while the key memory decodes them at 0.80-0.98.
+
+**Round 3, the GPU's setting (15 November): facts MIXED with ordinary text, 8 fact rows + 24 wiki rows a step, 400 steps a set (about 53
+rows per fact):**
+
+| method | lr | A after A | B after B | A after B | forgetting after A -> after B (wiki / dev) |
+|---|---|---|---|---|---|
+| full | 3e-5 | 0.50 | 0.52 | 0.43 | +0.012 -> +0.018 / +0.005 |
+| MLP_OUT (the GPU build's choice) | 3e-5 / 1e-4 | 0.32 / 0.37 | 0.35 / 0.42 | 0.32 / 0.37 | +0.009 / +0.020 |
+| all memory values | 1e-3 | 0.50 | 0.50 | 0.47 | -0.001 |
+| **SPARSE memory, answer slots, top 1,024** | 1e-2 | **0.70** | **0.73** | **0.62** | +0.019 -> +0.029 / +0.033 |
+| **SPARSE memory, answer slots, top 1,024** | 3e-2 | **0.88** | **0.87** | **0.68** | +0.064 -> +0.079 / +0.098 |
+| SPARSE memory, answer slots, top 1,024 | 1e-1 | 0.88 | 0.88 | 0.67 | +0.21 -> +0.22 |
+
+**Positive in the GPU's setting: with text mixed in, every method forgets little, and sparse memory learns far more for it - 0.70 at
++0.03 bits where full fine-tuning reaches 0.50 at +0.02 and the GPU build's mlp_out only 0.37 at +0.02; 0.88 at +0.08.** A candidate
+for a GPU build: a product-key memory layer in the trunk, question rows writing only the answer slots (TF-IDF on the answer bytes), lr
+about 1e-2.
+Seed 1 replicates (different facts and order): full 0.47 / 0.52 / 0.38 (+0.005), mlp_out 0.40 / 0.42 / 0.33 (+0.009), sparse answer
+slots lr 1e-2 **0.72 / 0.70 / 0.58** (+0.023), lr 3e-2 **0.88 / 0.87 / 0.60** (+0.071).
+**Refresh (SM_REPLAY 0.25: while B is taught, a quarter of the fact rows re-teach A; lr 1e-2, seeds 0 / 1):** A after B **0.70 / 0.68**
+(without refresh 0.62 / 0.58), B after B 0.70 / 0.68 (0.73 / 0.70), forgetting +0.030 / +0.025 (+0.029 / +0.023). **Refresh holds the
+old facts at their learned level for a small cost to the new ones and none in text** - as in the keyed memory. The GPU build already
+re-asks earlier written inferences across visits, which is this refresh.
+
+**Exact retraction inside the trunk? (SM_RETRACT, mixed setting, lr 3e-2):** after B, 30 facts of A retracted by restoring the answer slots
+their questions use most to their pre-teaching values. Rank (before teaching 0.30):
+
+| slots restored | retracted | rest of A | B | wiki bits added |
+|---|---|---|---|---|
+| top 1,024 | 0.60 -> **0.30** | 0.70 -> 0.63 | 0.87 -> **0.65** | +0.079 -> +0.068 |
+| top 256 | 0.60 -> 0.50 | 0.70 -> 0.70 | 0.87 -> 0.82 | +0.079 -> +0.077 |
+
+**Not clean: inside a byte-level trunk the answer slots are SHARED between facts (the bytes of one answer's name are predicted by slots
+other answers use), so restoring enough slots to remove the facts takes bystanders with them (B -0.22).** The key memory, addressed by
+(subject name, wording), retracts exactly with bystanders held (0.03-0.04). For the design: facts and inferences that may need retracting
+belong in the KEYED memory; the in-trunk sparse memory is for absorbing what is settled, at low forgetting.
+
+### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
+
+The author's design: a sparse memory (Lin et al. 2025) whose address is (the subject's NAME KEY, a JEPA WORDING KEY of the name-masked
+question prefix) and whose VALUE is a name key, so a read can be the next read's query; bytes only at the end (nearest known name).
+Frozen stand-in trunk; product keys 64 x 64 = 4,096 slots, top 8 per read; wording head trained only on the system's seven frames (the
+test wording never seen); writing changes only the slots a fact reaches (the trunk is never touched, so no text forgetting by
+construction). Lifelong order in one memory: A (60, = sparse_mem's) -> B (60) -> M (40 subjects x 2 relations) -> 60 chains (both hops
+taught, never the chain). Recall in the test wording, open (nearest of 2,987 known names) / rank (among 10 of the type), 6k / 18k trunk:
+
+| | K-JEPA | K-RAW (no JEPA training) | K-NAME (no wording half) |
+|---|---|---|---|
+| A after A | 0.88 / 0.93, **0.98 / 1.00** | 0.93 / 1.00, 0.97 / 1.00 | 0.57 / 0.73, 0.55 / 0.63 |
+| B after B | 0.82 / 0.95, 0.90 / 0.98 | 0.88 / 0.95, 0.90 / 1.00 | 0.23 / 0.37, 0.25 / 0.37 |
+| M (two relations per subject) | 0.65 / 0.82, **0.91 / 1.00** | 0.94 / 0.99, 0.85 / 0.96 | 0.09 / 0.21, 0.06 / 0.16 |
+| chain hops | 0.75 / 0.90, 0.89 / 0.97 | 0.86 / 0.97, 0.82 / 0.98 | 0.06 / 0.17, 0.07 / 0.15 |
+| **TWO-HOP, the chain never taught: decoded** | 0.58 / 0.72, **0.78 / 0.87** | 0.73 / 0.88, 0.65 / 0.82 | 0.02 / 0.10, 0.02 / 0.03 |
+| two-hop, latent (no decoding between hops) | 0.27 / 0.47, 0.42 / 0.62 | 0.32 / 0.53, 0.25 / 0.52 | 0.00 / 0.15, 0.02 / 0.12 |
+| at the end (after 340 more facts): A / M rank | 0.77 / 0.81, 0.93 / 0.99 | 0.88 / 0.96, 0.92 / 0.95 | - |
+
+Wording head: the test wording's relation found by the training frames' keys 1.00 (raw state 0.81 / 0.86); a PARAPHRASED relation phrase
+('passed away in' for 'died in') only 0.38 for both.
+**Positive: a sparse key memory learns real facts in an unseen wording almost perfectly, keeps most through 340 later facts, separates
+two relations of one subject only with the wording half, and COMPOSES: two-hop answers for chains never taught 0.72-0.88 (rank) with the
+first hop decoded to a known name.** The JEPA head helps on the better trunk (M 1.00, two-hop 0.87) but not on the 6k one; decoding
+between hops beats latent chaining (the decode cleans the key). The gap: paraphrased relation phrases (0.38) - the wording key has to
+learn synonymy from text, not from our frames. Seeds, abstention, retraction and capacity queued.
+
+**Seeds and new readouts (15 November, 00:07; seeds 0 / 1 on both trunks, and a 128 x 128 = 16,384-slot memory; JEPA key / raw key,
+rank in the test wording):**
+
+| | 6k s0 | 6k s1 | 18k s0 | 18k s1 | 18k, 16k slots |
+|---|---|---|---|---|---|
+| M (two relations per subject) | 0.84 / 1.00 | 0.96 / 0.96 | 1.00 / 0.96 | 0.95 / 0.95 | 0.91 / 0.97 |
+| two-hop, never taught, decoded | 0.73 / 0.87 | **0.97** / 0.85 | 0.87 / 0.83 | 0.83 / 0.75 | 0.88 / 0.80 |
+| RETRACT 30 of A: retracted (open) | 0.53 -> 0.33 | 0.63 -> 0.33 | 0.60 -> 0.33 | 0.70 -> 0.40 | 0.67 -> 0.27 |
+| RETRACT: largest bystander change (open, rest of A / B / M) | 0.04 | 0.02 | 0.00 | 0.00 | 0.04 |
+| ABSTAIN AUC (best cosine, taught vs never-taught subjects) | 0.61 / 0.70 | 0.72 / 0.65 | 0.62 / 0.68 | 0.66 / 0.60 | 0.72 / 0.62 |
+| CAPACITY: set A after 600 more facts (about 980 in all) | 0.68 / 0.85 | 0.70 / 0.75 | 0.80 / 0.75 | 0.77 / 0.53 | **0.87** / 0.72 |
+| paraphrased relation phrase, set A | 0.43 / 0.70 | 0.45 / 0.55 | 0.53 / 0.63 | 0.60 / 0.62 | 0.62 / 0.55 |
+
+**Replicated on every seed and trunk: facts learned in an unseen wording (rank 0.93-1.00), two relations of one subject separated by the
+wording half (the name-only memory 0.11-0.21), and composition for chains never taught (0.73-0.97 decoded). Retraction is CLEAN - the
+retracted facts lose about half their open recall and no bystander moves by more than 0.04 - but partial at 30 steps.** Abstention from
+the memory's confidence is weak (0.60-0.72). A memory 4x larger keeps old facts better as more are written (A 0.87 vs 0.68-0.80). The JEPA
+key and the raw key are level overall (the frame-trained head does not beat the raw state on its own); the open gap is paraphrase
+(0.43-0.70), which the text-trained key (K-TEXT, queued) addresses.
+
+Keyed units on the (overfit) 18k trunk, gate, on top of NAME: DATE +5.4 / +4.6, NUMBER +0.8 / +0.6, FACT +1.2 / -0.04, PLACE -0.2 / -0.2
+(bits per 1,000 bytes, late, first / second set): the same ranking as on the 6k trunk (DATE and NUMBER replicate, FACT unreliable, PLACE
+negative); the larger savings reflect the worse trunk (NAME alone 80-83 vs 30-33).
+
+**Retraction by ERASING SLOTS (15 November; 6k trunk, seeds 0 / 1 / 2): the slots that a retracted fact's own training-frame queries
+reach are set to zero - no gradient, no search.** Open recall in the test wording, retracted 30 of set A -> after; largest bystander
+change (open, rest of A / B / M):
+
+| key | retracted | largest bystander change | slots erased |
+|---|---|---|---|
+| JEPA key | 0.57 -> **0.00**, 0.67 -> **0.03**, 0.57 -> **0.00** | 0.04, 0.04, 0.03 | 295-324 |
+| raw key | 0.73 -> 0.00, 0.50 -> 0.00, 0.50 -> 0.00 | 0.04, **0.12**, **0.10** | 762-858 |
+| (gradient, -log(1 - p), 30-150 steps) | 0.53-0.73 -> 0.23-0.47 | 0.00-0.04 | - |
+| (gradient, margin 0.1, 150 steps) | 0.57 -> 0.23, 0.67 -> 0.37 | 0.02 | - |
+
+**Positive: erasing a fact's slots retracts it completely while bystanders hold - and the JEPA key does it with 2.5 times fewer slots and
+no collateral damage, where the raw key spreads facts wider and costs bystanders up to 0.12.** Gradient unlearning in the memory is
+clean but leaves a third to a half. Retraction is exact because every write has an address - the property a dense trunk lacks.
+**With the memory nearly full (JM_RX_LATE: after about 2,400 facts; 6 runs - 4,096 slots without / with 25% refresh, 16,384 with refresh;
+seeds 0 / 1):** the retracted facts' open recall falls to **0.00 in all six** (from 0.27-0.53); bystanders' rank moves by at most 0.06,
+open by at most 0.07 in five runs and 0.16 once (the rest of A, 16k slots seed 0). **Erasure stays exact under load.**
+(Note, 15 Nov: the RANK readout counted a tie as a hit, and an erased read (all zeros) ties every candidate, so ranks AFTER erasing
+were inflated - e.g. 'rank 0.43' for erased facts. Fixed in tools/jepa_mem.py and inference.kmem (the answer must score strictly above
+every other candidate); the OPEN numbers used above are unaffected.)
+Third seed of the full test (6k s2): the same pattern (two-hop decoded 0.65 / 0.75, M 0.89 / 0.86, name only 0.15).
+
+**Capacity, 2,000 more facts (15 November; 6k trunk, JEPA key, seeds 0 / 1; about 2,380 facts in all, no replay):** rank in the test
+wording of the OLDEST and NEWEST batch of 200 at the end, and of set A (the first facts):
+
+| slots | oldest batch | newest batch | set A | slots written |
+|---|---|---|---|---|
+| 4,096 (64 x 64) | 0.57 / 0.59 | 0.83 / 0.95 | 0.62 / 0.65 | 3,377 / 3,466 |
+| 16,384 (128 x 128) | **0.76 / 0.65** | 0.94 / 0.91 | **0.77 / 0.65** | 7,008 / 7,307 |
+
+**Graceful decay with age, no collapse; four times the slots keeps the oldest facts better on seed 0 (+0.19) and a little on seed 1
+(+0.06).** At about 2,400 facts the small memory is nearly full (83% of slots written). Lin et al. use 1M slots; a lifelong store needs
+the memory to scale with what it holds, and older facts need refresh (replay of memory writes, as sleep replays the store).
+
+**Refresh by replay (JM_REPLAY: a share of every write batch re-writes earlier facts; 4,096 slots, seeds 0 / 1):**
+
+| replay | oldest batch | newest batch | set A |
+|---|---|---|---|
+| none | 0.57 / 0.59 | 0.83 / 0.95 | 0.62 / 0.65 |
+| 25% | **0.78 / 0.77** | 0.82 / 0.93 | **0.77 / 0.72** |
+| 50% | **0.79 / 0.83** | 0.81 / 0.92 | **0.78 / 0.75** |
+
+**Positive: re-writing earlier facts flattens the age curve - the oldest batch +0.18 to +0.24 at no cost to the newest - as much as four
+times the slots did.** Refresh is the memory's version of sleep replay; a quarter of each write batch is enough.
+
+**Abstention by teaching 'nothing here' (JM_NULL 8 / 32 rows a step: reads for inventory names never used as subjects pushed to zero;
+6k, seeds 0 / 1):** abstention AUC by the read's norm 0.56-0.57, by the best cosine 0.59-0.62 (without: 0.52-0.55 / 0.61-0.72), while
+recall falls (B at the end 0.42-0.53 against 0.88-0.92; two-hop 0.58-0.77 against 0.65-0.97). **Negative: unknown names reach the same
+sub-keys as known ones, so pushing them to zero erases real facts.** Abstention should come from an explicit index of the subjects the
+memory holds (the name gate / the store's name inventory: is this subject's key within a small distance of a written one?), not from the
+memory's reads.
+
+**K-TEXT: a wording key learned from REAL TEXT only (15 November; 20,000 name pairs stated in 2+ different wordings within a sentence,
+50k distant documents, InfoNCE; the frames and the test wording never seen).** Relation of the test wording / of a PARAPHRASED relation
+phrase recognised by the frames' keys: K-TEXT 0.90 / **0.52**, 0.90 / 0.38, 0.95 / 0.33 (18k s0, 18k s1, 6k s0) against the frame-trained
+head 1.00 / 0.38, 1.00 / 0.33, 1.00 / 0.43. In the memory it is WORSE than the frame-trained key on everything (two-hop 0.55-0.72 vs
+0.83-0.87; set A at the end 0.55-0.70 vs 0.92-0.93; paraphrased wording 0.40-0.58 vs 0.53-0.60) - it spreads facts over more slots
+(2,364-2,935 vs 1,716-1,759) and interferes more. **Negative as built: co-occurrence of a name pair in two sentences is too weak and too
+noisy a synonymy signal (most pairs are 'X, Y' lists and loose associations), and it costs the sharpness the memory needs.** A head trained
+on text pairs AND frames (K-BOTH) keeps the test wording at 1.00 and reaches 0.48 / 0.33 on paraphrase (6k s0 / s1, frame head 0.43 / 0.29).
+In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 / 0.97), paraphrased wording, set A 0.65 / 0.43 (JEPA 0.43 /
+0.45), set A after 600 more facts 0.72 / 0.42 (JEPA 0.68 / 0.70). **Mixed across the two seeds, no reliable gain: the paraphrase gap stays
+open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
+or the trunk's own predictions (the wording after which the object is equally expected).
+
+### GPU cg27a_kmg: the gated memory (seed 4, 15 November, visits 1-3)
+
+Visit 2: taught facts WITH 0.42 / 0.50 vs trunk 0.10 / 0.48 (gate open 0.42 - the memory had written 60 subjects); HELD-BACK facts 0.00 /
+0.37 = trunk 0.00 / 0.37 (gate open 0.07); never-read names: gate open 0.00. Visit 3: taught inferences RIGHT **0.57 / 0.97** vs 0.15 / 0.52
+(gate open 1.00), WRONG 0.59 / 0.95 vs 0.15 / 0.62; facts 0.27 / 0.68 vs 0.25 / 0.63; HELD-BACK facts 0.00 / **0.50 = trunk 0.50** (gate open
+0.27); never-read names 0.00. **The gate removes the cost (cg27a_kmi: held back 0.63 vs 0.80) and keeps the gains; the memory abstains on
+never-read names.** COUNTER-WRITE (oracle, on a copy, support driven to zero): WRONG support +0.31 -> -0.20 bits but rank 0.92 -> 0.90 -
+**the TRUNK has learned the wrong inferences too (0.62 alone): retraction in the memory cannot undo the trunk's copy.** Hence cg27a_kmc:
+the trunk is taught an inference only once judged and kept. Bits 2.0342 / 2.0434 / 2.0319 (four identical-training runs at visit 1 span
+2.0145-2.0342: run-to-run noise about 0.02).
+Visit 4 (stopped there for cg27a_kmc): facts WITH **0.52 / 0.85** vs trunk 0.42 / 0.75 (gate open 0.78); held back 0.03 / 0.57 vs 0.07 /
+0.60 (gate open 0.37 - a small leak where the subject has other facts); paraphrased 0.10 / 0.57 = trunk; never-read names 0.00; COUNTER-WRITE
+(oracle, copy): WRONG support -0.97 -> -2.04 bits yet rank 0.55 -> 0.57 - the trunk alone ranks the taught wrong inferences 0.92. Bits
+1.9398 (cg27a_kmi 1.9354, cg27a_kmem 1.9185: kmi and kmg agree, both 0.017-0.021 above kmem - borderline).
+
+**Package smoke for cg27a_kmc** (tools/kmi_smoke.py KM_KMC=1): counter-write with a MARGIN (support below -1 nat per byte) took WRONG support
++5.7-5.8 -> -4.9 to -7.0 bits per byte (rank 0.86-1.00 -> 0.00-0.20), RIGHT and facts unchanged; consolidation masked 27 of 60 inference rows
+(unjudged or flagged) from the trunk; the 7 retracted were counter-written out of the real memory.
+
+### The GATED integrated memory read on ALL text (tools/int_mem.py IM_GATE=1, 15 November; stand-in trunk, mixed setting)
+
+As the integrated test above (the memory read inside the forward pass at every byte with a subject), but at evaluation the read counts only
+where its address was written (the subject is one the fact rows wrote for AND half the read weight is on slots they wrote):
+
+| lr | A after A (open / rank) | B after B | A after B | paraphrased | forgetting wiki / dev, after A -> after B | ungated (same lr) |
+|---|---|---|---|---|---|---|
+| 0.03 | 0.40 / 1.00 | 0.53 / 1.00 | 0.27 / 1.00 | 0.02 / 0.71 | **+0.000 -> +0.000 / +0.011 -> +0.015** | +0.27 -> +0.53 / +0.34 -> +0.62 |
+| 0.1 | **0.69** / 1.00 | **0.77** / 1.00 | 0.35 / 1.00 | 0.01 / 0.71 | **+0.001 -> +0.001 / +0.026 -> +0.036** | +0.78 -> +1.29 / +1.03 -> +1.55 |
+
+**Positive: the gate removes the cost of reading the memory on ordinary text - wiki +0.000-0.001 bits (from +0.5 to +1.3) and dev text
++0.015-0.036 (from +0.6 to +1.5) - with recall unchanged (rank 1.00, exact names 0.69-0.77, paraphrase 0.71).** The residual dev cost: the
+gate's subject index also took in capitalised frame words ('From', 'Notes') and the answers themselves, since every position of a fact row
+wrote; restricting writes to the answer bytes should close it. The memory can be read on all text.
+
+### The gate and the counter-write in the package (tools/kmi_smoke.py KM_PRESET=cg27a_kmg, 15 November)
+
+Tiny untrained Model, fabricated pool, 300 memory steps: GATE open on taught facts and inferences 1.00, on held-back facts 0.15-0.17, on
+questions about never-read names 0.00. COUNTER-WRITE (oracle, on a copy, 60 steps): driving the memory's SUPPORT for the wrong answers
+(bits per answer byte it adds) to zero took WRONG from +5.8-6.0 to -2.7 to -3.6 (rank 1.00 -> 0.30-0.50) with RIGHT inferences and facts
+unchanged; an unlikelihood loss reached only +2.3. Built as cg27a_kmg.
+
+### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
+
+200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is
+',' (122 of 187; 'X, Y' lists and appositions), then 'and' (8), 'in' (5). TYPING ACCURACY (evaluation only: the wording's commonest
+Wikidata relation is the pair's own) 0.48. Signals (AUC vs distant labels): later records stating it 0.601, wording functional 0.541,
+specific 0.489, not contradicted later 0.512 (108 of 187 'contradicted' - commas are 'functional' and everything is contradicted).
+**Negative: in this text, written pairs are restated mostly as lists, so later reading neither types them reliably nor contradicts the
+wrong ones. The trigger for untyped writes is not reachable from co-mention; retraction needs a different signal.**
+
+### GPU cg27a_kmi: the integrated keyed memory (seed 4, 15 November, visits 2-5)
+
+The model's answer = trunk + memory, test wording, open / rank among 10 (WITH vs trunk alone):
+
+| visit | taught facts | held-back facts | taught inferences RIGHT | WRONG | held-back inferences |
+|---|---|---|---|---|---|
+| 2 | **0.38** / 0.47 vs 0.07 / 0.45 | 0.00 / 0.33 vs 0.00 / 0.40 | (written at this readout) | | |
+| 3 | 0.32 / 0.70 vs 0.30 / 0.62 | 0.00 / 0.43 vs 0.03 / 0.47 | **0.42 / 0.93** vs 0.05 / 0.50 | 0.54 / 0.92 vs 0.08 / 0.59 | 0.00 / 0.13 vs 0.00 / 0.10 |
+| 4 | 0.35 / 0.73 vs 0.43 / 0.73 | 0.03 / 0.53 vs 0.07 / 0.63 | 0.33 / 0.53 vs 0.32 / 0.50 (half not yet taught) | 0.42 / 0.53 vs 0.30 / 0.47 | 0.00 / 0.17 vs 0.03 / 0.23 |
+| 5 | **0.53** / 0.80 vs 0.43 / 0.78 | 0.10 / **0.63 vs 0.80** | **0.67 / 0.98** vs 0.35 / 0.83 | 0.68 / 0.95 vs 0.15 / 0.85 | 0.00 / 0.10 vs 0.00 / 0.20 |
+
+(At visits 2 and 4 the sampled 'taught' inferences include the ones written at that readout, taught only from the next visit.) Paraphrased
+facts 0.15 / 0.35 -> 0.10 / 0.65 (trunk 0.00 / 0.30 -> 0.12 / 0.72). Memory steps 399 a visit, 98-99% of question rows addressed; slots used
+9,515 of 16,384 by visit 5. The readout memory with TRUNK name codes on the same visits: inferences 0.40 / 0.72 -> 0.14 / 0.33 (crowding, as
+cg27a_kmem). Bits 2.0292 / 2.0304 / 2.0203 / 1.9354 / 1.8788 against cg27a_kmem's 2.0277 / 2.0266 / 2.0105 / 1.9185 / 1.8624 (+0.002 to
++0.017; the trunk's training is meant to be identical - within seed noise but growing: to check whether the memory's extra forwards have
+side effects).
+**Positive: the hashed key holds - taught inferences 0.67 exact / 0.98 rank at visit 5 against the trunk's 0.35 / 0.83, facts +0.10 exact.
+The cost: where nothing was written, the memory's read still adds logits - held-back facts lose rank (0.80 -> 0.63) and paraphrases
+(0.72 -> 0.65). The memory needs a GATE: read only when its address is one it has written.** Wrong inferences are recalled as strongly
+(0.68 / 0.95): retraction still matters, and its trigger is not solved.
+Visit 6 (a write visit: the sampled 'taught' inferences include the 200 written at this readout): facts WITH **0.63 / 0.90** vs trunk 0.60 /
+0.82; inferences RIGHT 0.43 / 0.68 vs 0.28 / 0.60, WRONG 0.47 / 0.72 vs 0.40 / 0.68; HELD-BACK facts 0.00 / 0.47 vs 0.07 / 0.60 (the cost
+again); paraphrased 0.10 / 0.57 vs 0.07 / 0.62. Memory: 3,591 steps, 98% of rows addressed, 10,490 of 16,384 slots used. Bits 1.9100
+(cg27a_rasym 1.8840 at visit 6; cg27a_kmem stopped before visit 6). The readout memory with trunk codes: inferences 0.21 / 0.57.
+
+### Retraction for the integrated memory: trigger and precise erase (15 November, local)
+
+**Trigger, on the CURRENT GPU writes** (tools/trigger_retest.py with code + AA under the asymmetry filter, distant set, the GPU path:
+200 writes, 0.740 right; judged on the next 2/10 of the documents): later reading states 94% of the pairs again (right 0.95 / wrong 0.92).
+AUC against the distant labels: documents stating the pair again **0.639** (bottom 20% wrong 0.35, overall 0.26), records 0.638, short-gap
+records 0.607, bridges at write 0.563, the rret trigger (short + PMI) 0.528, predictive compression 0.504-0.594, popularity 0.360 (i.e.
+popular names lean wrong). **Negative for untyped links: the best label-free signal flags wrong writes at 0.35 against 0.26 - retracting the
+flagged fifth would raise the kept writes from 0.74 to about 0.76 right while losing 26 right ones.** Untyped claims are not contradicted
+by real text; a trigger needs TYPED claims (the earlier offline surprise test reached 0.80 with the pair's own source sentence).
+
+**Precise erase: one wording, two objects** (tools/jepa_mem.py JM_M2; 60 subjects 'is connected to' two names - the GPU's case; seeds 0 / 1):
+
+| | retracted (open) | SIBLING: same subject, same wording (open) | other facts |
+|---|---|---|---|
+| ERASE the slots | 0.40 -> 0.00, 0.30 -> 0.00 | **0.47 -> 0.00, 0.45 -> 0.00** | unchanged |
+| COUNTER-WRITE (unlearn the retracted, re-write the sibling, 60 steps) | 0.40 -> **0.00**, 0.30 -> **0.00** | 0.47 -> **0.95**, 0.45 -> **0.85** | unchanged |
+
+**Positive: when two facts share an address, erasing kills both; a counter-write removes the retracted one (open 0.00) and KEEPS the
+sibling (it even sharpens), bystanders untouched.** The precise erase is solved; the trigger for untyped links is not.
+
+### The keyed memory INTEGRATED into the forward pass (tools/int_mem.py, 15 November; 6k stand-in trunk, mixed setting, seed 0)
+
+Address from the model's own context at every byte (subject = latest completed capitalised run; wording = the bytes since, through a
+JEPA head on the trunk's middle states; offset = answer byte), the read added to the last residual; only the memory values learn, from
+the fact rows (wiki rows read but do not write). 105 facts (52 + 53), recall THROUGH THE WHOLE MODEL in the test wording:
+
+| lr | A after A (open / rank) | B after B | A after B | paraphrased | forgetting wiki / dev (after B) |
+|---|---|---|---|---|---|
+| (trunk alone) | 0.00 / 0.27 | | | 0.00 / 0.28 | |
+| 0.03 | 0.40 / **1.00** | 0.53 / **1.00** | 0.27 / **1.00** | 0.02 / **0.72** | **+0.53 / +0.62** |
+| 0.1 | **0.69** / 1.00 | **0.77** / 1.00 | 0.35 / 1.00 | 0.01 / 0.74 | **+1.29 / +1.55** |
+
+ERASE (the slots read where 30 facts' answers are predicted): retracted rank 1.00 -> 0.27-0.30 (the trunk's own level), bystanders' rank
+0.92-1.00. **Positive on learning - rank 1.00 and EXACT names 0.69-0.77 through the model's own bytes (every in-trunk method ~0), paraphrase
+0.72-0.74 - but reading the memory on ORDINARY TEXT costs +0.5 to +1.5 bits** (wiki subjects and wordings reach written slots; erasing
+the 30 facts' slots alone gives back a third of it). So the GPU build reads it on the question rows only (cg27a_kmi).
+
+**GPU cg27a_kmem, visits 4-5 (the readout memory, trunk name codes):** taught facts 0.45 / 0.61 -> 0.59 / 0.74; inferences RIGHT 0.20 /
+0.43 -> **0.05 / 0.16** while the trunk, taught them, reached rank 0.88 / 0.75; two-hop 0.09 / 0.15-0.20; persistent facts written at
+visit 2: 0.49 -> 0.20 -> 0.32 open. ERASE still exact (WRONG -> 0.00, facts unchanged). Bits 1.9185 at visit 4 (cg27a_rasym 1.9183).
+**The subject half of the address - the trunk's name code - drifts and crowds as the trunk learns the inferences; the integrated build
+uses a NAME-IDENTITY HASH (byte 3-grams) instead** (offline: memory loss 1.05 vs 1.17 with trunk codes, 6x cheaper).
+Package smoke (tools/kmi_smoke.py, tiny untrained Model, 300 memory steps): the model's rank WITH the memory 0.97-1.00 vs trunk 0.05-0.15,
+held back unchanged, still 0.95-1.00 after the trunk moved; exact names need more steps than this budget (0.00-0.02).
+
+### GPU cg27a_kmem: the keyed memory at GPU scale (readout) + rasymaa's code + AA (seed 4, 15 November, visits 1-2)
+
+Keyed memory (name x JEPA wording key, 128 x 128 slots; inference.kmem), recall in the TEST wording, open / rank among 10 (chance 0.10):
+taught facts **0.92 / 0.94** at visit 1, **0.72 / 0.83** at visit 2 (held back 0.00 / 0.23, 0.03 / 0.09; the trunk answers taught facts
+right 0.06 open at visit 2, false-memory probe c); real-text inferences RIGHT **0.57 / 0.81**, WRONG 0.51 / 0.69 (held back 0.00 / 0.18,
+0.00 / 0.23); TWO-HOP 0.19 / 0.44 (32 chains; first hop decoded right 0.50). Wording head on the GPU trunk: the test wording's relation
+0.95 / 0.98, a PARAPHRASED relation 0.76 / 0.88 (better than offline) - but paraphrased recall of facts only 0.21-0.26 / 0.25-0.34
+(inferences via 'is tied to' 0.50 / 0.71). ERASE (oracle, the WRONG inferences): 0.51 -> **0.00**, facts 0.72 -> 0.73, RIGHT inferences
+0.57 -> 0.42 (same subject, same wording - as warned). PERSISTENT: facts written at visit 1 read at visit 2 with the drifted keys **0.73 /
+0.88** (0.96 / 1.00 when written). Code + AA wrote **0.740** right at visit 2 (cg27a_rasym 0.680), as its readout predicted. Bits 2.0277 /
+2.0266 (cg27a_rasym 2.0145 / 2.0206; visit 1 precedes any change: seed noise). **Positive so far: at GPU scale the memory holds the real
+facts in an unseen wording far better than the trunk, survives one visit of key drift, and erases exactly.**
+
+### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
+
+The author's idea: 4-6 generic KEYED units like NAME, indexable, extracted from local context, each with its own memory, kept only if they
+measurably improve language modelling. Counted extractors (no learning yet), each with a keyed continuation memory (the bytes after each
+firing, stored under its key); when the key fires again, the stored continuations consistent with the bytes read so far predict the next
+byte, mixed with the trunk at lam = n / (n + 2). Prequential on the last 600 of 3,053 documents (630,697 bytes; trunk alone 2.246 bits per
+byte); memories filled from every earlier document. Bits saved per 1,000 bytes:
+
+| unit (key) | alone | on top of NAME (fixed mixture) |
+|---|---|---|
+| **NAME** (a run of capitalised words) | **29.99 (1.34% of the trunk's bits)** | - |
+| FACT (a name + the 1-4 words after it) | 9.79 | **-1.77** |
+| PLACE (a locative word + a name) | 3.57 | -0.50 |
+| DATE (the sentence's last name, where a year or month starts) | 2.97 | **+1.29** |
+| NUMBER (the sentence's last name + the word before a number) | 3.05 | +0.30 |
+| ALL five | 29.31 | -0.68 |
+
+**NAME carries almost all of it. Every other unit saves bits alone, but only DATE (+1.29) and NUMBER (+0.30) add anything on top of NAME;
+FACT and PLACE are mostly NAME's predictions again and, through the fixed mixture, make it worse.** The mixture is the weak point, not the
+units: a unit with many stored continuations gets a high weight whether or not they are right.
+
+**The feedback gate (same run, second version).** A softmax over the trunk and each firing unit; each unit's logit comes from a table keyed by
+(unit, consistent continuations, bytes into the continuation, the trunk's entropy at that byte), starts at the fixed rule and takes one
+online gradient step on -log p after each byte is scored (prequential). Bits saved per 1,000 bytes, all 600 documents / last 400:
+
+| | fixed mixture | learned gate (all / last 400) | on top of NAME with the gate (all / last 400) |
+|---|---|---|---|
+| NAME | 29.99 | **32.29 / 33.04** | - |
+| NAME+FACT | 28.22 | 32.76 / 33.75 | **+0.47 / +0.72** |
+| NAME+PLACE | 29.48 | 32.14 / 32.82 | -0.15 / -0.21 |
+| NAME+DATE | 31.27 | 34.35 / 35.15 | **+2.05 / +2.11** |
+| NAME+NUMBER | 30.29 | 32.84 / 33.64 | **+0.54 / +0.60** |
+| ALL five | 29.31 | **35.06 / 36.10 (1.61% of the trunk's bits)** | **+2.76 / +3.06** |
+
+**Positive: with trust learned from the bits each unit saves, three units add beyond NAME (DATE, NUMBER, FACT), all five together save
+36.1 bits per 1,000 bytes against NAME's 30.0 under the fixed rule (+20%), and the gain grows after warm-up.** PLACE stays slightly
+negative (its predictions are NAME's) and is the one to drop.
+
+**Second document set (Re-DocRED test, 500 documents, 520,299 bytes; memory from all 3,053 training documents).** On top of NAME with the
+gate, all / last two-thirds, bits per 1,000 bytes (first set's last 400 for comparison):
+
+| | test set | first set |
+|---|---|---|
+| NAME alone: fixed rule / gate (late) | 28.37 / 32.01 | 29.99 / 33.04 |
+| + DATE | **+1.65 / +1.80** | +2.11 |
+| + NUMBER | **+0.58 / +0.57** | +0.60 |
+| + FACT | -0.50 / -0.48 | +0.72 |
+| + PLACE | -0.24 / -0.28 | -0.21 |
+| **+ DATE + NUMBER** | **+2.29 / +2.46** | **+2.71** |
+| + all four | +1.36 / +1.54 | +3.06 |
+
+**Replicated: the gate (+12-13% for NAME alone), DATE and NUMBER. Not replicated: FACT (helps on one set, hurts on the other). PLACE
+hurts on both.** The kept design is NAME + DATE + NUMBER behind the learned gate: 34.5-35.8 bits saved per 1,000 bytes (late), about 1.55%
+of the trunk's bits, against 28.4-30.0 for NAME under the fixed rule (+19-20%). Counted extractors throughout; learned extractors next.
+
+### An AMIE-style functional contradiction trigger (tools/exclusive_trigger.py, 14 November; GPU write path, distant set, split 0)
+
+AMIE (Galarraga 2013): a wording is FUNCTIONAL if each subject has one object under it (functionality >= 0.8 over 5+ records; 3,328
+wordings). A written inference A-C is CONTRADICTED if A later appears under a functional wording with an object other than C. 400 writes
+at document 20,375, judged on documents 20,375-40,749:
+
+| writes | judged | contradicted: wrong | not contradicted: wrong | likelihood ratio |
+|---|---|---|---|---|
+| all | 336 (wrong 0.40) | 70: 0.49 | 0.37 | 1.4 |
+| asymmetry > 1 (functional-like) | 166 (wrong 0.24) | 20: 0.35 | 0.23 | 1.7 |
+
+**Weak: a functional contradiction is only 1.4-1.7 times likelier on a wrong write and fires on a fifth of them.** Confirmation by
+prediction (tools/surprise_trigger.py, AUC 0.80) stays the best retraction trigger found.
+
+### Type constraints from the class-pair table (tools/fact_compress.py FC_LCWA, 14 November; GPU write path, distant set, two splits)
+
+The type-constrained knowledge-graph literature (Krompass 2015, local closed-world assumption): keep a candidate inference only if its
+name-class pair (compressed classes of A and C) is one the store often links. Precision of the top 200 / 400 written by code + AA, split 0 / 1:
+
+| filter | top 200 | top 400 |
+|---|---|---|
+| none | 0.395 / 0.395 | 0.302 / 0.297 |
+| class-pair PMI above its 25th percentile | 0.375 / 0.400 | 0.282 / 0.297 |
+| class-pair PMI above its 50th percentile | 0.345 / 0.360 | 0.263 / 0.270 |
+| asymmetry > 1 alone | 0.585 / 0.525 | 0.515 / 0.453 |
+| asymmetry > 1 + class-pair PMI above its 25th percentile | 0.590 / 0.535 | 0.522 / 0.448 |
+
+**Negative: class-pair PMI does not separate right from wrong candidates (AUC 0.535 / 0.534); the filter costs precision on its own and
+adds nothing to the asymmetry filter.** The compressed classes are too coarse to act as types (as compress_typing found for exact
+relations); asymmetry stays the only label-free write filter that works.
+
+### Can compression statistics type an inference? (tools/compress_typing.py, 14 November; Re-DocRED gold + 30k distant documents, two splits)
+
+Gold-related pairs of held-out documents with every record pairing them removed (3,186-3,536 test pairs, never stated in the store).
+Label-free signals; a probe maps each signal's value to the gold label it most often has on kept documents. 'Coverage at 0.8' = the share
+of test pairs the signal's most confident predictions type at 80% precision. Split 0 / split 1:
+
+| target (baseline) | best signal: right | coverage at 0.8 precision |
+|---|---|---|
+| exact relation (commonest, P131: 0.363 / 0.363) | class pair + asymmetry 0.410 / 0.443 | **0.000-0.014 for every signal** |
+| family: location, person, organisation, work, time (location: 0.610 / 0.594) | path wording 0.675 / 0.662 (on 67% of pairs); class pair + asymmetry 0.613 / 0.614 | class pair + asymmetry 0.395 / 0.416 |
+| functional or not (functional share 0.488 / 0.480) | **class pair + asymmetry 0.746 / 0.774**; asymmetry alone 0.717 / 0.737 | **0.608 / 0.747** |
+| direction, location pairs | **the more specific name (lower store degree) is the head 0.753 / 0.756** | - |
+
+Signals: compressed name-class pair; ASYMMETRY (log of A's store degree over C's); latent relations (universal schema) of the bridge records
+and their composition; the pair's own later records (only 4-8% of held-out pairs have one); the wordings' functionality (AUC 0.536-0.546).
+On Re-DocRED alone (no distant documents) family looked better (coverage 0.66); the noisier, larger store lowers it.
+**Mixed. The exact relation cannot be typed without labels; the family barely beats 'always location'. But two coarse properties can:
+whether the inferred relation is FUNCTIONAL (0.75-0.77, two thirds of pairs typed at 80% precision) and, for location-like pairs, its
+DIRECTION (0.75) - both mostly from how general one name is against the other in the store.** That is enough for a weaker trigger than
+typing: a confidently functional inference A -> C is contradicted when later reading ties A as strongly to another name of C's class.
+
+### Why the retraction trigger failed on the GPU (tools/trigger_retest.py, 14 November; the package's own code path, distant set)
+
+PART 1 reruns the GPU path (_load_distant, _rcode_step at 20,375 documents, seed 4: 200 written, right 0.590 - as on the GPU) and judges the
+writes on documents 20,375-40,749. The trigger reproduces: AUC 0.518, bottom 20% wrong 0.38 (overall 0.41). Its parts against the distant
+labels:
+
+| signal | AUC | bottom 20% wrong (overall 0.41) |
+|---|---|---|
+| documents / records / short-gap records stating the pair | 0.58 / 0.58 / 0.58 | 0.57 / 0.57 / 0.53 |
+| document PMI | **0.43** (reversed) | 0.28 |
+| the names' popularity (low = popular) | **0.41** (popular pairs are more often right) | 0.28 |
+| the write-time code; bridges at write | 0.39; 0.55 | 0.28; 0.50 |
+| **predictive compression** (A's later partners coded with C's old neighbourhood, over a same-degree control) | **0.50** | 0.50 |
+
+93% of the writes are stated again in the next documents (right 0.97, wrong 0.88): the signal is nearly saturated. Among these writes the
+popular pairs are the labelled ones, so PMI - which discounts popularity - points the wrong way and cancels the weak count signal.
+Predictive compression: the inference saves bits on the names' later partners for 97% of writes, right and wrong alike (AUC 0.50; on the
+Re-DocRED writes 0.49 / 0.53 against human labels) - the 'wrong' writes are related in the store's sense too.
+
+PART 2, the Re-DocRED writes under both truths: human and distant labels agree on 0.85 / 0.87; distant labels add 0.12-0.14 'right' and
+almost never drop a human-right pair (0.01). **The labels are not what broke the trigger; the writes are** - pairs of popular, often
+co-mentioned entities from the distant documents, where re-mention says little and popularity tracks the label.
+
+**What this means.** A 'wrong' write here is mostly a pair the text keeps putting together that has no labelled relation: compression
+cannot tell it apart, because it does compress. Telling such pairs apart needs WHICH relation (typed inferences a later sentence can
+confirm or contradict), not more evidence that the names are associated. Best untyped trigger left: raw re-mention counts (AUC 0.58,
+likelihood ratio about 1.7) - too weak to retract on.
+
+### Refusal again: familiarity rows and a name gate (tools/toy_refuse.py, 14 November; toy, 3,000 steps, two seeds)
+
+Taught wording (the toy cannot answer in the held-out one); refusal on fresh names from the stored names' syllables (never read); facts
+only read answered right; known facts right. NAME GATE (no training): abstain when the trunk's surprise at the subject's name (bits a byte
+after 'Some say that ') is above the 95th percentile of known names'. Seed 0 / seed 1:
+
+| condition | refuse never-read | only-read right | known right | name gate: AUC read vs fresh; abstains never-read / only-read |
+|---|---|---|---|---|
+| none | 0.00 / 0.00 | **0.62 / 0.78** | 1.00 / 1.00 | 0.87 / 0.93; **0.48 / 0.50**, 0.06 / 0.02 |
+| refusal rows, same syllables | 0.85 / 0.97 | 0.15 / 0.12 | 0.97 / 0.94 | 0.75 / 0.79; 0.30 / 0.28, 0.15 / 0.09 |
+| + 12 wordings | 0.87 / 0.80 | 0.05 / 0.09 | 0.99 / 0.99 | 0.95 / 0.96; 0.98 / 0.90, 0.33 / 0.13 |
+| refusal + FAMILIARITY rows ('Have I read about A? yes / no') | 0.82 / 0.75 | 0.38 / 0.21 | 0.99 / 0.99 | 0.71 / 0.82; 0.25 / 0.50, 0.10 / 0.15 |
+| familiarity rows only | 0.00 / 0.00 | 0.47 / 0.55 | 0.96 / 0.91 | 0.82 / 0.93; 0.50 / 0.77, 0.19 / 0.09 |
+
+In the held-out wording every refusal-trained arm refuses KNOWN facts too (0.54-0.81): the refusal is tied to taught frames. **Familiarity
+rows halve the damage of refusal rows to facts only read (0.15 / 0.12 -> 0.38 / 0.21) but do not remove it, and cost reading on their own
+(0.47 / 0.55). The name gate, with no training, abstains on half of never-read names at a 2-6% cost to facts known or only read, and leaves
+learning from reading untouched.** For the GPU: no refusal training; the name gate at answer time beside the confidence gate.
+
+### GPU cg27a_rret (= cg27a_rcode5 + retraction; seed 4, 14 November, visits 1-3): the dose fix
+
+Retraction cannot act before the first judgement (visit 4), so visits 1-3 test the dose scaling alone (inf_rti_rows_ref 8: each of 16 rows
+pushes as one of 8). Visit 3, the visit-2 batch after one visit of teaching: dose loss 1.171 -> 0.234 (cg27a_rcode4 1.234 -> 0.354;
+cg27a_rcode3 1.059 -> 0.253); **rank taught right / wrong 0.54 / 0.57 vs held back 0.11 / 0.11** (cg27a_rcode4 0.43 / 0.37; cg27a_rcode3
+0.61 / 0.54); open-ended 0.14 / 0.10 (unchanged from cg27a_rcode4; cg27a_rcode3 0.22 / 0.27). Held-out bits 2.0235 / 2.0263 / 2.0125
+(cg27a_rcode4 2.0237 / 2.0271 / 2.0110). **The fix restores most of the per-inference learning (loss and rank near cg27a_rcode3's, with
+twice as many taught: about 44 right ranked first vs 30), at no cost; open-ended exact recall has not caught up at one visit.**
+
+Visit 4. **The trigger does not transfer to the GPU: AUC 0.517; the 40 flagged are wrong 0.38 against 0.42 unflagged** (200 judged on 20,374
+documents read since; 20 with no confirming record). 23 flagged taught: 8 retracted (3 wrong), 15 kept as control - too few, and no more
+wrong than the rest. Offline (Re-DocRED human labels, 0.6 wrong) the same score had AUC 0.72-0.73; here truth is the distant set's
+Wikidata labels and the writes are pairs from held-out distant documents - which difference breaks it is not yet known. Recall with the
+dose fix after two visits: **rank taught 0.97 / 0.90 vs held back 0.19 / 0.25** (cg27a_rcode4 0.89 / 0.87; cg27a_rcode3 0.88 / 0.88);
+open-ended 0.47 / 0.39 vs 0.01 / 0.00 (cg27a_rcode4 0.43 / 0.36). Second batch right 0.59. Held-out bits 1.9236 (cg27a_rcode4 1.9246).
+
 ### Codes as tokens on real text: NEGATIVE (tools/codetok_diag.py, 14 November; stand-in trunk, Re-DocRED, two seeds)
 
 Each name followed by its compression cluster token (128 k-means clusters of the store's co-mention graph codes) in the kept documents'

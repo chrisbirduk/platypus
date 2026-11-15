@@ -1717,6 +1717,22 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             try: ents, held = _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis)
             except Exception as e9:
                 _fail('inference.distill:relmod_write'); print(f"  [RELATIONAL MODULE WRITES] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_kmem', 0)):                                   # 15 Nov KEYED MEMORY readout (inference.kmem; training not changed)
+            try:
+                from platypus.inference.kmem import kmem_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9): kmem_readout(model, cfg, S_, S_slot, ents, held, vis)
+            except Exception as e9: _fail('inference.kmem'); print(f"  [KEYED MEMORY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        if int(getattr(cfg, 'inf_kmi', 0)):                                    # 15 Nov INTEGRATED KEYED MEMORY (MODEL CHANGE, inference.kmem): keys refreshed, then the readout
+            try:
+                from platypus.inference.kmem import kmi_refresh, kmi_readout
+                dv9 = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+                with torch.random.fork_rng(devices=dv9):
+                    kmi_readout(model, cfg, S_slot, ents, held, vis); kmi_refresh(model, cfg, ents, held, vis)
+                    if int(getattr(cfg, 'inf_kmc', 0)):
+                        from platypus.inference.kmem import kmc_retract
+                        kmc_retract(model, cfg, S_slot, ents, vis)
+            except Exception as e9: _fail('inference.kmem:kmi'); print(f"  [INTEGRATED KEYED MEMORY] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         if int(getattr(cfg, 'inf_distill_fu', 0)): _fu_sleep(model, cfg, S_, S_slot, ents, held, vslot, oslots, vis)
         sp = int(getattr(cfg, 'inf_distill_wake_spaced', 0)); sk = int(getattr(cfg, 'inf_distill_wake_selfkl', 0))
         spc = int(getattr(cfg, 'inf_distill_wake_spaced_conc', 0))             # 11 Nov: 0 = conclusions are NOT spaced (always rehearsed): the taught-wording check
@@ -1971,6 +1987,23 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
     finally: _NM['force'] = was
 
 
+def _kmc_pending(cfg, items):
+    """15 Nov CONSOLIDATION THROUGH THE MEMORY (inf_kmc; MODEL CHANGE of cg27a_kmc): rows of written real-text inferences that are NOT yet
+    judged-and-kept - unjudged, or flagged by the retraction trigger - teach the MEMORY only, never the trunk. The trunk learns an inference
+    only after it was judged on later reading and kept, so a retracted inference never reaches it. Returns the row indices to skip."""
+    if not int(getattr(cfg, 'inf_kmc', 0)): return set()
+    from platypus.inference.premises import _PM, _RTI_R
+    W = _PM.get('rti') or {}; out = set()
+    for r9, it in enumerate(items):
+        k = str(it[3]) if len(it) > 3 else ''
+        if _RTI_R not in k: continue
+        try:
+            key = __import__('ast').literal_eval(k); w = W.get((key[1], key[3]))
+        except Exception: w = None
+        if w is None or w.get('judged') is None or w.get('flag'): out.add(r9)
+    return out
+
+
 def distill_wake_loss(model, cfg):
     """inf_distill_wake_rows question rows (one slot, drawn from the pool, by spaced-rehearsal weight when on) - cross-entropy on the answer
     bytes, or KL to the trunk's own answer at the last sleep for rows of facts it already answers (inf_distill_wake_selfkl); 0.0 when no pool"""
@@ -1985,6 +2018,9 @@ def distill_wake_loss(model, cfg):
         X, M = _ws_batch(model, [it[0] + it[1] for it in items])
         if aw > 0: lg, Hq = _ws_hidden(model, lambda: _ws_run(model, X, sl, grad_=True))
         else: lg = _ws_run(model, X, sl, grad_=True); Hq = None
+        if int(getattr(cfg, 'inf_kmi', 0)):                                   # 15 Nov INTEGRATED KEYED MEMORY: learns from these rows (trunk untouched)
+            from platypus.inference.kmem import kmi_rows_loss
+            kmi_rows_loss(model, cfg, items, lg, X)
         tot = 0.0; cnt = 0; ce = []
         pd = int(getattr(cfg, 'inf_distill_wake_pd', 0)); LT = None
         if pd and any(len(it) > 5 and it[5] for it in items):                    # PROMPT DISTILLATION: the teacher reads the source sentence, then the question
@@ -1994,9 +2030,10 @@ def distill_wake_loss(model, cfg):
             Tt, Mt = _ws_batch(model, [(it[5] if len(it) > 5 and it[5] else b'') + it[0] + it[1] for it in items])
             with torch.no_grad(): LT = _ws_run(model, Tt, sl).float()
             T_ = float(getattr(cfg, 'inf_distill_wake_pd_T', 2.0)); ce_w = float(getattr(cfg, 'inf_distill_wake_pd_ce', 0.0)); H9 = D['pdst']
+        kmc_skip = _kmc_pending(cfg, items)                                    # 15 Nov CONSOLIDATION (inf_kmc): unjudged or flagged inferences - memory only
         for r9, it in enumerate(items):
             p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg.shape[1] - p0)
-            if n_ <= 0: continue
+            if n_ <= 0 or r9 in kmc_skip: continue
             z = lg[r9, p0:p0 + n_].float(); tl = it[4] if len(it) > 4 else None
             cx = it[5] if (LT is not None and len(it) > 5) else None
             if cx:
@@ -2047,9 +2084,13 @@ def distill_wake_loss(model, cfg):
             try:                                                               #   (its own guard: a failure here must not switch off the pool's rows)
                 it2 = [rp2[int(i)] for i in rs.choice(len(rp2), min(rk2, len(rp2)), replace=False)]; sl2 = int(it2[0][2])
                 X2, _ = _ws_batch(model, [it[0] + it[1] for it in it2]); lg2 = _ws_run(model, X2, sl2, grad_=True); t2 = 0.0; c2 = 0
+                if int(getattr(cfg, 'inf_kmi', 0)):
+                    from platypus.inference.kmem import kmi_rows_loss
+                    kmi_rows_loss(model, cfg, it2, lg2, X2)
+                kmc2 = _kmc_pending(cfg, it2)
                 for r9, it in enumerate(it2):
                     p0 = len(it[0]) - 1; n_ = min(len(it[1]), lg2.shape[1] - p0)
-                    if n_ > 0: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
+                    if n_ > 0 and r9 not in kmc2: t2 = t2 + F.cross_entropy(lg2[r9, p0:p0 + n_].float(), X2[r9, p0 + 1:p0 + 1 + n_], reduction='sum'); c2 += n_
                 if c2:                                                         # 14 Nov DOSE SCALING (inf_rti_rows_ref > 0): the loss is a mean over the rows'
                     l2 = t2 / c2; rf2 = int(getattr(cfg, 'inf_rti_rows_ref', 0))   #   answer bytes, so more rows a step would push each row less; weighting
                     w2 = (len(it2) / rf2) if rf2 > 0 else 1.0                      #   by rows / ref keeps each row's push at the ref's (cg27a_rcode4: 16 rows

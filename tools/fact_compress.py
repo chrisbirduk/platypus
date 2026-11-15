@@ -117,6 +117,59 @@ if os.environ.get('FC_SAVE') or os.environ.get('FC_LOAD'):                      
         lo_ = R_[:, 1] <= np.median(R_[:, 1])                                              # does the change add to the stage-1 rank? AUC of the change within halves of it
         P(f"   rank change within halves of the stage-1 rank: lower half AUC {auc((R_[:, 2] - R_[:, 1])[lo_ & y1], (R_[:, 2] - R_[:, 1])[lo_ & ~y1]):.3f}, upper half "
           f"{auc((R_[:, 2] - R_[:, 1])[~lo_ & y1], (R_[:, 2] - R_[:, 1])[~lo_ & ~y1]):.3f} | stage-1 rank alone {a_(R_[:, 1]):.3f}")
+if int(os.environ.get('FC_ASYM', 0)):                                                  # 14 Nov ASYMMETRY AS A WRITE FILTER (tools/exclusive_trigger.py: on the GPU
+    rk3 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1)                      #   path, writes whose subject is clearly more specific were wrong 0.28 vs 0.42)
+    ck3 = max(k for k in SC if k.startswith('CODE') and 'rel' not in k); both3 = rk3(SC[ck3]) + rk3(SC['Adamic-Adar']); o3 = np.argsort(-both3)
+    asy = np.abs(np.log((deg[XA_] + 1) / (deg[XB_] + 1)))
+    for n_ in (200, 400, 800):
+        t_ = o3[:n_]; P(f"ASYMMETRY FILTER, top {n_} by code + Adamic-Adar (right {yy[t_].mean():.3f}): " + " | ".join(
+            f"|log degree ratio| > {th}: {int((asy[t_] > th).sum())} kept, right {yy[t_][asy[t_] > th].mean():.3f} (dropped {yy[t_][asy[t_] <= th].mean():.3f})" for th in (0.5, 1.0, 2.0)))
+    for th in (1.0,):                                                                   # the same NUMBER written, filtered first: the top n among asymmetric pairs
+        oa = [i for i in o3 if asy[i] > th]
+        P(f"   writing the top 200 / 400 among pairs with |log degree ratio| > {th}: right {yy[oa[:200]].mean():.3f} / {yy[oa[:400]].mean():.3f} (unfiltered {yy[o3[:200]].mean():.3f} / {yy[o3[:400]].mean():.3f})")
+    P(f"   all candidates: right with |log degree ratio| > 1 {yy[asy > 1].mean():.3f} vs <= 1 {yy[asy <= 1].mean():.3f} (base {yy.mean():.3f})")
+if int(os.environ.get('FC_RECYCLE', 0)):                                               # 14 Nov THE TIPPING POINT: feed written inferences back into the store graph as
+    rk4 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1)                      #   premises at a CONTROLLED precision p, recompute the codes and chaining, and
+    kk = int(os.environ.get('FC_RECYCLE_K', 0)) or max(k for k in KS_)                   #   measure the NEXT batch's precision against the same batch without recycling
+    def scores(Gx):                                                                     #   (a self-reinforcing loop needs the next batch to IMPROVE)
+        dg = np.asarray(Gx.sum(1)).ravel(); iw_ = np.where(dg > 1, 1.0 / np.log(np.maximum(dg, 2)), 0.0)
+        aa_ = np.asarray(Gx[XA_].multiply(Gx[XB_]).multiply(iw_[None, :]).sum(1)).ravel()
+        U_ = normalize(TruncatedSVD(kk, random_state=0).fit_transform(ppmi(Gx)).astype(np.float32)); cd_ = np.einsum('ij,ij->i', U_[XA_], U_[XB_])
+        return rk4(cd_) + rk4(aa_)
+    s0 = scores(G1); o0 = np.argsort(-s0); NB = int(os.environ.get('FC_RECYCLE_N', 200)); pool = o0[:2000]
+    gp = [i for i in pool if yy[i]]; bp = [i for i in pool if not yy[i]]; rr5 = np.random.RandomState(9)
+    P(f"TIPPING POINT: first batch (top {NB}) right {yy[o0[:NB]].mean():.3f}; recycle {NB} inferences drawn from the top 2000 (right {len(gp)}, wrong {len(bp)}) at a set precision")
+    for pp in [float(x) for x in os.environ.get('FC_RECYCLE_P', 'actual,0.6,0.7,0.8,0.9,1.0').replace('actual', '-1').split(',')]:
+        if pp < 0: add = o0[:NB]; lab = f"the actual first batch ({yy[o0[:NB]].mean():.2f})"
+        else:
+            ng = min(len(gp), int(round(NB * pp))); nb_ = NB - ng
+            if nb_ > len(bp): continue
+            add = np.r_[rr5.choice(gp, ng, replace=False), rr5.choice(bp, nb_, replace=False)].astype(int); lab = f"precision {pp:.1f}"
+        Gx = G1.tolil(copy=True)
+        for i in add: Gx[XA_[i], XB_[i]] = 1.0; Gx[XB_[i], XA_[i]] = 1.0
+        Gx = Gx.tocsr(); s1 = scores(Gx); ex = np.zeros(len(ok), bool); ex[add] = True
+        nxt0 = [i for i in o0 if not ex[i]][:NB]; o1 = np.argsort(-s1); nxt1 = [i for i in o1 if not ex[i]][:NB]
+        nb0 = set(n_ for i in add for n_ in (XA_[i], XB_[i])); near1 = np.array([XA_[i] in nb0 or XB_[i] in nb0 for i in nxt1])
+        P(f"   recycled at {lab}: NEXT batch right {yy[nxt1].mean():.3f} with recycling vs {yy[nxt0].mean():.3f} without ({yy[nxt1].mean() - yy[nxt0].mean():+.3f}) | "
+          f"next-batch pairs touching a recycled name {near1.mean():.2f} (right {yy[np.array(nxt1)[near1]].mean() if near1.any() else float('nan'):.3f}, others "
+          f"{yy[np.array(nxt1)[~near1]].mean() if (~near1).any() else float('nan'):.3f})  ({time.time() - T0:.0f}s)")
+if int(os.environ.get('FC_LCWA', 0)):                                                  # 14 Nov TYPE CONSTRAINTS, LOCAL CLOSED WORLD (after Krompass et al. 2015): the
+    from sklearn.cluster import MiniBatchKMeans                                          #   class pairs the store has actually linked are the 'domain x range' a
+    U5 = normalize(TruncatedSVD(128, random_state=0).fit_transform(ppmi(G1)).astype(np.float32)); dg5 = np.asarray(G1.sum(1)).ravel() > 0
+    cl5 = np.full(NN, -1); cl5[dg5] = MiniBatchKMeans(32, random_state=0, batch_size=8192, n_init=3).fit_predict(U5[dg5])   # link may join;
+    Gt = G1.tocoo(); cc = collections.Counter(zip(cl5[Gt.row].tolist(), cl5[Gt.col].tolist())); tot5 = sum(cc.values())   # candidates whose
+    mc = collections.Counter(); [mc.__setitem__(a, mc[a] + n) for (a, b), n in cc.items()]                                   # class pair the store
+    cpm = np.array([np.log((cc.get((cl5[a], cl5[b]), 0) + 0.5) * tot5 / ((mc[cl5[a]] + 1) * (mc[cl5[b]] + 1))) for a, b in zip(XA_, XB_)])   # rarely links
+    rk5 = lambda x: np.argsort(np.argsort(x)) / max(1, len(x) - 1); ck5 = max(k for k in SC if k.startswith('CODE') and 'rel' not in k)    # are dropped
+    both5 = rk5(SC[ck5]) + rk5(SC['Adamic-Adar']); asy5 = np.abs(np.log((deg[XA_] + 1) / (deg[XB_] + 1)))
+    def top5(mask, n): o = [i for i in np.argsort(-both5) if mask[i]][:n]; return f"{yy[o].mean():.3f}" if o else 'nan'
+    allm = np.ones(len(ok), bool)
+    for q in (0.25, 0.5):
+        th = np.quantile(cpm, q)
+        P(f"TYPE CONSTRAINTS (class-pair PMI above its {int(q * 100)}th percentile): top 200 / 400 by code + AA right {top5(cpm > th, 200)} / {top5(cpm > th, 400)} "
+          f"(unfiltered {top5(allm, 200)} / {top5(allm, 400)}) | with asymmetry > 1 as well {top5((cpm > th) & (asy5 > 1), 200)} / {top5((cpm > th) & (asy5 > 1), 400)} "
+          f"(asymmetry alone {top5(asy5 > 1, 200)} / {top5(asy5 > 1, 400)})")
+    P(f"   all candidates: AUC of the class-pair PMI {auc(cpm[yy], cpm[~yy]):.3f}")
 rep(np.ones(len(ok), bool), "ALL CANDIDATE PAIRS (never stated together in the store)")
 rep(cn_cnt > 0, "WITH A BRIDGE (a chain A-B-C exists in the store)")
 rep(cn_cnt == 0, "NO BRIDGE (no chain: only a code can relate them)")
