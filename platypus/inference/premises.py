@@ -608,6 +608,9 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     if ath > 0:                                                               # 14 Nov ASYMMETRY FILTER (cg27a_rasym): write only pairs whose names differ in store
         asy0 = np.abs(np.log((deg[XA] + 1.0) / (deg[XB] + 1.0)))              #   degree by more than e^ath (offline, Re-DocRED gold, two splits: top 200
         sc_ = np.where(asy0 > ath, sc_, -np.inf)                               #   0.585 / 0.525 vs 0.395; GPU path: wrong 0.28 vs 0.42)
+    if _PM.get('save_cand'):                                                   # 15 Nov (offline tools/learned_selector.py): every candidate's write-time features
+        _PM['cand'] = dict(pairs=[tuple(sorted(c)) for c in ks], code=np.asarray(code, np.float32), aa=np.asarray(aa_all, np.float32), ra=np.asarray(ra_all, np.float32),
+                           dA=deg[XA].astype(np.float32), dB=deg[XB].astype(np.float32), y=yy.copy(), rule=np.asarray(sc_, np.float32), ndv=int(ndv_))
     done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
