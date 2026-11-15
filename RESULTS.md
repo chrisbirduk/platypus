@@ -1207,6 +1207,15 @@ Keyed units on the (overfit) 18k trunk, gate, on top of NAME: DATE +5.4 / +4.6, 
 (bits per 1,000 bytes, late, first / second set): the same ranking as on the 6k trunk (DATE and NUMBER replicate, FACT unreliable, PLACE
 negative); the larger savings reflect the worse trunk (NAME alone 80-83 vs 30-33).
 
+**K-TEXT: a wording key learned from REAL TEXT only (15 November; 20,000 name pairs stated in 2+ different wordings within a sentence,
+50k distant documents, InfoNCE; the frames and the test wording never seen).** Relation of the test wording / of a PARAPHRASED relation
+phrase recognised by the frames' keys: K-TEXT 0.90 / **0.52**, 0.90 / 0.38, 0.95 / 0.33 (18k s0, 18k s1, 6k s0) against the frame-trained
+head 1.00 / 0.38, 1.00 / 0.33, 1.00 / 0.43. In the memory it is WORSE than the frame-trained key on everything (two-hop 0.55-0.72 vs
+0.83-0.87; set A at the end 0.55-0.70 vs 0.92-0.93; paraphrased wording 0.40-0.58 vs 0.53-0.60) - it spreads facts over more slots
+(2,364-2,935 vs 1,716-1,759) and interferes more. **Negative as built: co-occurrence of a name pair in two sentences is too weak and too
+noisy a synonymy signal (most pairs are 'X, Y' lists and loose associations), and it costs the sharpness the memory needs.** A head trained
+on text pairs AND frames (K-BOTH) keeps the test wording at 1.00 and reaches 0.48 on paraphrase (6k s0); its memory runs are queued.
+
 ### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
 
 The author's idea: 4-6 generic KEYED units like NAME, indexable, extracted from local context, each with its own memory, kept only if they
