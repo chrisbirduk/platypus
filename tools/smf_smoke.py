@@ -78,8 +78,15 @@ def run(mode):
     for st in range(int(os.environ.get('SS_STEPS', 600))):
         text_step(m, op, r2); smf_text_step(m, cfg)
         if mode != 'none': distill_wake_step(m, cfg)
-        op.step()
+        if not int(os.environ.get('SS_FROZEN', 0)): op.step()                 # SS_FROZEN 1: the trunk does not train in visit 2 (as Lin et al.)
+        else: op.zero_grad()
     rk, ex = recall(m); b1 = bits(m); s = m.__dict__['_smf_st']; D = m.__dict__.get('_dtw') or {}
+    if mode == 'smem':                                                         # ADDRESS DRIFT: do the questions' answer positions still read the slots written for them?
+        from platypus.inference.smf import smf_note
+        s['ans'].zero_(); sub = rows[::7][:40]; X, _ = _ws_batch(m, [it[0] + it[1] for it in sub])
+        with torch.no_grad(): lg = _ws_run(m, X, 0)
+        smf_note(m, [(r, len(it[0]) - 1, len(it[1])) for r, it in enumerate(sub)]); rd = s['ans'] > 0
+        P(f"      ADDRESS DRIFT: of the slots the questions' answers read now, {float((rd & s['wrote']).sum()) / max(1.0, float(rd.sum())):.2f} were ever written by the questions")
     P(f"   {mode:8s}: test wording rank {rk:.2f}, open {ex:.2f} | held-out wiki {b1:.3f} bits per byte | question loss {np.mean(D.get('losses', [0])[:20]):.3f} -> {np.mean(D.get('losses', [0])[-20:]):.3f} | "
       f"slots written {int(s['wrote'].sum())} ({s['steps_q']} steps) | {time.time() - t0:.0f}s")
     return b1
