@@ -672,12 +672,35 @@ class Config:
     inf_kmc_passes=8                #     byte edit: passes over the retracted rows until every answer byte is below -margin
     inf_kmc_steps=60                #     counter-write steps (32 retracted rows + 32 kept rows each)
     inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
-    inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)
+    inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret), 'docs' (documents stating the pair since the write; AUC 0.64) or 'rel'
+                                    #     (15 Nov, cg27a_kmr: RELATIONAL records of the pair - linked by words, not lists; offline 0.697)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
     inf_kma=0                       #   15 Nov ALL-TEXT ADDRESS (MODEL CHANGE when on; cg27a_kma): the memory's address computed at EVERY byte of any text from the trunk's
                                     #     own forward (middle block, in context; subject = latest completed capitalised run, hashed); the model reads it on all text (gated);
                                     #     it writes only on question rows' answer bytes; readout: PREQUENTIAL BITS WITH THE MEMORY
+    inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
+                                    #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
+    inf_kmfb_n=4000                 #     spans per readout
+    inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
+                                    #   read, mixed with the trunk by a learned gate at prediction time (trunk training untouched); readout [KEYED UNITS]
+    inf_ku_fill=8000000             #     bytes of each visited domain's training text stored per visit
+    inf_ku_cap=32                   #     continuations kept per key (the most recent)
+    inf_ku_lr=0.05                  #     the gate's online learning rate
+    inf_kma_nori=0                  # 16 Nov THE GATE RULE: on ordinary text the all-text memory stays shut where the read weight lies mostly (0.5+) on the
+                                    #   untyped written inferences' slots (questions still read them). GPU cg27a_kmr readout: Wikipedia +0.0035 / +0.0054
+                                    #   -> +0.0002 / +0.0004 bits per byte at visits 3 / 4
+    inf_smf=0                       # 16 Nov SPARSE MEMORY CONSOLIDATION IN THE TRUNK (inference.smf): a product-key memory layer beside the middle block's MLP,
+                                    #   learning from text for the first inf_smf_pre visits, then written ONLY by the question rows (with inf_distill_wake_params
+                                    #   'smem'), only at the inf_smf_t slots with the highest TF-IDF where their answers are predicted (Lin et al. 2025)
+    inf_smf_n=256                   #     n x n value slots
+    inf_smf_k=16                    #     slots read per byte
+    inf_smf_dk=64                   #     half-query width
+    inf_smf_pre=1                   #     visits in which the layer learns from text (then frozen for text)
+    inf_smf_t=1024                  #     slots the question rows may change per step
+    inf_smf_lr=0.01                 #     row-wise Adam lr of the question rows' writes
+    inf_smf_klr=1.0                 #     keys / query lr = cfg.lr x this (text phase)
+    inf_smf_vlr=10.0                #     value rows lr = cfg.lr x this (text phase)
     inf_rtype=0                     #   15 Nov READOUT: RELATION TYPES FROM THE TRUNK every 2 visits (inference.reltype): k-means types of the trunk's pooled states over the
                                     #     premises records, rules over them, scored against Wikidata (evaluation only); the factorial's additivity on this trunk
     inf_rtype_n=60000               #     records represented

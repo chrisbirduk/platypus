@@ -810,6 +810,9 @@ def train_domain(model, meta, meta_opt, opt, get, dom_id, prior_buffer, cfg):
                 er_=er_loss(model,cfg,dom_id)
                 if er_ is not None: loss=loss+er_
         with _rf('backward'): loss.backward()
+        if int(getattr(cfg,'inf_smf',0)):                                            # 16 Nov SPARSE MEMORY LAYER: its text phase (own optimiser), background slot use
+            from platypus.inference.smf import smf_text_step
+            smf_text_step(model,cfg)
         if locals().get('_dw_'):                                                     # 10 Nov INTERLEAVED DISTILLATION (inference.distill): question rows about stored
             from platypus.inference.distill import distill_wake_step                 #   facts, forward + backward after the real step's backward (a forward between the
             distill_wake_step(model,cfg,olds=olds,dream=locals().get('_dws_',False),dk=locals().get('_dk_',1),dkl=((locals().get('_dwk_') if locals().get('_dwk_') is not None else locals().get('kraw_t')) if (locals().get('_dws_') and float(getattr(cfg,'inf_gate_beta',0.0))>0) else None))                                             #   real forward and its backward changed a tensor in place: autograd error); the

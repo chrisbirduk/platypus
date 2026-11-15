@@ -61,14 +61,51 @@ def build(d):
         elif isnum(w) and i > 0 and si in lastname: fires.append(('NUMBER', lastname[si] + ' |' + toks[i - 1][4], a))
         i += 1
     return out, fires
-B = [build(d) for d in docs]; ev0 = len(B) - NE
+CAUSAL = int(os.environ.get('RU_CAUSAL', 0))
+def build_causal(d):
+    """16 Nov CAUSAL FIRINGS (RU_CAUSAL 1): build() above decides where a unit fires from the WHOLE token list, so a firing tells the memory
+    what comes next - a NAME fires only at the end of the maximal capitalised run (it knows the next word is not capitalised), a DATE or
+    NUMBER fires exactly where a year or number starts (it knows one follows). Here every firing depends only on bytes already read, and
+    the memory predicts from the SECOND byte of its continuation (the firing byte itself is read first): NAME fires after EVERY
+    capitalised word with the run so far; DATE and NUMBER fire at EVERY word starting with a digit or (DATE) a capital, keyed as before;
+    the stored continuations come only from real dates and numbers (past text, fully known), so a non-date word simply finds none
+    consistent. FACT and PLACE fire at word ends with the name run as completed by then."""
+    out = b''; toks = []; prev = None
+    for si, sent in enumerate(d['sents']):
+        for ti, w in enumerate(sent):
+            wb = w.encode('utf-8', 'replace')
+            if out and not (w in NOSP_B or prev in NOSP_A): out += b' '
+            toks.append((si, ti, len(out), len(out) + len(wb), w)); out += wb; prev = w
+    fires = []; store = []; run = []; lastname = {}; since = 0
+    for i, (si, ti, a, b_, w) in enumerate(toks):
+        if i and toks[i - 1][0] != si: run = []
+        capw = w[:1].isupper() and not (ti == 0 and w.lower() in ('the', 'a', 'in', 'he', 'she', 'it', 'his', 'her', 'this', 'they'))
+        if (w[:1].isdigit() or w[:1].isupper()) and si in lastname:          # DATE / NUMBER fire at the word's first byte (scored from its second)
+            fires.append(('DATE', lastname[si] + ' |date', a))
+            if isyear(w) or w in MONTHS: store.append(('DATE', lastname[si] + ' |date', a))
+            if w[:1].isdigit() and i > 0:
+                fires.append(('NUMBER', lastname[si] + ' |' + toks[i - 1][4], a))
+                if isnum(w): store.append(('NUMBER', lastname[si] + ' |' + toks[i - 1][4], a))
+        if capw:
+            run = run + [w] if run and since == 0 else [w]; since = 0; name = ' '.join(run)
+            fires.append(('NAME', name, b_)); store.append(('NAME', name, b_))
+            if i > len(run) - 1 and i - len(run) >= 0 and toks[i - len(run)][0] == si and toks[i - len(run)][4] in LOCW:
+                fires.append(('PLACE', toks[i - len(run)][4] + ' ' + name, b_)); store.append(('PLACE', toks[i - len(run)][4] + ' ' + name, b_))
+            lastname[si] = name; continue
+        since += 1
+        if run and since <= 4 and not isnum(w):                               # FACT: the completed run + the words after it
+            fk = ' '.join(run) + ' ' + ' '.join(t[4] for t in toks[i - since + 1:i + 1]); fires.append(('FACT', fk, b_)); store.append(('FACT', fk, b_))
+    return out, fires, store
+if CAUSAL:
+    B3 = [build_causal(d) for d in docs]; B = [(b, f) for b, f, _ in B3]; ST = [st for _, _, st in B3]
+B = B if CAUSAL else [build(d) for d in docs]; ev0 = len(B) - NE
 P(f"documents {len(B)} (memory from all earlier ones; scored: the last {NE}) | firings per unit: " + ", ".join(f"{u} {n}" for u, n in collections.Counter(f[0] for b, fs in B for f in fs).most_common()))
 UNITS = ['NAME', 'FACT', 'PLACE', 'DATE', 'NUMBER']
 mem = {u: collections.defaultdict(list) for u in UNITS}
 PRIO = {'FACT': 0, 'NUMBER': 1, 'DATE': 1, 'PLACE': 2, 'NAME': 3}   # combined units back off from the most specific key to NAME
 def add(b, fs):
     for u, k, p in fs: mem[u][k].append(b[p:p + CL])
-for b, fs in B[:ev0]: add(b, fs)
+for i_, (b, fs) in enumerate(B[:ev0]): add(b, ST[i_] if CAUSAL else fs)
 def pmem(units, b, fs, raw=False):
     """per byte position: (lam, p_mem of the actual byte), units combined by pooling their consistent continuations"""
     best = {}
@@ -76,7 +113,7 @@ def pmem(units, b, fs, raw=False):
         if u not in units: continue
         conts = mem[u].get(k)
         if not conts: continue
-        for off in range(min(CL, len(b) - p)):
+        for off in range(1 if CAUSAL else 0, min(CL, len(b) - p)):
             seen = b[p:p + off]; cons = [c for c in conts if len(c) > off and c[:off] == seen]
             if not cons: break
             n = len(cons); hit = sum(1 for c in cons if c[off] == b[p + off])
@@ -118,8 +155,9 @@ for di in range(ev0, len(B)):
             for j, k in enumerate(ks): G[k] += LR * w[j + 1] * (ps[j + 1] - p) / max(p, 1e-12)
         gres[c][0] += gs
         if late: gres[c][1] += gs
-    add(b, fs)
+    add(b, ST[di] if CAUSAL else fs)
     if (di - ev0 + 1) % 150 == 0: P(f"   {di - ev0 + 1} documents scored  ({time.time() - T0:.0f}s)")
+P(f"FIRINGS {'CAUSAL (scored from the second byte)' if CAUSAL else 'as 14 Nov (from the whole token list)'}")
 P(f"SCORED {NE} documents, {nbytes} bytes; trunk alone {base_bits / nbytes:.3f} bits per byte")
 for c, (sv, npos, _) in res.items():
     P(f"   {c:12s} bits saved per 1,000 bytes {1000 * sv / nbytes:7.2f} ({100 * sv / base_bits:5.2f}% of the trunk's bits) | positions predicted {npos} | per predicted byte {sv / max(1, npos):.3f}")

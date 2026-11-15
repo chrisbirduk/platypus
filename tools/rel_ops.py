@@ -61,6 +61,7 @@ deg = np.asarray(G.sum(1)).ravel(); Gc = G.tocoo(); tot = float(G.sum()); v = np
 Pm = csr_matrix((v[mk].astype(np.float32), (Gc.row[mk], Gc.col[mk])), shape=(NN, NN)); del G, Gc, ia, ib
 CODE = TruncatedSVD(128, random_state=0).fit_transform(Pm).astype(np.float32); CODE /= (np.linalg.norm(CODE, axis=1, keepdims=True) + 1e-9); del Pm
 P(f"name codes: {NN} names, 128 dims  ({time.time() - T0:.0f}s)")
+ATTR = int(os.environ.get('RO_ATTR', 0))                                       # 1: ATTRIBUTE codes instead (set after the types: what roles a name plays)
 # TYPES (type-masked + Matching-the-Blanks key)
 nc = collections.Counter(n for r in early for n in (r[1], r[2])); pool = [r for r in early if nc[r[1]] >= 2 and nc[r[2]] >= 2]
 S = [pool[i] for i in g.choice(len(pool), min(30000, len(pool)), replace=False)]
@@ -82,12 +83,26 @@ for st in range(3000):
 with torch.no_grad(): Zk = F.normalize(head(torch.tensor((Xr - mu) / sd, dtype=torch.float32)), dim=-1).numpy()
 TYPE = MiniBatchKMeans(KT, random_state=0, n_init=3, batch_size=4096).fit_predict(Zk)
 P(f"types: {KT} over {len(S)} records (type-masked Matching-the-Blanks key, loss {float(lo.detach()):.2f})  ({time.time() - T0:.0f}s)")
+if ATTR:                                                                       # ATTRIBUTE CODES: a name's code = the relation types it takes part in, by role
+    Zall = Zk; TT = TYPE                                                       #   (head / tail), as the mean Matching-the-Blanks key per role + its entity type
+    acc = collections.defaultdict(lambda: np.zeros(2 * 64 + 6, np.float32)); cnt = collections.Counter(); ET = ['PER', 'LOC', 'ORG', 'TIME', 'NUM', 'MISC']
+    for r, z in zip(S, Zall):
+        acc[r[1]][:64] += z; acc[r[2]][64:128] += z; cnt[r[1]] += 1; cnt[r[2]] += 1
+    CODE = np.zeros((NN, 2 * 64 + 6), np.float32)
+    for n, v in acc.items():
+        if n in NI:
+            v = v / max(1, cnt[n]); e = np.zeros(6, np.float32)
+            if TYP.get(n) in ET: e[ET.index(TYP.get(n))] = 1.0
+            CODE[NI[n]] = np.concatenate([v[:128], e])
+    CODE /= (np.linalg.norm(CODE, axis=1, keepdims=True) + 1e-9); D9 = CODE.shape[1]
+    P(f"ATTRIBUTE codes: {len(acc)} names coded by the relation types they take part in (head / tail) + entity type, {D9} dims")
+else: D9 = 128
 # MAPS per type and direction: code(head) -> code(tail)
 def fit(pairs, lam=1.0):
     Xa = CODE[[NI[a] for a, b in pairs]]; Xb = CODE[[NI[b] for a, b in pairs]]; n = len(pairs); k = max(1, n // 5); idx = g.permutation(n); te, trn = idx[:k], idx[k:]
-    W = np.linalg.solve(Xa[trn].T @ Xa[trn] + lam * np.eye(128), Xa[trn].T @ Xb[trn])
+    W = np.linalg.solve(Xa[trn].T @ Xa[trn] + lam * np.eye(D9), Xa[trn].T @ Xb[trn])
     pr = Xa[te] @ W; cs = (pr * Xb[te]).sum(1) / (np.linalg.norm(pr, axis=1) + 1e-9)
-    W = np.linalg.solve(Xa.T @ Xa + lam * np.eye(128), Xa.T @ Xb); return W, float(cs.mean())
+    W = np.linalg.solve(Xa.T @ Xa + lam * np.eye(D9), Xa.T @ Xb); return W, float(cs.mean())
 recs = collections.defaultdict(list)
 for r, t in zip(S, TYPE):
     if r[1] in NI and r[2] in NI: recs[(int(t), 0)].append((r[1], r[2])); recs[(int(t), 1)].append((r[2], r[1]))

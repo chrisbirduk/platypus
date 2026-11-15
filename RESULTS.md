@@ -1379,6 +1379,50 @@ ArXiv; gate open 0.6 / 4.7 / 0.4 per 1000 bytes), next domain +0.0003 - a small 
 names live), no gain yet on known names. Counter-write (margin, copy): WRONG 0.92 -> 0.77 (cg27a_kmb's byte edit replaces it). Trunk bits
 2.0161 (cg27a_kmc 2.0201, cg27a_kmi 2.0203).
 
+### GPU cg27a_kmf: readouts - the ledger, memory feedback, memory-only two-hop (seed 4, 15 November, visits 1-2)
+
+Visit 2: INFERENCE LEDGER on the real writes - **the write score's AUC 0.504 (the offline subset's 0.70 did not hold: the top 200 scores
+are nearly tied, 1.99), bridges 0.563**; premises are often DATES (Nashville ~ Tennessee: '1964, 1963, 1920'). MEMORY-ONLY TWO-HOP: 0
+chains - the written inferences ('connected to', subject = the alphabetically first name) rarely chain with each other or with the taught
+facts (planted names): the readout needs symmetric chains over inferences (fix for the next build). Memory as kmt (facts WITH 0.40 / 0.50
+vs trunk 0.05 / 0.45; never-read 0.00; bits WITH the memory +0.0000-0.0001). Trunk bits 2.0296 / 2.0292.
+Visits 3-4: **MEMORY FEEDBACK FROM READING - negative as a judge: AUC 0.623 / 0.466 (bits saved), 0.538 / 0.518 (confirmations -
+contradictions), coverage 0.39 / 0.49; selection Spearman -0.10 / +0.07.** And telling: on real spans naming an inference's subject the
+memory HURTS - bits saved on the second name: inferences RIGHT -721 / -3112, WRONG -352 / -880 (178 / 369 spans; about -8 bits a span): an
+UNTYPED 'connected to' answer is the wrong continuation in almost every real sentence about the subject, right or wrong as a link. Untyped
+inferences should not be read on general text at all (and they feed the all-text cost: Wikipedia +0.0072 at visit 4). RETRACTED group
+(visit 4, before this visit's byte edit): WITH the memory 0.91 vs trunk 0.09 - the edit runs after the readout; visit 5 shows it. Ledger:
+write score 0.495, bridges 0.474. Memory-only chains 0 (as predicted). Facts WITH 0.80 / 0.92 vs trunk 0.45 / 0.90; never-read 0.00.
+
+### GPU cg27a_kmt: stricter gate (0.85) + relation types from the GPU trunk (seed 4, 15 November, visits 1-2)
+
+RELATION TYPES FROM THE TRUNK (visit 2, 60,000 premises records, 6,595 with one Wikidata relation): the factorial on the GPU trunk is
+ADDITIVE (R^2 0.97; variance subject / relation / object 0.60 / 0.20 / 0.18) with the relation's subspace apart from the names' (overlap
+0.11 / 0.13, subject-object 0.12; random 0.01). Types (64) against Wikidata: surface wordings 0.352 / 0.273 (purity / NMI), raw 0.355 /
+0.288, names out 0.382 / 0.305, type-masked 0.491 / 0.424, **MTB key type-masked 0.562 / 0.534** - the offline ranking reproduced at GPU
+scale. Rules over the types: 8-21 rules, typed proposals right 0.00-0.23 - **rule discovery fails at scale too.** TWO-HOP through the memory
+(10 chains): WITH the memory first hop exact 0.40, C rank 0.90; trunk alone 0.20, 0.90 (true B 0.90 / 0.80) - no gain yet (few chains;
+both hops taught to the trunk too). Memory as cg27a_kmb (facts WITH 0.42 / 0.48 vs trunk 0.18 / 0.43; never-read 0.00; bits WITH the
+memory +0.0000 at visit 2, gate open 0.0 per 1000). Trunk bits 2.0160 / 2.0278.
+Visit 3: **THE STRICTER GATE CUTS THE ALL-TEXT COST ~7x - Wikipedia +0.0023 (gate open 2.4 per 1000) against cg27a_kmb's +0.0173 (10.6) at
+the same visit**; Gutenberg +0.0006, ArXiv +0.0004, next domain +0.0005; at 0.95: Wikipedia +0.0014 (open 1.0). Recall nearly kept: taught
+inferences RIGHT WITH 0.65 / 0.98 vs trunk 0.00 / 0.10 (kmb 0.68 / 0.98); facts WITH 0.50 / 0.72 vs trunk 0.27 / 0.70 (kmb 0.55 / 0.78);
+BARE wording 0.53 / 0.78 vs 0.40 / 0.75; held back = trunk (gate open 0.03); never-read names 0.00. Byte edit (copy): WRONG 0.92 -> 0.08,
+RIGHT 0.97 kept, facts kept. TWO-HOP (30 chains): WITH the memory C rank 0.90 = trunk 0.90 (first hop exact 0.37 vs 0.23) - the trunk
+knows these chains' facts too, so no gain shows. Learning speed 0.48-0.51 (negative). Trunk bits 2.0182.
+Visit 4: **THE GATE HOLDS AS THE MEMORY FILLS - Wikipedia +0.0034 (gate open 4.2 per 1000) against cg27a_kmb's +0.026 (17.2) at visit 4**;
+other domains +0.0003-0.0008; at 0.95 Wikipedia +0.0020 (2.0). Taught facts WITH **0.82 / 0.93** vs trunk 0.38 / 0.87 (best so far); BARE
+wording 0.78 / 0.90 vs 0.57 / 0.90; held back 0.07 / 0.57 vs 0.07 / 0.60; never-read names 0.00. Judge as kmb (AUC 0.636; 160 kept, 40
+flagged, 11 retracted - the RETRACTED group is empty at this readout: the byte edit acts after it; visit 5). Byte edit (copy): WRONG 0.55 ->
+0.05. TWO-HOP (30 taught chains): WITH 0.93 vs trunk 1.00 (the trunk knows these chains). RELATION TYPES (documents < 40,749): MTB key
+type-masked 0.565 / 0.544 (wordings 0.339 / 0.267) - stable; rules over types still fail (typed right 0.00-0.21). Trunk bits 1.9425.
+Visit 5: the trunk learned the KEPT inferences (trunk alone RIGHT 0.90, WRONG 0.76; flagged 0.00 / 0.14; awaiting 0.20). Facts WITH 0.72 /
+0.78 vs trunk 0.37 / 0.73; never-read names 0.00. ALL TEXT: **Wikipedia +0.0076 (gate open 10.7 per 1000) - the cost creeps up again as the
+memory fills (visits 3-5: +0.0023, +0.0034, +0.0076), still 4x below cg27a_kmb's +0.033; at 0.95: +0.0032 (open 4.2)**; others +0.0004-0.0018.
+The RETRACTED group read 0 at visits 4-5: retracted inferences leave the taught pool, which the readout sampled - fixed (taken from the ledger)
+for cg27a_kmf. Two-hop (taught chains) WITH 0.87 vs trunk 0.97. Byte edit (copy) WRONG 0.95 -> 0.23 (the kept wrong ones are in the trunk).
+Trunk bits 1.8869.
+
 ### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
 
 Visit 3 (the memory now holds the visit-2 inferences): **BYTE EDIT (oracle, on a copy): WRONG rank 0.92 -> 0.03, RIGHT 1.00 -> 0.97, facts
@@ -1530,6 +1574,56 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### A LEARNED gate (tools/int_mem.py IM_LGATE=1, 15 November; 18k stand-in trunk, the integrated memory, lr 0.1, fact rows write)
+
+A small network on the read's features (written-slot weight, subject written, read confidence, address scores, byte offset) gates the read,
+trained by the trunk's own loss on fact rows AND ordinary wiki rows (+0.02 x the mean gate: a price for opening), against the fixed gate:
+
+| gate | A after A | B after B | A after B | paraphrased | bits wiki / dev (after B) | never-read names open |
+|---|---|---|---|---|---|---|
+| fixed (subject written, half the weight on written slots) | 0.81 / 1.00 | 0.89 / 1.00 | 0.56 / 0.98 | 0.03 / 0.66 | -0.000 / +0.016 | 0.00 |
+| LEARNED | 0.79 / 1.00 | 0.92 / 1.00 | 0.52 / 0.98 | 0.03 / 0.65 | -0.000 / +0.015 | 0.00 |
+
+**Neutral: the learned gate matches the fixed one (recall, abstention) but does not lower the cost on dev text (+0.015 vs +0.016).** The
+features it sees cannot tell a helpful read from a harmful one here; on the GPU the cost is traced to the untyped inferences' slots
+(cg27a_kmf memory feedback), which the gate-rule readout of cg27a_kmr measures directly. Keep the fixed gate.
+
+### A discriminating test: relational support or only lists? (tools/readiness.py part 1, 15 November; the GPU path's 200 writes)
+
+After an outside review: judge an inference by the plausible ALTERNATIVE that explains the same evidence - our errors are mostly associated
+pairs without a relation, so: is the pair ever linked by a RELATIONAL wording (1-8 words, not only ',' / 'and' / 'or' / '(' / '-', no 2+
+commas in the span), or only by lists? Records of documents < 4/10 (the judge's horizon); AUC right vs wrong (distant labels score only):
+
+| signal | AUC |
+|---|---|
+| **relational records of the pair** | **0.697** |
+| share of the pair's records that are relational | 0.625 |
+| bridges linked relationally on both sides | 0.598 |
+| not list-only | 0.597 |
+| bridges that are entities (no dates / numbers) / entity bridges linked relationally | 0.581 / 0.592 |
+| all bridges (comparison) | 0.594 |
+| (the current judge: documents stating the pair) | 0.639 |
+
+**Positive: counting only RELATIONAL records of the pair beats the current judge (0.697 vs 0.639)** - and LIST-ONLY pairs (co-occur,
+never relationally: 14% of the writes) are right only 0.48 against 0.78 for the rest. The alternative explanation the errors share -
+'they appear in the same list' - is testable label-free. Discounting date / number bridges did not help (0.581 vs 0.594). Parts 2-3
+(readiness, name merging) were killed for memory alongside a training job; rerun later.
+**Confirmed through the GPU's own code path** (tools/rel_judge_confirm.py: premises._rcode_step writes at visit 2, premises._rret_judge with
+inf_rret_sig 'rel' at visit 4): judge AUC 0.688 (relational records 0.697; since the write 0.675; documents 0.639 on the same batch);
+FLAGGED 40 now wrong **0.45** (the documents judge: 0.35), unflagged 0.21 (0.24); list-only pairs 25, right 0.44. The visit-4 batch (judged at
+visit 6) ran out of memory locally; cg27a_kmr's visit-6 judge line measures it on the GPU.
+
+### Do the existing weights say an inference is false? (tools/weights_judge.py, 15 November; 18k stand-in trunk, the GPU path's 200 writes)
+
+1 TRUTH DIRECTION (Marks & Tegmark 2023; CCS): a probe on read spans vs the same spans with the second name swapped (same entity type) -
+held-out accuracy **0.477 (chance 0.50): the stand-in trunk cannot tell a read fact from a swapped one at all**; on the writes, probe AUC
+0.448-0.453, the trunk's likelihood 0.539. 2 INTERFERENCE (3 SGD steps on the inference, MLPs; loss on what was read about A and C): AUC
+0.489 - learning ANY inference LOWERS that loss (right -0.361, wrong -0.375 nats: shared names and wordings); gradient cosine 0.452 (+0.73
+both). 3 HELD-OUT GAIN (Go-CLS validation; Mattar & Daw's gain: loss on text read AFTER the write naming A or C): AUC 0.500 (+0.278 vs
++0.284 nats). **Negative - but the prerequisite is missing: a trunk that cannot distinguish read facts from swapped ones (0.48) has no
+knowledge to judge with.** These signals need a trunk that knows facts: repeated on the pretrained trunk (B) and to be measured on the
+GPU trunk.
+
 ### Rules by composing relation maps between name codes (tools/rel_ops.py, 15 November; after Hernandez et al., ICLR 2024)
 
 Types as rel_mtb's best (type-masked Matching-the-Blanks key, 64 types over 30,000 records); name codes from the store's record graph
@@ -1540,6 +1634,11 @@ put related names NEAR each other, so the maps are close to a scaled identity an
 200 writes (0.74 right): the best map's type is the pair's relation 0.22 (0.30 among pairs with one); as a JUDGE, best map fit AUC 0.478,
 best composed-rule fit 0.498. **Negative: relation maps over CO-OCCURRENCE codes are near-identity - rules found are trivial, typing and
 judging at chance.** Maps need name codes that carry attributes (what a name IS), not only who it appears with.
+With ATTRIBUTE codes instead (RO_ATTR=1: a name's code = the mean Matching-the-Blanks key of the relation types it takes part in, as head
+and as tail, + its entity type; 30,677 names): maps fit far better (held-out cosine 0.915) but mostly because the entity types are easy;
+170 rules above the null (top 0.643), again 'X then Y => X' ('author'^-1 then 'from'^-1 => 'author'^-1); typing the writes 0.28 (0.38
+among pairs with a relation); judge AUC 0.502 / 0.537. **Still negative: label-free rule discovery from this corpus has now failed four
+ways (chains, shared pairs, maps over co-occurrence codes, maps over attribute codes).**
 
 ### Typed entailment graph from the records' name pairs (tools/ent_graph.py, 15 November; after Hosseini et al., TACL 2018)
 
@@ -2994,3 +3093,77 @@ question at the GPU window, for taught and never-taught facts.
 - **System-written question forms: GPU confirms and they hurt** (seed 3, eight sleeps): held-out multiple choice 0.22-0.39 vs 0.44-0.78 for the configured edit, answer bytes 0.60-0.65 vs 0.72-0.79.
 - **ROME-style fit on the GPU** (seed 3, eight sleeps): the best change at the subject buys 0.00-0.11 bits per answer byte (3.53 -> 3.52 ... 2.90 -> 2.79) - even less than locally.
 - **System-written question forms** in the edit ('Notes on A: ...', 'Q: A is connected to whom? A: ', 'It is recorded that ...', 'A is connected to ... ') add nothing either (shadow, local, two seeds, six sleeps): held-out multiple choice 0.09-0.27 vs 0.12-0.28 without, answer bytes 0.56-0.65 vs 0.58-0.69. More forms of any kind do not move held-out recall: the edit's key (the state at the question end) carries the wording. GPU check rides on the seed-3 readout run.
+
+## cg27a_kmf on GPU (15 Nov 2026, A100, seed 4; log up to visit 6 sleep)
+- MEMORY FEEDBACK FROM READING (new readout): text read after the write, naming a written subject. AUC right vs wrong of bits saved 0.62 / 0.47 / 0.49 (visits 3-5, n 56 / 87 / 157); confirmations minus contradictions 0.54 / 0.52 / 0.53; Spearman with write-time rank -0.10 / +0.07 / -0.03. **Not a usable judge** (matches the local negative). On the second name the memory COSTS bits for right and wrong inferences alike (visit 5: right -4944, wrong -1594 bits over 658 spans): an untyped "A ~ C" answer is the wrong prediction in real sentences even when the pair is right.
+- Wikipedia cost of the memory grows with fill: domain 1 +0.0015 / +0.0072 / +0.0144 bits per byte at visits 3 / 4 / 5 (gate open 2.1 / 5.0 / 12.3 per 1000 bytes); gate 0.95 roughly halves it (+0.0085 at visit 5) but it still doubles each visit. Other domains +0.0004 to +0.006.
+- Judge (docs signal) AUC 0.637; KEPT right 0.76 vs FLAGGED 0.65; the trunk receives 122 right + 38 wrong (oracle 122 + 0). Retracted and flagged inferences never reach the trunk (recall 0.00).
+- Byte-edit retraction degrades as the memory fills: WRONG rank 0.92 -> 0.03 (visit 3), 0.53 -> 0.03 (visit 4), 0.95 -> 0.25 (visit 5; 302 bytes above the margin left). Right inferences and facts unharmed.
+- Relation typing on the GPU trunk: MTB key NMI 0.547; typed rules fail (TYPED right 0.00-0.21 vs untyped 0.74). Learning speed as a judge: AUC 0.46-0.52 (none).
+
+## Pretraining stage, equal compute (15 Nov 2026, tools/pretrain_lm.py, d 192, 3 blocks, 6000 steps)
+- A6: Wikipedia only, 6000 steps: held-out Wikipedia 1.991 bits per byte.
+- B6: TinyStories 3000 steps (1.87 -> 1.47 training) then Wikipedia 3000 steps: held-out Wikipedia 2.008, held-out TinyStories 2.498.
+- Fluency on Wikipedia is level at equal compute (+0.017, about seed noise); B6 reaches A6's Wikipedia loss in fewer Wikipedia steps (2.0 bits at 2000 steps vs 3000), but TinyStories itself is largely forgotten after the switch (1.47 -> 2.50). Whether B6 judges and types relations better is the separate comparison (rel_mtb, weights_judge, jepa_mem) still to run.
+
+## Learned selector from the judge's own verdicts (15 Nov 2026, tools/learned_selector.py, distant_50k, GPU write path, 3 rounds)
+Candidates and write-time features from premises._rcode_step at visits 2 / 4 / 6; self-label = relational records of the pair within two visits (label-free); logistic selector trained on earlier rounds' self-labels picks the next 200; distant labels score only. Rounds 2 / 3 (200 written each; SE about 0.03):
+| selector | round 2 | round 3 |
+|---|---|---|
+| RULE (code + AA, asymmetry filter; GPU) | 0.730 | 0.675 |
+| learned, all candidates | 0.430 | 0.455 |
+| learned, all candidates, co-mention features dropped | 0.540 | 0.570 |
+| learned rerank inside the rule's top 1000 | 0.650 | 0.715 |
+| learned rerank inside the rule's top 1000, co-mention dropped | 0.750 | 0.720 |
+| rule + learned rank sum | 0.665 | 0.735 |
+| rule, then the judge (kept only) | 0.789 | 0.709 |
+- **Negative (Goodhart).** The selector predicts its own label very well (AUC 0.95) by choosing pairs ALREADY in a relational sentence (weight +3.7 to +4.1), which are re-mentioned later but are right only 0.43-0.46 of the time. The judge's verdict works as a FILTER after the rule (+0.03 to +0.06) but not as a training target over the whole pool. The best variant (rerank within the rule's shortlist, no co-mention) is +0.03 on average, within noise. Learned features that carry: resource allocation, both degrees, object type TIME negative.
+
+## Pretraining comparison, A6 vs B6 (15 Nov 2026; equal compute, d 192; the GPU path's 200 writes, 0.74 right)
+| | A6 (Wikipedia only) | B6 (TinyStories, then Wikipedia) |
+|---|---|---|
+| truth probe, read vs name-swapped spans (held-out acc) | 0.485 | 0.485 |
+| truth probe on the inferences (AUC) | 0.419 | 0.404 |
+| the trunk's likelihood of the inferences (AUC) | 0.515 | 0.537 |
+| interference with what was read (AUC) | 0.498 | 0.511 |
+| held-out gain (AUC) | 0.491 | 0.521 |
+| relation types, MTB key type-masked (NMI) | 0.455 | 0.451 |
+| jepa_mem two-hop decoded (rank) | 0.07 | 0.22 |
+- **Negative: a basic-English stage does not give a trunk that judges inferences or types relations better at this size.** No trunk signal separates right from wrong inferences (all 0.40-0.54). (jepa_mem on these trunks is far below the 6k / 18k trunks' 0.73-0.97: few slots written, 60-64 of 4,096 - these trunks' states may not suit the frame-trained head; not investigated.) sparse_mem stopped to free the CPU for builds.
+
+## GPU cg27a_kmr: the relational-records judge (seed 4, 15 Nov 2026, visits 1-4 and the visit-5 sleep)
+- **The relational judge holds at scale: AUC 0.688 (signal docs 0.639 on the same writes; offline 0.697).** FLAGGED 40: wrong 0.45 vs unflagged 0.21 (kmf, docs: 0.35 vs 0.24). KEPT right 0.79 vs flagged 0.55 (kmf 0.76 vs 0.65); the trunk receives 126 right + 34 wrong (kmf 122 + 38; oracle 126 + 0). List-only pairs 25, right 0.44. Retracted / flagged never reach the trunk (recall 0.00).
+- **THE GATE RULE removes the Wikipedia cost (readout):** with the untyped inferences' slots shut on text, Wikipedia +0.0035 -> +0.0002 (visit 3) and +0.0054 -> +0.0004 (visit 4) bits per byte; other domains +0.0000-0.0004. Questions still read the slots. Now an option (inf_kma_nori), touches no training.
+- Memory feedback from reading again no judge: AUC 0.417 / 0.628 (bits saved), 0.488 / 0.541 (confirm - contradict); right inferences cost bits on the second name (-2,588 / -4,093) as in kmf.
+- Byte edit (copy): WRONG 0.42 -> 0.05, RIGHT and facts unchanged, undo exact. Trunk bits level with kmf (2.0269 / 2.0265 / 2.0082 / 1.9207 vs 2.0296 / 2.0292 / 2.0075 / 1.9169).
+
+## Routes to typed inference from what the text confirms (16 Nov 2026, tools/typed_routes.py; GPU write path, distant_50k, 200 writes a round)
+A typed claim 'X <wording> Y' is right when the wording's commonest Wikidata relation (over labelled relational records) is one of the pair's relations in that direction (evaluation only). Exact relation / with the 'is in' relations (P131, P17, P30, P706, P276, P361) scored as one (TR_GROUP 1). Writes right as pairs 0.69 (round 1), 0.73, 0.675.
+| route | typed | typed claim right (exact / 'is in' as one) | among pairs that are right |
+|---|---|---|---|
+| 1 COARSE at write time: class pair, head = the more specific name (lower store degree), the store's commonest relational wording for that class pair | 200 of 200 (LOC-LOC 'in' 152) | 0.325 / **0.610** | 0.47 / **0.88** |
+| 2 FROM THE CONFIRMING relational sentence (after the write) | 115 (0.57) | 0.617 / 0.635 | 0.78 / 0.80 |
+| 3 COMPOSITION learned from earlier rounds' confirmations (premise wordings -> confirming wording), at write time | 54 / 72 (0.27 / 0.36) | 0.556 / **0.59-0.63** | - |
+| class-pair table learned the same way (no specificity) | all | 0.16 / 0.27-0.28 | - |
+- **Positive, two ways.** (1) Coarse typing at write time is nearly free at the 'is in' level: 0.61 typed-right against 0.69 right as pairs - 88% of right pairs get relation group and direction right, the direction from SPECIFICITY (without it the same class-pair idea scores 0.27). On the 115 confirmed writes route 1 (0.71) beats the confirming sentence's own wording (0.64: raw wordings are messy - ') was', 'in cascade range of'). The exact relation (state vs country) is not recoverable this way (0.33). (2) Typed COMPOSITION learned from the system's own confirmations works where rule mining failed: it types a third of the writes at write time, right 0.56-0.63, and **the pairs it types are right 0.83 against 0.73 / 0.675 for all writes - composition support is also a precision signal**. Its table is noisy (723 cells, TV-network and 'in united states on' wordings).
+- Build implication: write inferences TYPED ('head is in tail' for place pairs) instead of 'A is connected to C', and prefer pairs with composition support. Both label-free.
+
+## Keyed units with CAUSAL firings (16 Nov 2026, tools/keyed_units.py RU_CAUSAL 1; Re-DocRED, 600 scored documents, memory from the 2,453 before)
+The 14 Nov firings were decided from the whole token list (a NAME fired only at the end of the maximal run, a DATE / NUMBER exactly where a year or number starts), so a firing told the memory what came next. Causal: every capitalised word fires with the run so far, DATE / NUMBER fire at every word starting with a digit (DATE: or a capital) and are scored from its SECOND byte; stored continuations only from real dates / numbers. The stand-in trunk was retrained for this run and is weaker (2.532 bits per byte on these documents vs 2.246), so absolute savings are larger than on 14 Nov and not comparable; compare within the run.
+| bits saved per 1,000 bytes | fixed mixture | learned gate (last 400 documents) |
+|---|---|---|
+| NAME alone | 61.4 | 67.3 (2.67% of the trunk's bits) |
+| DATE on top of NAME | +2.54 | +3.81 |
+| NUMBER on top of NAME | +1.21 | +2.31 |
+| DATE + NUMBER on top of NAME | - | +3.60 |
+| FACT / PLACE on top of NAME | -1.86 / -0.56 | +1.10 / -0.10 |
+- **DATE and NUMBER survive the causal check** (+5% on top of NAME with the gate, as on 14 Nov: +1.29 / +0.30 on NAME's 30). NAME alone is the bulk. Expected on a stronger trunk: smaller in absolute terms (the 18k / 6k comparison: savings scale with the trunk's bits).
+
+## Build B smoke: the sparse memory layer in the package (16 Nov 2026, tools/smf_smoke.py; d 64, 3 blocks, 64 x 64 slots, top 8; 400 + 400 steps)
+Visit 1 (text, the layer learning with the trunk): held-out wiki 2.315 bits per byte, layer OFF 2.338 (+0.023: the trunk uses it), 2,660 of 4,096 slots used by text. Visit 2, text training continues + 8 question rows a step (60 facts x 7 wordings, the test wording never used):
+| question rows written to | test wording rank (of 10) | held-out wiki | forgetting vs no questions | question loss |
+|---|---|---|---|---|
+| nothing (control) | 0.12 | 2.181 | - | - |
+| the layer only (smem, lr 0.01, 256 slots a step) | 0.15 | 2.198 | **+0.018** | 3.76 -> 3.55 |
+| every block's mlp_out (the GPU builds so far) | 0.10 | 2.267 | **+0.086** | 3.00 -> 3.79 |
+- The path works end to end (1,277 slots written; the trunk untouched by the questions) and forgets 5x less than mlp_out at this scale, but neither learns these facts in 400 steps on a d-64 trunk (rank ~ chance 0.10-0.15). A grid of the write lr and slots (0.03-0.3, 256-1,024) is running.
