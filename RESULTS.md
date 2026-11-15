@@ -1362,6 +1362,15 @@ the kept wrong ones. Bits 1.8910 (cg27a_kmi 1.8788, cg27a_kmem 1.8624). **The me
 (kmc +0.005 / +0.006 / +0.010 / +0.025 / +0.029; kmi +0.002 / +0.004 / +0.010 / +0.017 / +0.016)** - common to kmi, kmg and kmc, so not
 consolidation; cg27a_kmgctl (memory frozen, every computation kept) separates the memory's learning from the extra computation.
 
+### GPU cg27a_kma: the keyed memory addressed at every byte of any text (seed 4, 15 November, visits 1-2)
+
+Visit 2: **reading the memory on ALL held-out text costs nothing - bits +0.0000 / +0.0001 per domain (trunk 2.0358), the memory addressed at
+59-84% of bytes but the gate open at 0.0-0.1 per 1000** (it opens only where a written subject meets written slots). Recall as cg27a_kmc
+with the in-context key: taught facts WITH 0.42 / 0.45 vs trunk 0.07 / 0.42 (kmc 0.40 / 0.50 vs 0.10 / 0.47); BARE wording ('A r ', no frame)
+0.45 / 0.45 vs 0.20 / 0.45; paraphrased 0.15 / 0.30 vs 0.03 / 0.25; held back = trunk (gate open 0.03); never-read names 0.00. Wording head
+(in context, 16 relations) loss 0.00. Counter-write (copy): WRONG -> 0.00, RIGHT 0.12 -> 0.95 (re-written), facts kept. Trunk bits 2.0375 /
+2.0358 (cg27a_kmc 2.0325 / 2.0324). Check at visit 3: the two read domains' bits WITH the memory print the same (2.0359) - confirm they differ.
+
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
 After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
