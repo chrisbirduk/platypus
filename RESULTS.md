@@ -1118,6 +1118,29 @@ overfit one: faster learning of taught facts with the same retention, no relatio
 memorisation would give, and it says nothing about a trunk trained longer on FRESH text. The question 'does more training on new text
 help' stays open; a GPU run with fresh data per pass (pass_fresh_data 1) is the test that can answer it.
 
+### Sparse memory finetuning inside the trunk (tools/sparse_mem.py, 14-15 November; 6k stand-in trunk, Lin et al. 2025 at small scale)
+
+Block 2's MLP replaced by a product-key memory (16,384 slots, top 16 per byte), 2,500 steps on wiki: held-out wiki 2.055 bits per byte
+(2.272 with the memory switched off: the model uses it; 11,812 slots used by background text). (A first version that added the memory
+BESIDE the MLP left it unused - equal bits with it off - and was stopped.) Then 120 never-read Re-DocRED facts in batches of facts only
+(no replay, the paper's stress test), set A then set B, 150 steps each; recall in the test wording (rank among 10) and bits added on
+held-out wiki / dev text:
+
+| method | lr | A after A | B after B | A after B | forgetting after A -> after B (wiki) |
+|---|---|---|---|---|---|
+| full | 3e-5 / 1e-4 | 0.70 / 0.95 | 0.77 / 0.95 | 0.67 / 0.78 | +0.46 -> +0.76 / **+1.17 -> +1.59** |
+| LoRA | 3e-4 / 1e-3 | 0.50 / 0.87 | 0.58 / 0.92 | 0.42 / 0.67 | +0.54 -> +0.86 / +1.43 -> +1.97 |
+| MLP_OUT (the GPU build's choice) | 3e-5 / 1e-4 | 0.35 / 0.57 | 0.40 / 0.62 | 0.37 / 0.50 | +0.13 -> +0.22 / +0.37 -> +0.61 |
+| all memory values | 1e-3 / 1e-2 | 0.58 / **0.93** | 0.58 / **0.98** | 0.55 / **0.90** | **+0.07 -> +0.17** / +1.01 -> +1.60 |
+| SPARSE memory, TF-IDF top 256 | 1e-3 / 1e-2 | 0.30 / 0.30 | 0.33 / 0.33 | 0.30 / 0.32 | +0.000 -> +0.001 / +0.007 -> +0.020 |
+| SPARSE memory, top 1,024 | 1e-2 | 0.47 | 0.58 | 0.43 | +0.035 -> +0.072 |
+
+**As the paper: dense finetuning on facts alone is catastrophic (+1.2 to +2.0 bits), and memory-only updates forget far less at the same
+learning rate. But sparse memory finetuning as built here barely LEARNS (rank 0.30-0.58 against 0.93 for all memory values): the TF-IDF
+selection over the whole batch picks slots used by the rare frame words, not where the answer is predicted.** Second round queued: slots
+chosen on the answer bytes only, and more of them (1,024 / 4,096). Note the key memory outside the trunk (next section) learns the same
+facts at rank 0.93-1.00 with no trunk forgetting by construction.
+
 ### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
 
 The author's design: a sparse memory (Lin et al. 2025) whose address is (the subject's NAME KEY, a JEPA WORDING KEY of the name-masked
