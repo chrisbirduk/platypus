@@ -74,6 +74,8 @@ def percentiles(T):
     """the written pairs' percentiles among ALL candidates under each view and under the write rule (code + AA rank sum)"""
     V = views(T, CL); R_ = {k: rk(v) for k, v in V.items()}; both = R_['code'] + R_['aa']; R_['rule'] = rk(both)
     return {k: v[wi] for k, v in R_.items()}
+R2 = [r for r in R if r[0] < n2 and frozenset((r[1], r[2])) not in CAND]   # later reading (built now, then the full record list is freed: memory)
+del R; pm._PM['R'] = None; import gc; gc.collect()
 # write time (all documents read)
 P0 = percentiles(table(R1, 4)); P(f"write-time table rebuilt  ({time.time() - T0:.0f}s)")
 # 1 bootstrap: 70% of the documents read
@@ -83,7 +85,6 @@ for b in range(NB):
     BS.append(percentiles(table([r for r in R1 if r[0] in keep], 100 + b))['rule']); P(f"   bootstrap {b + 1} of {NB}  ({time.time() - T0:.0f}s)")
 BS = np.array(BS)
 # 3 temporal: after the next 2/10 of the documents, records stating a written or candidate pair left out
-R2 = [r for r in R if r[0] < n2 and frozenset((r[1], r[2])) not in CAND]
 P2 = percentiles(table(R2, 4)); P(f"later table (documents < {n2})  ({time.time() - T0:.0f}s)")
 def report(name, s):
     m = ~np.isnan(s); s_, y_ = s[m], y[m]
