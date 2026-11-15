@@ -1369,7 +1369,15 @@ Visit 2: **reading the memory on ALL held-out text costs nothing - bits +0.0000 
 with the in-context key: taught facts WITH 0.42 / 0.45 vs trunk 0.07 / 0.42 (kmc 0.40 / 0.50 vs 0.10 / 0.47); BARE wording ('A r ', no frame)
 0.45 / 0.45 vs 0.20 / 0.45; paraphrased 0.15 / 0.30 vs 0.03 / 0.25; held back = trunk (gate open 0.03); never-read names 0.00. Wording head
 (in context, 16 relations) loss 0.00. Counter-write (copy): WRONG -> 0.00, RIGHT 0.12 -> 0.95 (re-written), facts kept. Trunk bits 2.0375 /
-2.0358 (cg27a_kmc 2.0325 / 2.0324). Check at visit 3: the two read domains' bits WITH the memory print the same (2.0359) - confirm they differ.
+2.0358 (cg27a_kmc 2.0325 / 2.0324). (Visit 2's two read domains printed the same bits with the memory, 2.0359: at visit 3 they differ - a
+coincidence.)
+Visit 3: **the in-context address gives far better EXACT recall** - taught inferences RIGHT WITH **0.68 / 0.98** vs trunk 0.00 / 0.10
+(cg27a_kmc 0.32 / 0.93), WRONG 0.67 / 0.90 vs 0.00 / 0.13; taught facts WITH **0.60 / 0.80** vs trunk 0.28 / 0.78 (kmc 0.42 / 0.77); BARE
+wording 0.53 / 0.78 vs 0.30 / 0.80; paraphrased 0.07 / 0.38 vs 0.03 / 0.35; held back 0.03 / 0.53 = trunk 0.00 / 0.53 (gate open 0.03);
+never-read names 0.00; 15,016 of 65,536 slots used. ALL TEXT: bits WITH the memory +0.0007 / **+0.0030** / +0.0003 (Gutenberg / Wikipedia /
+ArXiv; gate open 0.6 / 4.7 / 0.4 per 1000 bytes), next domain +0.0003 - a small cost where the gate opens on Wikipedia (where the facts'
+names live), no gain yet on known names. Counter-write (margin, copy): WRONG 0.92 -> 0.77 (cg27a_kmb's byte edit replaces it). Trunk bits
+2.0161 (cg27a_kmc 2.0201, cg27a_kmi 2.0203).
 
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
