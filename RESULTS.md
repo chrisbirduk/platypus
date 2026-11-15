@@ -3147,3 +3147,14 @@ A typed claim 'X <wording> Y' is right when the wording's commonest Wikidata rel
 | class-pair table learned the same way (no specificity) | all | 0.16 / 0.27-0.28 | - |
 - **Positive, two ways.** (1) Coarse typing at write time is nearly free at the 'is in' level: 0.61 typed-right against 0.69 right as pairs - 88% of right pairs get relation group and direction right, the direction from SPECIFICITY (without it the same class-pair idea scores 0.27). On the 115 confirmed writes route 1 (0.71) beats the confirming sentence's own wording (0.64: raw wordings are messy - ') was', 'in cascade range of'). The exact relation (state vs country) is not recoverable this way (0.33). (2) Typed COMPOSITION learned from the system's own confirmations works where rule mining failed: it types a third of the writes at write time, right 0.56-0.63, and **the pairs it types are right 0.83 against 0.73 / 0.675 for all writes - composition support is also a precision signal**. Its table is noisy (723 cells, TV-network and 'in united states on' wordings).
 - Build implication: write inferences TYPED ('head is in tail' for place pairs) instead of 'A is connected to C', and prefer pairs with composition support. Both label-free.
+
+## Keyed units with CAUSAL firings (16 Nov 2026, tools/keyed_units.py RU_CAUSAL 1; Re-DocRED, 600 scored documents, memory from the 2,453 before)
+The 14 Nov firings were decided from the whole token list (a NAME fired only at the end of the maximal run, a DATE / NUMBER exactly where a year or number starts), so a firing told the memory what came next. Causal: every capitalised word fires with the run so far, DATE / NUMBER fire at every word starting with a digit (DATE: or a capital) and are scored from its SECOND byte; stored continuations only from real dates / numbers. The stand-in trunk was retrained for this run and is weaker (2.532 bits per byte on these documents vs 2.246), so absolute savings are larger than on 14 Nov and not comparable; compare within the run.
+| bits saved per 1,000 bytes | fixed mixture | learned gate (last 400 documents) |
+|---|---|---|
+| NAME alone | 61.4 | 67.3 (2.67% of the trunk's bits) |
+| DATE on top of NAME | +2.54 | +3.81 |
+| NUMBER on top of NAME | +1.21 | +2.31 |
+| DATE + NUMBER on top of NAME | - | +3.60 |
+| FACT / PLACE on top of NAME | -1.86 / -0.56 | +1.10 / -0.10 |
+- **DATE and NUMBER survive the causal check** (+5% on top of NAME with the gate, as on 14 Nov: +1.29 / +0.30 on NAME's 30). NAME alone is the bulk. Expected on a stronger trunk: smaller in absolute terms (the 18k / 6k comparison: savings scale with the trunk's bits).
