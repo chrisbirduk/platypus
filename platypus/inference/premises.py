@@ -257,6 +257,10 @@ def rti_ent(k, w, **kw):
     e.update(kw); return e
 
 
+def _rnorm(w):
+    return ' '.join(t for t in w.split() if t not in ('the', 'a', 'an'))
+
+
 def is_rti(e):
     return bool(e.get('rti')) or e.get('r') == _RTI_R
 
@@ -658,6 +662,28 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
                 (w_, fw_), _ = TT_[cp_].most_common(1)[0]; th_, tt_ = (hd_, tl_) if fw_ else (tl_, hd_)
                 W[(A_, C_)].update(th=th_, tw=w_, tt=tt_)
         wr.append(bool(yy[j]))
+    if int(getattr(cfg, 'inf_rti_comp', 0)):                                   # 16 Nov TYPED COMPOSITION (inf_rti_comp): the premises' relational wordings (A-B, B-C,
+        new9 = [k for k, w in W.items() if w.get('vis') == vis]                #   oriented) at write time; the table learned from kept, confirmed inferences types
+        need9 = {frozenset((a, b)) for a, c in new9 for b in W[(a, c)]['prem']} | {frozenset((b, c)) for a, c in new9 for b in W[(a, c)]['prem']}   #   them where it can
+        pw9 = collections.defaultdict(list)
+        for r in RD:
+            if 1 <= r[5] <= 8 and not _rret_listlike(r):
+                f9 = frozenset((r[1], r[2]))
+                if f9 in need9: pw9[f9].append((r[1], r[2], _rnorm(r[3])))
+        def ori9(X, Y):
+            cs = pw9.get(frozenset((X, Y)))
+            if not cs: return None
+            a, b, w = collections.Counter(cs).most_common(1)[0][0]; return w if a == X else w + ' ^R'
+        T3 = _PM.get('T3') or {}; ncomp = 0
+        for (A_, C_) in new9:
+            pw = [(ori9(A_, b), ori9(b, C_)) for b in W[(A_, C_)]['prem']]; W[(A_, C_)]['pw'] = pw; votes = collections.Counter()
+            for a1, a2 in pw:
+                if a1 and a2: votes.update(T3.get((a1, a2), {}))
+            if votes:
+                cwd = votes.most_common(1)[0][0]; rv = cwd.endswith(' ^R'); w0 = cwd[:-3] if rv else cwd
+                W[(A_, C_)].update(th=C_ if rv else A_, tw=w0, tt=A_ if rv else C_, comp=True); ncomp += 1
+        print(f"  [TYPED COMPOSITION | visit {vis + 1}] {ncomp} of {len(new9)} new inferences typed by the composition table ({len(T3)} cells; learned from kept, confirmed "
+              f"inferences) | premises with a relational wording {np.mean([p is not None for k in new9 for q in W[k]['pw'] for p in q]) if new9 else 0:.2f}", flush=True)
     if TT_ is not None:
         ty_ = [(k, w) for k, w in W.items() if w.get('vis') == vis and w.get('tw')]
         print(f"  [TYPED WRITES | visit {vis + 1}] {len(ty_)} of {len(wr)} written inferences typed (class pair -> the store's commonest relational wording, head = the more "
@@ -704,10 +730,11 @@ def _rret_judge(cfg, RD, ndv_, vis):
     q = float(getattr(cfg, 'inf_rret_q', 0.2)); out = []
     for lo, ks in sorted(groups.items()):
         nd = max(1, ndv_ - lo); df = collections.Counter(); byp = collections.defaultdict(lambda: [set(), 0]); seenpair = set()
-        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter()
+        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter(); cw9 = collections.defaultdict(list)
         for r in RD:
             if frozenset((r[1], r[2])) in want and 1 <= r[5] <= 8 and not _rret_listlike(r):   # 15 Nov: RELATIONAL records of the pair (not lists)
                 relA[frozenset((r[1], r[2]))] += 1; relS[frozenset((r[1], r[2]))] += int(r[0] >= lo)
+                if r[0] >= lo: cw9[frozenset((r[1], r[2]))].append((r[1], r[2], _rnorm(r[3])))
             if r[0] < lo: continue
             for n in (r[1], r[2]):
                 if n in nm and (r[0], n) not in dn: dn.add((r[0], n)); df[n] += 1
@@ -725,6 +752,15 @@ def _rret_judge(cfg, RD, ndv_, vis):
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
         for j, k in enumerate(ks): W[k].update(judged=vis, flag=bool(fl[j]), ret=bool(ret[j]), rscore=float(sc[j]))
+        if int(getattr(cfg, 'inf_rti_comp', 0)):                               # 16 Nov TYPED COMPOSITION: kept inferences that a later relational record
+            T3 = _PM.setdefault('T3', collections.defaultdict(collections.Counter)); nl9 = 0   #   states teach the table premise wordings -> that wording
+            for j, k in enumerate(ks):
+                cs = cw9.get(frozenset(k))
+                if fl[j] or not cs: continue
+                X, Y, w = collections.Counter(cs).most_common(1)[0][0]; cf = w if X == k[0] else w + ' ^R'
+                for a1, a2 in W[k].get('pw', ()):
+                    if a1 and a2: T3[(a1, a2)][cf] += 1; nl9 += 1
+            out.append(f"COMPOSITION TABLE learned {nl9} premise-pair entries from this batch's kept, confirmed inferences ({len(T3)} cells)")
         a_ = _cg_auc(sc[y], sc[~y]) if y.any() and (~y).any() else float('nan')
         out.append(f"[signal {sig_}] written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
                    f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "

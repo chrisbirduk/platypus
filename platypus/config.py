@@ -682,6 +682,9 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_rti_comp=0                  # 16 Nov TYPED COMPOSITION: a table premise wordings (A-B, B-C) -> conclusion wording, learned from kept inferences a later
+                                    #   relational record confirms, types new inferences where it can (else the class pair, inf_rti_typed). Offline: exact 0.40 vs
+                                    #   0.365, bits +0.69 vs -0.12; the pairs it types right 0.83
     inf_rret_list2=0                # 16 Nov WIDER LIST FILTER for the judge and typing: one comma + 'and' / 'or' ('X , Y and Z') is a list too (offline +0.02-0.03 AUC;
                                     #   with the usefulness rule the kept memory 0.80-0.83 right against 0.73-0.77)
     inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved
