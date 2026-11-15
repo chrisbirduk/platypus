@@ -570,18 +570,26 @@ def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
               f"(label-free signals; 0.5 = none; the current judge 0.64): " + " | ".join(f"{k} {_cg_auc(v[y], v[~y]):.3f}" for k, v in sig.items()), flush=True)
 
 
-def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30):
+def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30, memonly=False):
     """15 Nov READOUT, TWO-HOP THROUGH THE MEMORY (after REMERGE, Kumaran & McClelland 2012: the hippocampus's output fed back as the next
     query): chains of TAUGHT facts A r1 B, B r2 C never taught as a chain. The model decodes B greedily after 'It is on record that A r1 ', then
     is asked 'So B' r2 ' with its OWN decoded B' - with the all-text address the decoded name becomes the next subject. WITH the memory (gated)
     vs the trunk alone (each decodes its own B'): first hop exact, and C's rank among 10 (chance 0.10); also with the TRUE B given (ceiling)"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
     from platypus.inference.premises import _RTI_R
-    F_ = [e for e in fs if e['r'] != _RTI_R]; byA = {}
-    for e in F_: byA.setdefault(e['A'], []).append(e)
-    ch = [(e1, e2) for e1 in F_ for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
+    if memonly:                                                                # 15 Nov: chains with a hop ONLY the memory holds (an inference awaiting
+        from platypus.inference.premises import _PM                            #   judgement: never taught to the trunk) - composition through the memory
+        W = _PM.get('rti') or {}; MO = [e for e in fs if e['r'] == _RTI_R and (W.get((e['A'], e['ans'])) or {}).get('judged', 0) is None]
+        F0 = [e for e in fs if e['r'] != _RTI_R] + MO; mo = {id(e) for e in MO}; byA = {}
+        for e in F0: byA.setdefault(e['A'], []).append(e)
+        ch = [(e1, e2) for e1 in F0 for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans']) and (id(e1) in mo or id(e2) in mo)]
+    else:
+        F_ = [e for e in fs if e['r'] != _RTI_R]; byA = {}
+        for e in F_: byA.setdefault(e['A'], []).append(e)
+        ch = [(e1, e2) for e1 in F_ for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
+    tag = 'TWO-HOP, MEMORY-ONLY HOP' if memonly else 'TWO-HOP'
     if len(ch) < 5:
-        print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP | visit {vis + 1}] too few chains of taught facts ({len(ch)})", flush=True); return
+        print(f"  [INTEGRATED KEYED MEMORY, {tag} | visit {vis + 1}] too few chains ({len(ch)})", flush=True); return
     rs = np.random.RandomState(int(cfg.seed) + 5858 + vis); ch = [ch[i] for i in rs.choice(len(ch), min(cap, len(ch)), replace=False)]
     def dec(pb, sl, use, n):
         o = b''
@@ -614,7 +622,7 @@ def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30):
                 if r2 is not None: res[use][1].append(r2)
                 if r3 is not None: res[use][2].append(r3)
     m = lambda L: f"{np.mean(L):.2f}" if L else '-'
-    print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP | visit {vis + 1}] {len(ch)} chains of taught facts (A r1 B, B r2 C; never taught as a chain), the model's OWN decoded B "
+    print(f"  [INTEGRATED KEYED MEMORY, {tag} | visit {vis + 1}] {len(ch)} chains {'with a hop ONLY the memory holds (an inference awaiting judgement)' if memonly else 'of taught facts'} (A r1 B, B r2 C; never taught as a chain), the model's OWN decoded B "
           f"asked next: WITH the memory first hop exact {m(res[True][0])}, C rank among 10 {m(res[True][1])} (true B given {m(res[True][2])}) | trunk alone "
           f"{m(res[False][0])}, {m(res[False][1])} (true B {m(res[False][2])}) (chance 0.10)", flush=True)
 
@@ -670,7 +678,9 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
           (f" | BARE wording 'A r ' facts {score(kind(fs, 'fact'), bw, 40)} || ALL-TEXT address (middle block, in context; wording head "
            f"loss {K.get('hloss', float('nan')):.2f} over {K.get('hrels', 0)} relations; gate weight {K.get('gatew')})" if K.get('allt') else ''), flush=True)
     if K.get('allt'):                                                          # 15 Nov TWO-HOP THROUGH THE MEMORY (REMERGE-style chaining; readout)
-        try: _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
+        try:
+            _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
+            if int(getattr(cfg, 'inf_kmc', 0)): _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, memonly=True)
         except Exception as e9:
             from platypus.common import _fail
             _fail('inference.kmem:twohop'); print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
