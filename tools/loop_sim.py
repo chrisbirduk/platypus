@@ -18,7 +18,7 @@ sys.path.insert(0, '.')
 import platypus.inference.premises as pm
 from platypus.inference.kunits import _row_bits, CL
 P = lambda *a: print(*a, flush=True); T0 = time.time(); torch.set_num_threads(2)
-cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel='code+aa',
+cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=int(os.environ.get('LS_SEED', 4)), inf_rcode_sel='code+aa',
                             inf_rcode_asym=1.0, inf_rcode_selreport=0, inf_rti_max=400, inf_rret=0, inf_rti_ctl=0.333, inf_rret_q=0.2, inf_rret_ctl=0.5)
 pm._load_distant(cfg); ND = pm._PM['ND']; R = pm._PM['R']; TY = pm._PM['TY']
 h = lambda v: int(round(ND * min(1.0, (v + 1) / 10)))
