@@ -1477,6 +1477,25 @@ judge recovers it (best end to end 0.53, or 0.69 on only 52 kept). Path evidence
 pipeline (code + AA, judged by documents) is the best of these, 0.77 to the trunk. The judge ceiling on these writes is ~0.65 whatever
 the signal. Further gains must come from a new kind of evidence (the Go-CLS learning-speed readout rides on cg27a_kma), not a re-split.
 
+### Invariance across environments as the judge (tools/env_judge.py, 15 November; after Lopez-Paz, 'Against All Likelihood', arXiv 2611.09385)
+
+Environments made without labels: the 40,749 documents read by 4/10 clustered by the names they mention (TF-IDF -> SVD 64 -> k-means, K =
+8 / 16 / 32). For the GPU path's 200 writes (code + AA, 0.740 right; code + RA, 0.680): environments restating A-C later, environments with
+a bridge path A-x-C inside them, the share of environments mentioning both in which they are linked (invariance), environments mentioning both.
+
+| signal (AUC right vs wrong; code + AA / code + RA) | K = 8 | K = 16 | K = 32 |
+|---|---|---|---|
+| environments restating A-C later | 0.566 / 0.578 | 0.544 / 0.578 | 0.541 / 0.557 |
+| environments with a path A-x-C inside | 0.545 / 0.551 | 0.504 / 0.544 | 0.508 / 0.552 |
+| invariance share (linked wherever both occur) | 0.504 / 0.479 | 0.471 / 0.449 | 0.443 / 0.412 |
+| environments mentioning both | 0.533 / 0.563 | 0.509 / 0.578 | 0.523 / 0.589 |
+
+To the trunk with the lowest 20% flagged: 0.725-0.756 (code + AA) - no better than flagging nothing (0.740) and below the current judge (0.772).
+**Negative: invariance across label-free document environments is WORSE than the counts it was meant to replace (documents 0.639, resource
+allocation 0.654), and the invariance share is below chance.** The errors here are not repeated falsehoods but ASSOCIATED pairs without the
+relation (wrong = no Wikidata relation between names that do co-occur): such pairs are linked in many environments, often more than right
+ones. Invariance of an association cannot tell 'related' from 'holds this relation' - a typed claim is needed before invariance can judge it.
+
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 
 200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is
