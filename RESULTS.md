@@ -1392,6 +1392,14 @@ domain +0.0029 - a real cost on Wikipedia, larger than cg27a_kma's +0.0030 at th
 written subjects in ordinary Wikipedia text and the read hurts there (known names +0.014). The stricter-gate readout (0.85 / 0.95) was
 added after kmb started; it rides on the next build. Trunk bits 2.0157 (cg27a_kma 2.0161).
 
+Visit 4 (cg27a_kmb): trigger AUC 0.636 (as kmc); KEPT 160 (right 0.76), flagged 40, 11 retracted - the byte edit acts on the real memory
+after this readout. BY STATUS (WITH the memory vs trunk, rank): KEPT right 0.97 vs 0.33, KEPT wrong 0.97 vs 0.07, FLAGGED right 1.00 vs 0.00,
+FLAGGED wrong 0.86 vs 0.14 (not yet edited), AWAITING (written at visit 4) 0.10 vs 0.07 - the visit-2 writes 1.00 vs 0.20. Taught facts WITH
+**0.78 / 0.93** vs trunk 0.38 / 0.90; BARE wording 0.75 / 0.88 vs 0.47 / 0.82; held back 0.07 / 0.53 vs 0.07 / 0.60; never-read 0.00.
+Byte edit (copy): WRONG 0.50 -> 0.03, RIGHT 0.60 -> 0.57, facts 0.85 -> 0.85. Learning speed AUC 0.50-0.51 again (negative). ALL TEXT: bits
+WITH the memory **+0.026 on Wikipedia (gate open 17.2 per 1000; known names +0.026)**, +0.0045 / +0.0013 / +0.0033 on the others - the cost
+grows as the memory fills (cg27a_kmt's stricter gate). Trunk bits 1.9239 (cg27a_kmc 1.9438, cg27a_kmem 1.9185).
+
 ### Reconsolidation-style retraction: only the wrong answer's bytes, only the slots it reads (inf_kmc_mode byte; tools/kmi_smoke.py, 15 November)
 
 After reconsolidation (an update of the retrieved trace at prediction error) rather than extinction (a competing memory): the slots each
