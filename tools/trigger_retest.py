@@ -14,7 +14,7 @@ sys.path.insert(0, '.')
 import platypus.inference.premises as pm
 from platypus.inference.compress import _cg_auc
 P = lambda *a: print(*a, flush=True); T0 = time.time()
-cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel='code+ra',
+cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel=__import__('os').environ.get('TR_SEL', 'code+ra'), inf_rcode_asym=float(__import__('os').environ.get('TR_ASYM', 0)),
                             inf_rcode_selreport=0, inf_rti_max=200, inf_rret=0, inf_rti_ctl=0.333, inf_rret_q=0.2, inf_rret_ctl=0.5)
 pm._load_distant(cfg); ND = pm._PM['ND']; R = pm._PM['R']; LAB = pm._PM['LAB']
 n1 = int(round(ND * 0.2)); n2 = int(round(ND * 0.4))

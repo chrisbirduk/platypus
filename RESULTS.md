@@ -1308,6 +1308,26 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### Retraction for the integrated memory: trigger and precise erase (15 November, local)
+
+**Trigger, on the CURRENT GPU writes** (tools/trigger_retest.py with code + AA under the asymmetry filter, distant set, the GPU path:
+200 writes, 0.740 right; judged on the next 2/10 of the documents): later reading states 94% of the pairs again (right 0.95 / wrong 0.92).
+AUC against the distant labels: documents stating the pair again **0.639** (bottom 20% wrong 0.35, overall 0.26), records 0.638, short-gap
+records 0.607, bridges at write 0.563, the rret trigger (short + PMI) 0.528, predictive compression 0.504-0.594, popularity 0.360 (i.e.
+popular names lean wrong). **Negative for untyped links: the best label-free signal flags wrong writes at 0.35 against 0.26 - retracting the
+flagged fifth would raise the kept writes from 0.74 to about 0.76 right while losing 26 right ones.** Untyped claims are not contradicted
+by real text; a trigger needs TYPED claims (the earlier offline surprise test reached 0.80 with the pair's own source sentence).
+
+**Precise erase: one wording, two objects** (tools/jepa_mem.py JM_M2; 60 subjects 'is connected to' two names - the GPU's case; seeds 0 / 1):
+
+| | retracted (open) | SIBLING: same subject, same wording (open) | other facts |
+|---|---|---|---|
+| ERASE the slots | 0.40 -> 0.00, 0.30 -> 0.00 | **0.47 -> 0.00, 0.45 -> 0.00** | unchanged |
+| COUNTER-WRITE (unlearn the retracted, re-write the sibling, 60 steps) | 0.40 -> **0.00**, 0.30 -> **0.00** | 0.47 -> **0.95**, 0.45 -> **0.85** | unchanged |
+
+**Positive: when two facts share an address, erasing kills both; a counter-write removes the retracted one (open 0.00) and KEEPS the
+sibling (it even sharpens), bystanders untouched.** The precise erase is solved; the trigger for untyped links is not.
+
 ### The keyed memory INTEGRATED into the forward pass (tools/int_mem.py, 15 November; 6k stand-in trunk, mixed setting, seed 0)
 
 Address from the model's own context at every byte (subject = latest completed capitalised run; wording = the bytes since, through a

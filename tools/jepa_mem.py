@@ -24,7 +24,8 @@ Usage: TG_D=192 TG_CKPT=<model file> python3 tools/jepa_mem.py   env JM_N (64), 
   JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME; add K-TEXT with JM_TEXT), JM_TEXT (a DocRED distant .json.gz: K-TEXT, a wording head
   trained on REAL TEXT only - two different wordings that link the same pair of names in one sentence are one statement; InfoNCE; the
   frames and the test wording never seen), JM_PAIRS (20000; with JM_TEXT also arm K-BOTH: the head trained on the text pairs AND the frames), JM_RX (30: retraction steps), JM_NULL (0: rows a write step that push reads for names never
-  used as subjects - a disjoint set from the abstention test's - toward zero), JM_RX_LATE (1: erase-retract 30 of A again after the capacity
+  used as subjects - a disjoint set from the abstention test's - toward zero), JM_M2 (1: subjects with two objects under one wording, 'is connected to' - retract one, keep the other: erase vs
+  counter-writing), JM_RX_LATE (1: erase-retract 30 of A again after the capacity
   batches, with the memory nearly full), JM_REPLAY (0: share of each
   write batch spent re-writing earlier facts, as sleep replays the store), JM_RXMODE (ul: -log(1 - p); margin: the object pushed 0.1 below the best other name; erase: the
   slots the facts' training-frame queries reach set to zero); ABSTAIN also by the read's norm (unwritten
@@ -46,7 +47,7 @@ REL = {'P17': 'is in the country', 'P131': 'is located in', 'P27': 'is a citizen
        'P54': 'played for', 'P463': 'is a member of', 'P102': 'is a member of the party', 'P175': 'was performed by', 'P495': 'comes from',
        'P159': 'is based in', 'P50': 'was written by', 'P57': 'was directed by', 'P361': 'is part of', 'P150': 'contains', 'P527': 'includes',
        'P740': 'was formed in', 'P276': 'took place in', 'P26': 'was married to', 'P69': 'was educated at'}
-RELS = sorted(set(REL.values()))
+RELS = sorted(set(REL.values()) | {'is connected to'})              # 'is connected to': the written inferences' one wording (JM_M2)
 tr_docs = json.load(open(SCR + '/bench_dl/train_revised.json')); dv_docs = json.load(open(SCR + '/bench_dl/dev_revised.json'))
 cn_ = lambda d: [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
 tp_ = lambda d: [vs[0].get('type', 'X') for vs in d['vertexSet']]
@@ -95,6 +96,19 @@ for di in np.random.RandomState(SEED + 1).permutation(len(tr_docs)):
             if di in used_docs: break
     if len(SET_M) >= 80 and len(CHAINS) >= 60: break
 HOPS = [f for c in CHAINS for f in c]
+SET_M2 = []                                                                    # 15 Nov JM_M2: subjects with TWO objects under ONE wording ('is connected to'),
+if int(os.environ.get('JM_M2', 0)):                                            #   as the GPU's written inferences: can one be retracted and the other kept?
+    for di in np.random.RandomState(SEED + 4).permutation(len(tr_docs)):
+        di = int(di)
+        if di in used_docs or len(SET_M2) >= 120: continue
+        d = tr_docs[di]; cn, tp = cn_(d), tp_(d); byh = collections.defaultdict(list)
+        for l in d['labels']:
+            if l['r'] in REL and ok(cn[l['h']]) and ok(cn[l['t']]) and cn[l['h']] != cn[l['t']]: byh[l['h']].append(l)
+        for h, ls in byh.items():
+            obs = list(dict.fromkeys(cn[l['t']] for l in ls))
+            if len(obs) >= 2 and cn[h] not in used:
+                for o, l in zip(obs[:2], [next(x for x in ls if cn[x['t']] == ob) for ob in obs[:2]]): SET_M2.append(dict(A=cn[h], C=o, rel='is connected to', t=tp[l['t']]))
+                used.add(cn[h]); used_docs.add(di); break
 CAPF = []; NCAP = int(os.environ.get('JM_CAP', 600))
 for di in np.random.RandomState(SEED + 2).permutation(len(tr_docs)):
     di = int(di)
@@ -145,7 +159,7 @@ def cands(f):
     if key not in CAND:
         alts = sorted(n for n in BYT[f['t']] if n != f['C'] and ok(n)); CAND[key] = [f['C']] + [alts[j] for j in rr.choice(len(alts), 9, replace=False)]
     return CAND[key]
-ALLF = SET_A + SET_B + SET_M + HOPS + CAPF + UNSEEN
+ALLF = SET_A + SET_B + SET_M + HOPS + CAPF + UNSEEN + SET_M2
 NAMES = sorted({n for f in ALLF for n in [f['A']] + cands(f)})
 NI = {n: k for k, n in enumerate(NAMES)}
 nm_m, _ = enc(["The name " + n + "." for n in NAMES], [(9, 9 + len(n)) for n in NAMES])
@@ -162,7 +176,7 @@ PARA = {'was born in': 'has as birthplace', 'died in': 'passed away in', 'is loc
         'is part of': 'belongs to', 'was educated at': 'studied at', 'is in the country': 'is situated in the country', 'comes from': 'originates from',
         'is based in': 'has headquarters in', 'was married to': 'was the spouse of', 'took place in': 'happened in', 'is a member of': 'belongs to the group',
         'was performed by': 'was sung by', 'contains': 'has within it', 'includes': 'comprises', 'was formed in': 'was founded in',
-        'is a member of the party': 'belongs to the party'}
+        'is a member of the party': 'belongs to the party', 'is connected to': 'is tied to'}
 pp = [TEST.format(A='someone', r=PARA[r]) for r in RELS]; ppm, ppl = enc(pp, [(0, len(t)) for t in pp])
 PPC = (torch.cat([ppm, ppl], -1) - torch.cat([pm, pl], -1).mean(0)) / (torch.cat([pm, pl], -1).std(0) + 1e-6)
 # the JEPA wording head: InfoNCE over relations, positives = two different TRAINING frames of the same relation phrase
@@ -307,6 +321,24 @@ for arm in os.environ.get('JM_ARMS', 'K-JEPA,K-RAW,K-NAME').split(','):
     P(f"   {arm:7s} A after A {fmt(ra)} | B after B {fmt(rb)} | A after B {fmt(raa)} | M (two relations per subject) {fmt(rm)} | chain hops {fmt(rh)}")
     P(f"           TWO-HOP, chain never taught: LATENT {fmt(lat)} | DECODED {fmt(dec)} || at the end: A {fmt(M.recall(SET_A))}, B {fmt(M.recall(SET_B))}, "
       f"M {fmt(M.recall(SET_M))} | slots written {len(M.touched)} of {NS * NS}  ({time.time() - T0:.0f}s)")
+    if SET_M2:                                                                 # one wording, two objects per subject: retract one of each pair
+        snapm = M.v.detach().clone(); M.teach(SET_M2, rr); RX3, SIB = SET_M2[1::2][:40], SET_M2[0::2][:40]
+        b6 = [M.recall(x) for x in (RX3, SIB, SET_A, SET_M)]; snap2 = M.v.detach().clone(); outs = []
+        for mode in ('erase', 'counter'):
+            with torch.no_grad(): M.v.copy_(snap2)
+            if mode == 'erase': os.environ['JM_RXMODE'] = 'erase'; M.retract(RX3)
+            else:
+                for st in range(int(os.environ.get('JM_RX', 60))):              # unlearn the retracted object while RE-WRITING the sibling (same slots)
+                    for grp, sign in ((RX3, -1), (SIB, 1)):
+                        nk = NK[[NI[f['A']] for f in grp for fi in range(TI)]]; wk = torch.stack([M.wkey(f['rel'], fi) for f in grp for fi in range(TI)])
+                        val, _ = M.read(nk, wk); lg = F.normalize(val, dim=-1) @ NK.t() / 0.05; ci = torch.tensor([NI[f['C']] for f in grp for fi in range(TI)])
+                        lo = (-torch.log1p(-F.softmax(lg, -1)[torch.arange(len(ci)), ci].clamp(max=0.999))).mean() if sign < 0 else F.cross_entropy(lg, ci)
+                        M.opt.zero_grad(); lo.backward(); M.opt.step()
+            a6 = [M.recall(x) for x in (RX3, SIB, SET_A, SET_M)]
+            outs.append(f"{mode.upper()}: retracted {fmt(b6[0])} -> {fmt(a6[0])} | SIBLING (same subject, same wording) {fmt(b6[1])} -> {fmt(a6[1])} | A {fmt(b6[2])} -> {fmt(a6[2])}, M {fmt(b6[3])} -> {fmt(a6[3])}")
+        P(f"           ONE WORDING, TWO OBJECTS ({len(SET_M2) // 2} subjects 'is connected to' two names): " + " || ".join(outs))
+        with torch.no_grad(): M.v.copy_(snapm)
+        os.environ.pop('JM_RXMODE', None)
     taught = SET_A + SET_B + SET_M + HOPS
     P(f"           PARAPHRASED test wording (relation phrase never taught): A {fmt(M.recall(SET_A, 'P'))}, B {fmt(M.recall(SET_B, 'P'))}, M {fmt(M.recall(SET_M, 'P'))} "
       f"(the test wording: A {fmt(M.recall(SET_A))}, B {fmt(M.recall(SET_B))}, M {fmt(M.recall(SET_M))})")
