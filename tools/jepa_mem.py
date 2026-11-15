@@ -23,7 +23,8 @@ Second version (14 Nov, late): JM_SEED (fact order, memory and head seeds), and 
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/jepa_mem.py   env JM_N (64), JM_KK (8), JM_STEPS (150 per set), JM_LR (0.05), JM_SEED (0),
   JM_CAP (600), JM_ARMS (K-JEPA,K-RAW,K-NAME; add K-TEXT with JM_TEXT), JM_TEXT (a DocRED distant .json.gz: K-TEXT, a wording head
   trained on REAL TEXT only - two different wordings that link the same pair of names in one sentence are one statement; InfoNCE; the
-  frames and the test wording never seen), JM_PAIRS (20000), JM_RX (30: retraction steps); ABSTAIN also by the read's norm (unwritten
+  frames and the test wording never seen), JM_PAIRS (20000), JM_RX (30: retraction steps), JM_RXMODE (ul: -log(1 - p); margin: the object pushed 0.1 below the best other name; erase: the
+  slots the facts' training-frame queries reach set to zero); ABSTAIN also by the read's norm (unwritten
   slots hold zeros)"""
 import os, json, math, time, collections
 import numpy as np
@@ -247,11 +248,19 @@ class KMem:
         rk = np.mean([int(np.argmax([float(vn[k] @ NK[NI[c]]) for c in cands(f)]) == 0) for k, f in enumerate(facts)])
         return oe, rk
     def retract(s, facts, steps=30):
+        if os.environ.get('JM_RXMODE', 'ul') == 'erase':                     # reset the slots the facts' training-frame queries reach
+            with torch.no_grad():
+                nk = NK[[NI[f['A']] for f in facts for fi in range(TI)]]; wk = torch.stack([s.wkey(f['rel'], fi) for f in facts for fi in range(TI)])
+                _, idx = s.read(nk, wk); ids = torch.unique(idx.flatten()); s.v[ids] = 0.0; s.erased = len(ids)
+            return
         for st in range(steps):
             nk = NK[[NI[f['A']] for f in facts for fi in range(TI)]]; wk = torch.stack([s.wkey(f['rel'], fi) for f in facts for fi in range(TI)])
-            val, idx = s.read(nk, wk); pr = F.softmax(F.normalize(val, dim=-1) @ NK.t() / 0.05, -1)
-            pc = pr[torch.arange(len(nk)), torch.tensor([NI[f['C']] for f in facts for fi in range(TI)])]
-            lo = -torch.log1p(-pc.clamp(max=0.999)).mean(); s.opt.zero_grad(); lo.backward(); s.opt.step()
+            val, idx = s.read(nk, wk); cs = F.normalize(val, dim=-1) @ NK.t(); ci = torch.tensor([NI[f['C']] for f in facts for fi in range(TI)])
+            if os.environ.get('JM_RXMODE', 'ul') == 'margin':               # push the object below the best other name by a margin
+                cc = cs[torch.arange(len(nk)), ci]; co = cs.scatter(1, ci[:, None], -9.0).max(-1).values; lo = F.relu(cc - co + 0.1).mean()
+            else:
+                pc = F.softmax(cs / 0.05, -1)[torch.arange(len(nk)), ci]; lo = -torch.log1p(-pc.clamp(max=0.999)).mean()
+            s.opt.zero_grad(); lo.backward(); s.opt.step()
     @torch.no_grad()
     def confid(s, facts):
         nk = NK[[NI[f['A']] for f in facts]]; wk = torch.stack([s.wkey(f['rel'], TI) for f in facts]); val, _ = s.read(nk, wk)
@@ -284,8 +293,8 @@ for arm in os.environ.get('JM_ARMS', 'K-JEPA,K-RAW,K-NAME').split(','):
       f"(never-taught read 'right' by chance: {fmt(M.recall(UNSEEN))})")
     snap = M.v.detach().clone(); RX, KEEP = SET_A[:30], SET_A[30:]; b4 = [M.recall(x) for x in (RX, KEEP, SET_B, SET_M)]
     M.retract(RX, int(os.environ.get('JM_RX', 30))); af = [M.recall(x) for x in (RX, KEEP, SET_B, SET_M)]
-    P(f"           RETRACT 30 of A (memory only, {os.environ.get('JM_RX', 30)} steps): retracted " + f"{fmt(b4[0])} -> {fmt(af[0])} | bystanders: rest of A {fmt(b4[1])} -> {fmt(af[1])}, "
-      f"B {fmt(b4[2])} -> {fmt(af[2])}, M {fmt(b4[3])} -> {fmt(af[3])}")
+    P(f"           RETRACT 30 of A (memory only, {os.environ.get('JM_RX', 30)} steps, {os.environ.get('JM_RXMODE', 'ul')}): retracted " + f"{fmt(b4[0])} -> {fmt(af[0])} | bystanders: rest of A {fmt(b4[1])} -> {fmt(af[1])}, "
+      f"B {fmt(b4[2])} -> {fmt(af[2])}, M {fmt(b4[3])} -> {fmt(af[3])}" + (f" | slots erased {M.erased}" if hasattr(M, 'erased') else ''))
     with torch.no_grad(): M.v.copy_(snap)
     if CAPF:
         bs = [CAPF[k:k + 200] for k in range(0, len(CAPF), 200)]
