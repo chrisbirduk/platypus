@@ -3100,3 +3100,8 @@ question at the GPU window, for taught and never-taught facts.
 - Judge (docs signal) AUC 0.637; KEPT right 0.76 vs FLAGGED 0.65; the trunk receives 122 right + 38 wrong (oracle 122 + 0). Retracted and flagged inferences never reach the trunk (recall 0.00).
 - Byte-edit retraction degrades as the memory fills: WRONG rank 0.92 -> 0.03 (visit 3), 0.53 -> 0.03 (visit 4), 0.95 -> 0.25 (visit 5; 302 bytes above the margin left). Right inferences and facts unharmed.
 - Relation typing on the GPU trunk: MTB key NMI 0.547; typed rules fail (TYPED right 0.00-0.21 vs untyped 0.74). Learning speed as a judge: AUC 0.46-0.52 (none).
+
+## Pretraining stage, equal compute (15 Nov 2026, tools/pretrain_lm.py, d 192, 3 blocks, 6000 steps)
+- A6: Wikipedia only, 6000 steps: held-out Wikipedia 1.991 bits per byte.
+- B6: TinyStories 3000 steps (1.87 -> 1.47 training) then Wikipedia 3000 steps: held-out Wikipedia 2.008, held-out TinyStories 2.498.
+- Fluency on Wikipedia is level at equal compute (+0.017, about seed noise); B6 reaches A6's Wikipedia loss in fewer Wikipedia steps (2.0 bits at 2000 steps vs 3000), but TinyStories itself is largely forgotten after the switch (1.47 -> 2.50). Whether B6 judges and types relations better is the separate comparison (rel_mtb, weights_judge, jepa_mem) still to run.
