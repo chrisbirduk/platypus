@@ -949,10 +949,12 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
     inf = [(k, v) for k, v in fb.items() if isinstance(ent[k[0]].get(k[1]), tuple)]
     y = np.array([ent[k[0]][k[1]][1] for k, v in inf]); mg = np.array([v[1] / v[0] for k, v in inf]); cc = np.array([(v[2] - v[3]) / v[0] for k, v in inf])
     auc = lambda s: _cg_auc(s[y], s[~y]) if len(y) >= 10 and y.any() and (~y).any() else float('nan')
-    nW = sum(1 for (A, C) in W if A in subj); rk = []
-    for (A, C), v in inf:
-        w = W.get((A, C)) or {}
+    hk = {((w['th'], w['tt']) if w.get('tw') else (A, C)): (A, C) for (A, C), w in W.items()}   # 16 Nov: typed writes are keyed head -> tail here
+    nW = sum(1 for k in hk if k[0] in subj); rk = []
+    for k9, v in inf:
+        w = W.get(hk.get(k9, k9)) or {}
         if w.get('rank') is not None: rk.append((float(w['rank']), v[1] / v[0]))
+        if hk.get(k9) in W: W[hk[k9]]['use'] = v[1] / v[0]; W[hk[k9]]['use_n'] = v[0]   # 16 Nov USEFULNESS: the memory's mean bits saved on this inference's later text
     from scipy.stats import spearmanr
     rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
     print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
@@ -960,3 +962,9 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
           f"{tot[('inference right', 'gain')]:+.1f}, WRONG {tot[('inference wrong', 'gain')]:+.1f} ({tot[('inf', 'n')]} spans) || WRITTEN INFERENCES with feedback: {len(inf)} of {nW} "
           f"({len(inf) / max(1, nW):.2f}); AUC right vs wrong (label-free feedback; the current judge 0.64): mean bits saved {auc(mg):.3f}, confirmations - contradictions "
           f"{auc(cc):.3f} | SELECTION: write-time rank vs feedback, Spearman {rho:+.2f} (n {len(rk)})", flush=True)
+    thr = float(getattr(cfg, 'inf_kmc_useful_thr', 0.0)); uw = [w for w in W.values() if w.get('use') is not None]
+    if uw:                                                                     # 16 Nov USEFULNESS (the keep rule of inf_kmc_useful; labels only score)
+        up = [w for w in uw if w['use'] > thr]; un = [w for w in uw if w['use'] <= thr]; jk = [w for w in up if w.get('judged') is not None and not w.get('flag')]
+        f9 = lambda L: f"{np.mean([bool(w['truth']) for w in L]):.3f} ({len(L)})" if L else 'nan (0)'
+        print(f"  [USEFULNESS | visit {vis + 1}] written inferences with feedback {len(uw)} of {len(W)}: USEFUL (mean bits saved > {thr:g}) right {f9(up)}, not useful right {f9(un)}, "
+              f"no feedback right {f9([w for w in W.values() if w.get('use') is None])} | useful AND judged-kept right {f9(jk)} | keep rule {'ON (inf_kmc_useful)' if int(getattr(cfg, 'inf_kmc_useful', 0)) else 'off (readout)'}", flush=True)

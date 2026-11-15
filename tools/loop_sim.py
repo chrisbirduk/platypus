@@ -22,7 +22,11 @@ cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=1
                             inf_rcode_asym=1.0, inf_rcode_selreport=0, inf_rti_max=400, inf_rret=0, inf_rti_ctl=0.333, inf_rret_q=0.2, inf_rret_ctl=0.5)
 pm._load_distant(cfg); ND = pm._PM['ND']; R = pm._PM['R']; TY = pm._PM['TY']
 h = lambda v: int(round(ND * min(1.0, (v + 1) / 10)))
-isrel = lambda r: 1 <= r[5] <= 8 and not pm._rret_listlike(r)
+import re as _re
+def _list2(r):                                                                 # LS_LIST2 1: the wider list filter ('X , Y and Z' too; tools/judge_list.py)
+    w = ' ' + r[3] + ' '
+    return bool(_re.search(r' , .*\b(and|or)\b', w)) or bool(_re.search(r'\b(and|or)\b.* , ', w)) or r[3].strip() in ('and', 'or', ', and', ', or', 'as well as', 'and the')
+isrel = (lambda r: 1 <= r[5] <= 8 and not pm._rret_listlike(r) and not _list2(r)) if int(os.environ.get('LS_LIST2', 0)) else (lambda r: 1 <= r[5] <= 8 and not pm._rret_listlike(r))
 norm = lambda w: ' '.join(t for t in w.split() if t not in ('the', 'a', 'an'))
 LISTW = pm._RRET_LISTW
 DW = int(os.environ.get('TG_D', 192)); L_ = 128; PAD = 256; V_ = 257

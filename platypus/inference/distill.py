@@ -2014,6 +2014,8 @@ def _kmc_pending(cfg, items):
             key = __import__('ast').literal_eval(k); w = W.get((key[1], key[3]))
         except Exception: w = None
         if w is None or w.get('judged') is None or w.get('flag'): out.add(r9)
+        elif int(getattr(cfg, 'inf_kmc_useful', 0)) and not (w.get('use') is not None and w['use'] > float(getattr(cfg, 'inf_kmc_useful_thr', 0.0))):
+            out.add(r9)                                                        # 16 Nov USEFULNESS: kept AND useful (the memory saved bits on its later text)
     return out
 
 
