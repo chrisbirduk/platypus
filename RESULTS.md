@@ -1559,6 +1559,27 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### A discriminating test: relational support or only lists? (tools/readiness.py part 1, 15 November; the GPU path's 200 writes)
+
+After an outside review: judge an inference by the plausible ALTERNATIVE that explains the same evidence - our errors are mostly associated
+pairs without a relation, so: is the pair ever linked by a RELATIONAL wording (1-8 words, not only ',' / 'and' / 'or' / '(' / '-', no 2+
+commas in the span), or only by lists? Records of documents < 4/10 (the judge's horizon); AUC right vs wrong (distant labels score only):
+
+| signal | AUC |
+|---|---|
+| **relational records of the pair** | **0.697** |
+| share of the pair's records that are relational | 0.625 |
+| bridges linked relationally on both sides | 0.598 |
+| not list-only | 0.597 |
+| bridges that are entities (no dates / numbers) / entity bridges linked relationally | 0.581 / 0.592 |
+| all bridges (comparison) | 0.594 |
+| (the current judge: documents stating the pair) | 0.639 |
+
+**Positive: counting only RELATIONAL records of the pair beats the current judge (0.697 vs 0.639)** - and LIST-ONLY pairs (co-occur,
+never relationally: 14% of the writes) are right only 0.48 against 0.78 for the rest. The alternative explanation the errors share -
+'they appear in the same list' - is testable label-free. Discounting date / number bridges did not help (0.581 vs 0.594). Parts 2-3
+(readiness, name merging) were killed for memory alongside a training job; rerun later.
+
 ### Do the existing weights say an inference is false? (tools/weights_judge.py, 15 November; 18k stand-in trunk, the GPU path's 200 writes)
 
 1 TRUTH DIRECTION (Marks & Tegmark 2023; CCS): a probe on read spans vs the same spans with the second name swapped (same entity type) -
