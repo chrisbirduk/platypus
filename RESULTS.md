@@ -1308,6 +1308,37 @@ In the memory (rank): two-hop decoded 0.88 / 0.62 (frame-trained JEPA key 0.73 /
 open.** Synonymy needs a cleaner signal than name-pair co-occurrence - e.g. sentences the store already verified as stating the same fact,
 or the trunk's own predictions (the wording after which the object is equally expected).
 
+### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
+
+200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is
+',' (122 of 187; 'X, Y' lists and appositions), then 'and' (8), 'in' (5). TYPING ACCURACY (evaluation only: the wording's commonest
+Wikidata relation is the pair's own) 0.48. Signals (AUC vs distant labels): later records stating it 0.601, wording functional 0.541,
+specific 0.489, not contradicted later 0.512 (108 of 187 'contradicted' - commas are 'functional' and everything is contradicted).
+**Negative: in this text, written pairs are restated mostly as lists, so later reading neither types them reliably nor contradicts the
+wrong ones. The trigger for untyped writes is not reachable from co-mention; retraction needs a different signal.**
+
+### GPU cg27a_kmi: the integrated keyed memory (seed 4, 15 November, visits 2-5)
+
+The model's answer = trunk + memory, test wording, open / rank among 10 (WITH vs trunk alone):
+
+| visit | taught facts | held-back facts | taught inferences RIGHT | WRONG | held-back inferences |
+|---|---|---|---|---|---|
+| 2 | **0.38** / 0.47 vs 0.07 / 0.45 | 0.00 / 0.33 vs 0.00 / 0.40 | (written at this readout) | | |
+| 3 | 0.32 / 0.70 vs 0.30 / 0.62 | 0.00 / 0.43 vs 0.03 / 0.47 | **0.42 / 0.93** vs 0.05 / 0.50 | 0.54 / 0.92 vs 0.08 / 0.59 | 0.00 / 0.13 vs 0.00 / 0.10 |
+| 4 | 0.35 / 0.73 vs 0.43 / 0.73 | 0.03 / 0.53 vs 0.07 / 0.63 | 0.33 / 0.53 vs 0.32 / 0.50 (half not yet taught) | 0.42 / 0.53 vs 0.30 / 0.47 | 0.00 / 0.17 vs 0.03 / 0.23 |
+| 5 | **0.53** / 0.80 vs 0.43 / 0.78 | 0.10 / **0.63 vs 0.80** | **0.67 / 0.98** vs 0.35 / 0.83 | 0.68 / 0.95 vs 0.15 / 0.85 | 0.00 / 0.10 vs 0.00 / 0.20 |
+
+(At visits 2 and 4 the sampled 'taught' inferences include the ones written at that readout, taught only from the next visit.) Paraphrased
+facts 0.15 / 0.35 -> 0.10 / 0.65 (trunk 0.00 / 0.30 -> 0.12 / 0.72). Memory steps 399 a visit, 98-99% of question rows addressed; slots used
+9,515 of 16,384 by visit 5. The readout memory with TRUNK name codes on the same visits: inferences 0.40 / 0.72 -> 0.14 / 0.33 (crowding, as
+cg27a_kmem). Bits 2.0292 / 2.0304 / 2.0203 / 1.9354 / 1.8788 against cg27a_kmem's 2.0277 / 2.0266 / 2.0105 / 1.9185 / 1.8624 (+0.002 to
++0.017; the trunk's training is meant to be identical - within seed noise but growing: to check whether the memory's extra forwards have
+side effects).
+**Positive: the hashed key holds - taught inferences 0.67 exact / 0.98 rank at visit 5 against the trunk's 0.35 / 0.83, facts +0.10 exact.
+The cost: where nothing was written, the memory's read still adds logits - held-back facts lose rank (0.80 -> 0.63) and paraphrases
+(0.72 -> 0.65). The memory needs a GATE: read only when its address is one it has written.** Wrong inferences are recalled as strongly
+(0.68 / 0.95): retraction still matters, and its trigger is not solved.
+
 ### Retraction for the integrated memory: trigger and precise erase (15 November, local)
 
 **Trigger, on the CURRENT GPU writes** (tools/trigger_retest.py with code + AA under the asymmetry filter, distant set, the GPU path:
