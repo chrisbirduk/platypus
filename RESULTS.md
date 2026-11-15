@@ -1530,6 +1530,17 @@ block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic 
 type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
 learned from real text (not from 12 phrases) before it can type records label-free.
 
+### Rules by composing relation maps between name codes (tools/rel_ops.py, 15 November; after Hernandez et al., ICLR 2024)
+
+Types as rel_mtb's best (type-masked Matching-the-Blanks key, 64 types over 30,000 records); name codes from the store's record graph
+(PPMI-SVD 128, 167,022 names); per type and direction a ridge map code(A) -> code(C) (128 with 40+ records; held-out cosine median 0.52,
+best 0.71). RULES: of 16,128 compositions W(t2) W(t1), 1,482 match some W(t3) above a shuffled-type null's 99th percentile (0.719; top
+0.859) - but every top rule is 'X then <co-mention> => X' (',' / 'and' / '-' types: siblings P3373, spouses P26): the co-occurrence codes
+put related names NEAR each other, so the maps are close to a scaled identity and composing with one changes nothing. TYPING the GPU path's
+200 writes (0.74 right): the best map's type is the pair's relation 0.22 (0.30 among pairs with one); as a JUDGE, best map fit AUC 0.478,
+best composed-rule fit 0.498. **Negative: relation maps over CO-OCCURRENCE codes are near-identity - rules found are trivial, typing and
+judging at chance.** Maps need name codes that carry attributes (what a name IS), not only who it appears with.
+
 ### Typed entailment graph from the records' name pairs (tools/ent_graph.py, 15 November; after Hosseini et al., TACL 2018)
 
 Typed predicates (wording + the names' entity types) with 5+ name pairs, documents 0 -> 2/10: 3,579 predicates over 146,183 pairs, but
