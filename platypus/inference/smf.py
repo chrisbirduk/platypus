@@ -131,7 +131,13 @@ def smf_q_step(model, cfg):
         idf = torch.log((st['nbg'] + 1.0) / (st['bg'] + 1.0)); tf = st['ans'] * idf
         T = int(getattr(cfg, 'inf_smf_t', 1024)); nz = int((st['ans'] > 0).sum())
         rows = tf.topk(min(T, nz)).indices
-        _row_adam(b, st, rows, g, float(getattr(cfg, 'inf_smf_lr', 1e-2))); st['wrote'][rows] = True; st['steps_q'] += 1; st['rows_q'].append(int(rows.numel()))
+        _row_adam(b, st, rows, g, float(getattr(cfg, 'inf_smf_lr', 1e-2))); st['wrote'][rows] = True
+        cl = float(getattr(cfg, 'inf_smf_clip', 0.0))
+        if cl > 0:                                                             # 16 Nov ROW NORM CAP: a written row may not grow past cl x the 99th percentile
+            if st.get('rn') is None:                                           #   of the text-trained rows' norms (the writes must not drown what text reads)
+                used = st['bg'] > 0; nr = b.smf_V.norm(dim=-1); st['rn'] = float(torch.quantile(nr[used].float(), 0.99)) if used.any() else float(nr.median())
+            with torch.no_grad():
+                nr = b.smf_V[rows].norm(dim=-1, keepdim=True); b.smf_V[rows] *= torch.clamp(cl * st['rn'] / (nr + 1e-9), max=1.0); st['steps_q'] += 1; st['rows_q'].append(int(rows.numel()))
     finally:
         b.smf_V.grad = None
 
