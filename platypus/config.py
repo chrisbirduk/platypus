@@ -667,6 +667,9 @@ class Config:
     inf_kmc=0                       #   15 Nov CONSOLIDATION THROUGH THE MEMORY (MODEL CHANGE when on; cg27a_kmc): written inferences teach the keyed memory at once but the
                                     #     TRUNK only once judged on later reading and kept (inf_rret's judge); flagged ones are counter-written OUT of the memory
                                     #     and never reach the trunk
+    inf_kmc_mode='margin'           #     retraction: 'margin' (counter-write, cg27a_kmc) | 'byte' / 'wide' (only the retracted answer's bytes lowered in the slots it reads -
+                                    #     the 8 read or the 64 of the product neighbourhood - recorded so it can be undone)
+    inf_kmc_passes=8                #     byte edit: passes over the retracted rows until every answer byte is below -margin
     inf_kmc_steps=60                #     counter-write steps (32 retracted rows + 32 kept rows each)
     inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
     inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret) or 'docs' (documents stating the pair since the write; offline AUC 0.64)

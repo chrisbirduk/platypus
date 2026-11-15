@@ -17,6 +17,7 @@ for k, v in ovr.items():
     if not k.startswith('_'): setattr(cfg, k, tuple(v) if isinstance(v, list) else v)
 cfg.d_model = 64; cfg.n_layers = 2; cfg.seq_len = 128
 if os.environ.get('KM_CSTEPS'): cfg.inf_kmc_steps = int(os.environ['KM_CSTEPS'])
+if os.environ.get('KM_MODE'): cfg.inf_kmc_mode = os.environ['KM_MODE']
 if os.environ.get('KM_MARGIN'): cfg.inf_kmc_margin = float(os.environ['KM_MARGIN'])
 from platypus.model import Model
 from platypus.inference.distill import _dt_forms

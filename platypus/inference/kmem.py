@@ -587,6 +587,58 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
     K['loss'] = lm[-200:]
 
 
+def _kmc_byte_edit(model, cfg, K, S_slot, L, rec=None):
+    """15 Nov RECONSOLIDATION-STYLE RETRACTION (inf_kmc_mode 'byte' / 'wide'): retrieve the slots each retracted answer byte reads (every
+    training frame, every byte of the answer) and lower ONLY THAT BYTE'S LOGIT in those slots until the memory's support (log p with it minus
+    without) is below -inf_kmc_margin - no other byte of any slot moves, so a sibling fact of the same subject (other answer bytes) keeps its
+    values. 'byte': the 8 slots read, in proportion to the read weight; 'wide': all 64 slots of the product neighbourhood (8 subject keys x
+    8 wording keys) by the same amount - so wordings the edit never saw, which read nearby slots, lose it too. After reconsolidation (an
+    update of the retrieved trace at prediction error; Sevenster, Beckers & Kindt 2013), not extinction (a competing memory). rec: every
+    edit (slot, byte, delta) is recorded under the inference's key, so a retraction can be UNDONE if later reading supports it (forgetting as
+    lost access, Ryan & Frankland 2022)."""
+    from platypus.inference.distill import _dt_forms
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    FR = _dt_forms(cfg); mg = float(getattr(cfg, 'inf_kmc_margin', 1.0)); wide = str(getattr(cfg, 'inf_kmc_mode', 'margin')) == 'wide'; n = K['n']
+    rows = [(f.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), int(S_slot(e['d'])), (e['A'], e['ans'])) for e in L for f in FR]
+    bysl = {}
+    for r9 in rows: bysl.setdefault(r9[2], []).append(r9)
+    left = 0
+    for it9 in range(int(getattr(cfg, 'inf_kmc_passes', 8))):
+        left = 0
+        for sl, RW in bysl.items():
+            for i0 in range(0, len(RW), 64):
+                ch = RW[i0:i0 + 64]; X, _ = _ws_batch(model, [a + b for a, b, c, k in ch]); p0s = [len(a) - 1 for a, b, c, k in ch]
+                with torch.no_grad():
+                    lg = _ws_run(model, X, sl).float(); ns = [min(len(b), lg.shape[1] - p0) for (a, b, c, k), p0 in zip(ch, p0s)]
+                    ad = _kma_addr_rows(model, K, X, sl, p0s, ns) if K.get('allt') else _kmi_addr(model, K, [a for a, b, c, k in ch], ns)
+                    if ad is None: continue
+                    nk, wk, off, rr, pp = ad; mv, idx = _kmi_read(K, nk, wk, off); w = K['_w']
+                    z0 = torch.stack([lg[r, p0s[r] + j] for r, j in zip(rr, pp)]); tg = torch.stack([X[r, p0s[r] + 1 + j] for r, j in zip(rr, pp)])
+                    sup = F.log_softmax(z0 + mv, -1).gather(-1, tg[:, None])[:, 0] - F.log_softmax(z0, -1).gather(-1, tg[:, None])[:, 0]
+                    bad = sup > -mg
+                    if not bool(bad.any()): continue
+                    left += int(bad.sum()); ex = (sup[bad] + mg + 0.5)
+                    if wide:                                                  # the whole product neighbourhood of the read: 8 x 8 slots
+                        q1 = F.normalize(nk[bad] @ K['R1'], dim=-1); w2 = F.normalize(wk[bad] + 0.5 * K['EOFF'][off[bad]], dim=-1)
+                        i1 = (q1 @ K['k1'].t()).topk(_KM_KK, -1)[1]; i2 = (w2 @ K['k2'].t()).topk(_KM_KK, -1)[1]
+                        ix = (i1[:, :, None] * n + i2[:, None, :]).flatten(1); dl = -ex[:, None].expand(-1, ix.shape[1])
+                    else:
+                        ix = idx[bad]; wb = w[bad]; dl = -ex[:, None] * wb / (wb * wb).sum(-1, keepdim=True)
+                    tb = tg[bad][:, None].expand(-1, ix.shape[1])
+                    K['v'].index_put_((ix.flatten(), tb.flatten()), dl.flatten(), accumulate=True)
+                    if rec is not None:
+                        bk = [ch[r][3] for r, q in zip(rr, bad.tolist()) if q]
+                        for q, kk in enumerate(bk): rec.setdefault(kk, []).append((ix[q].detach().cpu(), int(tb[q, 0]), dl[q].detach().cpu()))
+        if left == 0: break
+    return left
+
+
+def kmc_restore(K, rec, key):
+    """undo a recorded byte-edit retraction (later reading supports the inference after all)"""
+    with torch.no_grad():
+        for ix, b, dl in rec.pop(key, []): K['v'].index_put_((ix.to(K['v'].device), torch.full_like(ix, b).to(K['v'].device)), -dl.to(K['v'].device), accumulate=True)
+
+
 def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
     """ORACLE (the labels pick the wrong inferences - the mechanism, not a trigger), on a COPY of the memory: 60 steps driving the memory's
     support for the WRONG inferences' answer bytes (log-probability with it minus without) below -inf_kmc_margin while re-writing the RIGHT ones
@@ -616,6 +668,18 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
             hit.append(int(sc[0] > max(sc[1:])))
         return (np.mean(hit) if hit else float('nan'), np.mean(sup) if sup else float('nan'))
     b4 = [evalg(x) for x in (wrong, right, facts)]; snap = K['v'].detach().clone(); st0 = K['opt'].state_dict()
+    md = str(getattr(cfg, 'inf_kmc_mode', 'margin'))
+    if md in ('byte', 'wide'):
+        rec = {}; lf = _kmc_byte_edit(model, cfg, K, S_slot, wrong, rec); af = [evalg(x) for x in (wrong, right, facts)]
+        e1 = [evalg(x) for x in (wrong,)]
+        for kk in list(rec): kmc_restore(K, rec, kk)                            # REVERSIBLE: undo every edit
+        rs_ = evalg(wrong)
+        with torch.no_grad(): K['v'].copy_(snap)
+        print(f"  [INTEGRATED KEYED MEMORY, COUNTER-WRITE ({md.upper()} EDIT) | visit {vis + 1}] ORACLE on a copy: only the WRONG answers' own bytes lowered in the slots "
+              f"they read ({'all 64 of the neighbourhood' if md == 'wide' else 'the 8 read, by weight'}), training frames only; rank WITH the memory and its SUPPORT (bits per "
+              f"answer byte): WRONG {b4[0][0]:.2f}, {b4[0][1]:+.2f} -> {af[0][0]:.2f}, {af[0][1]:+.2f} | RIGHT {b4[1][0]:.2f}, {b4[1][1]:+.2f} -> {af[1][0]:.2f}, {af[1][1]:+.2f} | "
+              f"facts {b4[2][0]:.2f}, {b4[2][1]:+.2f} -> {af[2][0]:.2f}, {af[2][1]:+.2f} | bytes above the margin left {lf} | UNDONE: WRONG back to {rs_[0]:.2f}, {rs_[1]:+.2f}", flush=True)
+        return
     for st in range(int(getattr(cfg, 'inf_kmc_steps', 60))):
         for L, ul in ((wrong, True), (right, False)):
             it, X, lg = rows(L, 32); p0s = [len(a) - 1 for a, b, c in it]; ns = [min(len(b), lg.shape[1] - p0) for (a, b, c), p0 in zip(it, p0s)]
@@ -659,6 +723,10 @@ def kmc_retract(model, cfg, S_slot, ents, vis):
     if not new: return
     FR = _dt_forms(cfg); g = np.random.RandomState(int(cfg.seed) + 5757 + vis); mg = float(getattr(cfg, 'inf_kmc_margin', 1.0))
     RX = [ent(k, w) for k, w in new]; RT = [ent(k, w) for k, w in kept] or [ent(k, w) for k, w in pend if not w.get('flag')]
+    if str(getattr(cfg, 'inf_kmc_mode', 'margin')) in ('byte', 'wide'):       # reconsolidation-style edit, recorded (reversible)
+        _kmc_byte_edit(model, cfg, K, S_slot, RX, K.setdefault('rec', {}))
+        for k, w in new: w['kmc_done'] = vis
+        return
     def step(L, ul):
         it = [(FR[g.randint(len(FR))].format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), int(S_slot(e['d']))) for e in (L[g.randint(len(L))] for _ in range(32))]
         X, _ = _ws_batch(model, [a + b for a, b, c in it])
