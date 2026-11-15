@@ -3105,3 +3105,16 @@ question at the GPU window, for taught and never-taught facts.
 - A6: Wikipedia only, 6000 steps: held-out Wikipedia 1.991 bits per byte.
 - B6: TinyStories 3000 steps (1.87 -> 1.47 training) then Wikipedia 3000 steps: held-out Wikipedia 2.008, held-out TinyStories 2.498.
 - Fluency on Wikipedia is level at equal compute (+0.017, about seed noise); B6 reaches A6's Wikipedia loss in fewer Wikipedia steps (2.0 bits at 2000 steps vs 3000), but TinyStories itself is largely forgotten after the switch (1.47 -> 2.50). Whether B6 judges and types relations better is the separate comparison (rel_mtb, weights_judge, jepa_mem) still to run.
+
+## Learned selector from the judge's own verdicts (15 Nov 2026, tools/learned_selector.py, distant_50k, GPU write path, 3 rounds)
+Candidates and write-time features from premises._rcode_step at visits 2 / 4 / 6; self-label = relational records of the pair within two visits (label-free); logistic selector trained on earlier rounds' self-labels picks the next 200; distant labels score only. Rounds 2 / 3 (200 written each; SE about 0.03):
+| selector | round 2 | round 3 |
+|---|---|---|
+| RULE (code + AA, asymmetry filter; GPU) | 0.730 | 0.675 |
+| learned, all candidates | 0.430 | 0.455 |
+| learned, all candidates, co-mention features dropped | 0.540 | 0.570 |
+| learned rerank inside the rule's top 1000 | 0.650 | 0.715 |
+| learned rerank inside the rule's top 1000, co-mention dropped | 0.750 | 0.720 |
+| rule + learned rank sum | 0.665 | 0.735 |
+| rule, then the judge (kept only) | 0.789 | 0.709 |
+- **Negative (Goodhart).** The selector predicts its own label very well (AUC 0.95) by choosing pairs ALREADY in a relational sentence (weight +3.7 to +4.1), which are re-mentioned later but are right only 0.43-0.46 of the time. The judge's verdict works as a FILTER after the rule (+0.03 to +0.06) but not as a training target over the whole pool. The best variant (rerank within the rule's shortlist, no co-mention) is +0.03 on average, within noise. Learned features that carry: resource allocation, both degrees, object type TIME negative.

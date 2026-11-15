@@ -45,9 +45,15 @@ from platypus.inference.compress import _cg_auc
 def feats(D):
     ld = np.log1p(np.stack([D['dA'], D['dB']], 1)); asy = np.abs(ld[:, 0] - ld[:, 1])[:, None]
     oh = lambda t: np.eye(7)[t]
+    if NOREL: return np.concatenate([D['code'][:, None], np.log1p(D['aa'])[:, None], np.log1p(D['ra'] * 100)[:, None], ld, asy, oh(D['tA']), oh(D['tB'])], 1)
     return np.concatenate([D['code'][:, None], np.log1p(D['aa'])[:, None], np.log1p(D['ra'] * 100)[:, None], ld, asy, np.log1p(D['relW'])[:, None], np.log1p(D['lstW'])[:, None],
                            ((D['relW'] == 0) & (D['lstW'] > 0)).astype(np.float32)[:, None], oh(D['tA']), oh(D['tB'])], 1)
 RD_ = [dict(np.load(f"{S}_r{k}.npz")) for k in (1, 2, 3)]
+POOL = int(os.environ.get('SL_POOL', 0)); NOREL = int(os.environ.get('SL_NOREL', 0))   # rerank only inside the rule's top POOL; drop the co-mention features
+if POOL:
+    for D in RD_:
+        rr = np.where(np.isfinite(D['rule']), D['rule'], -1e9); keep = np.argsort(-rr)[:POOL]
+        for f in list(D): D[f] = D[f][keep]
 judged = lambda D, sel: (D['relL'][sel] > 0)                                   # the judge's verdict on a written batch (relational records later)
 Xtr, ytr = [], []
 for k, D in enumerate(RD_, 1):
@@ -61,7 +67,7 @@ for k, D in enumerate(RD_, 1):
         msg += (f" | LEARNED top 200 right {y[top_l].mean():.3f} (self-label AUC on this round {_cg_auc(sc[D['relL'] > 0], sc[D['relL'] == 0]):.3f}, true-label AUC {_cg_auc(sc[y], sc[~y]):.3f})"
                 f" | RULE + LEARNED rank sum {y[both].mean():.3f} || AFTER THE JUDGE (kept = relational records later): rule {y[top_rule][jr].mean() if jr.any() else float('nan'):.3f} "
                 f"({jr.sum()} kept), learned {y[top_l][jl].mean() if jl.any() else float('nan'):.3f} ({jl.sum()} kept)")
-        coef = clf.coef_[0]; nm = ['code', 'AA', 'RA', 'log deg A', 'log deg C', 'asymmetry', 'REL co-mention', 'LIST co-mention', 'list-only'] + [f'A:{t}' for t in ['PER', 'LOC', 'ORG', 'TIME', 'NUM', 'MISC', 'X']] + [f'C:{t}' for t in ['PER', 'LOC', 'ORG', 'TIME', 'NUM', 'MISC', 'X']]
+        coef = clf.coef_[0]; nm = ['code', 'AA', 'RA', 'log deg A', 'log deg C', 'asymmetry'] + ([] if NOREL else ['REL co-mention', 'LIST co-mention', 'list-only']) + [f'A:{t}' for t in ['PER', 'LOC', 'ORG', 'TIME', 'NUM', 'MISC', 'X']] + [f'C:{t}' for t in ['PER', 'LOC', 'ORG', 'TIME', 'NUM', 'MISC', 'X']]
         msg += " | strongest features: " + ", ".join(f"{nm[i]} {coef[i]:+.2f}" for i in np.argsort(-np.abs(coef))[:6])
     P(msg)
     Xtr.append(X); ytr.append(D['relL'] > 0)                                   # the system learns from its own judged outcomes, not from labels
