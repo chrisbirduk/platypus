@@ -19,7 +19,7 @@ P = lambda *a: print(*a, flush=True); T0 = time.time(); torch.set_num_threads(2)
 cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel='code+aa',
                             inf_rcode_asym=1.0, inf_rcode_selreport=0, inf_rti_max=400, inf_rret=0, inf_rti_ctl=0.333, inf_rret_q=0.2, inf_rret_ctl=0.5)
 pm._load_distant(cfg); ND = pm._PM['ND']; R = pm._PM['R']; TY = pm._PM['TY']; PRD = pm._PM['PRD']
-h = lambda v: int(round(ND * min(1.0, (v + 1) / 10))); v = 3
+h = lambda v: int(round(ND * min(1.0, (v + 1) / 10))); v = int(os.environ.get('TP_V', 3))   # TP_V 3 / 5: round 2 / 3 (the table from the round before)
 isrel = lambda r: 1 <= r[5] <= 8 and not pm._rret_listlike(r)
 norm = lambda w: ' '.join(t for t in w.split() if t not in ('the', 'a', 'an'))
 CONT = {'P131', 'P17', 'P30', 'P706', 'P276', 'P361'}
@@ -53,7 +53,7 @@ def orient(X, Y):
     if not cs: return None
     a, b, w = collections.Counter(cs).most_common(1)[0][0]; return w if a == X else w + ' ^R'
 T3 = collections.defaultdict(collections.Counter)                              # the composition table from round 1's confirmations
-for r in json.load(open(os.environ['TR_OUT'] + '_r1.json')):
+for r in json.load(open(os.environ['TR_OUT'] + f"_r{(v - 1) // 2}.json")):
     if r['cf'] is None: continue
     for p in r['prem']:
         if p[0] and p[1]: T3[(p[0], p[1])][r['cf']] += 1
