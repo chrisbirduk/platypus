@@ -1257,6 +1257,9 @@ change (open, rest of A / B / M):
 **Positive: erasing a fact's slots retracts it completely while bystanders hold - and the JEPA key does it with 2.5 times fewer slots and
 no collateral damage, where the raw key spreads facts wider and costs bystanders up to 0.12.** Gradient unlearning in the memory is
 clean but leaves a third to a half. Retraction is exact because every write has an address - the property a dense trunk lacks.
+**With the memory nearly full (JM_RX_LATE: after about 2,400 facts; 6 runs - 4,096 slots without / with 25% refresh, 16,384 with refresh;
+seeds 0 / 1):** the retracted facts' open recall falls to **0.00 in all six** (from 0.27-0.53); bystanders' rank moves by at most 0.06,
+open by at most 0.07 in five runs and 0.16 once (the rest of A, 16k slots seed 0). **Erasure stays exact under load.**
 Third seed of the full test (6k s2): the same pattern (two-hop decoded 0.65 / 0.75, M 0.89 / 0.86, name only 0.15).
 
 **Capacity, 2,000 more facts (15 November; 6k trunk, JEPA key, seeds 0 / 1; about 2,380 facts in all, no replay):** rank in the test
