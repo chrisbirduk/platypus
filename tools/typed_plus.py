@@ -52,18 +52,47 @@ def orient(X, Y):
     cs = pw.get(frozenset((X, Y)))
     if not cs: return None
     a, b, w = collections.Counter(cs).most_common(1)[0][0]; return w if a == X else w + ' ^R'
+CLU = {}
+if int(os.environ.get('TP_CLUSTER', 0)):                                       # 16 Nov DENSER TABLE: wordings that state the same name pairs are merged
+    byw = collections.defaultdict(set)                                         #   (label-free; union of wordings sharing 3+ pairs, Jaccard >= TP_JAC)
+    for r in R:
+        if r[0] < h(v) and isrel(r): byw[norm(r[3])].add(frozenset((r[1], r[2])))
+    byw = {w: s_ for w, s_ in byw.items() if len(s_) >= 3}; inv = collections.defaultdict(list)
+    for w, s_ in byw.items():
+        for f in s_: inv[f].append(w)
+    par = {w: w for w in byw}
+    def fnd(x):
+        while par[x] != x: par[x] = par[par[x]]; x = par[x]
+        return x
+    co = collections.Counter()
+    for f, ws in inv.items():
+        if len(ws) <= 30:
+            for i in range(len(ws)):
+                for j in range(i + 1, len(ws)): co[(ws[i], ws[j]) if ws[i] < ws[j] else (ws[j], ws[i])] += 1
+    jac = float(os.environ.get('TP_JAC', 0.1))
+    for (a, b), n in co.items():
+        if n >= 3 and n / len(byw[a] | byw[b]) >= jac: par[fnd(a)] = fnd(b)
+    grp = collections.defaultdict(list)
+    for w in byw: grp[fnd(w)].append(w)
+    for g, ws in grp.items():
+        rep = max(ws, key=lambda w: len(byw[w]))
+        for w in ws: CLU[w] = rep
+    P(f"WORDING CLUSTERS: {len(byw)} wordings with 3+ pairs -> {len(grp)} clusters; largest: " + " | ".join("/".join(sorted(ws, key=lambda w: -len(byw[w]))[:5]) for g, ws in sorted(grp.items(), key=lambda kv: -len(kv[1]))[:4]))
+def cl_(w):
+    if w is None: return None
+    rv = w.endswith(' ^R'); w0 = w[:-3] if rv else w; c = CLU.get(w0, w0); return c + ' ^R' if rv else c
 T3 = collections.defaultdict(collections.Counter)                              # the composition table from round 1's confirmations
 for r in json.load(open(os.environ['TR_OUT'] + f"_r{(v - 1) // 2}.json")):
     if r['cf'] is None: continue
     for p in r['prem']:
-        if p[0] and p[1]: T3[(p[0], p[1])][r['cf']] += 1
+        if p[0] and p[1]: T3[(cl_(p[0]), cl_(p[1]))][cl_(r['cf'])] += 1
 CAND = {}; COMP = {}
 for (A, C), e in W.items():
     hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X')); cs = []
     for (w, fw), _ in tab.get(cp, collections.Counter()).most_common(4): cs.append((hd, w, tl) if fw else (tl, w, hd))
     votes = collections.Counter()
     for b in e['prem']:
-        a1, a2 = orient(A, b), orient(b, C)
+        a1, a2 = cl_(orient(A, b)), cl_(orient(b, C))
         if a1 and a2: votes.update(T3.get((a1, a2), {}))
     if votes:
         cw = votes.most_common(1)[0][0]; rev = cw.endswith(' ^R'); w0 = cw[:-3] if rev else cw; COMP[(A, C)] = (C, w0, A) if rev else (A, w0, C)
