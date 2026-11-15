@@ -8,7 +8,8 @@ RA - and the later reading (documents 2/10 -> 4/10) judges them:
   COMBINED      rank sums: restatement + short-gap + RA
 Per rule: precision at write (distant labels), each judge's AUC, and END TO END - the precision of what reaches the trunk once the
 lowest 20% are flagged (and what an oracle would pass).
-Usage: python3 tools/select_judge.py <train_distant.json.gz>   env SJ_RULES (code,code+aa,code+ra), TR_ASYM (1.0)"""
+Usage: SJ_STAGE=write SJ_RULES=<rule> python3 tools/select_judge.py <train_distant.json.gz> (once per rule), then SJ_STAGE=judge
+       env SJ_RULES (code,code+aa,code+ra), SJ_OUT (file prefix), TR_ASYM (1.0)"""
 import sys, os, types, time, collections, gc
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -21,11 +22,14 @@ mk = lambda sel: types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premis
                                        inf_rti_max=200, inf_rret=0, inf_rti_ctl=0.333, inf_rret_q=0.2, inf_rret_ctl=0.5)
 cfg0 = mk('code'); pm._load_distant(cfg0); ND = pm._PM['ND']; R = pm._PM['R']; LAB = pm._PM['LAB']
 n1 = int(round(ND * 0.2)); n2 = int(round(ND * 0.4)); R1 = [r for r in R if r[0] < n1]
-WR = {}
-for sel in os.environ.get('SJ_RULES', 'code,code+aa,code+ra').split(','):
-    pm._PM['rti'] = {}; pm._rcode_step(None, mk(sel), lambda d: 0, [1], R1, 1); W = pm._PM['rti']
-    WR[sel] = [(tuple(k), bool(W[k]['truth'])) for k in W]; gc.collect()
-    P(f"rule {sel}: {len(WR[sel])} writes at document {n1}, right {np.mean([t for _, t in WR[sel]]):.3f}  ({time.time() - T0:.0f}s)")
+import json
+SJ = os.environ.get('SJ_OUT', 'select_judge_writes'); RULES = os.environ.get('SJ_RULES', 'code,code+aa,code+ra').split(',')
+if os.environ.get('SJ_STAGE', 'write') == 'write':                              # one rule per process (memory: the 512-dim table peaks ~3 GB)
+    sel = RULES[0]; pm._PM['rti'] = {}; pm._rcode_step(None, mk(sel), lambda d: 0, [1], R1, 1); W = pm._PM['rti']
+    L = [(list(k), bool(W[k]['truth'])) for k in W]; json.dump(L, open(f"{SJ}_{sel}.json", 'w'))
+    P(f"rule {sel}: {len(L)} writes at document {n1}, right {np.mean([t for _, t in L]):.3f}  ({time.time() - T0:.0f}s)"); sys.exit(0)
+WR = {sel: [(tuple(k), t) for k, t in json.load(open(f"{SJ}_{sel}.json"))] for sel in RULES}
+for sel, L in WR.items(): P(f"rule {sel}: {len(L)} writes at document {n1}, right {np.mean([t for _, t in L]):.3f}")
 del R1
 ALLP = {frozenset(k) for L in WR.values() for k, _ in L}
 docs = collections.defaultdict(set); short = collections.Counter(); NI = {}; ia, ib = [], []
