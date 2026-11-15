@@ -1223,6 +1223,18 @@ no collateral damage, where the raw key spreads facts wider and costs bystanders
 clean but leaves a third to a half. Retraction is exact because every write has an address - the property a dense trunk lacks.
 Third seed of the full test (6k s2): the same pattern (two-hop decoded 0.65 / 0.75, M 0.89 / 0.86, name only 0.15).
 
+**Capacity, 2,000 more facts (15 November; 6k trunk, JEPA key, seeds 0 / 1; about 2,380 facts in all, no replay):** rank in the test
+wording of the OLDEST and NEWEST batch of 200 at the end, and of set A (the first facts):
+
+| slots | oldest batch | newest batch | set A | slots written |
+|---|---|---|---|---|
+| 4,096 (64 x 64) | 0.57 / 0.59 | 0.83 / 0.95 | 0.62 / 0.65 | 3,377 / 3,466 |
+| 16,384 (128 x 128) | **0.76 / 0.65** | 0.94 / 0.91 | **0.77 / 0.65** | 7,008 / 7,307 |
+
+**Graceful decay with age, no collapse; four times the slots keeps the oldest facts better on seed 0 (+0.19) and a little on seed 1
+(+0.06).** At about 2,400 facts the small memory is nearly full (83% of slots written). Lin et al. use 1M slots; a lifelong store needs
+the memory to scale with what it holds, and older facts need refresh (replay of memory writes, as sleep replays the store).
+
 **K-TEXT: a wording key learned from REAL TEXT only (15 November; 20,000 name pairs stated in 2+ different wordings within a sentence,
 50k distant documents, InfoNCE; the frames and the test wording never seen).** Relation of the test wording / of a PARAPHRASED relation
 phrase recognised by the frames' keys: K-TEXT 0.90 / **0.52**, 0.90 / 0.38, 0.95 / 0.33 (18k s0, 18k s1, 6k s0) against the frame-trained
