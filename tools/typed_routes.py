@@ -151,3 +151,52 @@ if ST == '3':
             TC[(r['tA'], r['tC'])][r['cf']] += 1
     P(f"   table cells {len(T3)}, commonest: " + "; ".join(f"{a} + {b} -> {c.most_common(1)[0][0]} x{sum(c.values())}" for (a, b), c in sorted(T3.items(), key=lambda kv: -sum(kv[1].values()))[:6]))
     P(f"DONE ({time.time() - T0:.0f}s)")
+if ST == 'T':
+    # 16 Nov TRUNK FEEDBACK ON THE TYPE (TR_STAGE=T, TG_CKPT=<stand-in trunk>): route 1 proposes the class pair's 8 commonest relational
+    # wordings (each in its stored order); the TRUNK picks the one it finds most probable between the two names ('X w Y.', bits of the
+    # bytes after X). Against route 1's own top wording, and the best of the 8 (the ceiling for any chooser).
+    import torch, torch.nn as nn, torch.nn.functional as F2
+    DW = int(os.environ.get('TG_D', 192)); L_ = 128; PAD = 256; V_ = 257
+    class Blk(nn.Module):
+        def __init__(s, d, h):
+            super().__init__(); s.a = nn.MultiheadAttention(d, h, batch_first=True); s.m = nn.Sequential(nn.Linear(d, 4 * d), nn.GELU(), nn.Linear(4 * d, d)); s.n1 = nn.LayerNorm(d); s.n2 = nn.LayerNorm(d)
+        def forward(s, x, am):
+            h_ = s.n1(x); x = x + s.a(h_, h_, h_, attn_mask=am, need_weights=False)[0]; return x + s.m(s.n2(x))
+    class LM(nn.Module):
+        def __init__(s, d=DW, nl=3):
+            super().__init__(); s.emb = nn.Embedding(V_, d); s.pos = nn.Parameter(torch.randn(L_, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl)); s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V_)
+        def forward(s, X):
+            T = X.shape[1]; am = torch.triu(torch.ones(T, T, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:T]
+            for b in s.b: x = b(x, am)
+            return s.o(s.n(x))
+    lm = LM(); lm.load_state_dict(torch.load(os.environ['TG_CKPT'])); lm.eval(); torch.set_num_threads(2)
+    @torch.no_grad()
+    def tscore(claims):                                                        # claims [(X, w, Y)] -> mean bits of the bytes after X
+        txt = [(X + ' ' + w + ' ' + Y + '.').encode('latin-1', 'replace')[:L_] for X, w, Y in claims]; T = max(len(t) for t in txt)
+        Xb = torch.full((len(txt), T), PAD, dtype=torch.long)
+        for i, t in enumerate(txt): Xb[i, :len(t)] = torch.tensor(list(t))
+        Xi = torch.cat([torch.full((len(txt), 1), PAD), Xb[:, :-1]], 1); lp = F2.log_softmax(lm(Xi), -1).gather(-1, Xb[..., None])[..., 0]
+        out = []
+        for i, (X, w, Y) in enumerate(claims):
+            a = len((X + ' ').encode('latin-1', 'replace')); n = len(txt[i]); out.append(float(lp[i, a:n].mean()))
+        return out
+    v = 1; W = writes(v); RM = relmap(h(v + 2)); DG = degrees(h(v)); y = {k: e['truth'] for k, e in W.items()}; CF = confirm(W, h(v), h(v + 2))
+    tab = collections.defaultdict(collections.Counter)
+    for r in R:
+        if r[0] < h(v) and isrel(r) and r[1] in DG and r[2] in DG and DG[r[1]] != DG[r[2]]:
+            hd, tl, fw = (r[1], r[2], 1) if DG[r[1]] < DG[r[2]] else (r[2], r[1], 0); tab[(TY.get(hd, 'X'), TY.get(tl, 'X'))][(norm(r[3]), fw)] += 1
+    res = collections.defaultdict(list); KC = int(os.environ.get('TR_K', 8))
+    for (A, C) in W:
+        hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X'))
+        cands = [(w, fw) for (w, fw), _ in tab.get(cp, collections.Counter()).most_common(KC) if w]
+        if len(cands) < 2: continue
+        claims = [((hd, w, tl) if fw else (tl, w, hd)) for w, fw in cands]; ok = [(RM.get(w) in rels(X, Y)) if w in RM else False for X, w, Y in claims]
+        sc = tscore(claims); j = int(np.argmax(sc)); cf = CF.get((A, C))
+        res['table'].append(ok[0]); res['trunk'].append(ok[j]); res['ceiling'].append(any(ok)); res['pair'].append(y[(A, C)])
+        if cf:
+            X0, Y0, w0 = best(cf); res['cf_match_table'].append(claims[0][1] == w0); res['cf_match_trunk'].append(claims[j][1] == w0)
+    m = lambda k: f"{np.mean(res[k]):.3f}" if res[k] else 'nan'
+    P(f"TRUNK FEEDBACK ON THE TYPE ({os.environ['TG_CKPT'].split('/')[-1]}, {'is-in relations as one' if GRP else 'exact relations'}): {len(res['table'])} writes with 2+ candidate wordings "
+      f"(pairs right {m('pair')}) | typed claim right: route 1's top wording {m('table')}, THE TRUNK'S CHOICE {m('trunk')}, best of the {KC} (ceiling) {m('ceiling')} || "
+      f"matches the later confirming wording ({len(res['cf_match_table'])} confirmed): table {m('cf_match_table')}, trunk {m('cf_match_trunk')}")
+    P(f"DONE ({time.time() - T0:.0f}s)")
