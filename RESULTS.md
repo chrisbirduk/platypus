@@ -1379,6 +1379,14 @@ ArXiv; gate open 0.6 / 4.7 / 0.4 per 1000 bytes), next domain +0.0003 - a small 
 names live), no gain yet on known names. Counter-write (margin, copy): WRONG 0.92 -> 0.77 (cg27a_kmb's byte edit replaces it). Trunk bits
 2.0161 (cg27a_kmc 2.0201, cg27a_kmi 2.0203).
 
+### GPU cg27a_kmf: readouts - the ledger, memory feedback, memory-only two-hop (seed 4, 15 November, visits 1-2)
+
+Visit 2: INFERENCE LEDGER on the real writes - **the write score's AUC 0.504 (the offline subset's 0.70 did not hold: the top 200 scores
+are nearly tied, 1.99), bridges 0.563**; premises are often DATES (Nashville ~ Tennessee: '1964, 1963, 1920'). MEMORY-ONLY TWO-HOP: 0
+chains - the written inferences ('connected to', subject = the alphabetically first name) rarely chain with each other or with the taught
+facts (planted names): the readout needs symmetric chains over inferences (fix for the next build). Memory as kmt (facts WITH 0.40 / 0.50
+vs trunk 0.05 / 0.45; never-read 0.00; bits WITH the memory +0.0000-0.0001). Trunk bits 2.0296 / 2.0292.
+
 ### GPU cg27a_kmt: stricter gate (0.85) + relation types from the GPU trunk (seed 4, 15 November, visits 1-2)
 
 RELATION TYPES FROM THE TRUNK (visit 2, 60,000 premises records, 6,595 with one Wikidata relation): the factorial on the GPU trunk is
