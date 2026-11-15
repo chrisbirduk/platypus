@@ -18,6 +18,8 @@ finetuning), 71% (LoRA), 11% (sparse memory), at the same learning. Here, small:
   Readouts: recall in the TEST wording ('It is on record that A <relation> C') - open-ended exact and rank among 10 of the same type - of A
   after A, of B after B and of A after B (retention); held-out bits per byte on wiki and on Re-DocRED dev text (read in training) before
   and after: FORGETTING = the bits added.
+Second round (15 Nov): runs 12-16 select slots by TF-IDF counted only where the ANSWER bytes are predicted ('answer'), and with more slots
+(t = 1024 / 4096): the first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/sparse_mem.py   env SM_PRE (1500), SM_STEPS (150 per set), SM_T (256), SM_RUNS"""
 import os, sys, json, math, time, collections
 import numpy as np
@@ -144,13 +146,20 @@ P(f"held-out wiki bits per byte: memory untrained {b_tr:.3f} | memory model {b0w
   f"slots used by background {int((cnt_bg > 0).sum())} of {NS * NS}  ({time.time() - T0:.0f}s)")
 BASE = {k: v.clone() for k, v in m.state_dict().items()}
 
+ANS = False
 def teach(mm, facts, params, lr, sparse, rr):
     op = torch.optim.AdamW(params, lr=lr, weight_decay=0.0, betas=(0.9, 0.999))
     for st in range(STEPS):
-        seqs = [(FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) + f['C'] + '.').encode('latin-1') for f in (facts[rr.randint(len(facts))] for _ in range(32))]
+        fb = [facts[rr.randint(len(facts))] for _ in range(32)]; pre = [FORMS[rr.randint(len(FORMS))].format(A=f['A'], r=f['rel']) for f in fb]
+        seqs = [(q + f['C'] + '.').encode('latin-1') for q, f in zip(pre, fb)]
         l = loss_of(mm, seqs); op.zero_grad(); l.backward()
         if sparse:                                                            # TF-IDF over slot accesses in this batch; only the top TOPT keep their gradient
-            tf = torch.bincount(mm.mem.last.reshape(-1), minlength=NS * NS).float(); keep = (tf * IDF).topk(TOPT).indices
+            acc = mm.mem.last
+            if ANS:                                                           # 15 Nov: count only where the ANSWER bytes are predicted
+                am_ = torch.zeros(acc.shape[:2], dtype=torch.bool)
+                for j, (q, f) in enumerate(zip(pre, fb)): am_[j, len(q):min(L, len(q) + len(f['C']) + 1)] = True
+                acc = acc[am_]
+            tf = torch.bincount(acc.reshape(-1), minlength=NS * NS).float(); keep = (tf * IDF).topk(TOPT).indices
             mask = torch.zeros(NS * NS, 1); mask[keep] = 1.0; mm.mem.v.weight.grad *= mask
         op.step()
         if sparse: mm._touched.update(keep.tolist())
@@ -176,11 +185,13 @@ P(f"before teaching: A open {r0a[0]:.2f} rank {r0a[1]:.2f} | B open {r0b[0]:.2f}
   f"(about {STEPS * 32 / 60:.0f} rows per fact), facts only")
 RUNS = [('FULL', 'FULL', 3e-5), ('FULL', 'FULL', 1e-4), ('LORA', 'LORA', 3e-4), ('LORA', 'LORA', 1e-3), ('MLP_OUT', 'MLP_OUT', 3e-5),
         ('MLP_OUT', 'MLP_OUT', 1e-4), ('MEM_ALL', 'MEM_ALL', 1e-3), ('MEM_ALL', 'MEM_ALL', 1e-2), ('MEM_SPARSE', 'MEM_SPARSE', 1e-3),
-        ('MEM_SPARSE', 'MEM_SPARSE', 1e-2), (f'MEM_SPARSE t={4 * TOPT}', 'MEM_SPARSE', 1e-2)]
-SEL = os.environ.get('SM_RUNS', '')
+        ('MEM_SPARSE', 'MEM_SPARSE', 1e-2), (f'MEM_SPARSE t={4 * TOPT}', 'MEM_SPARSE', 1e-2),
+        ('SPARSE answer t=1024', 'MEM_SPARSE', 1e-2), ('SPARSE answer t=1024', 'MEM_SPARSE', 3e-2), ('SPARSE answer t=4096', 'MEM_SPARSE', 1e-2),
+        ('SPARSE all t=4096', 'MEM_SPARSE', 1e-2), ('SPARSE answer t=4096', 'MEM_SPARSE', 3e-3)]
+SEL = os.environ.get('SM_RUNS', ''); T00 = TOPT
 for k, (tag, meth, lr) in enumerate(RUNS):
     if SEL and str(k + 1) not in SEL.split(','): continue
-    if 't=' in tag: TOPT *= 4
+    TOPT = int(tag.split('t=')[1]) if 't=' in tag else T00; ANS = 'answer' in tag
     run(tag, meth, lr)
-    if 't=' in tag: TOPT //= 4
+TOPT = T00
 P(f"DONE ({time.time() - T0:.0f}s)")
