@@ -1276,6 +1276,13 @@ the memory to scale with what it holds, and older facts need refresh (replay of 
 **Positive: re-writing earlier facts flattens the age curve - the oldest batch +0.18 to +0.24 at no cost to the newest - as much as four
 times the slots did.** Refresh is the memory's version of sleep replay; a quarter of each write batch is enough.
 
+**Abstention by teaching 'nothing here' (JM_NULL 8 / 32 rows a step: reads for inventory names never used as subjects pushed to zero;
+6k, seeds 0 / 1):** abstention AUC by the read's norm 0.56-0.57, by the best cosine 0.59-0.62 (without: 0.52-0.55 / 0.61-0.72), while
+recall falls (B at the end 0.42-0.53 against 0.88-0.92; two-hop 0.58-0.77 against 0.65-0.97). **Negative: unknown names reach the same
+sub-keys as known ones, so pushing them to zero erases real facts.** Abstention should come from an explicit index of the subjects the
+memory holds (the name gate / the store's name inventory: is this subject's key within a small distance of a written one?), not from the
+memory's reads.
+
 **K-TEXT: a wording key learned from REAL TEXT only (15 November; 20,000 name pairs stated in 2+ different wordings within a sentence,
 50k distant documents, InfoNCE; the frames and the test wording never seen).** Relation of the test wording / of a PARAPHRASED relation
 phrase recognised by the frames' keys: K-TEXT 0.90 / **0.52**, 0.90 / 0.38, 0.95 / 0.33 (18k s0, 18k s1, 6k s0) against the frame-trained
