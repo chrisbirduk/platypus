@@ -3130,3 +3130,9 @@ Candidates and write-time features from premises._rcode_step at visits 2 / 4 / 6
 | relation types, MTB key type-masked (NMI) | 0.455 | 0.451 |
 | jepa_mem two-hop decoded (rank) | 0.07 | 0.22 |
 - **Negative: a basic-English stage does not give a trunk that judges inferences or types relations better at this size.** No trunk signal separates right from wrong inferences (all 0.40-0.54). (jepa_mem on these trunks is far below the 6k / 18k trunks' 0.73-0.97: few slots written, 60-64 of 4,096 - these trunks' states may not suit the frame-trained head; not investigated.) sparse_mem stopped to free the CPU for builds.
+
+## GPU cg27a_kmr: the relational-records judge (seed 4, 15 Nov 2026, visits 1-4 and the visit-5 sleep)
+- **The relational judge holds at scale: AUC 0.688 (signal docs 0.639 on the same writes; offline 0.697).** FLAGGED 40: wrong 0.45 vs unflagged 0.21 (kmf, docs: 0.35 vs 0.24). KEPT right 0.79 vs flagged 0.55 (kmf 0.76 vs 0.65); the trunk receives 126 right + 34 wrong (kmf 122 + 38; oracle 126 + 0). List-only pairs 25, right 0.44. Retracted / flagged never reach the trunk (recall 0.00).
+- **THE GATE RULE removes the Wikipedia cost (readout):** with the untyped inferences' slots shut on text, Wikipedia +0.0035 -> +0.0002 (visit 3) and +0.0054 -> +0.0004 (visit 4) bits per byte; other domains +0.0000-0.0004. Questions still read the slots. Now an option (inf_kma_nori), touches no training.
+- Memory feedback from reading again no judge: AUC 0.417 / 0.628 (bits saved), 0.488 / 0.541 (confirm - contradict); right inferences cost bits on the second name (-2,588 / -4,093) as in kmf.
+- Byte edit (copy): WRONG 0.42 -> 0.05, RIGHT and facts unchanged, undo exact. Trunk bits level with kmf (2.0269 / 2.0265 / 2.0082 / 1.9207 vs 2.0296 / 2.0292 / 2.0075 / 1.9169).

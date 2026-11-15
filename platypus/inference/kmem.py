@@ -926,7 +926,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         ch = sp[i0:i0 + 64]; tb = [(r[7] + '.').encode('latin-1', 'replace') for r in ch]
         X, _ = _ws_batch(model, [b + b' ' for b in tb])
         with torch.no_grad():
-            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H)
+            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H, no_rti=bool(int(getattr(cfg, 'inf_kma_nori', 0))))
             l0 = F.log_softmax(lg.float(), -1); l1 = F.log_softmax(lm, -1); mv = lm - lg.float()
         for k, (r, b) in enumerate(zip(ch, tb)):
             runs = [(m.start(), m.end()) for m in _KMI_RUN.finditer(b)]

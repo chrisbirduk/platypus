@@ -682,6 +682,9 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_kma_nori=0                  # 16 Nov THE GATE RULE: on ordinary text the all-text memory stays shut where the read weight lies mostly (0.5+) on the
+                                    #   untyped written inferences' slots (questions still read them). GPU cg27a_kmr readout: Wikipedia +0.0035 / +0.0054
+                                    #   -> +0.0002 / +0.0004 bits per byte at visits 3 / 4
     inf_smf=0                       # 16 Nov SPARSE MEMORY CONSOLIDATION IN THE TRUNK (inference.smf): a product-key memory layer beside the middle block's MLP,
                                     #   learning from text for the first inf_smf_pre visits, then written ONLY by the question rows (with inf_distill_wake_params
                                     #   'smem'), only at the inf_smf_t slots with the highest TF-IDF where their answers are predicted (Lin et al. 2025)
