@@ -1608,6 +1608,10 @@ commas in the span), or only by lists? Records of documents < 4/10 (the judge's 
 never relationally: 14% of the writes) are right only 0.48 against 0.78 for the rest. The alternative explanation the errors share -
 'they appear in the same list' - is testable label-free. Discounting date / number bridges did not help (0.581 vs 0.594). Parts 2-3
 (readiness, name merging) were killed for memory alongside a training job; rerun later.
+**Confirmed through the GPU's own code path** (tools/rel_judge_confirm.py: premises._rcode_step writes at visit 2, premises._rret_judge with
+inf_rret_sig 'rel' at visit 4): judge AUC 0.688 (relational records 0.697; since the write 0.675; documents 0.639 on the same batch);
+FLAGGED 40 now wrong **0.45** (the documents judge: 0.35), unflagged 0.21 (0.24); list-only pairs 25, right 0.44. The visit-4 batch (judged at
+visit 6) ran out of memory locally; cg27a_kmr's visit-6 judge line measures it on the GPU.
 
 ### Do the existing weights say an inference is false? (tools/weights_judge.py, 15 November; 18k stand-in trunk, the GPU path's 200 writes)
 
