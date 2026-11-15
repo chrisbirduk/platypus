@@ -19,7 +19,7 @@ finetuning), 71% (LoRA), 11% (sparse memory), at the same learning. Here, small:
   after A, of B after B and of A after B (retention); held-out bits per byte on wiki and on Re-DocRED dev text (read in training) before
   and after: FORGETTING = the bits added.
 Second round (15 Nov): runs 12-16 select slots by TF-IDF counted only where the ANSWER bytes are predicted ('answer'), and with more slots
-(t = 1024 / 4096); SM_MIX=k: k fact rows + (32 - k) wiki rows a step (the GPU's setting). The first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
+(t = 1024 / 4096); SM_RETRACT=1: after B, 30 facts of A retracted by restoring the SM_RX_T (1024) answer slots their questions use most (TF-IDF); SM_MIX=k: k fact rows + (32 - k) wiki rows a step (the GPU's setting). The first round's sparse runs barely learned (rank 0.30-0.58) while forgetting almost nothing.
 Usage: TG_D=192 TG_CKPT=<model file> python3 tools/sparse_mem.py   env SM_PRE (1500), SM_STEPS (150 per set), SM_T (256), SM_RUNS"""
 import os, sys, json, math, time, collections
 import numpy as np
@@ -182,6 +182,18 @@ def run(tag, method, lr):
     tch = f" | slots changed {len(mm._touched)}" if sp else ''
     P(f"   {tag:24s} lr {lr:g}: A after A open {ra[0]:.2f} rank {ra[1]:.2f} | B after B open {rb[0]:.2f} rank {rb[1]:.2f} | A after B open {raa[0]:.2f} "
       f"rank {raa[1]:.2f} || FORGETTING (bits added) wiki {w1 - b0w:+.3f} -> {w2 - b0w:+.3f}, dev {d1 - b0d:+.3f} -> {d2 - b0d:+.3f}{tch}  ({time.time() - T0:.0f}s)")
+    if sp and int(os.environ.get('SM_RETRACT', 0)):                         # 15 Nov: exact retraction - restore the answer slots of 30 facts of A
+        RX, KEEP = SET_A[:30], SET_A[30:]; b4 = [recall(mm, x) for x in (RX, KEEP, SET_B)]
+        with torch.no_grad():
+            mm.eval(); pre = [FORMS[k].format(A=f['A'], r=f['rel']) for f in RX for k in range(len(FORMS))]
+            seqs = [(q + f['C'] + '.').encode('latin-1') for q, f in zip(pre, [f for f in RX for k in range(len(FORMS))])]
+            mm(xin(tens(seqs))); acc = mm.mem.last; am_ = torch.zeros(acc.shape[:2], dtype=torch.bool)
+            for j, (q, sq) in enumerate(zip(pre, seqs)): am_[j, len(q):len(sq)] = True
+            tf = torch.bincount(acc[am_].reshape(-1), minlength=NS * NS).float(); nr = int(os.environ.get('SM_RX_T', 1024))
+            ids = (tf * IDF).topk(nr).indices; ids = ids[tf[ids] > 0]; mm.mem.v.weight[ids] = BASE['mem.v.weight'][ids]; mm.train()
+        af = [recall(mm, x) for x in (RX, KEEP, SET_B)]; w3 = bits(mm, EV_W)
+        P(f"      RETRACT 30 of A by restoring their {len(ids)} answer slots: retracted rank {b4[0][1]:.2f} -> {af[0][1]:.2f} | rest of A {b4[1][1]:.2f} -> "
+          f"{af[1][1]:.2f}, B {b4[2][1]:.2f} -> {af[2][1]:.2f} | wiki bits {w2 - b0w:+.3f} -> {w3 - b0w:+.3f}")
 r0a, r0b = recall(m, SET_A), recall(m, SET_B)
 P(f"before teaching: A open {r0a[0]:.2f} rank {r0a[1]:.2f} | B open {r0b[0]:.2f} rank {r0b[1]:.2f} | {STEPS} steps of {MIX or 32} fact rows per set "
   f"(about {STEPS * (MIX or 32) / 60:.0f} rows per fact), " + (f"mixed with {32 - MIX} rows of wiki text" if MIX else "facts only"))
