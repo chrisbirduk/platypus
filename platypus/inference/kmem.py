@@ -347,12 +347,14 @@ def _kma_keys(model, K, a):
     a['nk'] = _kmi_name(model, K, a['s']); return a
 
 
-def _kma_gate(K, a, idx):
+def _kma_gate(K, a, idx, no_rti=False):
     """open where the subject was written and inf_kmi_gatew of the read weight is on written slots; a name being spelled follows its first byte"""
     wm = K.get('wmask'); dev = idx.device
     if wm is None: return torch.zeros(len(a['s']), dtype=torch.bool, device=dev)
     wf = (K['_w'] * wm[idx].float()).sum(-1); subj = K.get('subj', set())
     ok = (wf >= float(K.get('gatew', 0.5))).cpu().numpy() & np.array([s in subj for s in a['s']])
+    if no_rti and K.get('wmask_rti') is not None:                              # 15 Nov GATE RULE (readout): reads that fall mostly on the untyped
+        ok &= ((K['_w'] * K['wmask_rti'][idx].float()).sum(-1) < 0.5).cpu().numpy()   #   inferences' slots stay shut on text
     sp = np.where(a['off'] > 0)[0]
     if len(sp):
         key = {(int(r), int(i)): q for q, (r, i) in enumerate(zip(a['r'], a['i']))}
@@ -362,13 +364,13 @@ def _kma_gate(K, a, idx):
     return torch.as_tensor(ok, device=dev)
 
 
-def kma_logits(model, K, X, lg, H, gate=None):
+def kma_logits(model, K, X, lg, H, gate=None, no_rti=False):
     """the model's logits: trunk + the (gated) memory read at EVERY addressed byte; also (row, state index) -> open, addressed and open counts"""
     out = lg.clone().float(); a = _kma_feats(X, H)
     if a is None: return out, {}, 0, 0
     _kma_keys(model, K, a); mv, idx = _kmi_read(K, a['nk'], a['wk'], a['offt'])
     g_ = K.get('gate') if gate is None else gate
-    ok = _kma_gate(K, a, idx) if g_ else torch.ones(len(a['s']), dtype=torch.bool, device=out.device)
+    ok = _kma_gate(K, a, idx, no_rti) if g_ else torch.ones(len(a['s']), dtype=torch.bool, device=out.device)
     rt = torch.as_tensor(a['r'], device=out.device); it = torch.as_tensor(a['i'], device=out.device)
     if bool(ok.any()): out = out.index_put((rt[ok], it[ok]), mv[ok].to(out.dtype), accumulate=True)
     okl = ok.tolist(); return out, {(int(r), int(i)): o for r, i, o in zip(a['r'], a['i'], okl)}, len(okl), int(sum(okl))
@@ -421,6 +423,13 @@ def kmi_rows_loss(model, cfg, items, lg, X, sl=None):
             K['steps'] += 1; K['loss'].append(float(lo.detach())); K.setdefault('subj', set()).update(K['_subj'])
             if 'wmask' not in K: K['wmask'] = torch.zeros(K['n'] ** 2, dtype=torch.bool, device=idx.device)
             K['wmask'][idx.flatten()] = True
+            try:                                                               # 15 Nov: the slots written by the untyped inferences' rows (gate-rule readout)
+                from platypus.inference.premises import _RTI_R
+                ri = [q for q, r in enumerate(rr) if len(items[r]) > 3 and _RTI_R in str(items[r][3])]
+                if ri:
+                    if 'wmask_rti' not in K: K['wmask_rti'] = torch.zeros(K['n'] ** 2, dtype=torch.bool, device=idx.device)
+                    K['wmask_rti'][idx[ri].flatten()] = True
+            except Exception: pass
             if len(K['touched']) < 10 ** 6: K['touched'].update(idx.flatten().tolist())
         except Exception:
             from platypus.common import _fail

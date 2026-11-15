@@ -385,6 +385,10 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
                                     lgm, _, na, no = kma_logits(model, KM, x, lgf, cap['h'].float()); lgm = lgm[:, -Ts:]
                                     nlm = (F.cross_entropy(lgm.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape).cpu().numpy()
                                     accm['addr'] += na; accm['open'] += no; accm['bytes'] += int(x.numel())
+                                    if KM.get('wmask_rti') is not None:                   # 15 Nov GATE RULE (readout): the untyped inferences' slots shut on text
+                                        lg3, _, _, no3 = kma_logits(model, KM, x, lgf, cap['h'].float(), no_rti=True); lg3 = lg3[:, -Ts:]
+                                        nl3 = (F.cross_entropy(lg3.reshape(-1, 256).float(), yy.reshape(-1), reduction='none') / np.log(2)).view(yy.shape)
+                                        accm.setdefault('nori', [0.0, 0, 0]); accm['nori'][0] += float(nl3.sum()); accm['nori'][1] += int(yy.numel()); accm['nori'][2] += no3
                                     gw0 = KM.get('gatew', 0.5)                           # STRICTER GATES on the same bytes (readout): the cost by gate weight
                                     for gw in (0.85, 0.95):
                                         KM['gatew'] = gw
@@ -410,7 +414,8 @@ def preq_bits(model, cfg, vals, seen_d, next_d, slot_of, S_, tag, nb=8):
                 if accm['bytes']:
                     fm = lambda k: accm[k][0] / max(1, accm[k][1])
                     mparts.append((d, kind, fm('all') - f('all'), fm('known') - f('known'), fm('unknown') - f('unknown'), 1000.0 * accm['addr'] / accm['bytes'], 1000.0 * accm['open'] / accm['bytes'], fm('all'),
-                                   ' '.join(f"gate {gw}: {accm[gw][0] / max(1, accm[gw][1]) - f('all'):+.4f} (open {1000.0 * accm[gw][2] / accm['bytes']:.1f})" for gw in (0.85, 0.95) if gw in accm)))
+                                   ' '.join(f"gate {gw}: {accm[gw][0] / max(1, accm[gw][1]) - f('all'):+.4f} (open {1000.0 * accm[gw][2] / accm['bytes']:.1f})" for gw in (0.85, 0.95) if gw in accm)
+                                   + (f"; NO INFERENCE SLOTS on text: {accm['nori'][0] / max(1, accm['nori'][1]) - f('all'):+.4f} (open {1000.0 * accm['nori'][2] / accm['bytes']:.1f})" if 'nori' in accm else '')))
         finally:
             if had: _INFM['force'] = sv
             else: _INFM.pop('force', None)

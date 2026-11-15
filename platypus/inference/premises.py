@@ -630,6 +630,14 @@ def _rret_key_held(cfg, A_, C_, tag):
     return zlib.crc32((k + tag).encode()) % 1000 < hc * 1000
 
 
+_RRET_LISTW = {',', 'and', 'or', '(', ')', '-', ', and', ', or', ') and', ') ,', ', (', 'and the', ', the', ';', '/'}
+
+
+def _rret_listlike(r):
+    """15 Nov: a record whose names are linked only by a list or coordination ('A, B and C'), not by relational wording"""
+    return r[3] in _RRET_LISTW or r[3] == '' or str(r[7]).count(',') >= 2
+
+
 def _rret_judge(cfg, RD, ndv_, vis):
     """14 Nov RETRACTION TRIGGER (inf_rret; THE ONE MODEL CHANGE of cg27a_rret). Each written inference not yet judged, written at an earlier
     readout, is judged by what the store has read SINCE it was written (documents ndv at the write .. now), label-free: SHORT = records stating
@@ -647,8 +655,10 @@ def _rret_judge(cfg, RD, ndv_, vis):
     q = float(getattr(cfg, 'inf_rret_q', 0.2)); out = []
     for lo, ks in sorted(groups.items()):
         nd = max(1, ndv_ - lo); df = collections.Counter(); byp = collections.defaultdict(lambda: [set(), 0]); seenpair = set()
-        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set()
+        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter()
         for r in RD:
+            if frozenset((r[1], r[2])) in want and 1 <= r[5] <= 8 and not _rret_listlike(r):   # 15 Nov: RELATIONAL records of the pair (not lists)
+                relA[frozenset((r[1], r[2]))] += 1; relS[frozenset((r[1], r[2]))] += int(r[0] >= lo)
             if r[0] < lo: continue
             for n in (r[1], r[2]):
                 if n in nm and (r[0], n) not in dn: dn.add((r[0], n)); df[n] += 1
@@ -660,7 +670,9 @@ def _rret_judge(cfg, RD, ndv_, vis):
         rk = lambda x: np.argsort(np.argsort(x + 1e-9 * np.random.RandomState(7).rand(len(x)), kind='stable'), kind='stable') / max(1, len(x) - 1)
         docs = np.array([len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0 for k in ks], float)
         sig_ = str(getattr(cfg, 'inf_rret_sig', 'short+pmi'))                  # 15 Nov: 'docs' = documents stating the pair since the write (offline on the
-        sc = rk(docs) if sig_ == 'docs' else rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr   #   current writes: AUC 0.639, the best label-free signal)
+        ra_ = np.array([relA[frozenset(k)] for k in ks], float); rs_ = np.array([relS[frozenset(k)] for k in ks], float)
+        sc = rk(docs) if sig_ == 'docs' else rk(ra_) if sig_ == 'rel' else rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr   # 'rel' (cg27a_kmr): relational
+        yv_ = np.array([bool(W[k]['truth']) for k in ks]); au_ = lambda x: _cg_auc(x[yv_], x[~yv_]) if yv_.any() and (~yv_).any() else float('nan')   #   records (0.697 offline)
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
         for j, k in enumerate(ks): W[k].update(judged=vis, flag=bool(fl[j]), ret=bool(ret[j]), rscore=float(sc[j]))
@@ -668,7 +680,8 @@ def _rret_judge(cfg, RD, ndv_, vis):
         out.append(f"[signal {sig_}] written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
                    f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "
                    f"| no confirming record {int((short == 0).sum())} | RETRACTED {int(ret.sum())} (wrong {1 - y[ret].mean() if ret.any() else float('nan'):.2f}), flagged taught kept as control "
-                   f"{int((fl & taught & ctl_).sum())}")
+                   f"{int((fl & taught & ctl_).sum())} | SIGNALS (evaluation only): documents since {au_(docs):.3f}, relational records {au_(ra_):.3f} (since the write {au_(rs_):.3f}), "
+                   f"list-only pairs {int(((ra_ == 0) & (docs > 0)).sum())} right {yv_[(ra_ == 0) & (docs > 0)].mean() if ((ra_ == 0) & (docs > 0)).any() else float('nan'):.2f}")
     print(f"  [RETRACTION TRIGGER | visit {vis + 1}] " + " || ".join(out), flush=True)
 
 
