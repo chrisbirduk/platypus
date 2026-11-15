@@ -1477,6 +1477,29 @@ judge recovers it (best end to end 0.53, or 0.69 on only 52 kept). Path evidence
 pipeline (code + AA, judged by documents) is the best of these, 0.77 to the trunk. The judge ceiling on these writes is ~0.65 whatever
 the signal. Further gains must come from a new kind of evidence (the Go-CLS learning-speed readout rides on cg27a_kma), not a re-split.
 
+### Does the relation word give a direction of its own? (tools/rel_direction.py, 15 November; 18k stand-in trunk, d 192)
+
+The author's hypothesis: in a plain pooled (JEPA-style) representation of 'A r C', the relation adds a direction roughly orthogonal to what
+names and numbers add. PART A, factorial (16 subjects x 12 relation phrases x 16 objects, and x 5 years), trunk states pooled over the
+sentence (mean; middle / last block):
+
+| | variance share subject / RELATION / object / year | additive R^2 | subspace overlap RELATION-subject / RELATION-object / subject-object / RELATION-year (random ~0.04) |
+|---|---|---|---|
+| middle block, mean | 0.40 / 0.22 / 0.38 | 1.00 | 0.12 / 0.11 / **0.42** |
+| last block, mean | 0.33 / 0.32 / 0.33 | 0.99 | 0.17 / 0.18 / **0.32** |
+| middle, with years | 0.37 / 0.21 / 0.39 / 0.02 | 0.99 | 0.12 / 0.13 / 0.44 / **0.05** |
+| last, with years | 0.31 / 0.31 / 0.33 / 0.03 | 0.98 | 0.18 / 0.18 / 0.34 / 0.21 |
+
+**Positive for the hypothesis: the pooled representation is almost exactly ADDITIVE (R^2 0.98-1.00) - subject + relation + object (+ year)
+- and the relation's effects lie in a subspace largely apart from the names' (overlap 0.11-0.18, against 0.32-0.44 between subject and
+object, which share a 'name' subspace) and from the year's (0.05 in the middle block).** (At the relation phrase's last byte the state is
+~all relation: 0.99-1.00 of the variance.)
+PART B, real records ('A <words> C', one Wikidata relation, the 12 commonest; evaluation only): 5-nearest-neighbour relation accuracy of the
+pooled states 0.50 / 0.52 (chance 0.08); with the NAME subspace of part A projected out **0.54 / 0.54**, k-means NMI 0.27 -> 0.30 (last
+block); projected ONTO part A's 8-dim relation subspace 0.23-0.31 (12 synthetic phrases span too little of real relations). Relation
+type is readable from plain representations of real records, and removing the names' direction helps; the relation subspace has to be
+learned from real text (not from 12 phrases) before it can type records label-free.
+
 ### Typed real-text inference by rule mining over surface wordings (tools/typed_rules.py, 15 November; distant documents 0 -> 2/10)
 
 AMIE-style closed-path rules r1(x,y) & r2(y,z) => r3(x,z) over typed records (the 150 commonest specific wordings between two names, 1-6
