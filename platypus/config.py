@@ -682,6 +682,11 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
+                                    #   read, mixed with the trunk by a learned gate at prediction time (trunk training untouched); readout [KEYED UNITS]
+    inf_ku_fill=8000000             #     bytes of each visited domain's training text stored per visit
+    inf_ku_cap=32                   #     continuations kept per key (the most recent)
+    inf_ku_lr=0.05                  #     the gate's online learning rate
     inf_kma_nori=0                  # 16 Nov THE GATE RULE: on ordinary text the all-text memory stays shut where the read weight lies mostly (0.5+) on the
                                     #   untyped written inferences' slots (questions still read them). GPU cg27a_kmr readout: Wikipedia +0.0035 / +0.0054
                                     #   -> +0.0002 / +0.0004 bits per byte at visits 3 / 4
