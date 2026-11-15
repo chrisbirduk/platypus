@@ -1395,6 +1395,12 @@ inferences RIGHT WITH 0.65 / 0.98 vs trunk 0.00 / 0.10 (kmb 0.68 / 0.98); facts 
 BARE wording 0.53 / 0.78 vs 0.40 / 0.75; held back = trunk (gate open 0.03); never-read names 0.00. Byte edit (copy): WRONG 0.92 -> 0.08,
 RIGHT 0.97 kept, facts kept. TWO-HOP (30 chains): WITH the memory C rank 0.90 = trunk 0.90 (first hop exact 0.37 vs 0.23) - the trunk
 knows these chains' facts too, so no gain shows. Learning speed 0.48-0.51 (negative). Trunk bits 2.0182.
+Visit 4: **THE GATE HOLDS AS THE MEMORY FILLS - Wikipedia +0.0034 (gate open 4.2 per 1000) against cg27a_kmb's +0.026 (17.2) at visit 4**;
+other domains +0.0003-0.0008; at 0.95 Wikipedia +0.0020 (2.0). Taught facts WITH **0.82 / 0.93** vs trunk 0.38 / 0.87 (best so far); BARE
+wording 0.78 / 0.90 vs 0.57 / 0.90; held back 0.07 / 0.57 vs 0.07 / 0.60; never-read names 0.00. Judge as kmb (AUC 0.636; 160 kept, 40
+flagged, 11 retracted - the RETRACTED group is empty at this readout: the byte edit acts after it; visit 5). Byte edit (copy): WRONG 0.55 ->
+0.05. TWO-HOP (30 taught chains): WITH 0.93 vs trunk 1.00 (the trunk knows these chains). RELATION TYPES (documents < 40,749): MTB key
+type-masked 0.565 / 0.544 (wordings 0.339 / 0.267) - stable; rules over types still fail (typed right 0.00-0.21). Trunk bits 1.9425.
 
 ### GPU cg27a_kmb: byte-edit retraction (seed 4, 15 November, visits 1-3)
 
