@@ -132,7 +132,7 @@ def enc(texts, spans):
         tb = [t.encode('latin-1') for t in texts[k:k + 128]]; X = torch.full((len(tb), L), PAD, dtype=torch.long)
         for j, q in enumerate(tb): X[j, :len(q)] = torch.tensor(list(q))
         Xi = torch.cat([torch.full((len(tb), 1), PAD), X[:, :-1]], 1); H = lm.states(Xi)
-        for j, (a, b) in enumerate(spans[k:k + 128]): out_m.append(H[j, a:b].mean(0)); out_l.append(H[j, b - 1])
+        for j, (a, b) in enumerate(spans[k:k + 128]): out_m.append(H[j, a:b].mean(0)); out_l.append(H[j, b - 1].clone())
     return torch.stack(out_m), torch.stack(out_l)
 # name inventory: every name in the sets and in their candidate types
 rr = np.random.RandomState(SEED + 5); CAND = {}
