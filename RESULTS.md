@@ -1172,6 +1172,8 @@ rows per fact):**
 +0.03 bits where full fine-tuning reaches 0.50 at +0.02 and the GPU build's mlp_out only 0.37 at +0.02; 0.88 at +0.08.** A candidate
 for a GPU build: a product-key memory layer in the trunk, question rows writing only the answer slots (TF-IDF on the answer bytes), lr
 about 1e-2.
+Seed 1 replicates (different facts and order): full 0.47 / 0.52 / 0.38 (+0.005), mlp_out 0.40 / 0.42 / 0.33 (+0.009), sparse answer
+slots lr 1e-2 **0.72 / 0.70 / 0.58** (+0.023), lr 3e-2 **0.88 / 0.87 / 0.60** (+0.071).
 
 **Exact retraction inside the trunk? (SM_RETRACT, mixed setting, lr 3e-2):** after B, 30 facts of A retracted by restoring the answer slots
 their questions use most to their pre-teaching values. Rank (before teaching 0.30):
