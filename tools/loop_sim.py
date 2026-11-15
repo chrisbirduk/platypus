@@ -108,6 +108,7 @@ for rd, v in enumerate((1, 3, 5), 1):
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE+USE': keep = [k for k in W if (tier[k] and judged(k)) or (not tier[k] and useful(k))]
+        elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
         elif p == 'EITHER-BATCH': keep = [k for k in W if tier[k] and (judged(k) or useful(k))]
         elif p.startswith('USEFUL>'): keep = [k for k in W if useful(k, float(p[7:]))]
