@@ -1540,6 +1540,11 @@ put related names NEAR each other, so the maps are close to a scaled identity an
 200 writes (0.74 right): the best map's type is the pair's relation 0.22 (0.30 among pairs with one); as a JUDGE, best map fit AUC 0.478,
 best composed-rule fit 0.498. **Negative: relation maps over CO-OCCURRENCE codes are near-identity - rules found are trivial, typing and
 judging at chance.** Maps need name codes that carry attributes (what a name IS), not only who it appears with.
+With ATTRIBUTE codes instead (RO_ATTR=1: a name's code = the mean Matching-the-Blanks key of the relation types it takes part in, as head
+and as tail, + its entity type; 30,677 names): maps fit far better (held-out cosine 0.915) but mostly because the entity types are easy;
+170 rules above the null (top 0.643), again 'X then Y => X' ('author'^-1 then 'from'^-1 => 'author'^-1); typing the writes 0.28 (0.38
+among pairs with a relation); judge AUC 0.502 / 0.537. **Still negative: label-free rule discovery from this corpus has now failed four
+ways (chains, shared pairs, maps over co-occurrence codes, maps over attribute codes).**
 
 ### Typed entailment graph from the records' name pairs (tools/ent_graph.py, 15 November; after Hosseini et al., TACL 2018)
 
