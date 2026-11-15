@@ -1111,9 +1111,12 @@ The stand-in trunk (3 x 192, wiki + Re-DocRED dev) trained 18,000 steps instead 
 | the same after 300 steps of other text | 0.37 / 0.47 / 0.40 | 0.39 / 0.51 / 0.40 |
 | confirmation by prediction, AUC typed / untyped (seed 0) | 0.797 / 0.805 | 0.792 / 0.762 |
 
-**A better-trained trunk learns taught facts faster but keeps them no better once other text follows, still holds no relation structure,
-and confirms no better.** Training length is not the bottleneck; dense-weight retention is. This lowers the priority of a Wikipedia-only
-multi-pass GPU build and supports moving facts into a sparse memory.
+**CORRECTION (15 November, 00:10): the 18k trunk is OVERFIT, not better trained.** Its 1.70 is on its own training text (wiki.bin is
+10.8 MB; 18k steps x 32 x 128 bytes is about 7 passes over it). On Re-DocRED documents it never read it is WORSE: 2.503 / 2.493 bits per
+byte against the 6k trunk's 2.246 / 2.235 (tools/keyed_units.py, the two document sets). So the table compares a fitted trunk with an
+overfit one: faster learning of taught facts with the same retention, no relation structure and no better confirmation is what
+memorisation would give, and it says nothing about a trunk trained longer on FRESH text. The question 'does more training on new text
+help' stays open; a GPU run with fresh data per pass (pass_fresh_data 1) is the test that can answer it.
 
 ### A key-to-key sparse memory addressed by name + JEPA wording key (tools/jepa_mem.py, 14 November, night; seed 0)
 
@@ -1141,6 +1144,30 @@ two relations of one subject only with the wording half, and COMPOSES: two-hop a
 first hop decoded to a known name.** The JEPA head helps on the better trunk (M 1.00, two-hop 0.87) but not on the 6k one; decoding
 between hops beats latent chaining (the decode cleans the key). The gap: paraphrased relation phrases (0.38) - the wording key has to
 learn synonymy from text, not from our frames. Seeds, abstention, retraction and capacity queued.
+
+**Seeds and new readouts (15 November, 00:07; seeds 0 / 1 on both trunks, and a 128 x 128 = 16,384-slot memory; JEPA key / raw key,
+rank in the test wording):**
+
+| | 6k s0 | 6k s1 | 18k s0 | 18k s1 | 18k, 16k slots |
+|---|---|---|---|---|---|
+| M (two relations per subject) | 0.84 / 1.00 | 0.96 / 0.96 | 1.00 / 0.96 | 0.95 / 0.95 | 0.91 / 0.97 |
+| two-hop, never taught, decoded | 0.73 / 0.87 | **0.97** / 0.85 | 0.87 / 0.83 | 0.83 / 0.75 | 0.88 / 0.80 |
+| RETRACT 30 of A: retracted (open) | 0.53 -> 0.33 | 0.63 -> 0.33 | 0.60 -> 0.33 | 0.70 -> 0.40 | 0.67 -> 0.27 |
+| RETRACT: largest bystander change (open, rest of A / B / M) | 0.04 | 0.02 | 0.00 | 0.00 | 0.04 |
+| ABSTAIN AUC (best cosine, taught vs never-taught subjects) | 0.61 / 0.70 | 0.72 / 0.65 | 0.62 / 0.68 | 0.66 / 0.60 | 0.72 / 0.62 |
+| CAPACITY: set A after 600 more facts (about 980 in all) | 0.68 / 0.85 | 0.70 / 0.75 | 0.80 / 0.75 | 0.77 / 0.53 | **0.87** / 0.72 |
+| paraphrased relation phrase, set A | 0.43 / 0.70 | 0.45 / 0.55 | 0.53 / 0.63 | 0.60 / 0.62 | 0.62 / 0.55 |
+
+**Replicated on every seed and trunk: facts learned in an unseen wording (rank 0.93-1.00), two relations of one subject separated by the
+wording half (the name-only memory 0.11-0.21), and composition for chains never taught (0.73-0.97 decoded). Retraction is CLEAN - the
+retracted facts lose about half their open recall and no bystander moves by more than 0.04 - but partial at 30 steps.** Abstention from
+the memory's confidence is weak (0.60-0.72). A memory 4x larger keeps old facts better as more are written (A 0.87 vs 0.68-0.80). The JEPA
+key and the raw key are level overall (the frame-trained head does not beat the raw state on its own); the open gap is paraphrase
+(0.43-0.70), which the text-trained key (K-TEXT, queued) addresses.
+
+Keyed units on the (overfit) 18k trunk, gate, on top of NAME: DATE +5.4 / +4.6, NUMBER +0.8 / +0.6, FACT +1.2 / -0.04, PLACE -0.2 / -0.2
+(bits per 1,000 bytes, late, first / second set): the same ranking as on the 6k trunk (DATE and NUMBER replicate, FACT unreliable, PLACE
+negative); the larger savings reflect the worse trunk (NAME alone 80-83 vs 30-33).
 
 ### Keyed units beyond names: which pay for themselves in bits? (tools/keyed_units.py, 14 November; Re-DocRED text, 6k stand-in trunk)
 
