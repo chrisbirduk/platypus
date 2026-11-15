@@ -1349,6 +1349,26 @@ questions about never-read names 0.00. COUNTER-WRITE (oracle, on a copy, 60 step
 (bits per answer byte it adds) to zero took WRONG from +5.8-6.0 to -2.7 to -3.6 (rank 1.00 -> 0.30-0.50) with RIGHT inferences and facts
 unchanged; an unlikelihood loss reached only +2.3. Built as cg27a_kmg.
 
+### Label-free triggers from CONSISTENCY (tools/stab_trigger.py, 15 November; the GPU path's 200 writes, 0.740 right, distant labels)
+
+Research routes (semantic entropy / SelfCheckGPT: stability under resampling; CAGED / CKRL / KGTtm: agreement across views and path
+evidence; temporal stability as evidence accumulates). AUC right vs wrong, and the lowest 20% flagged (wrong among them; base 0.26):
+
+| signal | AUC | wrong among flagged | kept right |
+|---|---|---|---|
+| (restatement: later documents stating the pair, tools/trigger_retest.py) | 0.639 | 0.35 | 0.76 |
+| 1 BOOTSTRAP STABILITY: mean / worst percentile over 5 resamples (70% of documents) / minus spread | 0.547 / 0.528 / 0.504 | 0.30 / 0.25 / 0.18 | 0.72-0.75 |
+| 2 VIEWS at write time: code / Adamic-Adar / resource allocation / 3-hop paths | 0.399 / 0.606 / 0.632 / 0.631 | 0.22 / 0.30 / 0.40 / 0.40 | 0.73-0.78 |
+| 2 the WORST view (all must support) / minus the views' spread | 0.623 / 0.607 | 0.40 / 0.40 | 0.775 |
+| 3 TEMPORAL: percentile after the next 2/10 of reading (indirect support only) / its change / 3-hop change | 0.612 / 0.608 / 0.596 | 0.32 / 0.29 / **0.43** | 0.75-0.78 |
+| combined: bootstrap worst + view worst + temporal change | 0.628 | 0.40 | 0.775 |
+
+(The resample and later tables are 256-dimensional - memory; the write-time rule at 256 dims scores 0.572.) **Negative as a trigger: no
+consistency signal passes AUC 0.64; the best flag sets hold wrong 0.40-0.43 against 0.26 (kept precision 0.74 -> 0.78).** Bootstrap stability
+is no help (the written pairs are stable whether right or wrong); path support (resource allocation, 3-hop) and its growth carry a little.
+Caveat: AUCs against the DISTANT labels (Wikidata), which agree with human labels only 0.85 (tools/trigger_retest.py part 2); offline against
+Re-DocRED human labels the restatement trigger reached 0.72-0.73 - part of the ceiling here may be the labels.
+
 ### Typing written inferences on confirmation (tools/type_confirm.py, 15 November; the GPU path, code + AA under the asymmetry filter)
 
 200 writes (0.740 right), typed by later reading (1-6 words between the names, either order): 0.94 typed - but the commonest typed wording is
