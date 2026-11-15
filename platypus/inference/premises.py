@@ -246,6 +246,26 @@ def premises_readout(model, cfg, S_slot, vis):
 _RTI_R = 'is connected to'
 
 
+def rti_ent(k, w, **kw):
+    """16 Nov: the pool entry of a written inference. Identity (key) always ('fact', A, _RTI_R, C) with A, C the sorted pair; with TYPED
+    WRITES (inf_rti_typed) the question is 'head <wording> ' and the answer the tail (w['th'], w['tw'], w['tt']), else 'A is connected to C'"""
+    A_, C_ = k
+    if w.get('tw'): h_, r_, t_ = w['th'], w['tw'], w['tt']
+    else: h_, r_, t_ = A_, _RTI_R, C_
+    e = dict(key=('fact', A_, _RTI_R, C_), A=h_, r=r_, ans=t_, d=w['d'], rti=True)
+    e.update(kw); return e
+
+
+def is_rti(e):
+    return bool(e.get('rti')) or e.get('r') == _RTI_R
+
+
+def rti_wkey(e):
+    """the ledger key (A, C) of an inference entry"""
+    k = e.get('key')
+    return (k[1], k[3]) if k and k[0] == 'fact' and len(k) > 3 and k[2] == _RTI_R else (e['A'], e['ans'])
+
+
 def _shape(n):
     if any(ch.isdigit() for ch in n): return 'num'
     c = sum(t[:1].isupper() for t in n.split()); return f"cap{min(c, 3)}" if c else 'low'
@@ -611,6 +631,16 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     if _PM.get('save_cand'):                                                   # 15 Nov (offline tools/learned_selector.py): every candidate's write-time features
         _PM['cand'] = dict(pairs=[tuple(sorted(c)) for c in ks], code=np.asarray(code, np.float32), aa=np.asarray(aa_all, np.float32), ra=np.asarray(ra_all, np.float32),
                            dA=deg[XA].astype(np.float32), dB=deg[XB].astype(np.float32), y=yy.copy(), rule=np.asarray(sc_, np.float32), ndv=int(ndv_))
+    TT_ = None
+    if int(getattr(cfg, 'inf_rti_typed', 0)):                                  # 16 Nov TYPED WRITES: the class pair's commonest relational wording in the store,
+        TT_ = collections.defaultdict(collections.Counter); TYP_ = _PM.get('TY', {})   #   head = the more specific name (lower store degree)
+        for r in RD:
+            if not (1 <= r[5] <= 8) or _rret_listlike(r) or r[1] not in NI or r[2] not in NI: continue
+            d1, d2 = deg[NI[r[1]]], deg[NI[r[2]]]
+            if d1 == d2: continue
+            hd_, tl_, fw_ = (r[1], r[2], 1) if d1 < d2 else (r[2], r[1], 0)
+            w_ = ' '.join(t for t in r[3].split() if t not in ('the', 'a', 'an'))
+            if w_ and any(ch.isalpha() for ch in w_): TT_[(TYP_.get(hd_, 'X'), TYP_.get(tl_, 'X'))][(w_, fw_)] += 1
     done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
@@ -620,7 +650,17 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         if 'INV' not in _PM or len(_PM['INV']) != len(NI): _PM['INV'] = {i: n for n, i in NI.items()}
         W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(len(cm_)), rank=len(wr), novel=True, code=float(code[j]), ndv=int(ndv_),
                            prem=[_PM['INV'][int(x)] for x in cm_[:5]], rule=str(sel_), score=float(sc_[j]), state='inferred')   # 15 Nov PROVENANCE: premises (bridges), rule, score
+        if TT_ is not None:
+            hd_, tl_ = (A_, C_) if deg[NI[A_]] <= deg[NI[C_]] else (C_, A_); cp_ = (_PM['TY'].get(hd_, 'X'), _PM['TY'].get(tl_, 'X'))
+            if TT_.get(cp_):
+                (w_, fw_), _ = TT_[cp_].most_common(1)[0]; th_, tt_ = (hd_, tl_) if fw_ else (tl_, hd_)
+                W[(A_, C_)].update(th=th_, tw=w_, tt=tt_)
         wr.append(bool(yy[j]))
+    if TT_ is not None:
+        ty_ = [(k, w) for k, w in W.items() if w.get('vis') == vis and w.get('tw')]
+        print(f"  [TYPED WRITES | visit {vis + 1}] {len(ty_)} of {len(wr)} written inferences typed (class pair -> the store's commonest relational wording, head = the more "
+              f"specific name): " + " | ".join(f"{w['th']} {w['tw']} {w['tt']} ({'right' if w['truth'] else 'wrong'})" for k, w in ty_[:6])
+              + " | wordings: " + ", ".join(f"'{a}' {n}" for a, n in collections.Counter(w['tw'] for k, w in ty_).most_common(6)), flush=True)
     print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
           f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
           f"(labelled {yy.mean():.3f}) || " + " || ".join([line(np.ones(len(sub), bool), 'ALL'), line(cn_ > 0, 'WITH A BRIDGE'), line(cn_ == 0, 'NO BRIDGE')])
@@ -713,7 +753,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
     have = {repr(e['key']) for e in ents + held}; T_, H_, U_, X_ = [], [], [], []
     for (A_, C_), w in W.items():
-        e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel'))
+        e = rti_ent((A_, C_), w, seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel')); e['pfs'] = [f"{e['A']} {e['r']} "]
         if repr(e['key']) in have: continue
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)

@@ -682,6 +682,8 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
+                                    #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
                                     #   read, mixed with the trunk by a learned gate at prediction time (trunk training untouched); readout [KEYED UNITS]
     inf_ku_fill=8000000             #     bytes of each visited domain's training text stored per visit

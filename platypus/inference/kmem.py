@@ -552,18 +552,18 @@ def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
     awaiting ones should not; also by the visit written (a fresh batch is not yet in the memory). LEARNING SPEED AS A JUDGE (Go-CLS):
     per inference, the memory's loss at its first and latest learning and the trunk's own loss at its first (predictability), AUC right vs
     wrong (label-free signals; the labels only score them)"""
-    from platypus.inference.premises import _PM, _RTI_R
+    from platypus.inference.premises import _PM, _RTI_R, rti_ent, is_rti, rti_wkey
     from platypus.inference.compress import _cg_auc
     W = _PM.get('rti') or {}
     if not W: return
-    inf_ = [e for e in fs if e['r'] == _RTI_R and (e['A'], e['ans']) in W]
-    st = lambda e: W[(e['A'], e['ans'])]
+    inf_ = [e for e in fs if is_rti(e) and rti_wkey(e) in W]
+    st = lambda e: W[rti_wkey(e)]
     grp = [('KEPT right', lambda w: w.get('judged') is not None and not w.get('flag') and w['truth']), ('KEPT wrong', lambda w: w.get('judged') is not None and not w.get('flag') and not w['truth']),
            ('FLAGGED right', lambda w: w.get('flag') and not w.get('ret') and w['truth']), ('FLAGGED wrong', lambda w: w.get('flag') and not w.get('ret') and not w['truth']),
            ('RETRACTED (removed from the memory)', lambda w: bool(w.get('ret'))),
            ('AWAITING (memory only)', lambda w: w.get('judged') is None)]
-    seen = {(e['A'], e['ans']) for e in inf_}                                  # retracted inferences leave the taught pool: take them from the ledger
-    inf_ = inf_ + [dict(key=('fact', A, _RTI_R, C), A=A, r=_RTI_R, ans=C, d=w['d']) for (A, C), w in W.items() if w.get('ret') and (A, C) not in seen]
+    seen = {rti_wkey(e) for e in inf_}                                         # retracted inferences leave the taught pool: take them from the ledger
+    inf_ = inf_ + [rti_ent((A, C), w) for (A, C), w in W.items() if w.get('ret') and (A, C) not in seen]
     parts = [f"{nm} {score([e for e in inf_ if f(st(e))], te, 30, False)}" for nm, f in grp]
     vs = sorted({st(e).get('vis') for e in inf_ if st(e).get('vis') is not None})
     parts += [f"written at visit {v + 1}: {score([e for e in inf_ if st(e).get('vis') == v], te, 30, False)}" for v in vs[-2:]]
@@ -587,15 +587,15 @@ def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30, memonly=False)
     is asked 'So B' r2 ' with its OWN decoded B' - with the all-text address the decoded name becomes the next subject. WITH the memory (gated)
     vs the trunk alone (each decodes its own B'): first hop exact, and C's rank among 10 (chance 0.10); also with the TRUE B given (ceiling)"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
-    from platypus.inference.premises import _RTI_R
+    from platypus.inference.premises import _RTI_R, is_rti, rti_wkey
     if memonly:                                                                # 15 Nov: chains with a hop ONLY the memory holds (an inference awaiting
         from platypus.inference.premises import _PM                            #   judgement: never taught to the trunk) - composition through the memory
-        W = _PM.get('rti') or {}; MO = [e for e in fs if e['r'] == _RTI_R and (W.get((e['A'], e['ans'])) or {}).get('judged', 0) is None]
-        F0 = [e for e in fs if e['r'] != _RTI_R] + MO; mo = {id(e) for e in MO}; byA = {}
+        W = _PM.get('rti') or {}; MO = [e for e in fs if is_rti(e) and (W.get(rti_wkey(e)) or {}).get('judged', 0) is None]
+        F0 = [e for e in fs if not is_rti(e)] + MO; mo = {id(e) for e in MO}; byA = {}
         for e in F0: byA.setdefault(e['A'], []).append(e)
         ch = [(e1, e2) for e1 in F0 for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans']) and (id(e1) in mo or id(e2) in mo)]
     else:
-        F_ = [e for e in fs if e['r'] != _RTI_R]; byA = {}
+        F_ = [e for e in fs if not is_rti(e)]; byA = {}
         for e in F_: byA.setdefault(e['A'], []).append(e)
         ch = [(e1, e2) for e1 in F_ for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
     tag = 'TWO-HOP, MEMORY-ONLY HOP' if memonly else 'TWO-HOP'
@@ -849,7 +849,8 @@ def kmc_retract(model, cfg, S_slot, ents, vis):
     new = [(k, w) for k, w in W.items() if w.get('ret') and not w.get('kmc_done')]
     kept = [(k, w) for k, w in W.items() if w.get('judged') is not None and not w.get('flag')]
     pend = [(k, w) for k, w in W.items() if w.get('judged') is None]
-    ent = lambda k, w: dict(A=k[0], r=_RTI_R, ans=k[1], d=w['d'])
+    from platypus.inference.premises import rti_ent
+    ent = lambda k, w: rti_ent(k, w)
     print(f"  [CONSOLIDATION THROUGH THE MEMORY | visit {vis + 1}] written inferences: {len(pend)} awaiting judgement (memory only), {len(kept)} judged and KEPT "
           f"(now taught to the trunk too: right {np.mean([bool(w['truth']) for k, w in kept]) if kept else float('nan'):.2f}), "
           f"{sum(1 for w in W.values() if w.get('flag'))} flagged (never taught to the trunk; right {np.mean([bool(w['truth']) for w in W.values() if w.get('flag')]) if any(w.get('flag') for w in W.values()) else float('nan'):.2f}), "
@@ -911,8 +912,10 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] no text read since the first writes yet", flush=True); return
     ent = collections.defaultdict(dict)                                        # subject -> {answer: kind}
     for e in ents:
-        if e['key'][0] == 'fact' and e['r'] != _RTI_R: ent[e['A']][e['ans']] = 'fact'
-    for (A, C), w in W.items(): ent[A][C] = ('inf', bool(w['truth']))
+        if e['key'][0] == 'fact' and not e.get('rti') and e['r'] != _RTI_R: ent[e['A']][e['ans']] = 'fact'
+    for (A, C), w in W.items():
+        if w.get('tw'): ent[w['th']][w['tt']] = ('inf', bool(w['truth']))         # 16 Nov typed writes: subject = the head, answer = the tail
+        else: ent[A][C] = ('inf', bool(w['truth']))
     subj = set(ent) & set(K.get('subj', ()))
     sp = [r for r in R if lo_ <= r[0] < hi_ and r[1] in subj and r[7].startswith(r[1])]
     rs = np.random.RandomState(int(cfg.seed) + 6161 + vis); cap = int(getattr(cfg, 'inf_kmfb_n', 4000))
