@@ -731,7 +731,11 @@ def _rret_judge(cfg, RD, ndv_, vis):
     for lo, ks in sorted(groups.items()):
         nd = max(1, ndv_ - lo); df = collections.Counter(); byp = collections.defaultdict(lambda: [set(), 0]); seenpair = set()
         want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter(); cw9 = collections.defaultdict(list)
+        hd9 = {(W[k].get('th') or k[0]): k for k in ks}; tl9 = {(W[k].get('tt') or k[1]) for k in ks}; HF9 = collections.defaultdict(list); LK9 = set()   # 16 Nov TYPED CONFIRMATION
         for r in RD:
+            if 1 <= r[5] <= 8 and not _rret_listlike(r):                       #   (inf_rret_sig 'rel+cc'): head-first records since the write; pairs the store
+                if r[0] >= lo and r[1] in hd9: HF9[r[1]].append(r[2])          #   linked before it (a container of the tail is no contradiction)
+                elif r[0] < lo and (r[1] in tl9 or r[2] in tl9): LK9.add(frozenset((r[1], r[2])))
             if frozenset((r[1], r[2])) in want and 1 <= r[5] <= 8 and not _rret_listlike(r):   # 15 Nov: RELATIONAL records of the pair (not lists)
                 relA[frozenset((r[1], r[2]))] += 1; relS[frozenset((r[1], r[2]))] += int(r[0] >= lo)
                 if r[0] >= lo: cw9[frozenset((r[1], r[2]))].append((r[1], r[2], _rnorm(r[3])))
@@ -747,7 +751,11 @@ def _rret_judge(cfg, RD, ndv_, vis):
         docs = np.array([len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0 for k in ks], float)
         sig_ = str(getattr(cfg, 'inf_rret_sig', 'short+pmi'))                  # 15 Nov: 'docs' = documents stating the pair since the write (offline on the
         ra_ = np.array([relA[frozenset(k)] for k in ks], float); rs_ = np.array([relS[frozenset(k)] for k in ks], float)
-        sc = rk(docs) if sig_ == 'docs' else rk(ra_) if sig_ == 'rel' else rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr   # 'rel' (cg27a_kmr): relational
+        def _cc9(k):
+            hh, tt = (W[k].get('th') or k[0]), (W[k].get('tt') or k[1]); zs = HF9.get(hh, ())
+            cf = sum(1 for z in zs if z == tt); ct = sum(1 for z in zs if z != tt and frozenset((z, tt)) not in LK9); return (cf - ct) / max(1, cf + ct)
+        cc_ = np.array([_cc9(k) for k in ks], float)
+        sc = (rk(docs) if sig_ == 'docs' else rk(ra_) if sig_ == 'rel' else rk(ra_) + rk(cc_) if sig_ == 'rel+cc' else rk(short) + rk(pmi)); thr = np.quantile(sc, q); fl = sc <= thr   # 'rel' (cg27a_kmr): relational
         yv_ = np.array([bool(W[k]['truth']) for k in ks]); au_ = lambda x: _cg_auc(x[yv_], x[~yv_]) if yv_.any() and (~yv_).any() else float('nan')   #   records (0.697 offline)
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
@@ -770,6 +778,8 @@ def _rret_judge(cfg, RD, ndv_, vis):
                     if a1 and a2: T3[(a1, a2)][cf] += 1; nl9 += 1
             out.append(f"COMPOSITION TABLE learned {nl9} premise-pair entries from this batch's kept, confirmed inferences ({len(T3)} cells)")
         a_ = _cg_auc(sc[y], sc[~y]) if y.any() and (~y).any() else float('nan')
+        out.append(f"[TYPED CONFIRMATION (evaluation)] AUC relational count {au_(rk(ra_)):.3f}, typed confirm - contradict {au_(cc_):.3f} (covers {np.mean([bool(HF9.get(W[k].get('th') or k[0])) for k in ks]):.2f}), "
+                   f"both {au_(rk(ra_) + rk(cc_)):.3f}")
         out.append(f"[signal {sig_}] written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
                    f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "
                    f"| no confirming record {int((short == 0).sum())} | RETRACTED {int(ret.sum())} (wrong {1 - y[ret].mean() if ret.any() else float('nan'):.2f}), flagged taught kept as control "

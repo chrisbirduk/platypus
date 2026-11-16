@@ -672,7 +672,7 @@ class Config:
     inf_kmc_passes=8                #     byte edit: passes over the retracted rows until every answer byte is below -margin
     inf_kmc_steps=60                #     counter-write steps (32 retracted rows + 32 kept rows each)
     inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
-    inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret), 'docs' (documents stating the pair since the write; AUC 0.64) or 'rel'
+    inf_rret_sig='short+pmi'        #     the judge's signal ('rel+cc', 16 Nov: rank of the relational count + rank of the containment-aware typed confirmation; offline +0.02-0.05 AUC on the next tier, coverage 0.8-0.9): 'short+pmi' (cg27a_rret), 'docs' (documents stating the pair since the write; AUC 0.64) or 'rel'
                                     #     (15 Nov, cg27a_kmr: RELATIONAL records of the pair - linked by words, not lists; offline 0.697)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
