@@ -102,8 +102,8 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 if any(ch.isalpha() for ch in w_) and w9 not in LISTW and w9 not in ('and', 'or'): tab[(TY.get(hd, 'X'), TY.get(tl, 'X'))][(w_, fw)] += 1
             f = frozenset((r[1], r[2]))
             if f in need: pw[f].append((r[1], r[2], norm(r[3])))
-        if h(v) <= r[0] < h(v + 2) and isrel(r):
-            k = want.get(frozenset((r[1], r[2])))
+        if h(v) <= r[0] < (mid if int(os.environ.get('LS_HALF', 1)) else h(v + 2)) and isrel(r):   # 16 Nov: the judge (and retyping) see only the FIRST half
+            k = want.get(frozenset((r[1], r[2])))                              #   (the second half is the held-out scoring text)
             if k: conf[k].append((r[1], r[2], norm(r[3])))
     def orient(X, Y):
         cs = pw.get(frozenset((X, Y)))
