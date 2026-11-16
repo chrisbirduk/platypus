@@ -924,7 +924,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] no spans name a written subject (documents {lo_}-{hi_})", flush=True); return
     try: sl = int(S_slot(1))
     except Exception: sl = 0
-    fb = collections.defaultdict(lambda: [0, 0.0, 0, 0]); opened = 0; tot = collections.Counter(); L2 = math.log(2)
+    fb = collections.defaultdict(lambda: [0, 0.0, 0, 0, 0.0]); opened = 0; tot = collections.Counter(); L2 = math.log(2)
     for i0 in range(0, len(sp), 64):
         ch = sp[i0:i0 + 64]; tb = [(r[7] + '.').encode('latin-1', 'replace') for r in ch]
         X, _ = _ws_batch(model, [b + b' ' for b in tb])
@@ -944,7 +944,10 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
             pick = max(ans, key=lambda a: float(first[a.encode('latin-1', 'replace')[0]])) if ans else None
             if pick is None: continue
             name = b[s0:e0].decode('latin-1').rstrip('.'); hit = name == pick or name.startswith(pick) or pick.startswith(name)
-            f = fb[(A, pick)]; f[0] += 1; f[1] += gain; f[2] += int(hit); f[3] += int(not hit)
+            sA = runs[0][1]; posall = [i for i in range(max(0, sA - 1), e0 - 1) if opn.get((k, i))]   # 16 Nov: the WHOLE span after the subject (wording + name)
+            ixa = torch.tensor(posall, device=l0.device); tga = X[k, ixa + 1]
+            gall = float((l1[k, ixa].gather(-1, tga[:, None]) - l0[k, ixa].gather(-1, tga[:, None])).sum()) / L2
+            f = fb[(A, pick)]; f[0] += 1; f[1] += gain; f[2] += int(hit); f[3] += int(not hit); f[4] += gall
             kd = ent[A][pick]; tot[('fact' if kd == 'fact' else ('inference right' if kd[1] else 'inference wrong'), 'gain')] += gain; tot[(kd if kd == 'fact' else 'inf', 'n')] += 1
     inf = [(k, v) for k, v in fb.items() if isinstance(ent[k[0]].get(k[1]), tuple)]
     y = np.array([ent[k[0]][k[1]][1] for k, v in inf]); mg = np.array([v[1] / v[0] for k, v in inf]); cc = np.array([(v[2] - v[3]) / v[0] for k, v in inf])
@@ -954,7 +957,9 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
     for k9, v in inf:
         w = W.get(hk.get(k9, k9)) or {}
         if w.get('rank') is not None: rk.append((float(w['rank']), v[1] / v[0]))
-        if hk.get(k9) in W: W[hk[k9]]['use'] = v[1] / v[0]; W[hk[k9]]['use_n'] = v[0]   # 16 Nov USEFULNESS: the memory's mean bits saved on this inference's later text
+        if hk.get(k9) in W:                                                    # 16 Nov USEFULNESS: the memory's mean bits saved on this inference's later text -
+            sp9 = int(getattr(cfg, 'inf_kmc_useful_span', 0))                 #   on the second name (default) or on the whole span after the subject
+            W[hk[k9]]['use'] = (v[4] if sp9 else v[1]) / v[0]; W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
     from scipy.stats import spearmanr
     rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
     print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
@@ -966,5 +971,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
     if uw:                                                                     # 16 Nov USEFULNESS (the keep rule of inf_kmc_useful; labels only score)
         up = [w for w in uw if w['use'] > thr]; un = [w for w in uw if w['use'] <= thr]; jk = [w for w in up if w.get('judged') is not None and not w.get('flag')]
         f9 = lambda L: f"{np.mean([bool(w['truth']) for w in L]):.3f} ({len(L)})" if L else 'nan (0)'
-        print(f"  [USEFULNESS | visit {vis + 1}] written inferences with feedback {len(uw)} of {len(W)}: USEFUL (mean bits saved > {thr:g}) right {f9(up)}, not useful right {f9(un)}, "
+        sn = [w for w in uw if w.get('use_span', 0) > thr]; nn = [w for w in uw if w.get('use_name', 0) > thr]
+        print(f"  [USEFULNESS | visit {vis + 1}] measured on {'the WHOLE SPAN' if int(getattr(cfg, 'inf_kmc_useful_span', 0)) else 'the SECOND NAME'} (second name: useful right {f9(nn)}; "
+              f"whole span: useful right {f9(sn)}) || written inferences with feedback {len(uw)} of {len(W)}: USEFUL (mean bits saved > {thr:g}) right {f9(up)}, not useful right {f9(un)}, "
               f"no feedback right {f9([w for w in W.values() if w.get('use') is None])} | useful AND judged-kept right {f9(jk)} | keep rule {'ON (inf_kmc_useful)' if int(getattr(cfg, 'inf_kmc_useful', 0)) else 'off (readout)'}", flush=True)

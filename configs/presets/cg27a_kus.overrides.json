@@ -192,5 +192,7 @@
  "inf_ku": 1,
  "_inf_ku": "keyed continuation units, prediction time only; readout [KEYED UNITS]",
  "inf_kmc_useful": 1,
- "_inf_kmc_useful": "the usefulness keep rule (THE model change of cg27a_kus)"
+ "_inf_kmc_useful": "the usefulness keep rule (THE model change of cg27a_kus)",
+ "inf_kmc_useful_span": 1,
+ "_inf_kmc_useful_span": "usefulness over the whole span after the subject (offline: judge AND useful keeps a memory 0.80-0.83 right that saves the most bits; the second name alone keeps 6-13 a round, 0.89-1.00 right); the readout reports both"
 }
