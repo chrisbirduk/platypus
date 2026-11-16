@@ -74,7 +74,18 @@ def bits(claims, idx, TXT, PT, EN):
     return 1000 * s / max(1, n)
 POL = tuple(os.environ.get('LS_POL', 'JUDGE,USEFUL,JUDGE+USE,ALL BATCH').split(','))   # also EITHER (judge or useful, all 400), USEFUL>t (gain above t bits per 1,000 bytes)
 KEPT = {p: {} for p in POL}; T3 = {p: collections.defaultdict(collections.Counter) for p in POL}
-SELX, SELY = [], []                                                            # 16 Nov LEARNED SELECTION: write-time features -> usefulness, from earlier rounds
+SELX, SELY = [], []
+PRD = pm._PM['PRD']; CONT = {'P131', 'P17', 'P30', 'P706', 'P276', 'P361'}
+def _cg(x, grp):
+    if not grp: return x
+    b_, inv = (x[:-3], '^-1') if x.endswith('^-1') else (x, ''); return ('CONTAINED' + inv) if b_ in CONT else x
+def _rels(X, Y, grp): return {_cg(x, grp) for x in PRD.get((X, Y), ())} | {_cg(x + '^-1', grp) for x in PRD.get((Y, X), ())}
+_RMc = collections.defaultdict(collections.Counter)
+for r in R:
+    if r[6] and 1 <= r[5] <= 8 and not pm._rret_listlike(r):
+        for x in set(PRD.get((r[1], r[2]), ())) | {x + '^-1' for x in PRD.get((r[2], r[1]), ())}: _RMc[norm(r[3])][x] += 1
+RMAP = {w: c.most_common(1)[0][0] for w, c in _RMc.items()}
+def tright(c, grp): return c[1] in RMAP and _cg(RMAP[c[1]], grp) in _rels(c[0], c[2], grp)                                                            # 16 Nov LEARNED SELECTION: write-time features -> usefulness, from earlier rounds
 pm._PM['rti'] = {}
 for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5').split(',')), 1):
     before = set(pm._PM['rti']); pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
@@ -149,6 +160,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 if len(kk) < float(os.environ.get('LS_STOP', 0.1)) * max(1, len(ch)): break
         elif p == 'BOTH-NAME': keep = [k for k in W if judged(k) and useful_name(k)]
         elif p == 'USEFUL-NAME': keep = [k for k in W if useful_name(k)]
+        elif p == 'BOTH-RETYPE': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
         elif p == 'EITHER-BATCH': keep = [k for k in W if tier[k] and (judged(k) or useful(k))]
@@ -156,6 +168,9 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         else: keep = [k for k in W if tier[k]]
         for k in keep:
             if k in typed: KEPT[p][k] = typed[k]
+            if p == 'BOTH-RETYPE' and conf.get(k):                             # 16 Nov RETYPE ON CONFIRMATION: the kept inference rewritten in the wording of
+                X, Y, w = collections.Counter(conf[k]).most_common(1)[0][0]    #   the later relational sentence that states it
+                if w and any(ch.isalpha() for ch in w): KEPT[p][k] = (X, w, Y)
             if conf.get(k):                                                    # the composition table learns from kept, confirmed writes (no labels)
                 X, Y, w = collections.Counter(conf[k]).most_common(1)[0][0]; cf = w if X == k[0] else w + ' ^R'
                 for b in W[k]['prem']:
@@ -163,8 +178,9 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                     if a1 and a2: T3[p][(a1, a2)][cf] += 1
         allk = list(KEPT[p]); b2 = bits([KEPT[p][k] for k in allk], second, TXT, PT, EN)
         yk = [y[k] for k in keep]; yall = [pm._PM['rti'][k]['truth'] for k in allk]
-        out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}; composition-typed {np.mean([k in typed and typed[k][1] not in ('in',) for k in keep]) if keep else 0:.2f}) | memory {len(allk)} "
-                   f"(right {np.mean(yall) if yall else float('nan'):.3f}) saves {b2:+.2f}")
+        mm = list(KEPT[p].values()); te = np.mean([tright(c, 0) for c in mm]) if mm else float('nan'); tg = np.mean([tright(c, 1) for c in mm]) if mm else float('nan')
+        out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}) | memory {len(allk)} (right {np.mean(yall) if yall else float('nan'):.3f}; typed claims right "
+                   f"exact {te:.3f} / 'is in' {tg:.3f}) saves {b2:+.2f}")
     if any(p == 'SEL-BOTH' for p in POL):                                     # this round's usefulness labels for the next rounds' selector (typed by the
         typed = {}                                                             #   class pair, as the rounds start)
         for (A, C), e in W.items():
