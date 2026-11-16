@@ -28,6 +28,7 @@ _SENT = re.compile(r'[^.!?]+[.!?]*')
 def _load_distant(cfg):
     """records of the distant set, once: (doc, A, B, words between, last word, n words, labelled, record text); names' automatic types"""
     p = str(getattr(cfg, 'inf_premises_path', '') or '')
+    _PM['list2'] = bool(int(getattr(cfg, 'inf_rret_list2', 0)))
     if _PM.get('path') == p: return
     _PM.update(path=p, R=[], TY={}, LAB=set(), ND=0)
     if not p: return
@@ -244,6 +245,30 @@ def premises_readout(model, cfg, S_slot, vis):
 
 
 _RTI_R = 'is connected to'
+
+
+def rti_ent(k, w, **kw):
+    """16 Nov: the pool entry of a written inference. Identity (key) always ('fact', A, _RTI_R, C) with A, C the sorted pair; with TYPED
+    WRITES (inf_rti_typed) the question is 'head <wording> ' and the answer the tail (w['th'], w['tw'], w['tt']), else 'A is connected to C'"""
+    A_, C_ = k
+    if w.get('tw'): h_, r_, t_ = w['th'], w['tw'], w['tt']
+    else: h_, r_, t_ = A_, _RTI_R, C_
+    e = dict(key=('fact', A_, _RTI_R, C_), A=h_, r=r_, ans=t_, d=w['d'], rti=True)
+    e.update(kw); return e
+
+
+def _rnorm(w):
+    return ' '.join(t for t in w.split() if t not in ('the', 'a', 'an'))
+
+
+def is_rti(e):
+    return bool(e.get('rti')) or e.get('r') == _RTI_R
+
+
+def rti_wkey(e):
+    """the ledger key (A, C) of an inference entry"""
+    k = e.get('key')
+    return (k[1], k[3]) if k and k[0] == 'fact' and len(k) > 3 and k[2] == _RTI_R else (e['A'], e['ans'])
 
 
 def _shape(n):
@@ -611,6 +636,17 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     if _PM.get('save_cand'):                                                   # 15 Nov (offline tools/learned_selector.py): every candidate's write-time features
         _PM['cand'] = dict(pairs=[tuple(sorted(c)) for c in ks], code=np.asarray(code, np.float32), aa=np.asarray(aa_all, np.float32), ra=np.asarray(ra_all, np.float32),
                            dA=deg[XA].astype(np.float32), dB=deg[XB].astype(np.float32), y=yy.copy(), rule=np.asarray(sc_, np.float32), ndv=int(ndv_))
+    TT_ = None
+    if int(getattr(cfg, 'inf_rti_typed', 0)):                                  # 16 Nov TYPED WRITES: the class pair's commonest relational wording in the store,
+        TT_ = collections.defaultdict(collections.Counter); TYP_ = _PM.get('TY', {})   #   head = the more specific name (lower store degree)
+        for r in RD:
+            if not (1 <= r[5] <= 8) or _rret_listlike(r) or r[1] not in NI or r[2] not in NI: continue
+            d1, d2 = deg[NI[r[1]]], deg[NI[r[2]]]
+            if d1 == d2: continue
+            hd_, tl_, fw_ = (r[1], r[2], 1) if d1 < d2 else (r[2], r[1], 0)
+            w_ = ' '.join(t for t in r[3].split() if t not in ('the', 'a', 'an'))
+            w9_ = ' '.join(t for t in w_.replace('"', ' ').split()).strip(' ,;()')
+            if w_ and any(ch.isalpha() for ch in w_) and w9_ not in _RRET_LISTW and w9_ not in ('and', 'or') and (not int(getattr(cfg, 'inf_rti_clean', 0)) or (w_[0].isalnum() and w_[-1].isalnum())): TT_[(TYP_.get(hd_, 'X'), TYP_.get(tl_, 'X'))][(w_, fw_)] += 1
     done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
     for j in o:
         if len(wr) >= nmax: break
@@ -620,7 +656,39 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         if 'INV' not in _PM or len(_PM['INV']) != len(NI): _PM['INV'] = {i: n for n, i in NI.items()}
         W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(len(cm_)), rank=len(wr), novel=True, code=float(code[j]), ndv=int(ndv_),
                            prem=[_PM['INV'][int(x)] for x in cm_[:5]], rule=str(sel_), score=float(sc_[j]), state='inferred')   # 15 Nov PROVENANCE: premises (bridges), rule, score
+        if TT_ is not None:
+            hd_, tl_ = (A_, C_) if deg[NI[A_]] <= deg[NI[C_]] else (C_, A_); cp_ = (_PM['TY'].get(hd_, 'X'), _PM['TY'].get(tl_, 'X'))
+            if TT_.get(cp_):
+                (w_, fw_), _ = TT_[cp_].most_common(1)[0]; th_, tt_ = (hd_, tl_) if fw_ else (tl_, hd_)
+                W[(A_, C_)].update(th=th_, tw=w_, tt=tt_)
         wr.append(bool(yy[j]))
+    if int(getattr(cfg, 'inf_rti_comp', 0)):                                   # 16 Nov TYPED COMPOSITION (inf_rti_comp): the premises' relational wordings (A-B, B-C,
+        new9 = [k for k, w in W.items() if w.get('vis') == vis]                #   oriented) at write time; the table learned from kept, confirmed inferences types
+        need9 = {frozenset((a, b)) for a, c in new9 for b in W[(a, c)]['prem']} | {frozenset((b, c)) for a, c in new9 for b in W[(a, c)]['prem']}   #   them where it can
+        pw9 = collections.defaultdict(list)
+        for r in RD:
+            if 1 <= r[5] <= 8 and not _rret_listlike(r):
+                f9 = frozenset((r[1], r[2]))
+                if f9 in need9: pw9[f9].append((r[1], r[2], _rnorm(r[3])))
+        def ori9(X, Y):
+            cs = pw9.get(frozenset((X, Y)))
+            if not cs: return None
+            a, b, w = collections.Counter(cs).most_common(1)[0][0]; return w if a == X else w + ' ^R'
+        T3 = _PM.get('T3') or {}; ncomp = 0
+        for (A_, C_) in new9:
+            pw = [(ori9(A_, b), ori9(b, C_)) for b in W[(A_, C_)]['prem']]; W[(A_, C_)]['pw'] = pw; votes = collections.Counter()
+            for a1, a2 in pw:
+                if a1 and a2: votes.update(T3.get((a1, a2), {}))
+            if votes:
+                cwd = votes.most_common(1)[0][0]; rv = cwd.endswith(' ^R'); w0 = cwd[:-3] if rv else cwd
+                W[(A_, C_)].update(th=C_ if rv else A_, tw=w0, tt=A_ if rv else C_, comp=True); ncomp += 1
+        print(f"  [TYPED COMPOSITION | visit {vis + 1}] {ncomp} of {len(new9)} new inferences typed by the composition table ({len(T3)} cells; learned from kept, confirmed "
+              f"inferences) | premises with a relational wording {np.mean([p is not None for k in new9 for q in W[k]['pw'] for p in q]) if new9 else 0:.2f}", flush=True)
+    if TT_ is not None:
+        ty_ = [(k, w) for k, w in W.items() if w.get('vis') == vis and w.get('tw')]
+        print(f"  [TYPED WRITES | visit {vis + 1}] {len(ty_)} of {len(wr)} written inferences typed (class pair -> the store's commonest relational wording, head = the more "
+              f"specific name): " + " | ".join(f"{w['th']} {w['tw']} {w['tt']} ({'right' if w['truth'] else 'wrong'})" for k, w in ty_[:6])
+              + " | wordings: " + ", ".join(f"'{a}' {n}" for a, n in collections.Counter(w['tw'] for k, w in ty_).most_common(6)), flush=True)
     print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] store graph {NN} names, {int(G.nnz // 2)} name pairs from {len(ia)} records (held out: {int(HD.sum())} records of "
           f"{len(co)} documents, and every record pairing two names of one of them) -> CODES {k} dims ({t1:.0f} s) | candidates never stated together {len(ks)} "
           f"(labelled {yy.mean():.3f}) || " + " || ".join([line(np.ones(len(sub), bool), 'ALL'), line(cn_ > 0, 'WITH A BRIDGE'), line(cn_ == 0, 'NO BRIDGE')])
@@ -638,7 +706,11 @@ _RRET_LISTW = {',', 'and', 'or', '(', ')', '-', ', and', ', or', ') and', ') ,',
 
 def _rret_listlike(r):
     """15 Nov: a record whose names are linked only by a list or coordination ('A, B and C'), not by relational wording"""
-    return r[3] in _RRET_LISTW or r[3] == '' or str(r[7]).count(',') >= 2
+    if r[3] in _RRET_LISTW or r[3] == '' or str(r[7]).count(',') >= 2: return True
+    if _PM.get('list2'):                                                       # 16 Nov WIDER LIST FILTER (inf_rret_list2): 'X , Y and Z' (one comma + and / or)
+        w = ' ' + r[3] + ' '
+        return bool(re.search(r' , .*\b(and|or)\b', w)) or bool(re.search(r'\b(and|or)\b.* , ', w)) or r[3].strip() in ('and', 'or', ', and', ', or', 'as well as', 'and the')
+    return False
 
 
 def _rret_judge(cfg, RD, ndv_, vis):
@@ -658,10 +730,11 @@ def _rret_judge(cfg, RD, ndv_, vis):
     q = float(getattr(cfg, 'inf_rret_q', 0.2)); out = []
     for lo, ks in sorted(groups.items()):
         nd = max(1, ndv_ - lo); df = collections.Counter(); byp = collections.defaultdict(lambda: [set(), 0]); seenpair = set()
-        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter()
+        want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter(); cw9 = collections.defaultdict(list)
         for r in RD:
             if frozenset((r[1], r[2])) in want and 1 <= r[5] <= 8 and not _rret_listlike(r):   # 15 Nov: RELATIONAL records of the pair (not lists)
                 relA[frozenset((r[1], r[2]))] += 1; relS[frozenset((r[1], r[2]))] += int(r[0] >= lo)
+                if r[0] >= lo: cw9[frozenset((r[1], r[2]))].append((r[1], r[2], _rnorm(r[3])))
             if r[0] < lo: continue
             for n in (r[1], r[2]):
                 if n in nm and (r[0], n) not in dn: dn.add((r[0], n)); df[n] += 1
@@ -679,6 +752,23 @@ def _rret_judge(cfg, RD, ndv_, vis):
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
         for j, k in enumerate(ks): W[k].update(judged=vis, flag=bool(fl[j]), ret=bool(ret[j]), rscore=float(sc[j]))
+        if int(getattr(cfg, 'inf_rti_retype', 0)):                             # 16 Nov RETYPE ON CONFIRMATION: a kept inference that a later relational record
+            nrt = 0                                                            #   states is rewritten in that record's wording and order
+            for j, k in enumerate(ks):
+                cs = cw9.get(frozenset(k))
+                if fl[j] or not cs: continue
+                X, Y, w = collections.Counter(cs).most_common(1)[0][0]
+                if w and any(ch.isalpha() for ch in w): W[k].update(th=X, tw=w, tt=Y, retyped=vis); nrt += 1
+            out.append(f"RETYPED ON CONFIRMATION {nrt} kept inferences (e.g. " + "; ".join(f"{W[k]['th']} {W[k]['tw']} {W[k]['tt']} ({'right' if W[k]['truth'] else 'wrong'})" for k in ks if W[k].get('retyped') == vis)[:300] + ")")
+        if int(getattr(cfg, 'inf_rti_comp', 0)):                               # 16 Nov TYPED COMPOSITION: kept inferences that a later relational record
+            T3 = _PM.setdefault('T3', collections.defaultdict(collections.Counter)); nl9 = 0   #   states teach the table premise wordings -> that wording
+            for j, k in enumerate(ks):
+                cs = cw9.get(frozenset(k))
+                if fl[j] or not cs: continue
+                X, Y, w = collections.Counter(cs).most_common(1)[0][0]; cf = w if X == k[0] else w + ' ^R'
+                for a1, a2 in W[k].get('pw', ()):
+                    if a1 and a2: T3[(a1, a2)][cf] += 1; nl9 += 1
+            out.append(f"COMPOSITION TABLE learned {nl9} premise-pair entries from this batch's kept, confirmed inferences ({len(T3)} cells)")
         a_ = _cg_auc(sc[y], sc[~y]) if y.any() and (~y).any() else float('nan')
         out.append(f"[signal {sig_}] written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
                    f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "
@@ -711,9 +801,16 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     W = _PM.get('rti') or {}
     if not W:
         print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
+    nup = 0
+    for e in ents + held:                                                      # 16 Nov RETYPE ON CONFIRMATION: pool entries follow their ledger entry's new type
+        if is_rti(e):
+            w9 = W.get(rti_wkey(e)) or {}
+            if w9.get('retyped') is not None and (e['A'], e['r'], e['ans']) != (w9['th'], w9['tw'], w9['tt']):
+                e.update(A=w9['th'], r=w9['tw'], ans=w9['tt']); e['pfs'] = [f"{e['A']} {e['r']} "]; nup += 1
+    if nup: print(f"  [RETYPE ON CONFIRMATION | visit {vis + 1}] {nup} taught inferences now taught in their confirming wording", flush=True)
     have = {repr(e['key']) for e in ents + held}; T_, H_, U_, X_ = [], [], [], []
     for (A_, C_), w in W.items():
-        e = dict(key=('fact', A_, _RTI_R, C_), A=A_, r=_RTI_R, ans=C_, d=w['d'], pfs=[f"{A_} {_RTI_R} "], seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel'))
+        e = rti_ent((A_, C_), w, seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel')); e['pfs'] = [f"{e['A']} {e['r']} "]
         if repr(e['key']) in have: continue
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)

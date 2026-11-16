@@ -552,18 +552,18 @@ def _kmi_status_readout(model, cfg, K, fs, score, te, vis):
     awaiting ones should not; also by the visit written (a fresh batch is not yet in the memory). LEARNING SPEED AS A JUDGE (Go-CLS):
     per inference, the memory's loss at its first and latest learning and the trunk's own loss at its first (predictability), AUC right vs
     wrong (label-free signals; the labels only score them)"""
-    from platypus.inference.premises import _PM, _RTI_R
+    from platypus.inference.premises import _PM, _RTI_R, rti_ent, is_rti, rti_wkey
     from platypus.inference.compress import _cg_auc
     W = _PM.get('rti') or {}
     if not W: return
-    inf_ = [e for e in fs if e['r'] == _RTI_R and (e['A'], e['ans']) in W]
-    st = lambda e: W[(e['A'], e['ans'])]
+    inf_ = [e for e in fs if is_rti(e) and rti_wkey(e) in W]
+    st = lambda e: W[rti_wkey(e)]
     grp = [('KEPT right', lambda w: w.get('judged') is not None and not w.get('flag') and w['truth']), ('KEPT wrong', lambda w: w.get('judged') is not None and not w.get('flag') and not w['truth']),
            ('FLAGGED right', lambda w: w.get('flag') and not w.get('ret') and w['truth']), ('FLAGGED wrong', lambda w: w.get('flag') and not w.get('ret') and not w['truth']),
            ('RETRACTED (removed from the memory)', lambda w: bool(w.get('ret'))),
            ('AWAITING (memory only)', lambda w: w.get('judged') is None)]
-    seen = {(e['A'], e['ans']) for e in inf_}                                  # retracted inferences leave the taught pool: take them from the ledger
-    inf_ = inf_ + [dict(key=('fact', A, _RTI_R, C), A=A, r=_RTI_R, ans=C, d=w['d']) for (A, C), w in W.items() if w.get('ret') and (A, C) not in seen]
+    seen = {rti_wkey(e) for e in inf_}                                         # retracted inferences leave the taught pool: take them from the ledger
+    inf_ = inf_ + [rti_ent((A, C), w) for (A, C), w in W.items() if w.get('ret') and (A, C) not in seen]
     parts = [f"{nm} {score([e for e in inf_ if f(st(e))], te, 30, False)}" for nm, f in grp]
     vs = sorted({st(e).get('vis') for e in inf_ if st(e).get('vis') is not None})
     parts += [f"written at visit {v + 1}: {score([e for e in inf_ if st(e).get('vis') == v], te, 30, False)}" for v in vs[-2:]]
@@ -587,15 +587,15 @@ def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30, memonly=False)
     is asked 'So B' r2 ' with its OWN decoded B' - with the all-text address the decoded name becomes the next subject. WITH the memory (gated)
     vs the trunk alone (each decodes its own B'): first hop exact, and C's rank among 10 (chance 0.10); also with the TRUE B given (ceiling)"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
-    from platypus.inference.premises import _RTI_R
+    from platypus.inference.premises import _RTI_R, is_rti, rti_wkey
     if memonly:                                                                # 15 Nov: chains with a hop ONLY the memory holds (an inference awaiting
         from platypus.inference.premises import _PM                            #   judgement: never taught to the trunk) - composition through the memory
-        W = _PM.get('rti') or {}; MO = [e for e in fs if e['r'] == _RTI_R and (W.get((e['A'], e['ans'])) or {}).get('judged', 0) is None]
-        F0 = [e for e in fs if e['r'] != _RTI_R] + MO; mo = {id(e) for e in MO}; byA = {}
+        W = _PM.get('rti') or {}; MO = [e for e in fs if is_rti(e) and (W.get(rti_wkey(e)) or {}).get('judged', 0) is None]
+        F0 = [e for e in fs if not is_rti(e)] + MO; mo = {id(e) for e in MO}; byA = {}
         for e in F0: byA.setdefault(e['A'], []).append(e)
         ch = [(e1, e2) for e1 in F0 for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans']) and (id(e1) in mo or id(e2) in mo)]
     else:
-        F_ = [e for e in fs if e['r'] != _RTI_R]; byA = {}
+        F_ = [e for e in fs if not is_rti(e)]; byA = {}
         for e in F_: byA.setdefault(e['A'], []).append(e)
         ch = [(e1, e2) for e1 in F_ for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
     tag = 'TWO-HOP, MEMORY-ONLY HOP' if memonly else 'TWO-HOP'
@@ -849,7 +849,8 @@ def kmc_retract(model, cfg, S_slot, ents, vis):
     new = [(k, w) for k, w in W.items() if w.get('ret') and not w.get('kmc_done')]
     kept = [(k, w) for k, w in W.items() if w.get('judged') is not None and not w.get('flag')]
     pend = [(k, w) for k, w in W.items() if w.get('judged') is None]
-    ent = lambda k, w: dict(A=k[0], r=_RTI_R, ans=k[1], d=w['d'])
+    from platypus.inference.premises import rti_ent
+    ent = lambda k, w: rti_ent(k, w)
     print(f"  [CONSOLIDATION THROUGH THE MEMORY | visit {vis + 1}] written inferences: {len(pend)} awaiting judgement (memory only), {len(kept)} judged and KEPT "
           f"(now taught to the trunk too: right {np.mean([bool(w['truth']) for k, w in kept]) if kept else float('nan'):.2f}), "
           f"{sum(1 for w in W.values() if w.get('flag'))} flagged (never taught to the trunk; right {np.mean([bool(w['truth']) for w in W.values() if w.get('flag')]) if any(w.get('flag') for w in W.values()) else float('nan'):.2f}), "
@@ -911,8 +912,10 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] no text read since the first writes yet", flush=True); return
     ent = collections.defaultdict(dict)                                        # subject -> {answer: kind}
     for e in ents:
-        if e['key'][0] == 'fact' and e['r'] != _RTI_R: ent[e['A']][e['ans']] = 'fact'
-    for (A, C), w in W.items(): ent[A][C] = ('inf', bool(w['truth']))
+        if e['key'][0] == 'fact' and not e.get('rti') and e['r'] != _RTI_R: ent[e['A']][e['ans']] = 'fact'
+    for (A, C), w in W.items():
+        if w.get('tw'): ent[w['th']][w['tt']] = ('inf', bool(w['truth']))         # 16 Nov typed writes: subject = the head, answer = the tail
+        else: ent[A][C] = ('inf', bool(w['truth']))
     subj = set(ent) & set(K.get('subj', ()))
     sp = [r for r in R if lo_ <= r[0] < hi_ and r[1] in subj and r[7].startswith(r[1])]
     rs = np.random.RandomState(int(cfg.seed) + 6161 + vis); cap = int(getattr(cfg, 'inf_kmfb_n', 4000))
@@ -921,7 +924,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] no spans name a written subject (documents {lo_}-{hi_})", flush=True); return
     try: sl = int(S_slot(1))
     except Exception: sl = 0
-    fb = collections.defaultdict(lambda: [0, 0.0, 0, 0]); opened = 0; tot = collections.Counter(); L2 = math.log(2)
+    fb = collections.defaultdict(lambda: [0, 0.0, 0, 0, 0.0]); opened = 0; tot = collections.Counter(); L2 = math.log(2)
     for i0 in range(0, len(sp), 64):
         ch = sp[i0:i0 + 64]; tb = [(r[7] + '.').encode('latin-1', 'replace') for r in ch]
         X, _ = _ws_batch(model, [b + b' ' for b in tb])
@@ -941,15 +944,22 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
             pick = max(ans, key=lambda a: float(first[a.encode('latin-1', 'replace')[0]])) if ans else None
             if pick is None: continue
             name = b[s0:e0].decode('latin-1').rstrip('.'); hit = name == pick or name.startswith(pick) or pick.startswith(name)
-            f = fb[(A, pick)]; f[0] += 1; f[1] += gain; f[2] += int(hit); f[3] += int(not hit)
+            sA = runs[0][1]; posall = [i for i in range(max(0, sA - 1), e0 - 1) if opn.get((k, i))]   # 16 Nov: the WHOLE span after the subject (wording + name)
+            ixa = torch.tensor(posall, device=l0.device); tga = X[k, ixa + 1]
+            gall = float((l1[k, ixa].gather(-1, tga[:, None]) - l0[k, ixa].gather(-1, tga[:, None])).sum()) / L2
+            f = fb[(A, pick)]; f[0] += 1; f[1] += gain; f[2] += int(hit); f[3] += int(not hit); f[4] += gall
             kd = ent[A][pick]; tot[('fact' if kd == 'fact' else ('inference right' if kd[1] else 'inference wrong'), 'gain')] += gain; tot[(kd if kd == 'fact' else 'inf', 'n')] += 1
     inf = [(k, v) for k, v in fb.items() if isinstance(ent[k[0]].get(k[1]), tuple)]
     y = np.array([ent[k[0]][k[1]][1] for k, v in inf]); mg = np.array([v[1] / v[0] for k, v in inf]); cc = np.array([(v[2] - v[3]) / v[0] for k, v in inf])
     auc = lambda s: _cg_auc(s[y], s[~y]) if len(y) >= 10 and y.any() and (~y).any() else float('nan')
-    nW = sum(1 for (A, C) in W if A in subj); rk = []
-    for (A, C), v in inf:
-        w = W.get((A, C)) or {}
+    hk = {((w['th'], w['tt']) if w.get('tw') else (A, C)): (A, C) for (A, C), w in W.items()}   # 16 Nov: typed writes are keyed head -> tail here
+    nW = sum(1 for k in hk if k[0] in subj); rk = []
+    for k9, v in inf:
+        w = W.get(hk.get(k9, k9)) or {}
         if w.get('rank') is not None: rk.append((float(w['rank']), v[1] / v[0]))
+        if hk.get(k9) in W:                                                    # 16 Nov USEFULNESS: the memory's mean bits saved on this inference's later text -
+            sp9 = int(getattr(cfg, 'inf_kmc_useful_span', 0))                 #   on the second name (default) or on the whole span after the subject
+            W[hk[k9]]['use'] = (v[4] if sp9 else v[1]) / v[0]; W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
     from scipy.stats import spearmanr
     rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
     print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
@@ -957,3 +967,11 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
           f"{tot[('inference right', 'gain')]:+.1f}, WRONG {tot[('inference wrong', 'gain')]:+.1f} ({tot[('inf', 'n')]} spans) || WRITTEN INFERENCES with feedback: {len(inf)} of {nW} "
           f"({len(inf) / max(1, nW):.2f}); AUC right vs wrong (label-free feedback; the current judge 0.64): mean bits saved {auc(mg):.3f}, confirmations - contradictions "
           f"{auc(cc):.3f} | SELECTION: write-time rank vs feedback, Spearman {rho:+.2f} (n {len(rk)})", flush=True)
+    thr = float(getattr(cfg, 'inf_kmc_useful_thr', 0.0)); uw = [w for w in W.values() if w.get('use') is not None]
+    if uw:                                                                     # 16 Nov USEFULNESS (the keep rule of inf_kmc_useful; labels only score)
+        up = [w for w in uw if w['use'] > thr]; un = [w for w in uw if w['use'] <= thr]; jk = [w for w in up if w.get('judged') is not None and not w.get('flag')]
+        f9 = lambda L: f"{np.mean([bool(w['truth']) for w in L]):.3f} ({len(L)})" if L else 'nan (0)'
+        sn = [w for w in uw if w.get('use_span', 0) > thr]; nn = [w for w in uw if w.get('use_name', 0) > thr]
+        print(f"  [USEFULNESS | visit {vis + 1}] measured on {'the WHOLE SPAN' if int(getattr(cfg, 'inf_kmc_useful_span', 0)) else 'the SECOND NAME'} (second name: useful right {f9(nn)}; "
+              f"whole span: useful right {f9(sn)}) || written inferences with feedback {len(uw)} of {len(W)}: USEFUL (mean bits saved > {thr:g}) right {f9(up)}, not useful right {f9(un)}, "
+              f"no feedback right {f9([w for w in W.values() if w.get('use') is None])} | useful AND judged-kept right {f9(jk)} | NOT HARMFUL AND judged-kept right {f9([w for w in W.values() if w.get('judged') is not None and not w.get('flag') and not (w.get('use') is not None and w['use'] <= thr)])} | keep rule {('ON, judge AND not harmful (inf_kmc_useful 2)' if int(getattr(cfg, 'inf_kmc_useful', 0)) == 2 else 'ON (inf_kmc_useful)') if int(getattr(cfg, 'inf_kmc_useful', 0)) else 'off (readout)'}", flush=True)

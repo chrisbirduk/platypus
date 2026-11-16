@@ -306,6 +306,19 @@ class KMem:
         lat, _ = s.read(F.normalize(v1, dim=-1), w2)                                              # latent: the value IS the next name key
         dec_n = NK[(F.normalize(v1, dim=-1) @ NK.t()).argmax(-1)]; dec, _ = s.read(dec_n, w2)       # decoded to a known name first
         for k, (a, b) in enumerate(CHAINS): CAND[(a['A'], b['rel'], b['C'])] = cands(b)              # the final answer's candidates = hop 2's
+        if int(os.environ.get('JM_RQ', 0)):                                    # 16 Nov RETURN-TO-QUERY: what a read returns, mapped to the next query
+            vn1 = F.normalize(v1, dim=-1)                                      #   (a) SOFT decode: attention over the known names' keys (no training)
+            soft = F.softmax(vn1 @ NK.t() / 0.05, -1) @ NK; sft, _ = s.read(F.normalize(soft, dim=-1), w2)
+            with torch.enable_grad():                                          #   (b) LEARNED map G (identity start) trained on TAUGHT single hops only:
+                G = torch.nn.Linear(DW, DW); torch.nn.init.eye_(G.weight); torch.nn.init.zeros_(G.bias)   #   G(read of A r) -> the object's name key
+                og = torch.optim.Adam(G.parameters(), lr=1e-3); rr2 = np.random.RandomState(7); H_ = [f for f in s.hist if f not in f1s or True]
+                for st in range(int(os.environ.get('JM_RQ_STEPS', 300))):
+                    fb = [H_[rr2.randint(len(H_))] for _ in range(64)]; fis = rr2.randint(0, TI, 64)
+                    with torch.no_grad(): vv, _ = s.read(NK[[NI[f['A']] for f in fb]], torch.stack([s.wkey(f['rel'], int(fi)) for f, fi in zip(fb, fis)]))
+                    lo = F.cross_entropy(F.normalize(G(F.normalize(vv, dim=-1)), dim=-1) @ NK.t() / 0.05, torch.tensor([NI[f['C']] for f in fb]))
+                    og.zero_grad(); lo.backward(); og.step()
+            lrn, _ = s.read(F.normalize(G(vn1), dim=-1), w2)
+            s.rq = (s.score(sft, fin), s.score(lrn, fin))
         return s.score(lat, fin), s.score(dec, fin)
 fmt = lambda x: f"open {x[0]:.2f} rank {x[1]:.2f}"
 NUL = int(os.environ.get('JM_NULL', 0))                                       # rows a step that teach 'no fact here' on inventory names never used as subjects
@@ -319,6 +332,7 @@ for arm in os.environ.get('JM_ARMS', 'K-JEPA,K-RAW,K-NAME').split(','):
     M.teach(SET_A, rr); ra = M.recall(SET_A); M.teach(SET_B, rr); rb = M.recall(SET_B); raa = M.recall(SET_A)
     M.teach(SET_M, rr); rm = M.recall(SET_M); M.teach(HOPS, rr); rh = M.recall(HOPS); lat, dec = M.two_hop()
     P(f"   {arm:7s} A after A {fmt(ra)} | B after B {fmt(rb)} | A after B {fmt(raa)} | M (two relations per subject) {fmt(rm)} | chain hops {fmt(rh)}")
+    if getattr(M, 'rq', None): P(f"           RETURN-TO-QUERY (two-hop, chain never taught): LATENT {fmt(lat)} | SOFT DECODE {fmt(M.rq[0])} | LEARNED MAP (single hops only) {fmt(M.rq[1])} | DECODED {fmt(dec)}")
     P(f"           TWO-HOP, chain never taught: LATENT {fmt(lat)} | DECODED {fmt(dec)} || at the end: A {fmt(M.recall(SET_A))}, B {fmt(M.recall(SET_B))}, "
       f"M {fmt(M.recall(SET_M))} | slots written {len(M.touched)} of {NS * NS}  ({time.time() - T0:.0f}s)")
     if SET_M2:                                                                 # one wording, two objects per subject: retract one of each pair

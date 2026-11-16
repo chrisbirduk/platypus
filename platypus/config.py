@@ -682,11 +682,30 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_rti_retype=0                # 16 Nov RETYPE ON CONFIRMATION: a kept inference that a later relational record states is rewritten in that record's wording
+    inf_rti_clean=0                 #   16 Nov TYPED WORDING CLEANUP: 1 = the class-pair table ignores wordings that start or end with punctuation (') was')
+                                    #   and order (memory, question rows, readouts). Offline held-out (tools/loop_sim.py BOTH-RETYPE): exact relations 0.30-0.33 ->
+                                    #   0.54-0.64, the memory saves +1.05 / +1.72 vs +0.26 / +0.11 bits per 1,000 bytes in rounds 1-2
+    inf_rti_comp=0                  # 16 Nov TYPED COMPOSITION: a table premise wordings (A-B, B-C) -> conclusion wording, learned from kept inferences a later
+                                    #   relational record confirms, types new inferences where it can (else the class pair, inf_rti_typed). Offline: exact 0.40 vs
+                                    #   0.365, bits +0.69 vs -0.12; the pairs it types right 0.83
+    inf_rret_list2=0                # 16 Nov WIDER LIST FILTER for the judge and typing: one comma + 'and' / 'or' ('X , Y and Z') is a list too (offline +0.02-0.03 AUC;
+                                    #   with the usefulness rule the kept memory 0.80-0.83 right against 0.73-0.77)
+    inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved  (2 = judge AND NOT HARMFUL: only those measured not useful are held back)
+                                    #   bits on the inference's answer in later text naming its subject (the memory-feedback readout, inf_kmfb 1, measures it)
+    inf_kmc_useful_thr=0.0          #     mean bits saved per span above which it is useful
+    inf_kmc_useful_span=0           #     1: usefulness over the whole span after the subject (wording + name; offline: more kept, memory 0.80-0.83 right),
+                                    #     0: on the second name only (offline: 6-13 kept a round, 0.89-1.00 right)
+    inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
+                                    #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
                                     #   read, mixed with the trunk by a learned gate at prediction time (trunk training untouched); readout [KEYED UNITS]
     inf_ku_fill=8000000             #     bytes of each visited domain's training text stored per visit
     inf_ku_cap=32                   #     continuations kept per key (the most recent)
     inf_ku_lr=0.05                  #     the gate's online learning rate
+    inf_ku_word=0                   # 16 Nov GENERIC WORD UNITS (readout): every word end keyed by its last 1-2 words; [GENERIC KEYED UNITS] vs the hand units
+    inf_ku_word_fill=2000000        #   bytes of each visited domain's text stored for the word units
+    inf_ku_word_cap=16              #   continuations kept per word key
     inf_kma_nori=0                  # 16 Nov THE GATE RULE: on ordinary text the all-text memory stays shut where the read weight lies mostly (0.5+) on the
                                     #   untyped written inferences' slots (questions still read them). GPU cg27a_kmr readout: Wikipedia +0.0035 / +0.0054
                                     #   -> +0.0002 / +0.0004 bits per byte at visits 3 / 4
@@ -694,6 +713,8 @@ class Config:
                                     #   learning from text for the first inf_smf_pre visits, then written ONLY by the question rows (with inf_distill_wake_params
                                     #   'smem'), only at the inf_smf_t slots with the highest TF-IDF where their answers are predicted (Lin et al. 2025)
     inf_smf_n=256                   #     n x n value slots
+    inf_smf_blk=-1                  #     the block it sits beside (-1 = the middle block)
+    inf_smf_clip=0.0                #     > 0: written rows capped at this x the 99th percentile norm of the text-trained rows
     inf_smf_k=16                    #     slots read per byte
     inf_smf_dk=64                   #     half-query width
     inf_smf_pre=1                   #     visits in which the layer learns from text (then frozen for text)
