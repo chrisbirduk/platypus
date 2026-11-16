@@ -116,7 +116,8 @@ def kmem_readout(model, cfg, S_, S_slot, ents, held, vis):
     te = lambda e: ti_(e['r']); pa = lambda e: pi_(e['r'])
     fmt = lambda x: f"{x[0]:.2f} / {x[1]:.2f} ({x[2]})" if x[2] else "- (0)"
     RTI_R = 'is connected to'
-    kind = lambda L, t=None: [e for e in L if (e['r'] != RTI_R if t == 'fact' else (e['r'] == RTI_R and e.get('truth') is t))]
+    from platypus.inference.premises import is_rti as _is_rti            # 16 Nov: typed writes ('head wording tail') are inferences too
+    kind = lambda L, t=None: [e for e in L if (not _is_rti(e) if t == 'fact' else (_is_rti(e) and e.get('truth') is t))]
     # REBUILT: the whole pool written afresh
     M = _KMem(n_, d, dev, seed, lr_); steps = max(300, int(math.ceil(rows_ * len(fs) / 256))); write(M, fs, steps)
     rf, rh = recall(M, kind(fs, 'fact'), te), recall(M, kind(hf, 'fact'), te)
@@ -678,7 +679,8 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         return f"WITH {np.mean(oon):.2f} / {np.mean(on):.2f} vs trunk {np.mean(ooff):.2f} / {np.mean(off):.2f} ({len(on)}{g_})"
     bw = lambda e: f"{e['A']} {e['r']} "                                       # 15 Nov ALL-TEXT readout: the bare sentence wording, no frame
     te = lambda e: f"It is on record that {e['A']} {e['r']} "; pa = lambda e: f"It is on record that {e['A']} {_DT_PARA[e['r']]} "
-    kind = lambda L, t=None: [e for e in L if (e['r'] != RTI_R if t == 'fact' else (e['r'] == RTI_R and e.get('truth') is t))]
+    from platypus.inference.premises import is_rti as _is_rti            # 16 Nov: typed writes ('head wording tail') are inferences too
+    kind = lambda L, t=None: [e for e in L if (not _is_rti(e) if t == 'fact' else (_is_rti(e) and e.get('truth') is t))]
     rs.shuffle(fs); rs.shuffle(hf)
     lm = K['loss']; ml = f"{np.mean(lm[:50]):.3f} -> {np.mean(lm[-50:]):.3f}" if lm else "-"
     print(f"  [INTEGRATED KEYED MEMORY | visit {vis + 1}] the model's answer = trunk + memory read ({'EVERY byte of any text, written on answer bytes' if K.get('allt') else 'question rows only'}; subject key: {K.get('namekey')}; {K['steps']} memory steps, "
