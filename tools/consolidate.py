@@ -46,6 +46,11 @@ def tens(bl):
     for i, b in enumerate(bl): X[i, :len(b)] = torch.tensor(list(b))
     return X, torch.cat([torch.full((len(bl), 1), PAD), X[:, :-1]], 1)
 FR = ("{h} {w} {t}.", "In short, {h} {w} {t}.", "Notes: {h} {w} {t}.", "As recorded, {h} {w} {t}.", "From the notes: {h} {w} {t}.", "{h}, as noted, {w} {t}.")
+FR24 = FR + ("It is known that {h} {w} {t}.", "We read that {h} {w} {t}.", "Sources say {h} {w} {t}.", "{h} - {w} {t}.", "Reportedly, {h} {w} {t}.", "Note that {h} {w} {t}.",
+             "According to records, {h} {w} {t}.", "Fact: {h} {w} {t}.", "One learns that {h} {w} {t}.", "Indeed, {h} {w} {t}.", "Background: {h} {w} {t}.",
+             "As written elsewhere, {h} {w} {t}.", "{h}? {h} {w} {t}.", "Remember: {h} {w} {t}.", "On {h}: {h} {w} {t}.", "Summary - {h} {w} {t}.",
+             "Earlier we saw that {h} {w} {t}.", "Briefly, {h} {w} {t}.")       # 16 Nov CS_FRAMES 24: knowledge augmentation (varied wordings while learning)
+if int(os.environ.get('CS_FRAMES', 6)) == 24: FR = FR24
 FACT = [f.format(h=h, w=w, t=t).encode('latin-1', 'replace')[:L_] for h, w, t, _ in CL for f in FR]
 EV = [bytes(WK[HO + k * 129:HO + (k + 1) * 129]) for k in range(64)]
 @torch.no_grad()
