@@ -50,7 +50,7 @@ FR24 = FR + ("It is known that {h} {w} {t}.", "We read that {h} {w} {t}.", "Sour
              "According to records, {h} {w} {t}.", "Fact: {h} {w} {t}.", "One learns that {h} {w} {t}.", "Indeed, {h} {w} {t}.", "Background: {h} {w} {t}.",
              "As written elsewhere, {h} {w} {t}.", "{h}? {h} {w} {t}.", "Remember: {h} {w} {t}.", "On {h}: {h} {w} {t}.", "Summary - {h} {w} {t}.",
              "Earlier we saw that {h} {w} {t}.", "Briefly, {h} {w} {t}.")       # 16 Nov CS_FRAMES 24: knowledge augmentation (varied wordings while learning)
-if int(os.environ.get('CS_FRAMES', 6)) == 24: FR = FR24
+FR = FR24[:int(os.environ.get('CS_FRAMES', 6))]
 FACT = [f.format(h=h, w=w, t=t).encode('latin-1', 'replace')[:L_] for h, w, t, _ in CL for f in FR]
 EV = [bytes(WK[HO + k * 129:HO + (k + 1) * 129]) for k in range(64)]
 @torch.no_grad()
