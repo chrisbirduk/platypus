@@ -127,6 +127,11 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE+USE': keep = [k for k in W if (tier[k] and judged(k)) or (not tier[k] and useful(k))]
+        elif p == 'BOTH-ADAPT':                                                # 16 Nov ADAPTIVE BUDGET: write in chunks of 100 by rank; stop when under
+            keep = []                                                          #   LS_STOP of a chunk passes judge AND usefulness
+            for c0 in range(0, 400, 100):
+                ch = [k for k in W if c0 <= W[k]['rank'] < c0 + 100]; kk = [k for k in ch if judged(k) and useful(k)]; keep += kk
+                if len(kk) < float(os.environ.get('LS_STOP', 0.1)) * max(1, len(ch)): break
         elif p == 'BOTH-NAME': keep = [k for k in W if judged(k) and useful_name(k)]
         elif p == 'USEFUL-NAME': keep = [k for k in W if useful_name(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
