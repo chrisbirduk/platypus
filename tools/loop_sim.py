@@ -57,6 +57,17 @@ def mem(claims):
     M = {'NAME': {}, 'DATE': {}, 'NUMBER': {}}
     for X, w, Y in claims: M['NAME'].setdefault(X.encode('latin-1', 'replace'), collections.deque(maxlen=32)).append((' ' + w + ' ' + Y + '.').encode('latin-1', 'replace')[:CL])
     return dict(mem=M, gate={'NAME': {}, 'ALL': {}})
+import re as _re2
+_RUN2 = _re2.compile(rb"[A-Z][\w'\-]*(?: (?:of |de |the )?[A-Z][\w'\-]*)*")
+def bits_name(claims, idx, TXT, PT, EN):
+    """16 Nov: the GPU feedback readout's signal - bits saved only on the SECOND name of each span (its last capitalised run)"""
+    st = mem(claims); s = 0.0; n = 0
+    for i in idx:
+        b = TXT[i]; runs = [(m.start(), m.end()) for m in _RUN2.finditer(b)]
+        if len(runs) < 2: continue
+        s0, e0 = runs[-1]; mk = np.zeros(len(b), bool); mk[s0:e0] = True
+        s += _row_bits(st, b, PT[i], EN[i], ('NAME',), 'NAME', 0.05, mask=mk)[0]; n += 1
+    return s / max(1, n)
 def bits(claims, idx, TXT, PT, EN):
     st = mem(claims); s = 0.0; n = 0
     for i in idx: s += _row_bits(st, TXT[i], PT[i], EN[i], ('NAME',), 'NAME', 0.05)[0]; n += len(TXT[i])
@@ -104,6 +115,10 @@ for rd, v in enumerate((1, 3, 5), 1):
                 cw = votes.most_common(1)[0][0]; rv = cw.endswith(' ^R'); w0 = cw[:-3] if rv else cw; typed[(A, C)] = (C, w0, A) if rv else (A, w0, C)
             elif tab.get(cp):
                 (w, fw), _ = tab[cp].most_common(1)[0]; typed[(A, C)] = (hd, w, tl) if fw else (tl, w, hd)
+        def useful_name(k):
+            c = typed.get(k)
+            if c is None or not first.get(c[0]): return False
+            return bits_name([c], first[c[0]], TXT, PT, EN) > 0
         def useful(k, t=0.0):
             c = typed.get(k)
             if c is None or not first.get(c[0]): return False
@@ -112,6 +127,8 @@ for rd, v in enumerate((1, 3, 5), 1):
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE+USE': keep = [k for k in W if (tier[k] and judged(k)) or (not tier[k] and useful(k))]
+        elif p == 'BOTH-NAME': keep = [k for k in W if judged(k) and useful_name(k)]
+        elif p == 'USEFUL-NAME': keep = [k for k in W if useful_name(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
         elif p == 'EITHER-BATCH': keep = [k for k in W if tier[k] and (judged(k) or useful(k))]

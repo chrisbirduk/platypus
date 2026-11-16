@@ -69,7 +69,7 @@ _obk = lambda o: 0 if o == 0 else 1 if o <= 3 else 2 if o <= 11 else 3
 _ebk = lambda e: 0 if e < 0.5 else 1 if e < 1.5 else 2 if e < 3 else 3
 
 
-def _row_bits(st, b, pt, ent, units, combo, lr):
+def _row_bits(st, b, pt, ent, units, combo, lr, mask=None):
     """bits saved on one row by the units (learned gate, prequential: each byte scored before the gate learns from it)"""
     fires, _ = ku_fires(b); M = st['mem']; best = {}
     for u, k, p in fires:
@@ -87,7 +87,7 @@ def _row_bits(st, b, pt, ent, units, combo, lr):
         d = best[pos]; ks = [(u, _nbk(v[1]), _obk(v[2]), _ebk(float(ent[pos]))) for u, v in d.items()]
         lg = np.array([0.0] + [G.setdefault(k, math.log(max(d[k[0]][1], 1) / 2.0)) for k in ks]); w = np.exp(lg - lg.max()); w /= w.sum()
         ps = np.array([pt[pos]] + [d[k[0]][0] for k in ks]); p_ = float((w * ps).sum())
-        saved += -math.log2(max(pt[pos], 1e-12)) + math.log2(max(p_, 1e-12))
+        if mask is None or mask[pos]: saved += -math.log2(max(pt[pos], 1e-12)) + math.log2(max(p_, 1e-12))
         for j, k in enumerate(ks): G[k] += lr * w[j + 1] * (ps[j + 1] - p_) / max(p_, 1e-12)
     return saved, len(best)
 
