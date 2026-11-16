@@ -99,7 +99,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         if r[0] < h(v) and isrel(r):
             if r[1] in DG and r[2] in DG and DG[r[1]] != DG[r[2]]:
                 hd, tl, fw = (r[1], r[2], 1) if DG[r[1]] < DG[r[2]] else (r[2], r[1], 0); w_ = norm(r[3]); w9 = ' '.join(w_.replace('"', ' ').split()).strip(' ,;()')
-                if any(ch.isalpha() for ch in w_) and w9 not in LISTW and w9 not in ('and', 'or'): tab[(TY.get(hd, 'X'), TY.get(tl, 'X'))][(w_, fw)] += 1
+                if any(ch.isalpha() for ch in w_) and w9 not in LISTW and w9 not in ('and', 'or') and (not int(os.environ.get('LS_CLEAN', 0)) or (w_[0].isalnum() and w_[-1].isalnum())): tab[(TY.get(hd, 'X'), TY.get(tl, 'X'))][(w_, fw)] += 1
             f = frozenset((r[1], r[2]))
             if f in need: pw[f].append((r[1], r[2], norm(r[3])))
         if h(v) <= r[0] < (mid if int(os.environ.get('LS_HALF', 1)) else h(v + 2)) and isrel(r):   # 16 Nov: the judge (and retyping) see only the FIRST half
