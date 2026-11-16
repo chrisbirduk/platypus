@@ -3391,3 +3391,14 @@ Signals per typed inference over later relational records whose FIRST name is it
 - **MODEST POSITIVE.** On the first batch the judge stays best (the typed signal adds nothing); **on the harder next tier judge + typed confirmation beats the judge in all three rounds (+0.03 / +0.01 / +0.05) and covers about twice as many inferences (0.69-0.80 vs 0.33-0.46).** Smaller than the GPU readout suggested (0.626 vs 0.519 there; the GPU's signal is read through the memory's gate, this one from records).
 - **'Contradictions' in the inference's OWN wording are misleading (AUC below 0.5):** most typed wordings are 'in', and a head is 'in' several true places at once (a city in its county, state and country), so 'X in Z' with another Z is usually NOT a contradiction. Containment relations need a hierarchy-aware contradiction test (Z not containing / contained by the tail) before same-wording contradictions can count.
 - Use: the combined score as the judge for the next tier, and its coverage for the kus keep rule (queue 35: judge AND (useful OR typed-confirmed)).
+
+## Key-returning memory, three routes, FULL RUN (16 Nov 2026, tools/key_return.py; all 3,053 Re-DocRED documents, 85,932 facts written, 4,000 chains A -> B -> C with A -> C never stated; 27,794 name keys from the 6k stand-in trunk; relation key = the gold relation)
+| two-hop, top-1 / top-5 | all 4,000 | ALIASED B (186, 5%) | plain B (3,814) |
+|---|---|---|---|
+| DECODE (today's path, spelling assumed perfect) | 0.358 / 0.666 | 0.059 / 0.075 | 0.373 / 0.695 |
+| A POINTER (a distribution over answer names) | **0.395 / 0.745** | 0.081 / 0.145 | **0.410 / 0.774** |
+| B LEARNED KEY SPACE (similarity addressing, untrained) | 0.301 / 0.479 | 0.204 / 0.333 | 0.306 / 0.486 |
+| **C HYBRID (A, B where the exact address is empty)** | **0.395 / 0.748** | **0.210 / 0.312** | 0.404 / 0.769 |
+- **POSITIVE, smaller than the 60-document trial (0.505 / 0.557 / 0.549 / 0.575): returning a DISTRIBUTION of keys instead of decoding one name gains +0.04 top-1 and +0.08 top-5 (A and C vs DECODE), and the hybrid triples aliased chains (0.21 vs 0.06-0.08) at almost no cost on plain ones (0.404 vs 0.410).** C ties A overall because only 5% of these chains write B two ways (gold evidence sentences); in the package's store, built from noisy distant records, the alias share is likely higher, which is where C's fallback pays.
+- B alone (similarity addressing over the whole store, untrained keys) is worst on plain chains (0.306): look-alike names collide. The learned half earns its place only as the fallback - as with the hash + learned name key.
+- So the design for the package: POINTER first (answer-name distribution per slot, top-k carried to hop 2), the learned key as fallback for empty exact addresses (frozen encoder). Absolute two-hop accuracy here is with ideal relation keys; the package's learned wording key will cost some.
