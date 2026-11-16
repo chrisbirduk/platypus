@@ -74,6 +74,7 @@ def bits(claims, idx, TXT, PT, EN):
     return 1000 * s / max(1, n)
 POL = tuple(os.environ.get('LS_POL', 'JUDGE,USEFUL,JUDGE+USE,ALL BATCH').split(','))   # also EITHER (judge or useful, all 400), USEFUL>t (gain above t bits per 1,000 bytes)
 KEPT = {p: {} for p in POL}; T3 = {p: collections.defaultdict(collections.Counter) for p in POL}
+SELX, SELY = [], []                                                            # 16 Nov LEARNED SELECTION: write-time features -> usefulness, from earlier rounds
 pm._PM['rti'] = {}
 for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5').split(',')), 1):
     before = set(pm._PM['rti']); pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
@@ -104,6 +105,11 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
     for i, s in enumerate(spans):
         if s[0]: first[s[2]].append(i)
     out = []
+    ET9 = ['PER', 'LOC', 'ORG', 'TIME', 'NUM', 'MISC']
+    def fx(k):                                                                 # write-time features of a candidate
+        e = W[k]; A, C = k; dA, dC = DG.get(A, 0), DG.get(C, 0)
+        oh = lambda t: [float(TY.get(t, 'X') == c) for c in ET9]
+        return [float(e.get('score', 0)), float(e['rank']), float(len(e.get('prem', ()))), np.log1p(min(dA, dC)), np.log1p(max(dA, dC)), abs(np.log1p(dA) - np.log1p(dC))] + oh(A) + oh(C)
     for p in POL:
         typed = {}
         for (A, C), e in W.items():
@@ -127,6 +133,15 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE+USE': keep = [k for k in W if (tier[k] and judged(k)) or (not tier[k] and useful(k))]
+        elif p in ('SEL-BOTH', 'RULE-BOTH'):                                  # 16 Nov: 200 chosen by the rule (top ranks) or by a selector trained on earlier
+            if p == 'RULE-BOTH' or not SELX: cand = [k for k in W if tier[k]] #   rounds' USEFULNESS (label-free); then judge AND useful as usual
+            else:
+                from sklearn.linear_model import LogisticRegression
+                Xa, ya = np.array(SELX), np.array(SELY); mu, sd = Xa.mean(0), Xa.std(0) + 1e-6
+                clf = LogisticRegression(max_iter=2000, class_weight='balanced').fit((Xa - mu) / sd, ya)
+                ks = list(W); sc = clf.decision_function((np.array([fx(k) for k in ks]) - mu) / sd); cand = [ks[i] for i in np.argsort(-sc)[:200]]
+            keep = [k for k in cand if judged(k) and useful(k)]
+            if p == 'SEL-BOTH': print(f"      {p}: the 200 written right {np.mean([y[k] for k in cand]):.3f} (rule's top 200 {np.mean([y[k] for k in W if tier[k]]):.3f}); overlap with the rule's {sum(tier[k] for k in cand)}", flush=True)
         elif p == 'BOTH-ADAPT':                                                # 16 Nov ADAPTIVE BUDGET: write in chunks of 100 by rank; stop when under
             keep = []                                                          #   LS_STOP of a chunk passes judge AND usefulness
             for c0 in range(0, 400, 100):
@@ -150,6 +165,14 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         yk = [y[k] for k in keep]; yall = [pm._PM['rti'][k]['truth'] for k in allk]
         out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}; composition-typed {np.mean([k in typed and typed[k][1] not in ('in',) for k in keep]) if keep else 0:.2f}) | memory {len(allk)} "
                    f"(right {np.mean(yall) if yall else float('nan'):.3f}) saves {b2:+.2f}")
+    if any(p == 'SEL-BOTH' for p in POL):                                     # this round's usefulness labels for the next rounds' selector (typed by the
+        typed = {}                                                             #   class pair, as the rounds start)
+        for (A, C), e in W.items():
+            hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X'))
+            if tab.get(cp): (w, fw), _ = tab[cp].most_common(1)[0]; typed[(A, C)] = (hd, w, tl) if fw else (tl, w, hd)
+        for k in W:
+            c = typed.get(k); u = bool(c is not None and first.get(c[0]) and bits([c], first[c[0]], TXT, PT, EN) > 0)
+            SELX.append(fx(k)); SELY.append(u)
     P(f"ROUND {rd} (visit {v + 1}): written {len(W)} (batch right {np.mean([y[k] for k in W if tier[k]]):.3f}, next tier {np.mean([y[k] for k in W if not tier[k]]):.3f}) | "
       f"{len(spans)} later spans || " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")
