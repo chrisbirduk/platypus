@@ -160,6 +160,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 if len(kk) < float(os.environ.get('LS_STOP', 0.1)) * max(1, len(ch)): break
         elif p == 'BOTH-NAME': keep = [k for k in W if judged(k) and useful_name(k)]
         elif p == 'USEFUL-NAME': keep = [k for k in W if useful_name(k)]
+        elif p == 'BOTH-RETRACT': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH-RETYPE': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
@@ -176,10 +177,15 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 for b in W[k]['prem']:
                     a1, a2 = orient(k[0], b), orient(b, k[1])
                     if a1 and a2: T3[p][(a1, a2)][cf] += 1
+        nret = 0
+        if p == 'BOTH-RETRACT':                                                # 16 Nov RETRACTION BY USEFULNESS: every older memory entry re-measured on this
+            for k in [k for k in KEPT[p] if k not in W]:                       #   round's first-half text; dropped if it now costs bits (label-free)
+                c = KEPT[p][k]
+                if first.get(c[0]) and bits([c], first[c[0]], TXT, PT, EN) < 0: del KEPT[p][k]; nret += 1
         allk = list(KEPT[p]); b2 = bits([KEPT[p][k] for k in allk], second, TXT, PT, EN)
         yk = [y[k] for k in keep]; yall = [pm._PM['rti'][k]['truth'] for k in allk]
         mm = list(KEPT[p].values()); te = np.mean([tright(c, 0) for c in mm]) if mm else float('nan'); tg = np.mean([tright(c, 1) for c in mm]) if mm else float('nan')
-        out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}) | memory {len(allk)} (right {np.mean(yall) if yall else float('nan'):.3f}; typed claims right "
+        out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}){f'; retracted {nret}' if p == 'BOTH-RETRACT' else ''} | memory {len(allk)} (right {np.mean(yall) if yall else float('nan'):.3f}; typed claims right "
                    f"exact {te:.3f} / 'is in' {tg:.3f}) saves {b2:+.2f}")
     if any(p == 'SEL-BOTH' for p in POL):                                     # this round's usefulness labels for the next rounds' selector (typed by the
         typed = {}                                                             #   class pair, as the rounds start)
