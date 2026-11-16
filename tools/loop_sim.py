@@ -163,9 +163,10 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
             if p == 'SEL-BOTH': print(f"      {p}: the 200 written right {np.mean([y[k] for k in cand]):.3f} (rule's top 200 {np.mean([y[k] for k in W if tier[k]]):.3f}); overlap with the rule's {sum(tier[k] for k in cand)}", flush=True)
         elif p == 'BOTH-ADAPT':                                                # 16 Nov ADAPTIVE BUDGET: write in chunks of 100 by rank; stop when under
             keep = []                                                          #   LS_STOP of a chunk passes judge AND usefulness
+            ADAPT_END = 400
             for c0 in range(0, 400, 100):
                 ch = [k for k in W if c0 <= W[k]['rank'] < c0 + 100]; kk = [k for k in ch if judged(k) and useful(k)]; keep += kk
-                if len(kk) < float(os.environ.get('LS_STOP', 0.1)) * max(1, len(ch)): break
+                if len(kk) < float(os.environ.get('LS_STOP', 0.1)) * max(1, len(ch)): ADAPT_END = c0 + 100; break
         elif p == 'BOTH-NAME': keep = [k for k in W if judged(k) and useful_name(k)]
         elif p == 'USEFUL-NAME': keep = [k for k in W if useful_name(k)]
         elif p == 'BOTH-RETRACT': keep = [k for k in W if judged(k) and useful(k)]
@@ -198,6 +199,10 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         mm = list(KEPT[p].values()); te = np.mean([tright(c, 0) for c in mm]) if mm else float('nan'); tg = np.mean([tright(c, 1) for c in mm]) if mm else float('nan')
         out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}){f'; retracted {nret}' if p == 'BOTH-RETRACT' else ''} | memory {len(allk)} (right {np.mean(yall) if yall else float('nan'):.3f}; typed claims right "
                    f"exact {te:.3f} / 'is in' {tg:.3f}) saves {b2:+.2f}")
+    if int(os.environ.get('LS_DEFER', 0)) and 'BOTH-ADAPT' in POL:            # 16 Nov TRUE ADAPTIVE WRITES: candidates past the stop were never written -
+        dfr = [k for k in W if W[k]['rank'] >= ADAPT_END]                      #   they leave the ledger and may be proposed again, with more evidence
+        for k in dfr: del pm._PM['rti'][k]
+        out.append(f"[deferred {len(dfr)} unwritten candidates (stop at rank {ADAPT_END})]")
     if any(p == 'SEL-BOTH' for p in POL):                                     # this round's usefulness labels for the next rounds' selector (typed by the
         typed = {}                                                             #   class pair, as the rounds start)
         for (A, C), e in W.items():
