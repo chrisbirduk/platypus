@@ -17,20 +17,23 @@ def list2(r):
     if pm._rret_listlike(r): return True
     w = ' ' + r[3] + ' '
     return bool(re.search(r' , .*\b(and|or)\b', w)) or bool(re.search(r'\b(and|or)\b.* , ', w)) or r[3].strip() in ('and', 'or', ', and', ', or', 'as well as', 'and the')
+import math as _m
+WDF = collections.Counter(r[3] for r in R if 1 <= r[5] <= 8 and not list2(r))   # 16 Nov: how common each wording is (label-free)
+NW = sum(WDF.values())
 for v in (1, 3, 5):
     pm._PM['rti'] = {}; pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v); W = dict(pm._PM['rti'])
-    want = {frozenset(k): k for k in W}; c1 = collections.Counter(); c2 = collections.Counter(); nl = [0, 0]
+    want = {frozenset(k): k for k in W}; c1 = collections.Counter(); c2 = collections.Counter(); c3 = collections.Counter(); c4 = collections.Counter(); nl = [0, 0]
     for r in R:
         if h(v) <= r[0] < h(v + 2) and 1 <= r[5] <= 8:
             k = want.get(frozenset((r[1], r[2])))
             if k is None: continue
             if not pm._rret_listlike(r): c1[k] += 1
-            if not list2(r): c2[k] += 1
+            if not list2(r): c2[k] += 1; c3[k] += _m.log(NW / (1 + WDF[r[3]])); c4[k] = max(c4[k], _m.log(NW / (1 + WDF[r[3]])))
             nl[0] += not pm._rret_listlike(r); nl[1] += pm._rret_listlike(r) is False and list2(r)
     out = []
     for tr, lo, hi in (('batch 0-200', 0, 200), ('next tier 200-400', 200, 400)):
         ks = [k for k, w in W.items() if lo <= w['rank'] < hi]; y = np.array([W[k]['truth'] for k in ks])
-        for nm, c in (('current filter', c1), ('wider filter', c2)):
+        for nm, c in (('current filter', c1), ('wider filter', c2), ('wider + IDF-weighted count', c3), ('wider + most specific wording', c4)):
             s = np.array([c[k] for k in ks], float); out.append(f"{tr}, {nm}: AUC {_cg_auc(s[y], s[~y]):.3f}, kept (any record) right {y[s > 0].mean() if (s > 0).any() else float('nan'):.3f} ({int((s > 0).sum())}), unconfirmed right {y[s == 0].mean() if (s == 0).any() else float('nan'):.3f}")
         out.append(f"{tr}: right {y.mean():.3f}")
     print(f"ROUND visit {v + 1}: relational records {nl[0]}, of them newly called lists {nl[1]} || " + " | ".join(out), flush=True)
