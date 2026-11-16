@@ -123,8 +123,16 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         return [float(e.get('score', 0)), float(e['rank']), float(len(e.get('prem', ()))), np.log1p(min(dA, dC)), np.log1p(max(dA, dC)), abs(np.log1p(dA) - np.log1p(dC))] + oh(A) + oh(C)
     for p in POL:
         typed = {}
+        if p == 'BOTH-RETYPE-T':                                              # 16 Nov: the retyped kept inferences' wordings (label-free) type NEW writes by class pair
+            RTT = collections.defaultdict(collections.Counter)
+            for c in KEPT[p].values(): RTT[(TY.get(c[0], 'X'), TY.get(c[2], 'X'))][c[1]] += 1
         for (A, C), e in W.items():
             hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X')); votes = collections.Counter()
+            if p == 'BOTH-RETYPE-T':
+                f_, b_ = RTT.get((TY.get(hd, 'X'), TY.get(tl, 'X'))), RTT.get((TY.get(tl, 'X'), TY.get(hd, 'X')))
+                nf, nb_ = (sum(f_.values()) if f_ else 0), (sum(b_.values()) if b_ else 0)
+                if nf + nb_ >= 3:
+                    typed[(A, C)] = (hd, f_.most_common(1)[0][0], tl) if nf >= nb_ else (tl, b_.most_common(1)[0][0], hd); continue
             for b in e['prem']:
                 a1, a2 = orient(A, b), orient(b, C)
                 if a1 and a2: votes.update(T3[p].get((a1, a2), {}))
@@ -161,7 +169,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         elif p == 'BOTH-NAME': keep = [k for k in W if judged(k) and useful_name(k)]
         elif p == 'USEFUL-NAME': keep = [k for k in W if useful_name(k)]
         elif p == 'BOTH-RETRACT': keep = [k for k in W if judged(k) and useful(k)]
-        elif p == 'BOTH-RETYPE': keep = [k for k in W if judged(k) and useful(k)]
+        elif p in ('BOTH-RETYPE', 'BOTH-RETYPE-T'): keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
         elif p == 'EITHER-BATCH': keep = [k for k in W if tier[k] and (judged(k) or useful(k))]
@@ -169,7 +177,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         else: keep = [k for k in W if tier[k]]
         for k in keep:
             if k in typed: KEPT[p][k] = typed[k]
-            if p == 'BOTH-RETYPE' and conf.get(k):                             # 16 Nov RETYPE ON CONFIRMATION: the kept inference rewritten in the wording of
+            if p in ('BOTH-RETYPE', 'BOTH-RETYPE-T') and conf.get(k):                             # 16 Nov RETYPE ON CONFIRMATION: the kept inference rewritten in the wording of
                 X, Y, w = collections.Counter(conf[k]).most_common(1)[0][0]    #   the later relational sentence that states it
                 short_ = len(w.split()) <= 4 and not any(ch in w for ch in ':()[];"')
                 if w and any(ch.isalpha() for ch in w) and (short_ or not int(os.environ.get('LS_RT_SHORT', 0))): KEPT[p][k] = (X, w, Y)
@@ -185,6 +193,8 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 if first.get(c[0]) and bits([c], first[c[0]], TXT, PT, EN) < 0: del KEPT[p][k]; nret += 1
         allk = list(KEPT[p]); b2 = bits([KEPT[p][k] for k in allk], second, TXT, PT, EN)
         yk = [y[k] for k in keep]; yall = [pm._PM['rti'][k]['truth'] for k in allk]
+        if p in ('BOTH-RETYPE', 'BOTH-RETYPE-T'):                             # typed accuracy of ALL this round's new writes as typed at write time
+            tw_ = [typed[k] for k in W if k in typed]; out.append(f"[{p} new writes typed at write time: exact {np.mean([tright(c, 0) for c in tw_]):.3f} / 'is in' {np.mean([tright(c, 1) for c in tw_]):.3f}]")
         mm = list(KEPT[p].values()); te = np.mean([tright(c, 0) for c in mm]) if mm else float('nan'); tg = np.mean([tright(c, 1) for c in mm]) if mm else float('nan')
         out.append(f"{p}: kept {len(keep)} (right {np.mean(yk) if yk else float('nan'):.3f}){f'; retracted {nret}' if p == 'BOTH-RETRACT' else ''} | memory {len(allk)} (right {np.mean(yall) if yall else float('nan'):.3f}; typed claims right "
                    f"exact {te:.3f} / 'is in' {tg:.3f}) saves {b2:+.2f}")
