@@ -151,6 +151,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         judged = lambda k: bool(conf.get(k))
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
+        elif p == 'JUDGE-ALL': keep = [k for k in W if judged(k)]                # 16 Nov: the judge over all 400 written (BOTH's candidate set)
         elif p == 'JUDGE+USE': keep = [k for k in W if (tier[k] and judged(k)) or (not tier[k] and useful(k))]
         elif p in ('SEL-BOTH', 'RULE-BOTH'):                                  # 16 Nov: 200 chosen by the rule (top ranks) or by a selector trained on earlier
             if p == 'RULE-BOTH' or not SELX: cand = [k for k in W if tier[k]] #   rounds' USEFULNESS (label-free); then judge AND useful as usual
@@ -172,6 +173,12 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         elif p == 'BOTH-RETRACT': keep = [k for k in W if judged(k) and useful(k)]
         elif p in ('BOTH-RETYPE', 'BOTH-RETYPE-T'): keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
+        elif p == 'JUDGE-NOHARM':                                              # 16 Nov JUDGE AND NOT HARMFUL: drop only judged pairs MEASURED as not useful;
+            def harmful(k):                                                    #   pairs with no later span of the head pass on the judge alone
+                c = typed.get(k)
+                return c is not None and bool(first.get(c[0])) and bits([c], first[c[0]], TXT, PT, EN) <= 0
+            keep = [k for k in W if judged(k) and not harmful(k)]
+            print(f"      {p}: judged {sum(judged(k) for k in W)}, of them no feedback {sum(judged(k) and not (typed.get(k) and first.get(typed[k][0])) for k in W)}", flush=True)
         elif p == 'EITHER': keep = [k for k in W if judged(k) or useful(k)]
         elif p == 'EITHER-BATCH': keep = [k for k in W if tier[k] and (judged(k) or useful(k))]
         elif p.startswith('USEFUL>'): keep = [k for k in W if useful(k, float(p[7:]))]
