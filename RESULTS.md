@@ -3272,3 +3272,12 @@ tools/typed_routes.py (route 3) and tools/typed_plus.py ran each write round IND
 | 0.75 | 46 / 29 / 27 / 16 | 0.783 / 0.800 / 0.775 / 0.763 | 0.54-0.57 | +1.24 / +2.34 / +2.53 / +1.25 |
 - More evidence keeps more (46 vs 19 in round 1) at slightly lower precision (0.76-0.80 vs 0.75-0.84) and saves the most bits in rounds 2-3; less evidence keeps fewer and loses the thin round 4. **No sharp optimum: half the window (the default, about one visit on the GPU) is a sound middle; the GPU's two visits correspond to the generous end.** Retyping helps at every window.
 - JUDGE WITH WORDING SPECIFICITY (tools/judge_list.py; confirmations weighted by the wording's rarity, label-free), rounds at visits 2 / 4 / 6, AUC batch / next tier: wider filter (count) 0.682 / 0.568, 0.688 / 0.614, 0.642 / 0.558; IDF-weighted count 0.672 / 0.565, 0.694 / 0.603, 0.639 / 0.540; most specific wording 0.651 / 0.558, 0.695 / 0.593, 0.613 / 0.523. **Negative: rare wordings are not stronger evidence; the plain count of relational confirmations (with the wider list filter) stays the best judge.**
+
+## Consolidation of kept typed inferences into a trunk (16 Nov 2026, tools/consolidate.py; A6 stand-in trunk, the GPU path's 200 typed writes at visit 2 (right 0.690), six frames, 8 fact + 24 wiki rows a step, 400 steps; test wording never taught, rank among 10, chance ~0.10; base rank 0.115, wiki 2.0268)
+| rule | lr 1e-4 | lr 3e-4 | lr 1e-3 |
+|---|---|---|---|
+| FULL | rank 0.105, +0.071 bits | 0.155, +0.091 | 0.255, +0.173 |
+| KL (wiki rows anchored to the old model) | 0.140, +0.064 | 0.185, +0.069 | **0.260, +0.116** |
+| MLPOUT | 0.090, +0.065 | 0.090, +0.079 | 0.130, +0.088 |
+| LORA (rank 8) | 0.090, +0.052 | 0.090, +0.053 | 0.085, +0.053 |
+- Weak at this scale: the best recall in an unseen wording is rank 0.26 (chance 0.10), at +0.12 bits with the KL anchor (the same recall costs +0.17 without it). MLP-out (the GPU's path) and a rank-8 adapter barely learn at these rates. Every rule also adds +0.05 bits with almost no learning - a drift control (wiki rows only) and higher adapter rates are running.
