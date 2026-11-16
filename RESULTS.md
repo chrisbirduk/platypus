@@ -3356,3 +3356,13 @@ The NAME unit's exact-string key (the package's subject hash) vs a LEARNED key: 
 - Memory cost on held-out Wikipedia at visit 5: +0.0071 bits per byte (kmr +0.0133, about half); the gate rule (no inference slots on text) would make it +0.0004. Visit 6 gate open on 1,494 spans (kmr 927), inferences -17,697 bits (-12.4 per span; kmr -10.4) - per-span cost is NOT lower at visit 6.
 - False memories from the trunk unchanged (kty teaches what kmr taught): taught WRONG inferences recalled 0.28 (kmr 0.30), RIGHT 0.42 (0.37).
 - **Post-train BPC kty vs kmr: +0.001 / +0.017 / +0.007 / +0.011 / +0.010 on the five domains so far** - each within seed noise, but five of five on the same side (mean +0.009). A small real cost of typed writes is likely; the final forgetting decides.
+
+## GPU cg27a_kus to visit 5 (phase 6 running) - THE KEEP RULE BLOCKS FALSE MEMORIES AT SCALE
+| from the TRUNK, test wording, visit 5 | taught RIGHT inferences recalled | taught WRONG inferences recalled (false memories) | held back (control) right / wrong |
+|---|---|---|---|
+| kmr (judge keeps -> trunk) | 0.22 (366) | 0.14 (170) | 0.01 / 0.02 |
+| kty (the same + typed writes) | 0.33 (183) | 0.27 (85) | 0.04 / 0.00 |
+| **kus (judge AND useful -> trunk)** | **0.10 (182)** | **0.02 (85)** | 0.00 / 0.03 |
+- **POSITIVE for the false-memory goal: with the usefulness keep rule, wrong inferences are recalled from the trunk at the control level (0.02 vs held-back 0.03), against 0.27 in kty and 0.14 in kmr.** Right ones are still recalled above control (0.10 vs 0.00); the ratio of right to wrong recalled is about 5 : 1 (kty 1.2 : 1, kmr 1.6 : 1). The cost is recall of right inferences from the trunk (0.10 vs 0.33) - they stay available through the memory.
+- The rule's per-visit readout is unstable, as in kty: useful AND judged-kept right 0.882 (17) at visit 4, 0.429 (7) at visit 5 (usefulness re-measured on new text); NOT HARMFUL AND kept 0.877 (81) / 0.841 (69) against all kept 0.79. The trunk-level outcome above is what matters, and it is clearly better.
+- No harm so far: post-train BPC 2.036 / 2.063 / 2.037 / 1.670 / 1.587 vs kty 2.035 / 2.079 / 2.026 / 1.670 / 1.588 (same; both about +0.009 above kmr). Memory cost on held-out Wikipedia, visit 5: +0.0058 (kty +0.0071, kmr +0.0133).
