@@ -3314,3 +3314,19 @@ Can the hand-written keyed units (NAME / DATE / NUMBER) be replaced by GENERIC k
 - **Putting the learned type IN the key hurts** (41 vs 82): 16 types split each key's continuations 16 ways, so fewer are found. Types should select or weight keys, not partition them.
 - **The learned types rediscover the hand categories unsupervised:** type 7 is 81% NAME firings; type 0 is 63% DATE + 30% NUMBER (one 'date-or-number' type); the rest are mostly other words. The gate trusts type 7 (+0.43) and type 1 (+0.49, 35% NAME) most; types 2, 3, 4, 14 cost bits (-0.4 to -1.4k) and get the lowest trust.
 - Caveats: a small trunk (6k steps, 2.24 bits per byte on this text) leaves much for a cache to catch; a stronger trunk will gain less, and the hand units' advantage is cost (far fewer firings). Next: generic + typed as SEPARATE units (types weighting, not partitioning), longer keys, and a stronger trunk (queue 27b).
+
+## Learned subject keys under key drift (16 Nov 2026, tools/learned_keys.py; Re-DocRED, 300 scored documents; NAME firings, causal; feedback gate)
+The NAME unit's exact-string key (the package's subject hash) vs a LEARNED key: the nearest of 1,024 codes (k-means) of the trunk's state at the name. DRIFT: the memory is written with the 6k trunk and read after that trunk was trained 1,500 more steps on arXiv text (a continual-learning drift; mean state change 15.0 against a state norm of 17.7 - large). Every arm is scored with the drifted trunk's predictions (3.81 bits per byte here - it forgot much of its wiki text, so absolute savings are inflated; the RANKING is the result).
+
+| bits saved per 1,000 bytes | all 300 | after warm-up |
+|---|---|---|
+| HASH (exact name; today) | 158.1 | 169.5 |
+| REKEY (learned key, every stored key recomputed with the new trunk at sleep) | **181.6** | **191.7** |
+| STALE (stored with the old trunk, no fix) | 153.6 | 163.3 |
+| QDC (query corrected by the mean drift) | 161.8 | 171.9 |
+| FROZEN (a frozen key encoder: old trunk's states both sides) | **180.7** | **191.7** |
+| **HASH + REKEY / HASH + FROZEN** (exact key and learned key as two units) | **210.5 / 210.1** | **224.0 / 224.2** |
+
+- **POSITIVE: learned keys beat the exact hash (+15%), and the hash plus a learned key beats either (+33% over the hash alone).** The learned key reaches stored text the exact name cannot: ~18k ALIAS positions (the exact name had nothing stored) saving ~13.9k bits.
+- **Drift matters and a FROZEN key encoder solves it as well as re-keying:** stale keys lose 28 bits per 1,000 bytes against re-keyed ones (153.6 vs 181.6, below the hash); query drift compensation recovers only about a quarter (161.8); a frozen encoder matches re-keying exactly (180.7 / 191.7) with no re-keying pass - the Discrete Key-Value Bottleneck recipe holds here.
+- The learned codes are COARSE: 1,024 codes over ~109k name firings, about 44 distinct names per code, 1% of codes hold one name. So the learned key works as a 'kind of name in this context' key, not an identity key - it complements the hash rather than replacing it. Next (28b): more codes (8,192) for identity-level keys, a milder drift where the trunk stays good, and the frozen-encoder hybrid in the package's keyed units as a build candidate.
