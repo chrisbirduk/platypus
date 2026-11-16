@@ -14,8 +14,9 @@ def minipile_bytes(domain, seed, n):
     return b[-VAL_BYTES:] if seed % 10000 >= 7777 else b[:min(int(n), TRAIN_BYTES)]
 import platypus.data as D
 D._stream_bytes = minipile_bytes; D._cache_path = lambda key: None; D._BYTES_CACHE.clear()
-ovr = json.load(open(os.environ['LR_PRESET'])) if os.environ.get('LR_PRESET') else {}
-ovr = {k: v for k, v in ovr.items() if not k.startswith('_')}
+from platypus.presets import DEFAULT_LAB_OVR                     # as scripts/merge_overrides.py: LAB_OVR REPLACES the defaults, so merge onto them
+ovr = json.loads(DEFAULT_LAB_OVR)                               #   (16 Nov: without this the first local run had inf_on off - no inference at all)
+if os.environ.get('LR_PRESET'): ovr.update({k: v for k, v in json.load(open(os.environ['LR_PRESET'])).items() if not k.startswith('_')})
 ovr.update(dict(d_model=64, d_state=64, n_layers=2, seq_len=64, batch_size=16, steps_per_task=int(os.environ.get('LR_STEPS', 250)),
                 d_state_max=512, widen_chunk=16, min_fresh=32, widen_per_difficulty=128, log_locality=False, log_every=250, sens_every=125,
                 extra_domains=(), amp='', adam_fused=False))   # the five local domains only; CPU: no bf16 autocast, no fused Adam
