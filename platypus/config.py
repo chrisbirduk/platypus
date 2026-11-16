@@ -682,6 +682,9 @@ class Config:
     inf_kmfb=0                      #   15 Nov READOUT: MEMORY FEEDBACK FROM READING (inference.kmem): real text read since the first writes grades each memory entry in use
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
+    inf_rti_retype=0                # 16 Nov RETYPE ON CONFIRMATION: a kept inference that a later relational record states is rewritten in that record's wording
+                                    #   and order (memory, question rows, readouts). Offline held-out (tools/loop_sim.py BOTH-RETYPE): exact relations 0.30-0.33 ->
+                                    #   0.54-0.64, the memory saves +1.05 / +1.72 vs +0.26 / +0.11 bits per 1,000 bytes in rounds 1-2
     inf_rti_comp=0                  # 16 Nov TYPED COMPOSITION: a table premise wordings (A-B, B-C) -> conclusion wording, learned from kept inferences a later
                                     #   relational record confirms, types new inferences where it can (else the class pair, inf_rti_typed). Offline: exact 0.40 vs
                                     #   0.365, bits +0.69 vs -0.12; the pairs it types right 0.83

@@ -752,6 +752,14 @@ def _rret_judge(cfg, RD, ndv_, vis):
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
         for j, k in enumerate(ks): W[k].update(judged=vis, flag=bool(fl[j]), ret=bool(ret[j]), rscore=float(sc[j]))
+        if int(getattr(cfg, 'inf_rti_retype', 0)):                             # 16 Nov RETYPE ON CONFIRMATION: a kept inference that a later relational record
+            nrt = 0                                                            #   states is rewritten in that record's wording and order
+            for j, k in enumerate(ks):
+                cs = cw9.get(frozenset(k))
+                if fl[j] or not cs: continue
+                X, Y, w = collections.Counter(cs).most_common(1)[0][0]
+                if w and any(ch.isalpha() for ch in w): W[k].update(th=X, tw=w, tt=Y, retyped=vis); nrt += 1
+            out.append(f"RETYPED ON CONFIRMATION {nrt} kept inferences (e.g. " + "; ".join(f"{W[k]['th']} {W[k]['tw']} {W[k]['tt']} ({'right' if W[k]['truth'] else 'wrong'})" for k in ks if W[k].get('retyped') == vis)[:300] + ")")
         if int(getattr(cfg, 'inf_rti_comp', 0)):                               # 16 Nov TYPED COMPOSITION: kept inferences that a later relational record
             T3 = _PM.setdefault('T3', collections.defaultdict(collections.Counter)); nl9 = 0   #   states teach the table premise wordings -> that wording
             for j, k in enumerate(ks):
@@ -793,6 +801,13 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
     W = _PM.get('rti') or {}
     if not W:
         print(f"  [REAL-TEXT INFERENCE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
+    nup = 0
+    for e in ents + held:                                                      # 16 Nov RETYPE ON CONFIRMATION: pool entries follow their ledger entry's new type
+        if is_rti(e):
+            w9 = W.get(rti_wkey(e)) or {}
+            if w9.get('retyped') is not None and (e['A'], e['r'], e['ans']) != (w9['th'], w9['tw'], w9['tt']):
+                e.update(A=w9['th'], r=w9['tw'], ans=w9['tt']); e['pfs'] = [f"{e['A']} {e['r']} "]; nup += 1
+    if nup: print(f"  [RETYPE ON CONFIRMATION | visit {vis + 1}] {nup} taught inferences now taught in their confirming wording", flush=True)
     have = {repr(e['key']) for e in ents + held}; T_, H_, U_, X_ = [], [], [], []
     for (A_, C_), w in W.items():
         e = rti_ent((A_, C_), w, seen=2, src=(), rm=w['vis'], truth=w['truth'], novel=w.get('novel')); e['pfs'] = [f"{e['A']} {e['r']} "]
