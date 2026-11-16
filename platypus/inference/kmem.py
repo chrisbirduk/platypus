@@ -929,7 +929,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         ch = sp[i0:i0 + 64]; tb = [(r[7] + '.').encode('latin-1', 'replace') for r in ch]
         X, _ = _ws_batch(model, [b + b' ' for b in tb])
         with torch.no_grad():
-            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H, no_rti=bool(int(getattr(cfg, 'inf_kma_nori', 0))))
+            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H, no_rti=bool(int(getattr(cfg, 'inf_kma_nori', 0))) and not int(getattr(cfg, 'inf_kmc_useful_open', 0)))
             l0 = F.log_softmax(lg.float(), -1); l1 = F.log_softmax(lm, -1); mv = lm - lg.float()
         for k, (r, b) in enumerate(zip(ch, tb)):
             runs = [(m.start(), m.end()) for m in _KMI_RUN.finditer(b)]
@@ -962,7 +962,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
             W[hk[k9]]['use'] = (v[4] if sp9 else v[1]) / v[0]; W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
     from scipy.stats import spearmanr
     rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
-    print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
+    print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}]{' (inference slots readable here: the usefulness measure, inf_kmc_useful_open; prediction keeps the gate rule)' if int(getattr(cfg, 'inf_kma_nori', 0)) and int(getattr(cfg, 'inf_kmc_useful_open', 0)) else ''} {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
           f"{opened} | bits SAVED by the memory on those names (negative = it hurt): facts {tot[('fact', 'gain')]:+.1f} ({tot[('fact', 'n')]} spans), inferences RIGHT "
           f"{tot[('inference right', 'gain')]:+.1f}, WRONG {tot[('inference wrong', 'gain')]:+.1f} ({tot[('inf', 'n')]} spans) || WRITTEN INFERENCES with feedback: {len(inf)} of {nW} "
           f"({len(inf) / max(1, nW):.2f}); AUC right vs wrong (label-free feedback; the current judge 0.64): mean bits saved {auc(mg):.3f}, confirmations - contradictions "

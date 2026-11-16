@@ -696,6 +696,8 @@ class Config:
     inf_kmc_useful_thr=0.0          #     mean bits saved per span above which it is useful
     inf_kmc_useful_span=0           #     1: usefulness over the whole span after the subject (wording + name; offline: more kept, memory 0.80-0.83 right),
                                     #     0: on the second name only (offline: 6-13 kept a round, 0.89-1.00 right)
+    inf_kmc_useful_open=0           #     16 Nov: 1 = usefulness (and the memory-feedback readout) read with the inference slots OPEN even under the gate rule
+                                    #     (inf_kma_nori): a counterfactual 'would it have helped' - GPU kgk: with the rule, 5 inferences passed
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
