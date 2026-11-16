@@ -171,7 +171,8 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
             if k in typed: KEPT[p][k] = typed[k]
             if p == 'BOTH-RETYPE' and conf.get(k):                             # 16 Nov RETYPE ON CONFIRMATION: the kept inference rewritten in the wording of
                 X, Y, w = collections.Counter(conf[k]).most_common(1)[0][0]    #   the later relational sentence that states it
-                if w and any(ch.isalpha() for ch in w): KEPT[p][k] = (X, w, Y)
+                short_ = len(w.split()) <= 4 and not any(ch in w for ch in ':()[];"')
+                if w and any(ch.isalpha() for ch in w) and (short_ or not int(os.environ.get('LS_RT_SHORT', 0))): KEPT[p][k] = (X, w, Y)
             if conf.get(k):                                                    # the composition table learns from kept, confirmed writes (no labels)
                 X, Y, w = collections.Counter(conf[k]).most_common(1)[0][0]; cf = w if X == k[0] else w + ' ^R'
                 for b in W[k]['prem']:
