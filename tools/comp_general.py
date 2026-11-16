@@ -40,6 +40,13 @@ for rd, v in enumerate((1, 3, 5), 1):
         f = frozenset((r[1], r[2]))
         if r[0] < h(v) and f in need: pw[f].append((r[1], r[2], norm(r[3])))
         if h(v) <= r[0] < h(v + 2) and f in want: conf[want[f]].append((r[1], r[2], norm(r[3])))
+    byname = collections.defaultdict(list); DGd = collections.Counter()
+    for r in R:
+        if r[0] < h(v):
+            DGd[r[1]] += 1; DGd[r[2]] += 1
+            if isrel(r):
+                w_ = norm(r[3])
+                if any(ch.isalpha() for ch in w_): byname[r[1]].append((r[1], r[2], w_)); byname[r[2]].append((r[1], r[2], w_))
     def ori(X, Y):
         cs = pw.get(frozenset((X, Y)))
         if not cs: return None
@@ -66,6 +73,15 @@ for rd, v in enumerate((1, 3, 5), 1):
             if got: lvl[got[0]] += 1
             c = got[1] if got else None; res['backoff L0-L3'].append((c is not None, right(c, 0), right(c, 1), e['truth']))
             r1 = (e['th'], e['tw'], e['tt']) if e.get('tw') else None; res['route 1 (store class pair)'].append((r1 is not None, right(r1, 0), right(r1, 1), e['truth']))
+            if r1 is not None:                                                 # 16 Nov NAME-SPECIFIC: how the TAIL name is related to names of the head's class
+                hd, tl = (r1[0], r1[2]) if DGd.get(r1[0], 0) <= DGd.get(r1[2], 0) else (r1[2], r1[0]); cc = collections.Counter()
+                for X, Y, w in byname.get(tl, ()):
+                    o = Y if X == tl else X
+                    if TY.get(o, 'X') == TY.get(hd, 'X') and w: cc[(w, X == tl)] += 1
+                if cc:
+                    (w, tfirst), _ = cc.most_common(1)[0]; c2 = (tl, w, hd) if tfirst else (hd, w, tl)
+                else: c2 = r1
+                res['name-specific (tail), else route 1'].append((True, right(c2, 0), right(c2, 1), e['truth']))
         out = []
         for nm, L in res.items():
             a = np.array(L, bool); cov = a[:, 0]
