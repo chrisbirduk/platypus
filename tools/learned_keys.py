@@ -38,7 +38,7 @@ NE = int(os.environ.get('LK_EVAL', 300)); CL = int(os.environ.get('RU_CONT', 24)
 LR = float(os.environ.get('RU_LR', 0.05)); torch.set_num_threads(2); ev0 = len(docs) - NE
 P(f"documents {len(docs)}: memory from the first {ev0}, scored on the last {NE} | old trunk {os.environ.get('TG_CKPT')} new {os.environ['LK_NEW']} | {K} codes")
 def names(d):
-    b, fh, st = build_causal(d); return b, [f for f in st if f[0] == 'NAME'], [f for f in fh if f[0] == 'NAME']
+    b, fh, st = build_causal(d); return b, [f for f in st if f[0] == 'NAME' and f[2] < len(b)], [f for f in fh if f[0] == 'NAME' and f[2] < len(b)]
 # 1. states at name ends from both trunks, memory documents
 MEMD = []; So, Sn = [], []
 for i, d in enumerate(docs[:ev0]):
