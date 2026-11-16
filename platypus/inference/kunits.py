@@ -22,13 +22,18 @@ _isyear = re.compile(rb'1[0-9]{3}|20[0-9]{2}').fullmatch; _isnum = re.compile(rb
 CL = 24
 
 
-def ku_fires(b):
-    """causal firings of a byte string: (fires, stores) as lists of (unit, key, position where the continuation starts)"""
-    fires, store = [], []; run = []; last = None; prev = None; ti = 0; gap = 0
+def ku_fires(b, word=False):
+    """causal firings of a byte string: (fires, stores) as lists of (unit, key, position where the continuation starts); word=True adds the
+    GENERIC units W1 / W2 (16 Nov, inf_ku_word): a firing at EVERY word end, key = the sentence's last 1 / 2 words, no hand rule"""
+    fires, store = [], []; run = []; last = None; prev = None; ti = 0; gap = 0; pw = None
     for m in _TOK.finditer(b):
         w = m.group(0); a, e = m.start(), m.end()
         if w in _END:
-            run = []; last = None; prev = w; ti = 0; gap = 0; continue
+            run = []; last = None; prev = w; ti = 0; gap = 0; pw = None; continue
+        if word and w[:1].isalnum():
+            fires.append(('W1', w, e)); store.append(('W1', w, e))
+            if pw is not None: k2 = pw + b' ' + w; fires.append(('W2', k2, e)); store.append(('W2', k2, e))
+            pw = w
         c0 = w[:1]
         if (c0.isdigit() or c0.isupper()) and last is not None:
             fires.append(('DATE', last + b' |date', a))
@@ -47,7 +52,7 @@ def ku_fires(b):
 def _st(model):
     st = model.__dict__.get('_ku')
     if st is None:
-        st = dict(mem={u: {} for u in ('NAME', 'DATE', 'NUMBER')}, gate={c: {} for c in ('NAME', 'ALL')}, nfill=0, bytes=0)
+        st = dict(mem={u: {} for u in ('NAME', 'DATE', 'NUMBER', 'W1', 'W2')}, gate={c: {} for c in ('NAME', 'ALL', 'WORD', 'WORD+HAND')}, nfill=0, bytes=0)
         model.__dict__['_ku'] = st
     return st
 
@@ -60,6 +65,14 @@ def ku_fill(model, cfg, raw):
         d = M[u].get(k)
         if d is None: d = M[u][k] = collections.deque(maxlen=cap)
         d.append(b[p:p + CL])
+    if int(getattr(cfg, 'inf_ku_word', 0)):                                     # 16 Nov GENERIC WORD UNITS: a smaller fill (every word end fires);
+        bw = b[:int(getattr(cfg, 'inf_ku_word_fill', 2_000_000))]; wcap = int(getattr(cfg, 'inf_ku_word_cap', 16))   #   plain lists, capped
+        for u, k, p in ku_fires(bw, word=True)[1]:
+            if u not in ('W1', 'W2'): continue
+            d = M[u].get(k)
+            if d is None: d = M[u][k] = []
+            d.append(bw[p:p + CL])
+            if len(d) > wcap: del d[0]
     st['nfill'] += len(store); st['bytes'] += len(b)
     return time.time() - t0
 
@@ -71,7 +84,7 @@ _ebk = lambda e: 0 if e < 0.5 else 1 if e < 1.5 else 2 if e < 3 else 3
 
 def _row_bits(st, b, pt, ent, units, combo, lr, mask=None):
     """bits saved on one row by the units (learned gate, prequential: each byte scored before the gate learns from it)"""
-    fires, _ = ku_fires(b); M = st['mem']; best = {}
+    fires, _ = ku_fires(b, word=('W1' in units)); M = st['mem']; best = {}
     for u, k, p in fires:
         if u not in units: continue
         conts = M[u].get(k)
@@ -98,14 +111,15 @@ def ku_readout(model, cfg, vals, seen_d, next_d, slot_of, tag, nb=8):
     st = model.__dict__.get('_ku')
     if not st or not st['nfill']: return
     try:
-        lr = float(getattr(cfg, 'inf_ku_lr', 0.05)); Ts = int(model.cfg.seq_len); parts = []; tot = [0.0, 0.0, 0.0, 0]
+        lr = float(getattr(cfg, 'inf_ku_lr', 0.05)); Ts = int(model.cfg.seq_len); parts = []; tot = [0.0, 0.0, 0.0, 0, 0.0, 0.0]
+        wd = int(getattr(cfg, 'inf_ku_word', 0)) and bool(st['mem']['W1'])
         doms = [(d, 'read') for d in seen_d] + ([(next_d, 'NEXT')] if next_d is not None and next_d not in seen_d else [])
         was = model.training; model.eval()
         try:
             for d, kind in doms:
                 g = vals[d]; cur = model.__dict__.get('_cur_dom'); sl = int(slot_of(d)) if kind == 'read' or cur is None else int(slot_of(int(cur)))
                 if hasattr(g, 'reset'): g.reset()
-                acc = [0.0, 0.0, 0.0, 0]
+                acc = [0.0, 0.0, 0.0, 0, 0.0, 0.0]
                 for _ in range(nb):
                     x, y = g(); lg = model(x, sl)[:, -Ts:].float(); yy = y[:, -Ts:]
                     lp = F.log_softmax(lg, -1); pt = lp.gather(-1, yy[..., None])[..., 0].exp().cpu().numpy(); ent = (-(lp.exp() * lp).sum(-1) / math.log(2)).cpu().numpy()
@@ -113,13 +127,21 @@ def ku_readout(model, cfg, vals, seen_d, next_d, slot_of, tag, nb=8):
                     for r in range(yb.shape[0]):
                         b = bytes(yb[r]); acc[0] += float(-np.log2(np.maximum(pt[r], 1e-12)).sum()); acc[3] += len(b)
                         acc[1] += _row_bits(st, b, pt[r], ent[r], ('NAME',), 'NAME', lr)[0]; acc[2] += _row_bits(st, b, pt[r], ent[r], ('NAME', 'DATE', 'NUMBER'), 'ALL', lr)[0]
-                for i in range(4): tot[i] += acc[i]
-                n = max(1, acc[3]); parts.append(f"domain {d} ({kind}): trunk {acc[0] / n:.4f}, + NAME {-acc[1] / n:+.4f}, + NAME + DATE + NUMBER {-acc[2] / n:+.4f}")
+                        if wd:
+                            acc[4] += _row_bits(st, b, pt[r], ent[r], ('W1', 'W2'), 'WORD', lr)[0]
+                            acc[5] += _row_bits(st, b, pt[r], ent[r], ('NAME', 'DATE', 'NUMBER', 'W1', 'W2'), 'WORD+HAND', lr)[0]
+                for i in range(6): tot[i] += acc[i]
+                n = max(1, acc[3]); parts.append(f"domain {d} ({kind}): trunk {acc[0] / n:.4f}, + NAME {-acc[1] / n:+.4f}, + NAME + DATE + NUMBER {-acc[2] / n:+.4f}"
+                                                 + (f", GENERIC WORDS {-acc[4] / n:+.4f}, WORDS + NAME + DATE + NUMBER {-acc[5] / n:+.4f}" if wd else ''))
         finally: model.train(was)
         n = max(1, tot[3]); M = st['mem']
         print(f"  [KEYED UNITS | {tag}] change in held-out bits per byte (negative = the units help; learned gate, prequential) || ALL DOMAINS: trunk {tot[0] / n:.4f}, + NAME "
               f"{-tot[1] / n:+.4f}, + NAME + DATE + NUMBER {-tot[2] / n:+.4f} (DATE + NUMBER on top of NAME {-(tot[2] - tot[1]) / n:+.4f}) || " + " | ".join(parts)
               + f" || memory: {st['bytes'] / 1e6:.1f} MB read, keys NAME {len(M['NAME'])}, DATE {len(M['DATE'])}, NUMBER {len(M['NUMBER'])}", flush=True)
+        if wd:
+            print(f"  [GENERIC KEYED UNITS | {tag}] every word end keyed by its last 1-2 words (no hand rule; learned gate, prequential), change in held-out "
+                  f"bits per byte || ALL DOMAINS: GENERIC WORDS {-tot[4] / n:+.4f} vs hand NAME + DATE + NUMBER {-tot[2] / n:+.4f}; WORDS + HAND {-tot[5] / n:+.4f} "
+                  f"(hand units on top of words {-(tot[5] - tot[4]) / n:+.4f}) || keys W1 {len(M['W1'])}, W2 {len(M['W2'])}", flush=True)
     except Exception as e:
         from platypus.common import _fail
         _fail('inference.kunits'); print(f"  [KEYED UNITS] readout unavailable ({type(e).__name__}: {e})"[:240], flush=True)

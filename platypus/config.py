@@ -703,6 +703,9 @@ class Config:
     inf_ku_fill=8000000             #     bytes of each visited domain's training text stored per visit
     inf_ku_cap=32                   #     continuations kept per key (the most recent)
     inf_ku_lr=0.05                  #     the gate's online learning rate
+    inf_ku_word=0                   # 16 Nov GENERIC WORD UNITS (readout): every word end keyed by its last 1-2 words; [GENERIC KEYED UNITS] vs the hand units
+    inf_ku_word_fill=2000000        #   bytes of each visited domain's text stored for the word units
+    inf_ku_word_cap=16              #   continuations kept per word key
     inf_kma_nori=0                  # 16 Nov THE GATE RULE: on ordinary text the all-text memory stays shut where the read weight lies mostly (0.5+) on the
                                     #   untyped written inferences' slots (questions still read them). GPU cg27a_kmr readout: Wikipedia +0.0035 / +0.0054
                                     #   -> +0.0002 / +0.0004 bits per byte at visits 3 / 4
