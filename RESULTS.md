@@ -3376,3 +3376,18 @@ The NAME unit's exact-string key (the package's subject hash) vs a LEARNED key: 
 - Gate rule: the memory's cost on held-out text at visit 2 is 0.0000 on every domain. Post-train BPC: Gutenberg 2.022 (kty 2.035, kmr 2.036), Wikipedia 2.058 (kty 2.079, kmr 2.062) - lower so far.
 - **CHECK (queue 37): post-train BPC does NOT include the keyed memory** (it is the trunk's own forward, platypus/runner.py `bpc_m`; the keyed memory and the gate rule enter only the readouts: compress.py prequential bits, kmem.py feedback and recall). So kgk's lower post-train BPC (Gutenberg 2.022 / Wikipedia 2.058 vs kty 2.035 / 2.079, kus 2.036 / 2.063) is not the gate rule - kty, kus and kgk are the same configuration up to visit 3 (the judge acts at visit 4), so these differences are **run-to-run GPU variation of about 0.015-0.02 per domain**. kty's +0.009 mean against kmr is within it: no evidence of a cost from typed writes.
 - **cg27a_kgk IN THE PACKAGE (local, run A's settings): PASSES.** HEADLINE forgetting -0.042, final BPC 2.597 (A -0.036 / 2.603, krt -0.040 / 2.599); 32 retyped at visit 4; every readout prints, no failures. Generic word units locally beat the hand units (visit 4: -0.071 vs -0.012 bits per byte) - the small-trunk effect the GPU run does not reproduce on unseen text.
+
+## A judge from typed confirmations (16 Nov 2026, tools/typed_judge.py; offline, GPU write path, distant_50k, writes at visits 2 / 4 / 6, judged on the next two visits' records)
+Signals per typed inference over later relational records whose FIRST name is its head: CC-ANY (confirm - contradict) / total, any wording; CC-WORD only the inference's own wording; CC-CLASS only records whose second name has the tail's class; JUDGE+CC = judge rank + CC-CLASS rank. AUC right vs wrong over all 200 of a tier (uncovered = 0) and COVERAGE (share with any record).
+
+| AUC (coverage) | batch, visit 2 / 4 / 6 | next tier, visit 2 / 4 / 6 |
+|---|---|---|
+| JUDGE (relational records of the pair) | **0.682** / **0.688** / **0.642** (0.51-0.55) | 0.568 / 0.614 / 0.558 (0.33-0.46) |
+| CC-ANY | 0.635 / 0.562 / 0.622 (0.84-0.93) | 0.584 / 0.587 / **0.629** (0.81-0.88) |
+| CC-WORD (own wording) | 0.429 / 0.476 / 0.503 | 0.445 / 0.415 / 0.486 |
+| CC-CLASS | 0.561 / 0.588 / 0.567 (0.76-0.83) | 0.575 / 0.563 / 0.612 (0.67-0.79) |
+| **JUDGE + CC** | 0.656 / 0.678 / 0.635 (0.79-0.85) | **0.597 / 0.622 / 0.610** (0.69-0.80) |
+
+- **MODEST POSITIVE.** On the first batch the judge stays best (the typed signal adds nothing); **on the harder next tier judge + typed confirmation beats the judge in all three rounds (+0.03 / +0.01 / +0.05) and covers about twice as many inferences (0.69-0.80 vs 0.33-0.46).** Smaller than the GPU readout suggested (0.626 vs 0.519 there; the GPU's signal is read through the memory's gate, this one from records).
+- **'Contradictions' in the inference's OWN wording are misleading (AUC below 0.5):** most typed wordings are 'in', and a head is 'in' several true places at once (a city in its county, state and country), so 'X in Z' with another Z is usually NOT a contradiction. Containment relations need a hierarchy-aware contradiction test (Z not containing / contained by the tail) before same-wording contradictions can count.
+- Use: the combined score as the judge for the next tier, and its coverage for the kus keep rule (queue 35: judge AND (useful OR typed-confirmed)).
