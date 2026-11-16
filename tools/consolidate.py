@@ -81,7 +81,7 @@ for rule in os.environ.get('CS_RULES', 'FULL,KL,MLPOUT,LORA').split(','):
         op = torch.optim.Adam(ps, lr=lr)
         for st in range(STEPS):
             fb = [FACT[i] for i in rs.randint(0, len(FACT), 8)]; wb = [bytes(WK[i:i + 129]) for i in rs.randint(0, HO - 200, 24)]
-            Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD)
+            Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD) * (0.0 if rule == 'NONE' else 1.0)   # NONE: wiki only (the drift control)
             Xw, Xwi = tens(wb); lw_ = m(Xwi)
             if rule == 'KL':
                 with torch.no_grad(): lo = F.log_softmax(base(Xwi), -1)
