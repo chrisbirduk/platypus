@@ -75,7 +75,7 @@ def bits(claims, idx, TXT, PT, EN):
 POL = tuple(os.environ.get('LS_POL', 'JUDGE,USEFUL,JUDGE+USE,ALL BATCH').split(','))   # also EITHER (judge or useful, all 400), USEFUL>t (gain above t bits per 1,000 bytes)
 KEPT = {p: {} for p in POL}; T3 = {p: collections.defaultdict(collections.Counter) for p in POL}
 pm._PM['rti'] = {}
-for rd, v in enumerate((1, 3, 5), 1):
+for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5').split(',')), 1):
     before = set(pm._PM['rti']); pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
     W = {k: w for k, w in pm._PM['rti'].items() if k not in before}; y = {k: w['truth'] for k, w in W.items()}; tier = {k: w['rank'] < 200 for k, w in W.items()}
     nb = collections.defaultdict(set); tab = collections.defaultdict(collections.Counter); pw = collections.defaultdict(list); mid = (h(v) + h(v + 2)) // 2
