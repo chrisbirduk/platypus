@@ -94,7 +94,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
     need = {frozenset((A, b)) for (A, C), e in W.items() for b in e['prem']} | {frozenset((b, C)) for (A, C), e in W.items() for b in e['prem']}
     for r in R:
         if r[0] < h(v): nb[r[1]].add(r[2]); nb[r[2]].add(r[1])
-    DG = {n: len(s) for n, s in nb.items()}; want = {frozenset(k): k for k in W}; conf = collections.defaultdict(list)
+    DG = {n: len(s) for n, s in nb.items()}; want = {frozenset(k): k for k in W}; conf = collections.defaultdict(list); HF = collections.defaultdict(list)
     for r in R:
         if r[0] < h(v) and isrel(r):
             if r[1] in DG and r[2] in DG and DG[r[1]] != DG[r[2]]:
@@ -105,6 +105,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         if h(v) <= r[0] < (mid if int(os.environ.get('LS_HALF', 1)) else h(v + 2)) and isrel(r):   # 16 Nov: the judge (and retyping) see only the FIRST half
             k = want.get(frozenset((r[1], r[2])))                              #   (the second half is the held-out scoring text)
             if k: conf[k].append((r[1], r[2], norm(r[3])))
+            HF[r[1]].append(r[2])                                              # 16 Nov (queue 35): head-first records, the typed confirmation signal
     def orient(X, Y):
         cs = pw.get(frozenset((X, Y)))
         if not cs: return None
@@ -149,6 +150,11 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
             if c is None or not first.get(c[0]): return False
             return bits([c], first[c[0]], TXT, PT, EN) > t
         judged = lambda k: bool(conf.get(k))
+        def typed_ok(k):                                                       # 16 Nov: confirmations > contradictions among head-first records of the
+            c = typed.get(k)                                                   #   judge's window; a second name the store links to the tail is no contradiction
+            if c is None: return False
+            zs = HF.get(c[0], ()); cf = sum(1 for z in zs if z == c[2]); ct = sum(1 for z in zs if z != c[2] and z not in nb.get(c[2], ()))
+            return cf > ct
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE-ALL': keep = [k for k in W if judged(k)]                # 16 Nov: the judge over all 400 written (BOTH's candidate set)
@@ -173,6 +179,8 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         elif p == 'BOTH-RETRACT': keep = [k for k in W if judged(k) and useful(k)]
         elif p in ('BOTH-RETYPE', 'BOTH-RETYPE-T'): keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
+        elif p == 'BOTH-OR-CC': keep = [k for k in W if judged(k) and (useful(k) or typed_ok(k))]   # 16 Nov (queue 35): coverage for the keep rule
+        elif p == 'JUDGE-CC': keep = [k for k in W if judged(k) and typed_ok(k)]
         elif p == 'JUDGE-NOHARM':                                              # 16 Nov JUDGE AND NOT HARMFUL: drop only judged pairs MEASURED as not useful;
             def harmful(k):                                                    #   pairs with no later span of the head pass on the judge alone
                 c = typed.get(k)
