@@ -3699,3 +3699,4 @@ README.md has a new section, "Recent results (15-17 November)". Ten new table ro
 - That is below what the fact-table code writes today (0.6-0.7 right, distant labels; a different metric). A real-text composition write path is NOT yet worth a GPU build.
 
 **Next.** Premise quality: compose only over judged-kept and typed-confirmed facts. In the rule world, composition through verified rules is already exact.
+- **Label-free premise filters (same tool, FC_READERS).** None helps. The pair co-occurring in 2+ sentences gives 48 / 10 composed pairs (precision 0.29 / 0.00). A short gap ending in a preposition gives 62 / 96 (0.00). Both together give 0 rules. They are too sparse within one document. A premise filter needs the package's own judged and kept facts, or the label-free extractor (tools/consistency_teacher.py, top 5% 0.54).

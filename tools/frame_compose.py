@@ -56,10 +56,14 @@ def premises(d, kind, reader):
             want = int(round(len(out) * (1 - pr) / max(pr, 1e-6))); rr = np.random.RandomState(len(d['sents']) * 7 + len(ng))
             for i in rr.permutation(len(ng))[:want]:
                 (a, b), frs = ng[int(i)]; out[(a, b)].add(key(kind, frs[0]))
-    else:
-        for (a, b), frs in pf.items():
+    else:                                                                      # REAL readers: every co-occurrence, or label-free filters:
+        for (a, b), frs in pf.items():                                         #   REPEAT = the pair co-occurs in 2+ sentences of the document;
+            if reader == 'REPEAT' and len({tuple(f[2]) for f in frs}) < 2 and len(frs) < 2: continue   #   SHORT = 1-4 words between, the last one a
+            if reader == 'SHORT' and not any(1 <= len(f[2]) <= 4 and f[2][-1] in PREP for f in frs): continue   #   preposition or 'is/was';
+            if reader == 'BOTH' and not (len(frs) >= 2 and any(1 <= len(f[2]) <= 4 and f[2][-1] in PREP for f in frs)): continue   # BOTH = both
             for fr in frs[:2]: out[(a, b)].add(key(kind, fr))
     return out
+PREP = {'in', 'of', 'at', 'from', 'by', 'for', 'on', 'to', 'with', 'is', 'was', 'as', 'near', 'into'}
 def chains(prem):
     byh = collections.defaultdict(list)
     for (a, b), ks in prem.items():
@@ -93,7 +97,8 @@ def run(kind, reader):
       f"recall of chain-reachable gold pairs {got / max(1, reach):.3f} ({reach})  ({time.time() - T0:.0f}s)")
 P(f"RULES OVER RELATION KEYS (train {len(TR)} docs, held out {len(DV)}; support >= {MINSUP}, Wilson LB >= {MINLB}; premises within {GAP} tokens in one sentence)")
 MIX = [x for x in os.environ.get('FC_MIX', '').split(',') if x]
-RUNS = [(k, 'MIX' + m) for m in MIX for k in ('COARSE', 'TYPES')] if MIX else [('GOLD', 'IDEAL'), ('FINE', 'IDEAL'), ('COARSE', 'IDEAL'), ('TYPES', 'IDEAL'), ('FINE', 'REAL'), ('COARSE', 'REAL'), ('TYPES', 'REAL')]
+RDR = [x for x in os.environ.get('FC_READERS', '').split(',') if x]
+RUNS = [(k, r) for r in RDR for k in ('COARSE', 'TYPES')] if RDR else [(k, 'MIX' + m) for m in MIX for k in ('COARSE', 'TYPES')] if MIX else [('GOLD', 'IDEAL'), ('FINE', 'IDEAL'), ('COARSE', 'IDEAL'), ('TYPES', 'IDEAL'), ('FINE', 'REAL'), ('COARSE', 'REAL'), ('TYPES', 'REAL')]
 for kind, reader in RUNS:
     run(kind, reader)
 P(f"DONE ({time.time() - T0:.0f}s)")
