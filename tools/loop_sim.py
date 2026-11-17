@@ -87,6 +87,7 @@ for r in R:
 RMAP = {w: c.most_common(1)[0][0] for w, c in _RMc.items()}
 def tright(c, grp): return c[1] in RMAP and _cg(RMAP[c[1]], grp) in _rels(c[0], c[2], grp)                                                            # 16 Nov LEARNED SELECTION: write-time features -> usefulness, from earlier rounds
 pm._PM['rti'] = {}
+ALLW = {}                                                                      # 16 Nov (queue 34, LS_STAB 1): every written inference across rounds
 for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5').split(',')), 1):
     before = set(pm._PM['rti']); pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
     W = {k: w for k, w in pm._PM['rti'].items() if k not in before}; y = {k: w['truth'] for k, w in W.items()}; tier = {k: w['rank'] < 200 for k, w in W.items()}
@@ -111,7 +112,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         if not cs: return None
         a, b, w = collections.Counter(cs).most_common(1)[0][0]; return w if a == X else w + ' ^R'
     spans = [(r[0] < mid, r[7], r[1]) for r in R if h(v) <= r[0] < h(v + 2) and isrel(r)]
-    names = {n for p in POL for k in list(KEPT[p]) + list(W) for n in k}
+    names = {n for p in POL for k in list(KEPT[p]) + list(W) for n in k} | {n for k in ALLW for n in k}
     spans = [s for s in spans if s[2] in names]; TXT = [s[1].encode('latin-1', 'replace')[:L_] for s in spans]; PT, EN = trunk(TXT)
     first = collections.defaultdict(list); second = [i for i, s in enumerate(spans) if not s[0]]
     for i, s in enumerate(spans):
@@ -226,6 +227,22 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         for k in W:
             c = typed.get(k); u = bool(c is not None and first.get(c[0]) and bits([c], first[c[0]], TXT, PT, EN) > 0)
             SELX.append(fx(k)); SELY.append(u)
+    if int(os.environ.get('LS_STAB', 0)):                                      # 16 Nov USEFULNESS STABILITY: each round every written inference so far is
+        for (A, C), e in W.items():                                            #   re-measured on this round's first-half text (as the GPU re-measures at every
+            hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X'))   #   visit); keep rule on the LATEST measure
+            if tab.get(cp):                                                    #   vs the CUMULATIVE one (bits summed over every round since the write)
+                (w, fw), _ = tab[cp].most_common(1)[0]; ALLW[(A, C)] = dict(c=(hd, w, tl) if fw else (tl, w, hd), y=bool(e['truth']), j=bool(conf.get((A, C))), hist=[], prev=None)
+        for k, a in ALLW.items():
+            c = a['c']; a['hist'].append(bits([c], first[c[0]], TXT, PT, EN) if first.get(c[0]) else None)
+        J = [a for a in ALLW.values() if a['j']]; flips = 0; nlast = ncum = 0; ylast = []; ycum = []
+        for a in J:
+            ms = [b for b in a['hist'] if b is not None]; last = (ms[-1] > 0) if ms else False; cum = (sum(ms) > 0) if ms else False
+            if a['prev'] is not None and a['prev'] != last: flips += 1
+            a['prev'] = last
+            if last: ylast.append(a['y'])
+            if cum: ycum.append(a['y'])
+        out.append(f"[STABILITY over {len(J)} judged inferences so far (right {np.mean([a['y'] for a in J]) if J else float('nan'):.3f}): LATEST measure passes {len(ylast)} right {np.mean(ylast) if ylast else float('nan'):.3f}, "
+                   f"decision flips since last round {flips} | CUMULATIVE passes {len(ycum)} right {np.mean(ycum) if ycum else float('nan'):.3f} | measured this round {sum(1 for a in J if a['hist'][-1] is not None)}]")
     P(f"ROUND {rd} (visit {v + 1}): written {len(W)} (batch right {np.mean([y[k] for k in W if tier[k]]):.3f}, next tier {np.mean([y[k] for k in W if not tier[k]]):.3f}) | "
       f"{len(spans)} later spans || " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")
