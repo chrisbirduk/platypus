@@ -13,7 +13,7 @@ co-occurrences are facts (tools/frame_compose.py: every co-occurrence composes a
      pairs on Re-DocRED (tools/frame_compose.py's measure; base 0.132, every co-occurrence 0.155, gold facts 0.45).
 RD_TEACH agree (17 Nov, label-free): positives = a pair in 2+ documents with the same RELATIONAL last word (not list glue), negatives = pairs joined
 only by list glue or seen once.
-Usage: python3 tools/reader_diag.py <distant.json.gz>   env RD_GAP (12) RD_TOP (0.25) RD_MAXREC (1500000) RD_TEACH (redundancy | agree)"""
+Usage: python3 tools/reader_diag.py <distant.json.gz>   env RD_GAP (12) RD_TOP (0.25) RD_MAXREC (1500000) RD_TEACH (redundancy | agree | typed)"""
 import os, sys, json, math, time, types, collections, zlib
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -90,10 +90,27 @@ def feats(mid_words, ta, tb, order):
 fr_max = collections.defaultdict(int)
 for (k, f), v in docs_fr.items(): fr_max[k] = max(fr_max[k], len(v))
 Xtr, ypl, ylab = [], [], []; rs = np.random.RandomState(0)
+TYPED = {}
+if TEACH == 'typed':
+    IX = collections.defaultdict(list)
+    for r in R:
+        if r[0] < cut and r[4].isalpha() and r[4] not in GLUE: IX[(r[1], r[4])].append((r[0], r[2]))
+    for (h, w), L in IX.items():
+        L.sort()
+        for i, (d0, t0) in enumerate(L):
+            later = [(d1, t1) for d1, t1 in L[i + 1:] if d1 != d0]
+            if not later: continue
+            conf = any(t1 == t0 for _, t1 in later); contra = any(t1 != t0 for _, t1 in later)
+            if conf: TYPED[(d0, h, t0, w)] = 1
+            elif contra: TYPED.setdefault((d0, h, t0, w), 0)
+    P(f"   TYPED teacher: {sum(v == 1 for v in TYPED.values())} confirmed, {sum(v == 0 for v in TYPED.values())} only contradicted records")
 for r in R:
     if r[0] >= cut or r[5] > GAP: continue
     k = frozenset((r[1], r[2])); n = len(docs_any[k]); m = fr_max[k]
-    if TEACH == 'agree':                                                       # AGREEMENT teacher (label-free): the same pair in 2+ documents with the
+    if TEACH == 'typed':                                                       # TYPED CONFIRMATION teacher (label-free, as the package judges its
+        pl = TYPED.get((r[0], r[1], r[2], r[4]))                               #   typed inferences): confirmed by a later document (same head, same last
+        if pl is None or (pl == 0 and rs.rand() > 0.5): continue               #   word, same tail) = positive; only contradicted (same head and word,
+    elif TEACH == 'agree':                                                     #   another tail, never confirmed) = negative                                                       # AGREEMENT teacher (label-free): the same pair in 2+ documents with the
         rel_ = r[4].isalpha() and r[4] not in GLUE                             #   same RELATIONAL last word (not list glue) = positive; a pair joined only
         pl = 1 if (m >= 2 and rel_) else (0 if (not rel_ or n == 1) else None)  #   by list glue, or seen once, = negative
     else: pl = 1 if m >= 3 else (0 if n == 1 else None)

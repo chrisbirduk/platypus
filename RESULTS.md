@@ -3756,3 +3756,28 @@ The extractor's composed figures (top 10 / 25%) are too few to count.
 - Composition over its top 10%: 0.35 (34 conclusions), top 25% 0.16. **Negative.** No label-free teacher yet approaches the labelled reader (AUC 0.79).
 
 The author chose to stay label-free (no distant supervision for the reader).
+
+## Label-free reader teachers and COMPOSE-THEN-CONFIRM (17 Nov 2026, 21:40-21:50)
+
+**TYPED-CONFIRMATION teacher for the reader (tools/reader_diag.py RD_TEACH typed, distant_50k).**
+- Teacher: a record is confirmed by a later document with the same head, last word and tail (11,235 records), or only contradicted (63,836).
+- Pseudo-positive label rate 0.445 vs negative 0.148.
+- The reader reaches AUC 0.62 on both corpora: the best label-free reader, level with the 13 Nov extractor (0.63) and far below the labelled reader (0.79).
+- Composition over its top 25 / 50%: 0.20 / 0.22.
+
+**COMPOSE, THEN CONFIRM (tools/compose_confirm.py; label-free, distant labels for evaluation only).** Compose from every co-occurrence, then keep conclusions that later reading confirms.
+
+| distant_50k (10k in brackets) | Precision | n |
+|---|---|---|
+| Base: random within-document pair never recorded together | 0.070 (0.066) | 308,149 |
+| Two-step chain, no rule | 0.082 (0.075) | 462,383 |
+| Chain, CONFIRMED by a later document | 0.265 (0.275) | 25,834 |
+| Composed by a rule (TYPES / COARSE keys) | 0.083 / 0.098 | n/a |
+| Composed + confirmed, any wording (TYPES / COARSE) | 0.261 / 0.281 | n/a |
+| **Composed + confirmed, relational wording (TYPES / COARSE)** | **0.311 / 0.337 (0.344 / 0.296)** | 13,752 / 5,543 |
+
+**Conclusions.**
+- Confirmation by later reading does the work: x3.8-4.8 over base, matching the GPU's predict-then-confirm (cg27a_rtc: 0.49 vs 0.21).
+- Rules over label-free keys add little on top: 0.31-0.34 vs 0.27 for chains confirmed without a rule.
+- The confirmed pairs are later STATED, so this is anticipation (as rtc), not inference of something never read.
+- **For label-free real-text inference, the judge (later reading) matters more than the composer.** Composition rules earn their place only once relation keys are clean, as in the rule world.
