@@ -3484,9 +3484,49 @@ Signals per typed inference over later relational records whose FIRST name is it
 | ArXiv | 2.060 | 2.028 | +0.032 |
 | PubMed | 1.695 | 1.664 | +0.031 |
 
-The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The cost is concentrated on the newest domains: the anchor slows learning. Next test: a lighter consolidation dose.
+The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The cost is concentrated on the newest domains: the anchor slows learning. Next test: a lighter consolidation dose. (Revised at visit 5, below: most of this was run variation.)
 
 **cg27a_kcp smoke test (synthetic names).**
 - `[COMPOSED WRITES]` runs at visits 2 and 3 with no errors.
 - 1,129–1,269 unstated two-hop conclusions found; the top 100 written per sleep.
 - The labels read 0.00 because synthetic names have no distant labels. This is not a recall result.
+
+
+## cg27a_kcs on the GPU, final (visit 5)
+
+**Held-out BPC at visit 5.**
+
+| Domain | kcs | kgk | kty |
+|---|---|---|---|
+| Gutenberg | 2.006 | 2.030 | 2.063 |
+| Wikipedia | 2.050 | 2.040 | 2.070 |
+| ArXiv | 2.058 | 2.025 | 2.024 |
+| PubMed | 1.702 | 1.686 | 1.699 |
+| FreeLaw | 1.592 | 1.579 | 1.588 |
+
+- Mean change: kcs vs kgk +0.010; kcs vs kty -0.007. kgk and kty themselves differ by up to 0.03 on a domain.
+- The visit-4 "learning cost" was mostly run variation. Only ArXiv is consistently higher (+0.033), and ArXiv is not forgotten after it is learned (2.063 post-train -> 2.058).
+
+**Facts.**
+- Trunk recall of facts taught for at least one visit: 0.80 (kgk 0.48, kty 0.46).
+- Known facts right: 0.70 (kgk 0.52); confidence when right 0.93 (kgk 0.66).
+- AUC, known-right vs never-read: 0.93 (kgk 0.84).
+
+**Gated answers.**
+- Right when answered: 0.94 (kgk 0.71).
+- Never-read given a stored name: 0.11 (kgk 0.31, kty 0.16); abstained 0.88.
+
+**Real-text inferences from the trunk, taught vs held back.**
+- kcs: right 0.14 vs 0.03, wrong 0.01 vs 0.00.
+- kgk: right 0.06; kty: right 0.33 but wrong 0.27.
+- Written at visit 2: right 0.24 vs 0.04. kcs recalls more right inferences without the false memories that kty had.
+
+**Key-returning memory, visit 5.**
+- Route A: first hop 0.95, rank 0.98, top-1 0.95.
+- Route C: 0.95 / 0.98 / 0.93.
+
+**REGRESSION: taught sleep-layer conclusions (n 22) recalled from the trunk 0.05 (kgk 0.36, kty 0.45).**
+- Hypothesis: `inf_distill_wake_decay` is GLOBAL. Every question row is weighted 0.5^(visit - 1), about x0.125 at visit 5, while the anchor (akl 2.0) is not decayed.
+- Conclusions enter the pool late and have no source sentences, so the anchor holds them out. Facts survive through source replay and early teaching.
+- This cannot be tested locally: only 2–4 conclusions are taught there.
+- Next: a local harm check of decay off (1.0), then a GPU run.
