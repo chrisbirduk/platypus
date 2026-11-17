@@ -3592,3 +3592,41 @@ Sleep finds about 80% or more of the chains it can reach. The remaining inferenc
 - Conclusions are tested in the held-out paraphrase "A is tied to" / "The one tied to A is" (taught as "is connected to" in every form).
 - This is the same for 7 and 21 wordings, so the drop from about 0.36 (kgk, kty, kus) to about 0.06 (kcs, kcb) comes from the consolidation package itself: every weight, every-domain anchor, 21 forms, decay.
 - kcw tests the 21 forms.
+
+## COMPOSITION ON REAL TEXT WITH RELATION KEYS: POSITIVE (17 Nov 2026, 20:30-20:50; tools/latent_compose.py, Re-DocRED)
+
+### E1. Rules over relation keys (gold relation ids = the ideal relation key)
+
+- Rules mined on 3,053 training documents: 200 kept (support >= 10, Wilson LB >= 0.5).
+- On 1,000 unseen documents, the rules composed 17,661 conclusions. **Precision 0.796** (labelled with that relation in the document).
+- Of 17,572 labelled facts reachable by a two-step chain, **0.44 are composed by a rule**.
+
+| Rule | Training support | Held-out precision |
+|---|---|---|
+| located-in o located-in | 6,577 / 6,577 | 1.00 |
+| located-in o country | 4,862 / 4,889 | 0.99 |
+| birthplace o located-in -> citizenship | 504 / 770 | 0.68 |
+| performer o label -> label | 470 / 727 | 0.73 |
+
+The relation names were printed from a local table (rel_info.json was not downloaded), so some names may be mislabelled. The ids and the precision are exact.
+
+**Conclusion.** Tonight's real-text negative (tools/rt_rules.py) came from the surface-frame relation keys, not from composition itself.
+
+### E2. Latent operators on learned name keys (the user's fuzzy-composition hypothesis)
+
+Name key = the stand-in trunk's state over the name's bytes (tg_lm192_18000). Relation maps are ridge fits on the training documents (92 relations). For 13,413 composites in unseen documents, C is ranked among the document's entities (chance 0.055, about 18 entities).
+
+| Route | C ranked first | Top quarter by margin |
+|---|---|---|
+| ONE learned map W_r3 key(A) | 0.249 | 0.461 |
+| **Pure latent composition W_r2 W_r1 key(A)** | **0.248** | 0.478 |
+| **Memory hop 1 (B read) + latent hop 2 W_r2 key(B)** | **0.336** | **0.674** |
+| NULL (random r2) | 0.063 | 0.076 |
+
+- Composing two learned maps is as good as a direct map for the composite relation.
+- It is 4.5x chance, and the null shows it depends on the right relations.
+- Hop 1 through the memory raises it to 0.34, and to 0.67 when only the confident quarter answers.
+
+**Conclusion.** Fuzzy composition in a learned key space works on real text, beside the exact rules of E1 (0.80 precision). Next steps:
+1. Rules over LEARNED relation keys (the JEPA wording key) instead of gold ids.
+2. A write path in the package: rule-composed conclusions, with latent composition as the fallback where a premise is missing, judged, kept and taught.
