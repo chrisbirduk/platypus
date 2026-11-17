@@ -3670,3 +3670,32 @@ At 4-8x the earlier sample, composition in the trunk's code space is exact while
 ## README updated (17 Nov 2026, 21:05)
 
 README.md has a new section, "Recent results (15-17 November)". Ten new table rows were added, and open questions 7, 17 and 18 were updated or added. The "Note from author" is unchanged.
+
+## Rules over LABEL-FREE relation keys: the reader, not the key, is the blocker (17 Nov 2026, 21:20; tools/frame_compose.py, Re-DocRED)
+
+**Setup.** Premises are facts readable in one sentence (both names within 12 tokens). Held-out precision = the composed pair is gold-related in the document. The base rate for random pairs in the same documents is 0.132.
+
+| Key \ reader | Rules | Composed | Precision | Recall of chain-reachable gold pairs |
+|---|---|---|---|---|
+| GOLD relation id, ideal reader (gold facts) | 16 | 826 | **0.527** | 0.368 |
+| FINE frame (types + 1-3 words between), ideal reader | 29 | 152 | 0.382 | 0.049 |
+| COARSE frame (types + last word), ideal reader | 30 | 260 | 0.423 | 0.093 |
+| TYPES only (type pair + order), ideal reader | 7 | 1,052 | **0.452** | **0.402** |
+| FINE / COARSE / TYPES, REAL reader (every mention pair within 12 tokens) | 2,226 / 2,546 / 365 | 5,668 / 7,872 / 26,006 | **0.150 / 0.155 / 0.149** | 0.11 / 0.16 / 0.51 |
+| Same, REAL reader within 5 tokens | 305 / 442 / 153 | n/a | 0.22 / 0.22 / 0.20 | n/a |
+
+**Simulated readers (ideal premises plus non-gold records to a premise precision).** COARSE / TYPES rules:
+
+| Premise precision | Composed precision | Recall (TYPES) |
+|---|---|---|
+| 0.8 | 0.32 / 0.41 | 0.38 |
+| 0.6 | 0.31 / 0.33 | n/a |
+| 0.4 | 0.30 / 0.28 | n/a |
+
+**Conclusions.**
+- With an ideal reader, label-free keys keep about 85% of the gold key's precision (0.45 vs 0.53), and the type pair alone matches its recall. A better relation key is NOT the main blocker.
+- Deciding which co-occurrences are facts (the reader) is. Over every co-occurrence, composition is barely above base (0.15 vs 0.13).
+- Precision degrades gracefully with premise quality. Composing only over premises the package already trusts, such as judged-kept inferences (right about 0.8), should give conclusions about 3x base (~0.4).
+- That is below what the fact-table code writes today (0.6-0.7 right, distant labels; a different metric). A real-text composition write path is NOT yet worth a GPU build.
+
+**Next.** Premise quality: compose only over judged-kept and typed-confirmed facts. In the rule world, composition through verified rules is already exact.
