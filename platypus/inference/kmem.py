@@ -893,8 +893,10 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
             cb = [(c + '.').encode('latin-1', 'replace') for c in cs]; X, _ = _ws_batch(model, [pb + c for c in cb])
             with torch.no_grad():
                 lg = _ws_run(model, X, int(S_slot(e['d']))).float(); gt = K.get('gate'); K['gate'] = 0; z = kmi_logits(model, K, [pb] * len(cb), X, lg, int(S_slot(e['d']))); K['gate'] = gt
-                lp = F.log_softmax(z, -1); l0 = F.log_softmax(lg, -1); p0 = len(pb) - 1; n0 = min(len(cb[0]), lp.shape[1] - p0); ar = torch.arange(p0, p0 + n0, device=lp.device)
-                sc = [float(lp[j, torch.arange(p0, p0 + min(len(c), lp.shape[1] - p0), device=lp.device), X[j, p0 + 1:p0 + 1 + min(len(c), lp.shape[1] - p0)]].mean()) for j, c in enumerate(cb)]
+                lp = F.log_softmax(z, -1); l0 = F.log_softmax(lg, -1); p0 = len(pb) - 1; n0 = min(len(cb[0]), lp.shape[1] - p0)
+                if n0 <= 0: continue                                                   # 17 Nov: a long (retyped) prompt past the row's width
+                ar = torch.arange(p0, p0 + n0, device=lp.device)
+                sc = [float(lp[j, torch.arange(p0, p0 + max(1, min(len(c), lp.shape[1] - p0)), device=lp.device), X[j, p0 + 1:p0 + 1 + max(1, min(len(c), lp.shape[1] - p0))]].mean()) for j, c in enumerate(cb)]
                 sup.append(float((lp[0, ar, X[0, p0 + 1:p0 + 1 + n0]] - l0[0, ar, X[0, p0 + 1:p0 + 1 + n0]]).mean()) / math.log(2))
             hit.append(int(sc[0] > max(sc[1:])))
         return (np.mean(hit) if hit else float('nan'), np.mean(sup) if sup else float('nan'))
