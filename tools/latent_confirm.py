@@ -5,7 +5,8 @@ co-occurrence records in a held-out document (k = the coarse frame key), the map
 W_k2 key(B) (memory hop 1, latent hop 2), with its margin; conclusion (A, C_hat) if A-C_hat is not a record in the document.
 Precision by the distant labels for: base (random within-document pairs never recorded together), every chain's C (no map), the MAP'S
 choice C_hat, the map's choice in its confident quarter, and each CONFIRMED by a later document (any wording / relational last word).
-Usage: TG_D=192 TG_CKPT=<model> python3 tools/latent_confirm.py <distant.json.gz>   env LF_TRAIN (0.5) LF_LAM (1.0) LF_DOCS (10000)"""
+LF_JOINT 1 (18 Nov): name keys learned jointly with the maps (label-free; latent_compose E4). Also: confirmed by 2+ later documents.
+Usage: TG_D=192 TG_CKPT=<model> python3 tools/latent_confirm.py <distant.json.gz>   env LF_TRAIN (0.5) LF_LAM (1.0) LF_DOCS (10000) LF_JOINT (0) LF_JSTEPS (3000)"""
 import os, sys, math, time, types, collections
 import numpy as np
 import torch
@@ -44,6 +45,20 @@ for k, v in XY.items():
     if len(v) < 50: continue
     X = K[[a for a, _ in v]]; Y = K[[b for _, b in v]]; W[k] = np.linalg.solve(X.T @ X + LAM * np.eye(D_), X.T @ Y)
 P(f"{len(W)} label-free maps (keys with 50+ training records)  ({time.time() - T0:.0f}s)")
+if int(os.environ.get('LF_JOINT', 0)):                                         # 18 Nov: LEARNED KEYS jointly with the maps (as latent_compose E4)
+    import torch.nn.functional as F_
+    ks = sorted(W); kix = {k: i for i, k in enumerate(ks)}
+    TRP = np.array([(NI[a], kix[k], NI[b]) for d in range(cut) for (a, b), kk in by_doc[d].items() for k in kk if k in kix])
+    Et = torch.nn.Parameter(torch.tensor(K)); Wt = torch.nn.Parameter(torch.tensor(np.stack([W[k] for k in ks])).float()); K0 = torch.tensor(K)
+    opt = torch.optim.Adam([Et, Wt], lr=1e-3); rsj = np.random.RandomState(5)
+    for st in range(int(os.environ.get('LF_JSTEPS', 3000))):
+        b_ = TRP[rsj.randint(0, len(TRP), 512)]; A_ = F_.normalize(Et[b_[:, 0]], dim=-1); Bv = F_.normalize(Et[b_[:, 2]], dim=-1)
+        pred = F_.normalize(torch.einsum('nd,nde->ne', A_, Wt[b_[:, 1]]), dim=-1)
+        loss = F_.cross_entropy(pred @ Bv.t() / 0.1, torch.arange(len(b_))) + ((Et[b_[:, 0]] - K0[b_[:, 0]]) ** 2).sum(-1).mean()
+        opt.zero_grad(); loss.backward(); opt.step()
+        if st % 1000 == 0: P(f"   joint step {st}: loss {loss.item():.3f}  ({time.time() - T0:.0f}s)")
+    with torch.no_grad(): K = F_.normalize(Et, dim=-1).numpy(); W = {k: Wt[kix[k]].detach().numpy() for k in ks}
+    P(f"LEARNED KEYS jointly with the maps ({len(TRP)} training records)  ({time.time() - T0:.0f}s)")
 res = collections.defaultdict(list); margins = []; mapped = []
 for d in range(cut, ND):
     pr = by_doc[d]; ents = sorted({x for p in pr for x in p})
@@ -62,7 +77,8 @@ for d in range(cut, ND):
             if (a, ch) in pr: continue
             p_ = frozenset((a, ch)); y = p_ in LAB; m = float(s[o[0]] - s[o[1]])
             later = any(x > d for x in seen_docs.get(p_, ())); later_rel = any(x > d for x in rel_docs.get(p_, ()))
-            mapped.append((y, m, later, later_rel))
+            two = sum(1 for x in rel_docs.get(p_, ()) if x > d) >= 2
+            mapped.append((y, m, later, later_rel, two))
     rs = np.random.RandomState(d)
     for _ in range(min(20, len(ents))):
         i, j = rs.randint(len(ents)), rs.randint(len(ents))
@@ -76,4 +92,6 @@ show("MAP'S CHOICE, confident quarter", M[M[:, 1] >= q, 0])
 show("MAP'S CHOICE + CONFIRMED later (any wording)", M[M[:, 2] > 0, 0])
 show("MAP'S CHOICE + CONFIRMED later (relational wording)", M[M[:, 3] > 0, 0])
 show("MAP'S CHOICE, confident quarter + CONFIRMED (relational)", M[(M[:, 1] >= q) & (M[:, 3] > 0), 0])
+show("MAP'S CHOICE + CONFIRMED TWICE (relational, 2+ later docs)", M[M[:, 4] > 0, 0])
+show("MAP'S CHOICE, confident quarter + CONFIRMED TWICE", M[(M[:, 1] >= q) & (M[:, 4] > 0), 0])
 P(f"DONE ({time.time() - T0:.0f}s)")
