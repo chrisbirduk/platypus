@@ -11,7 +11,8 @@ the GPU), with labels that DO cover composites (the revised set labels A-C pairs
      C ranked among the document's entities by  (a) W_r3 key(A) (one learned map), (b) W_r2 W_r1 key(A) (pure latent composition),
      (c) W_r2 key(B) with B read from the memory (memory hop 1, latent hop 2), (d) NULL: W_r2' W_r1 with a random other relation r2';
      chance = 1 / entities. Abstention: accuracy when only the top quartile by margin answers.
-Usage: python3 tools/latent_compose.py   env LC_MINSUP (10) LC_MINLB (0.5) LC_LAM (1.0); E2 needs TG_D=192 TG_CKPT=<model file>"""
+  E3 (LC_LABELFREE 1) the same with LABEL-FREE relation keys: coarse frames of co-occurrence records, no gold facts or relations.
+Usage: python3 tools/latent_compose.py   env LC_MINSUP (10) LC_MINLB (0.5) LC_LAM (1.0) LC_LABELFREE (0); E2 / E3 need TG_D=192 TG_CKPT=<model file>"""
 import os, sys, json, math, time, collections
 import numpy as np
 SCR = '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpad'
@@ -111,4 +112,51 @@ for k_ in sorted(res):
         q = np.quantile(v[:, 1], 0.75); top = v[v[:, 1] >= q, 0].mean()
         P(f"   {k_:34s} C first among the document's entities {acc:.3f} (n {len(v)}) | top quarter by margin {top:.3f}")
     else: P(f"   {k_:34s} {acc:.3f} (n {len(v)})")
+# E3 (17 Nov, LC_LABELFREE 1): LABEL-FREE OPERATORS - the relation key is what a reader sees (the coarse frame: type A, the last word between,
+#    type B, order) for every mention pair within 12 tokens in one sentence (no gold facts, no gold relations); one ridge map per frequent key
+#    on the training documents. Held-out: for each gold composite (A, r3, C) with a gold chain A-B-C, the chain read as RECORDS (A-B and B-C
+#    both co-occurrence records, keyed by their frames): C ranked among the document's entities by W_k2 W_k1 key(A) and by memory hop 1 +
+#    W_k2 key(B); NULL = a random frequent key for hop 2.
+if int(os.environ.get('LC_LABELFREE', 0)):
+    def recs(d):
+        ty = [vs[0]['type'] for vs in d['vertexSet']]; out = collections.defaultdict(set); bys = collections.defaultdict(list)
+        for e, vs in enumerate(d['vertexSet']):
+            for m in vs: bys[m['sent_id']].append((m['pos'][0], m['pos'][1], e))
+        for sid, L in bys.items():
+            L.sort(); toks = d['sents'][sid]
+            for i in range(len(L)):
+                for j in range(i + 1, len(L)):
+                    (a0, a1, ea), (b0, b1, eb) = L[i], L[j]
+                    if ea == eb or a1 > b0 or b0 - a1 > 12: continue
+                    lw = toks[b0 - 1].lower() if b0 > a1 else ''
+                    out[(ea, eb)].add((ty[ea], lw, ty[eb], 'f')); out[(eb, ea)].add((ty[eb], lw, ty[ea], 'r'))
+        return out
+    XY2 = collections.defaultdict(list)
+    for d in TR:
+        for (a, b), ks in recs(d).items():
+            for k in ks: XY2[k].append((NI[name(d, a)], NI[name(d, b)]))
+    W2 = {}
+    for k, v in XY2.items():
+        if len(v) < 50: continue
+        X = K[[a for a, _ in v]]; Y = K[[b for _, b in v]]; W2[k] = np.linalg.solve(X.T @ X + LAM * np.eye(D_), X.T @ Y)
+    P(f"E3 LABEL-FREE OPERATORS: {len(W2)} maps over coarse frame keys (50+ training records)  ({time.time() - T0:.0f}s)")
+    ks2 = sorted(W2); res3 = collections.defaultdict(list); rs3 = np.random.RandomState(1)
+    for d in DV:
+        F, _ = doc_facts(d); rc = recs(d); ents = list(range(len(d['vertexSet']))); CK = K[[NI[name(d, e)] for e in ents]]; seen = set()
+        for a, r1, b, r2, c, _F in chains(d):
+            if not [r for (h, r, t) in F if h == a and t == c] or (a, c) in seen: continue
+            k1s = [k for k in rc.get((a, b), ()) if k in W2]; k2s = [k for k in rc.get((b, c), ()) if k in W2]
+            if not k1s or not k2s: continue
+            seen.add((a, c)); ka = K[NI[name(d, a)]]; kb = K[NI[name(d, b)]]; k1, k2 = k1s[0], k2s[0]
+            def rank(v, excl):
+                s_ = CK @ (v / (np.linalg.norm(v) + 1e-8)); s_[excl] = -9; o = np.argsort(-s_); return int(o[0] == c), float(s_[o[0]] - s_[o[1]])
+            res3['b LATENT W_k2 W_k1 key(A)'].append(rank(ka @ W2[k1] @ W2[k2], [a]))
+            res3['c MEMORY hop 1 + W_k2 key(B)'].append(rank(kb @ W2[k2], [a, b]))
+            res3['d NULL W_random W_k1 key(A)'].append(rank(ka @ W2[k1] @ W2[ks2[rs3.randint(len(ks2))]], [a]))
+            res3['chance'].append((1.0 / max(1, len(ents) - 1), 0.0))
+    for k_ in sorted(res3):
+        v = np.array(res3[k_]); acc = v[:, 0].mean()
+        if k_ != 'chance' and len(v) > 8:
+            q = np.quantile(v[:, 1], 0.75); P(f"   {k_:34s} C first among the document's entities {acc:.3f} (n {len(v)}) | top quarter by margin {v[v[:, 1] >= q, 0].mean():.3f}")
+        else: P(f"   {k_:34s} {acc:.3f} (n {len(v)})")
 P(f"DONE ({time.time() - T0:.0f}s)")
