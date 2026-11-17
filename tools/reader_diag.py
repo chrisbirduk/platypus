@@ -11,13 +11,15 @@ co-occurrences are facts (tools/frame_compose.py: every co-occurrence composes a
      Scored (a) on held-out distant documents by the distant labels, (b) on Re-DocRED gold pairs (another corpus: AUC, precision of the top
      5 / 10 / 25%), and (c) as the premise filter of composition: rules over coarse keys on the reader's top band, precision of composed
      pairs on Re-DocRED (tools/frame_compose.py's measure; base 0.132, every co-occurrence 0.155, gold facts 0.45).
-Usage: python3 tools/reader_diag.py <distant.json.gz>   env RD_GAP (12) RD_TOP (0.25) RD_MAXREC (1500000)"""
+RD_TEACH agree (17 Nov, label-free): positives = a pair in 2+ documents with the same RELATIONAL last word (not list glue), negatives = pairs joined
+only by list glue or seen once.
+Usage: python3 tools/reader_diag.py <distant.json.gz>   env RD_GAP (12) RD_TOP (0.25) RD_MAXREC (1500000) RD_TEACH (redundancy | agree)"""
 import os, sys, json, math, time, types, collections, zlib
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCR = '/tmp/claude-0/-home-claude/62aed2de-fc26-5d81-b0ca-dc2522d86ab8/scratchpad'
 T0 = time.time(); P = lambda s: print(s, flush=True)
-GAP = int(os.environ.get('RD_GAP', 12)); TOP = float(os.environ.get('RD_TOP', 0.25))
+GAP = int(os.environ.get('RD_GAP', 12)); TEACH = os.environ.get('RD_TEACH', 'redundancy'); GLUE = {'and', 'or', 'the', 'a', 'an', 'with', 'to'}; TOP = float(os.environ.get('RD_TOP', 0.25))
 TR = json.load(open(SCR + '/bench_dl/train_revised.json')); DV = json.load(open(SCR + '/bench_dl/dev_revised.json')) + json.load(open(SCR + '/bench_dl/test_revised.json'))
 PRON = {'he', 'she', 'it', 'they', 'his', 'her', 'its', 'their', 'the'}
 
@@ -91,7 +93,10 @@ Xtr, ypl, ylab = [], [], []; rs = np.random.RandomState(0)
 for r in R:
     if r[0] >= cut or r[5] > GAP: continue
     k = frozenset((r[1], r[2])); n = len(docs_any[k]); m = fr_max[k]
-    pl = 1 if m >= 3 else (0 if n == 1 else None)
+    if TEACH == 'agree':                                                       # AGREEMENT teacher (label-free): the same pair in 2+ documents with the
+        rel_ = r[4].isalpha() and r[4] not in GLUE                             #   same RELATIONAL last word (not list glue) = positive; a pair joined only
+        pl = 1 if (m >= 2 and rel_) else (0 if (not rel_ or n == 1) else None)  #   by list glue, or seen once, = negative
+    else: pl = 1 if m >= 3 else (0 if n == 1 else None)
     if pl is None or (pl == 0 and rs.rand() > 0.25): continue                  # subsample the many singletons
     Xtr.append(feats(r[3].split(), TY.get(r[1], 'X'), TY.get(r[2], 'X'), 'f')); ypl.append(pl); ylab.append(int(k in LAB))
 P(f"R3 SELF-TRAINED READER: {len(Xtr)} training records (pseudo-positive {np.mean(ypl):.3f}; their label rate: pseudo-pos {np.mean([l for l, p in zip(ylab, ypl) if p]):.3f}, "

@@ -3743,3 +3743,16 @@ The extractor's composed figures (top 10 / 25%) are too few to count.
 **Decision for the author.** Use distant supervision (Wikidata labels, an outside source, labelled as such), or keep the system label-free and find a better internal teacher, e.g. the package's typed confirmations of written inferences, which separated right from wrong at AUC 0.63-0.71 on the GPU.
 
 **New build ready: cg27a_kcr.** kcb + the POWERED COMPOSITION TEST (rule world x4, half the relational module's written composites held back, as cg27a_step4p) + the two-hop probe readout. The local safety run is queued after the consolidation paraphrase test.
+
+## GPU cg27a_kcw (kcb + conclusions in 7 wordings), visit 4; label-free AGREEMENT teacher for the reader (17 Nov 2026, 21:35)
+
+**kcw, visit 4.**
+- Taught conclusions recalled from the trunk: 0.09 (22). kcs 0.09, kcb 0.06, kfc3 0.12. **Fewer wordings is not the fix at visit 4.** Visit 5 decides whether kfc3's 0.36 at visit 5 was a late effect of the boost (x8).
+- Facts 0.81-0.82. Gated: right when answered 1.00; never-read given a stored name 0.21.
+- Relational-module composites held back recalled 2 of 3 (taught 0.88). The late held-back recall seen in kcs and kfc3, on tiny n; kcr powers it.
+
+**Reader, label-free AGREEMENT teacher (tools/reader_diag.py RD_TEACH agree, distant_50k).** Positives: a pair in 2+ documents with the same relational last word. Negatives: pairs joined only by list glue, or seen once.
+- AUC 0.51 (distant held-out), 0.54 (Re-DocRED); top 10% 0.36.
+- Composition over its top 10%: 0.35 (34 conclusions), top 25% 0.16. **Negative.** No label-free teacher yet approaches the labelled reader (AUC 0.79).
+
+The author chose to stay label-free (no distant supervision for the reader).
