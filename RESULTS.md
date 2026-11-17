@@ -3530,3 +3530,26 @@ The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The 
 - Conclusions enter the pool late and have no source sentences, so the anchor holds them out. Facts survive through source replay and early teaching.
 - This cannot be tested locally: only 2–4 conclusions are taught there.
 - Next: a local harm check of decay off (1.0), then a GPU run.
+
+## Real-text composition rules mined from typed frames: NEGATIVE (17 Nov 2026, evening; tools/rt_rules.py, distant_10k)
+
+**Setup.** The relation of a record is its typed frame: (type A, the words between, type B). Rules r1 o r2 -> r3 are mined on the first 70% of documents, against a shuffled null, with a Wilson lower bound on confidence. Composed pairs that were never stated in training are then checked two ways: stated in a later document, or carrying a distant label.
+
+| Run | Rules kept | Composed pairs | Stated later | Distant label |
+|---|---|---|---|---|
+| Surface frames, chains within one document allowed | 49 | 578 | 0.038 | 0.021 |
+| All chains, no rule (baseline) | n/a | sample of 50,000 | 0.005 | 0.009 |
+| Random same-type pairs (control) | n/a | 576 | 0.000 | 0.000 |
+| Hops from different documents, evidence from a third | 1 | n/a | n/a | n/a |
+| Cross-document, frames ending in a word | 0 | n/a | n/a | n/a |
+| Cross-document, word frames, last word only | 0 | n/a | n/a | n/a |
+| Same, threshold lowered to 0.15 | 1 (TIME frames) | 10 | n/a | n/a |
+
+- In the first run, the rules are mostly list and punctuation artefacts within one document.
+- Across documents, an A-C pair from a chain is almost never stated elsewhere (0.005). There is too little evidence to learn or verify cross-document composition in this corpus.
+- The distant labels exist only for pairs named in the same document, so they cannot score cross-document conclusions anyway.
+
+**Conclusion.** Real-text composition across documents cannot be learned or checked from this corpus with surface frames.
+- Within-document "never stated together" inference is what the typed writes already do: 0.6-0.8 right.
+- Rule-world composition works through the relational module, with verified rules and no false ones on the GPU.
+- Measuring the next step needs a corpus whose composite facts are checkable (Wikidata relation paths over the names read), not later text.
