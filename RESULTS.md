@@ -3794,3 +3794,26 @@ The author chose to stay label-free (no distant supervision for the reader).
 - Locally, the probe facts are almost never in the memory: the memory holds the question pool, which is small here. The readout measures coverage, not composition. On the 1 covered chain, C was first (1.00).
 - The existing KEY-RETURNING readout (chains of entries in the memory) composes above chance locally: top-1 0.33-0.55, rank 0.52-0.75 (chance 0.10).
 - The probe readout rides in cg27a_kcr for the GPU, where the pool is up to 2,000 facts.
+
+## LABEL-FREE RELATION OPERATORS ON REAL TEXT: POSITIVE (17 Nov 2026, 22:25; tools/latent_compose.py LC_LABELFREE 1, Re-DocRED, tg_lm192_18000 name keys)
+
+**Setup.** The relation key is what a reader sees: the coarse frame (type A, last word between, type B, order) of every mention pair within 12 tokens in one sentence. No gold facts or relations are used. 524 ridge maps (keys with 50+ training records).
+
+**Test.** Held-out gold composites whose chain A-B-C is readable as two records. C is ranked among the document's entities.
+
+| Route (n 2,367) | Label-free keys: C first | Confident quarter | Gold relation keys (E2, n 13,413) | Gold, confident quarter |
+|---|---|---|---|---|
+| Pure latent composition W_k2 W_k1 key(A) | **0.155** | 0.279 | 0.254 | 0.481 |
+| Memory hop 1 + latent hop 2, W_k2 key(B) | **0.216** | **0.442** | 0.339 | 0.677 |
+| Null (random second map) | 0.045 | 0.042 | 0.066 | 0.078 |
+| Chance | 0.057 | n/a | 0.055 | n/a |
+
+**Conclusions.**
+- The system CAN learn relation operators from its own reading of real text, without labels, and compose them. Pure composition is 2.7x chance, and 3.8x with the first hop read from memory. The null is at chance.
+- That is about 60-65% of the gold-key result, and 0.44 for the confident quarter.
+- This is the label-free route to real-text composition that the rule mining lacked: learned maps degrade gracefully where symbolic rules over noisy keys did not.
+- Caveats:
+  - Ranking among a document's entities (about 18).
+  - Name keys from a stand-in trunk.
+  - Chains where both hops are readable in one sentence.
+- Next: compose with these maps, CONFIRM by later reading (tools/compose_confirm.py: confirmation x4), and teach.
