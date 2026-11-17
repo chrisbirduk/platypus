@@ -554,7 +554,7 @@ def _dw_cache(model, cfg, S_, S_slot, slots, vis):
     ra = np.random.RandomState(int(cfg.seed) + 9696 + vis); by = {}
     for i in ra.permutation(len(real)):
         x = real[int(i)]; sl = int(S_slot(x['d']))
-        if sl in slots and len(by.setdefault(sl, [])) < 32: by[sl].append(bytes(x['s']))
+        if sl in slots and len(by.setdefault(sl, [])) < int(getattr(cfg, 'inf_distill_wake_aklcache', 32)): by[sl].append(bytes(x['s']))
     C = {}
     for sl, txt in by.items():
         if len(txt) < 4: continue
@@ -1419,6 +1419,7 @@ def _dw_relmod(model, cfg, ents, held, vis):
         WR = model.__dict__.setdefault('_rm_written', {})                     # STEP 4 (inf_distill_relmod_write): facts written at earlier sleeps -
         for (r9, a9, c9) in WR: pairs.setdefault(r9, set()).add((a9, c9))      #   hops for later chains, never evidence (provenance)
         R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}), derived=set(WR))
+        model.__dict__['_rm_rules'] = [tuple(str(x).strip() for x in t[:3]) for t in R['rules']]   # 17 Nov: for the composing writes (inf_kmc_compose_rule)
         rels = R['rels']; mg9 = model.__dict__.setdefault('_rm_merged', set())   # 12 Nov: the paraphrase merges, kept across sleeps (paraphrase alignment)
         for a9, b9 in R['merged']: mg9.add((str(a9), str(b9)))
         if len(rels) < 2: print(f"  [RELATIONAL MODULE | visit {vis + 1}] too few relations recorded ({len(rels)})", flush=True); return
@@ -1496,6 +1497,7 @@ def _dw_relmod_real(model, cfg, S_, vis):
             for b in ob:
                 if b in keep and b != a and nf < 20000: pairs.setdefault(dec(r), set()).add((dec(a), dec(b))); nf += 1
         R = _rm_mine(pairs, min(800, int(getattr(cfg, 'inf_distill_relmod', 800))), int(cfg.seed) * 100 + 919, hist=model.__dict__.setdefault('_rm_hist_real', {}))
+        model.__dict__['_rm_rules_real'] = [tuple(str(x).strip() for x in t[:3]) for t in R['rules']]
         G = _bench(cfg); t2e = G['_t2e']; gold = {(min(h, t), max(h, t)) for h, t, _, _ in G['rel']}
         def ents(x):
             es = set()
@@ -1843,7 +1845,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             own9 = f"{e['A']} {e['r']} {e['ans']}.".encode('latin-1', 'replace')   #   (never the row's own fact as its descriptor)
             d1 = [d for d in brd.get(e['ans'], []) if d != own9] if e['key'][0] == 'fact' else None
             d2 = [d for d in brd.get(e['A'], []) if d != own9] if e['key'][0] == 'fact' else None
-            for j9, fm in enumerate(FORMS9):
+            nfc9 = int(getattr(cfg, 'inf_distill_forms_conc', 0))           # 17 Nov (queue 50): conclusions (no source sentences) taught in FEWER wordings
+            for j9, fm in enumerate(FORMS9[:nfc9] if (nfc9 > 0 and e['key'][0] != 'fact') else FORMS9):
                 pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
                 if d2:                                                         #   BRIDGE ANCHORING: the bridge as SUBJECT - its descriptor before the question,
                     rm9 = L09 - 1 - len(pb) - len(ab) - 1                          #   trimmed from the left to keep the answer in the window
@@ -1884,6 +1887,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if sp:
             for sl, pool in bysl.items():
                 a_ = np.array([1.0 / iv.get(rw[3], 1) for rw in pool]); w[sl] = a_ / a_.sum()
+        _dw_concboost(cfg, bysl, w, vis)
         anc = {}                                                               # ANCHOR SENTENCES per slot (stored real text) for the projection
         if int(getattr(cfg, 'inf_distill_wake_proj', 0)):
             it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]; ra = np.random.RandomState(int(cfg.seed) + 9595 + vis)
@@ -1995,9 +1999,24 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 for fm in FORMS9: rret9.append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), sl9))
             print(f"  [RETRACTION | visit {vis + 1}] next visit: {len(model.__dict__.get('_rret_x') or [])} retracted inferences, {len(rret9)} unlikelihood rows, "
                   f"{int(getattr(cfg, 'inf_rret_rows', 8))} a step at weight {float(getattr(cfg, 'inf_rret_w', 0.1)):g}", flush=True)
-        model.__dict__['_dtw'] = dict(rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
+
+
+def _dw_concboost(cfg, bysl, w, vis):
+    """17 Nov (queue 49, inf_distill_wake_concboost): CONCLUSION ROWS SAMPLED x 1/decay - the question budget stays as decayed (forgetting as
+    B6), but conclusions (no source sentences to replay) get the share they had before the decay. Edits w (slot -> row probabilities) in place."""
+    dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))
+    if not int(getattr(cfg, 'inf_distill_wake_concboost', 0)) or dc9 >= 1.0 or not bysl: return
+    f9 = (1.0 / dc9) ** max(0, int(vis) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))); ncb9 = 0; sh9 = []
+    for sl, pool in bysl.items():
+        a_ = np.asarray(w[sl], float) * len(pool) if sl in w else np.ones(len(pool))
+        isc = np.array([not (str(rw[3]).startswith("('fact'") or str(rw[3]).startswith('refuse|')) for rw in pool], bool); ncb9 += int(isc.sum())
+        a_ = a_ * np.where(isc, f9, 1.0); w[sl] = a_ / a_.sum(); sh9.append(float(w[sl][isc].sum()))
+    nall9 = max(1, sum(len(v) for v in bysl.values()))
+    print(f"  [DISTILLATION, CONCLUSION BOOST | visit {vis + 1}] {ncb9} conclusion rows of {nall9} sampled x{f9:.1f} (the inverse of the question decay at this "
+          f"visit; the question budget unchanged) | their share of samples {np.mean(sh9) if sh9 else 0.0:.3f} (uniform {ncb9 / nall9:.3f})", flush=True)
 
 
 def _kmc_pending(cfg, items):
@@ -2014,6 +2033,8 @@ def _kmc_pending(cfg, items):
             key = __import__('ast').literal_eval(k); w = W.get((key[1], key[3]))
         except Exception: w = None
         if w is None or w.get('judged') is None or w.get('flag'): out.add(r9)
+        elif int(getattr(cfg, 'inf_kmc_useful', 0)) == 3:                      # 17 Nov WIDER KEEP RULE: kept AND (useful OR typed-confirmed: more confirmations
+            if not ((w.get('use') is not None and w['use'] > float(getattr(cfg, 'inf_kmc_useful_thr', 0.0))) or float(w.get('cc', 0.0)) > 0): out.add(r9)   #   than contradictions)
         elif int(getattr(cfg, 'inf_kmc_useful', 0)) == 2:                      # 16 Nov JUDGE AND NOT HARMFUL: only kept inferences MEASURED as not useful
             if w.get('use') is not None and w['use'] <= float(getattr(cfg, 'inf_kmc_useful_thr', 0.0)): out.add(r9)   #   stay memory-only; no feedback passes
         elif int(getattr(cfg, 'inf_kmc_useful', 0)) and not (w.get('use') is not None and w['use'] > float(getattr(cfg, 'inf_kmc_useful_thr', 0.0))):
@@ -2187,6 +2208,8 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     ond = int(getattr(cfg, 'inf_distill_wake_ondream', 0))
     if ond and not dream: return
     w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
+    dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))                   # 17 Nov (queue 47): question rows pushed less in later visits
+    if dc9 != 1.0: w *= dc9 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2)))
     if int(getattr(cfg, 'inf_distill_spindle', 0)): return                 # spindle coupling: questions only inside the sleep's replay burst
     if int(getattr(cfg, 'inf_distill_readonly', 0)): return                # CONTROL RUN: the pool and every readout as usual, no question rows trained
     gw = _gate_weight(model, cfg, dkl)
@@ -2230,7 +2253,11 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
         if akl > 0 and C and olds:
             sls = [int(s) for s in olds if int(s) in C]
             if sls:
-                kl = _dw_kl(model, C, sls[D['rs'].randint(len(sls))], D['rs'], int(getattr(cfg, 'inf_distill_wake_rows', 4)))
+                nr9 = int(getattr(cfg, 'inf_distill_wake_aklrows', 0)) or int(getattr(cfg, 'inf_distill_wake_rows', 4))   # 17 Nov (queue 44): anchor rows
+                if int(getattr(cfg, 'inf_distill_wake_aklall', 0)):            #   from EVERY old slot each step; inf_distill_wake_aklslot / aklfw (queue 46):
+                    fs9 = int(getattr(cfg, 'inf_distill_wake_aklslot', -1)); fw9 = float(getattr(cfg, 'inf_distill_wake_aklfw', 1.0))   #   the facts' own domain weighted up
+                    ww9 = [fw9 if s9 == fs9 else 1.0 for s9 in sls]; kl = sum(w9 * _dw_kl(model, C, s9, D['rs'], nr9) for w9, s9 in zip(ww9, sls)) / sum(ww9)
+                else: kl = _dw_kl(model, C, sls[D['rs'].randint(len(sls))], D['rs'], nr9)
                 tot = tot + akl * kl; D['akl'].append(float(kl.detach()))
         tot.backward()
         if proj:

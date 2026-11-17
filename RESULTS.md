@@ -3368,3 +3368,305 @@ The NAME unit's exact-string key (the package's subject hash) vs a LEARNED key: 
 - No harm so far: post-train BPC 2.036 / 2.063 / 2.037 / 1.670 / 1.587 vs kty 2.035 / 2.079 / 2.026 / 1.670 / 1.588 (same; both about +0.009 above kmr). Memory cost on held-out Wikipedia, visit 5: +0.0058 (kty +0.0071, kmr +0.0133).
 - **krt IN THE PACKAGE (local, run A's settings): PASSES.** HEADLINE forgetting -0.040, final BPC 2.599 (A -0.036 / 2.603, kus -0.040 / 2.599). 32 kept inferences retyped on confirmation at visit 4 (e.g. 'Sydney , most populous city in Australia', 'Billboard Hot 100 in US'; some long wordings: ', son of albert iii of'). False memories from the trunk at visit 5: taught wrong recalled 0.00 (147) vs held back 0.01 - as kus. Safe to run on the GPU.
 - **GPU kus at visit 6 (the hard second batch): false memories stay blocked.** Taught WRONG inferences recalled from the trunk 0.05 (79) vs held back 0.00 - against kty 0.28 and kmr 0.30 at visit 6; RIGHT 0.08 (171) vs kty 0.42. Usefulness at visit 6: useful right 0.857 (21) vs not useful 0.633 (218); useful AND judged-kept 0.812 (16) vs all judged-kept 0.72. The keep rule holds across both batches at GPU scale.
+
+## GPU cg27a_kgk (krt + gate rule + generic word units readout), interim to visit 2 (16 Nov 20:29 run)
+- **GENERIC WORD UNITS at GPU scale: NOT better than the hand units on text they never stored.** Held-out bits per byte saved (visit 2): Wikipedia (read) words -0.0049 vs hand NAME + DATE + NUMBER -0.0122 (words + hand -0.0125); ArXiv (NEXT, unread) words -0.0173 vs hand -0.0179, words + hand -0.0291 (+0.011 on top of hand). Visit 1, ArXiv... / Wikipedia NEXT: words -0.0026 vs hand -0.0027.
+- **The headline 'ALL DOMAINS -0.229 / -0.163 vs hand -0.025' is a DUPLICATION ARTEFACT from Gutenberg:** words save -0.456 / -0.468 bits per byte there (hand -0.047). The run's own overlap check finds 2,222 of 259,122 128-byte Gutenberg training chunks inside the validation text (Pile documents are disjoint, but PG-19 has duplicated books); a memory that copies 24-byte continuations after any 1-2 words reproduces duplicated passages almost free. The hand units on Gutenberg (-0.047 vs -0.014 on Wikipedia, every build) are inflated the same way, less. Readouts of copy-type memories should exclude or flag Gutenberg (and Github: 943 overlapping chunks).
+- So the offline 2.5x (6k stand-in trunk, 2.24 bits per byte) was mostly the weak trunk, as cautioned: a strong trunk already predicts what a 1-2 word cache knows. Generic keys may still ADD on top of the hand units on some domains (ArXiv -0.011); the learned-keys line moves to KEYS FOR COMPOSITION (key_return.py, route C) rather than byte prediction.
+- Gate rule: the memory's cost on held-out text at visit 2 is 0.0000 on every domain. Post-train BPC: Gutenberg 2.022 (kty 2.035, kmr 2.036), Wikipedia 2.058 (kty 2.079, kmr 2.062) - lower so far.
+- **CHECK (queue 37): post-train BPC does NOT include the keyed memory** (it is the trunk's own forward, platypus/runner.py `bpc_m`; the keyed memory and the gate rule enter only the readouts: compress.py prequential bits, kmem.py feedback and recall). So kgk's lower post-train BPC (Gutenberg 2.022 / Wikipedia 2.058 vs kty 2.035 / 2.079, kus 2.036 / 2.063) is not the gate rule - kty, kus and kgk are the same configuration up to visit 3 (the judge acts at visit 4), so these differences are **run-to-run GPU variation of about 0.015-0.02 per domain**. kty's +0.009 mean against kmr is within it: no evidence of a cost from typed writes.
+- **cg27a_kgk IN THE PACKAGE (local, run A's settings): PASSES.** HEADLINE forgetting -0.042, final BPC 2.597 (A -0.036 / 2.603, krt -0.040 / 2.599); 32 retyped at visit 4; every readout prints, no failures. Generic word units locally beat the hand units (visit 4: -0.071 vs -0.012 bits per byte) - the small-trunk effect the GPU run does not reproduce on unseen text.
+
+## A judge from typed confirmations (16 Nov 2026, tools/typed_judge.py; offline, GPU write path, distant_50k, writes at visits 2 / 4 / 6, judged on the next two visits' records)
+Signals per typed inference over later relational records whose FIRST name is its head: CC-ANY (confirm - contradict) / total, any wording; CC-WORD only the inference's own wording; CC-CLASS only records whose second name has the tail's class; JUDGE+CC = judge rank + CC-CLASS rank. AUC right vs wrong over all 200 of a tier (uncovered = 0) and COVERAGE (share with any record).
+
+| AUC (coverage) | batch, visit 2 / 4 / 6 | next tier, visit 2 / 4 / 6 |
+|---|---|---|
+| JUDGE (relational records of the pair) | **0.682** / **0.688** / **0.642** (0.51-0.55) | 0.568 / 0.614 / 0.558 (0.33-0.46) |
+| CC-ANY | 0.635 / 0.562 / 0.622 (0.84-0.93) | 0.584 / 0.587 / **0.629** (0.81-0.88) |
+| CC-WORD (own wording) | 0.429 / 0.476 / 0.503 | 0.445 / 0.415 / 0.486 |
+| CC-CLASS | 0.561 / 0.588 / 0.567 (0.76-0.83) | 0.575 / 0.563 / 0.612 (0.67-0.79) |
+| **JUDGE + CC** | 0.656 / 0.678 / 0.635 (0.79-0.85) | **0.597 / 0.622 / 0.610** (0.69-0.80) |
+
+- **MODEST POSITIVE.** On the first batch the judge stays best (the typed signal adds nothing); **on the harder next tier judge + typed confirmation beats the judge in all three rounds (+0.03 / +0.01 / +0.05) and covers about twice as many inferences (0.69-0.80 vs 0.33-0.46).** Smaller than the GPU readout suggested (0.626 vs 0.519 there; the GPU's signal is read through the memory's gate, this one from records).
+- **'Contradictions' in the inference's OWN wording are misleading (AUC below 0.5):** most typed wordings are 'in', and a head is 'in' several true places at once (a city in its county, state and country), so 'X in Z' with another Z is usually NOT a contradiction. Containment relations need a hierarchy-aware contradiction test (Z not containing / contained by the tail) before same-wording contradictions can count.
+- Use: the combined score as the judge for the next tier, and its coverage for the kus keep rule (queue 35: judge AND (useful OR typed-confirmed)).
+
+## Key-returning memory, three routes, FULL RUN (16 Nov 2026, tools/key_return.py; all 3,053 Re-DocRED documents, 85,932 facts written, 4,000 chains A -> B -> C with A -> C never stated; 27,794 name keys from the 6k stand-in trunk; relation key = the gold relation)
+| two-hop, top-1 / top-5 | all 4,000 | ALIASED B (186, 5%) | plain B (3,814) |
+|---|---|---|---|
+| DECODE (today's path, spelling assumed perfect) | 0.358 / 0.666 | 0.059 / 0.075 | 0.373 / 0.695 |
+| A POINTER (a distribution over answer names) | **0.395 / 0.745** | 0.081 / 0.145 | **0.410 / 0.774** |
+| B LEARNED KEY SPACE (similarity addressing, untrained) | 0.301 / 0.479 | 0.204 / 0.333 | 0.306 / 0.486 |
+| **C HYBRID (A, B where the exact address is empty)** | **0.395 / 0.748** | **0.210 / 0.312** | 0.404 / 0.769 |
+- **POSITIVE, smaller than the 60-document trial (0.505 / 0.557 / 0.549 / 0.575): returning a DISTRIBUTION of keys instead of decoding one name gains +0.04 top-1 and +0.08 top-5 (A and C vs DECODE), and the hybrid triples aliased chains (0.21 vs 0.06-0.08) at almost no cost on plain ones (0.404 vs 0.410).** C ties A overall because only 5% of these chains write B two ways (gold evidence sentences); in the package's store, built from noisy distant records, the alias share is likely higher, which is where C's fallback pays.
+- B alone (similarity addressing over the whole store, untrained keys) is worst on plain chains (0.306): look-alike names collide. The learned half earns its place only as the fallback - as with the hash + learned name key.
+- So the design for the package: POINTER first (answer-name distribution per slot, top-k carried to hop 2), the learned key as fallback for empty exact addresses (frozen encoder). Absolute two-hop accuracy here is with ideal relation keys; the package's learned wording key will cost some.
+
+## GPU cg27a_kgk to visit 6 (krt + gate rule + word units readout; vs kus / kty)
+- **False memories stay blocked:** taught WRONG inferences recalled from the trunk at visit 5: 0.01 (85) vs held back 0.00 (kus 0.02, kty 0.27); RIGHT 0.06 (kus 0.10, kty 0.33).
+- **The gate rule works on the GPU:** the memory's cost on held-out Wikipedia at visit 5 is +0.0004 bits per byte (kus +0.0058, kty +0.0071: -93%).
+- **Retyping is active at scale: 135 kept inferences retyped at visit 4, 108 at visit 6** (local runs: 32). But the confirming wordings are often long spans rather than relation words ('Iran , but especially from Tehran', 'Ohio , located 61 miles southwest of Cleveland'), and some are lists ('Houston and galveston , Texas' - the judge's list filter inf_rret_list2 is off). Exact relation accuracy cannot be read from this log (readout gap, queue 30).
+- **INTERACTION FOUND: the gate rule starves the usefulness keep rule.** Usefulness is measured through the memory with the gate rule applied (kmfb_readout passes no_rti = inf_kma_nori), so inference slots rarely open on text: the gate opened on 177 spans at visit 4 (kty 1,238), feedback on 48 of 400 inferences (kus 118), and **only 5 inferences reached the trunk** (all right, 1.000; kus 16-17). Fix: measure usefulness with the inference slots readable (a counterfactual 'would it have helped' read) while prediction keeps the gate rule (queue 40).
+- Judge unchanged (visit 4 AUC 0.688, visit 6 0.520). Post-train BPC 2.022 / 2.058 / 2.024 / 1.664 / 1.579 - lowest of the four builds but within run variation.
+- LEARNED SUBJECT KEYS, 28b (LK_K 8,192 codes, drift = 300 arXiv steps; tools/learned_keys.py): the drift is barely milder (mean state change 14.0 vs norm 17.2; the trunk at 3.31 bits per byte on this text - it forgets wiki fast). Finer codes hold 5.8 names per code (24% hold one). Bits saved per 1,000 bytes (all | after warm-up): HASH 116.8 | 124.9, REKEY 121.8 | 129.0, STALE 86.7 | 96.4, QDC 97.8 | 107.7, **FROZEN 125.6 | 135.3, HASH + FROZEN 144.7 | 155.0 (+24% over the hash)**. The ranking holds: a frozen key encoder is the best learned key (at least as good as re-keying), stale keys lose 26% (now well below the hash), query drift compensation recovers a third. Finer codes give the learned key alone a smaller edge over the hash (+7%, vs +15% at 1,024 codes): coarse codes share more across aliases. For route C's fallback: a frozen encoder, codes on the coarse side.
+- READOUT FIX (queue 30) verified (tools/kmi_smoke.py, cg27a_kgk): the integrated keyed memory readout now reports typed inferences (taught RIGHT 40 / WRONG 20, held back 19) instead of '- (0)', and they no longer sit in the 'taught FACTS' rows. NOTE for earlier typed builds (kty, kus, kgk on the GPU): their 'taught FACTS' recall included typed inferences.
+- **CONTAINMENT-AWARE CONTRADICTIONS (queue 38; typed_judge.py, '-H': 'X in Z' is not a contradiction when the store already links Z and the tail): the best judge is JUDGE + CC-ANY-H** (judge rank + confirm-minus-contradict over any wording, containment-aware): batch 0.678 / 0.671 / 0.677 vs the judge 0.682 / 0.688 / 0.642 (about equal on average, 0.675 vs 0.671), **next tier 0.608 / 0.632 / 0.603 vs 0.568 / 0.614 / 0.558 (+0.04 / +0.02 / +0.05), covering 0.79-0.92 of inferences vs the judge's 0.33-0.55.** Own-wording contradictions stay below chance even containment-aware (CC-WORD-H 0.40-0.52): the store rarely states the containment link, so drop that variant. Candidate model change: the relational judge's score replaced by judge + typed confirmation (containment-aware) - mainly for the harder tier and for coverage (queue 42).
+- **RETYPING WITH THE WIDER LIST FILTER (queue 41; loop_sim BOTH-RETYPE, A6, distant_50k, three rounds): POSITIVE - the list filter belongs with retyping.** LS_LIST2 1 vs 0: memory right 0.829 / 0.839 / 0.810 vs 0.771 / 0.742 / 0.739; exact relation types 0.600 / 0.613 / 0.595 vs 0.543 / 0.545 / 0.534; bits saved +1.05 / +1.77 / +1.81 vs +0.76 / +1.43 / +1.55. The GPU kgk retyped list wordings ('Houston and galveston , Texas') because inf_rret_list2 is off there. Candidate for the next judge build: inf_rret_list2 1 with the typed confirmation judge (both change the judge's evidence).
+- **WIDER KEEP RULE (queue 35; loop_sim, LS_LIST2 1, A6, distant_50k): judge AND (useful OR typed-confirmed) keeps 17-50% more at the same precision** - kept 41 / 32 / 33 (right 0.854 / 0.812 / 0.758) vs judge AND useful 35 / 27 / 22 (0.829 / 0.852 / 0.727), memory 106 at 0.811 vs 84 at 0.810 by round 3, bits the same (+1.12 vs +1.13); the judge alone keeps 81-125 at 0.68-0.76. Typed confirmation alone with the judge keeps few (8-15) at 0.75-0.90. Offline, usefulness covers nearly every judged pair, so the typed signal adds only a few; on the GPU, where usefulness covered 16 of 160 (kus) and 5 under the gate rule (kgk), it should add more - a cheap coverage fix to pair with inf_kmc_useful_open.
+- GPU cg27a_kgk to visit 7 (8 domains in this run; no headline yet): **false memories from the trunk stay at the control level through visits 5-7: taught WRONG recalled 0.01 / 0.00 / 0.01 vs held back 0.00** (kmr 0.14 / 0.30 at visits 5 / 6); taught RIGHT 0.06 / 0.06 / 0.07 vs held back 0.01-0.02. Useful AND judged-kept right 1.000 (10) at visit 7 - precise, but only 10 reach the trunk (the gate-rule starvation, fix queued). The gate rule keeps the memory's cost on held-out Wikipedia at +0.0007 / +0.0012 (visits 6 / 7). Generic word units (ALL DOMAINS, incl. duplicated Gutenberg) -0.069 to -0.080 vs hand -0.009 to -0.013.
+- JUDGE WINDOW (queue 13; loop_sim LS_UWIN = share of the two visits after a write the judge sees, LS_LIST2 1): the judge's precision barely depends on the window (judge alone, round 1: 0.756 / 0.760 / 0.750 at 0.25 / 0.5 / 0.75) while coverage grows with it (kept 78 / 125 / 152); judge AND useful memory by round 3: 40 at 0.800 / 84 at 0.810 / 102 at 0.775. No sharp optimum - more reading judges more pairs at about the same precision; the GPU's two-visit window is a reasonable setting. (Bits are not comparable across windows: the scoring text is what remains after the judge's share.)
+- **PACKAGE CHECK OF THE TYPED CONFIRMATION JUDGE (inf_rret_sig 'rel+cc'; the GPU write path offline, distant_50k, writes of 200 at visits 2 and 4, judged two visits later): NOT BETTER in the package's own sequence.** First batch AUC 0.657 vs 'rel' 0.654 (flagged 40 wrong 0.40 vs 0.47); second batch 0.650 vs 0.659 (flagged wrong 0.50 vs 0.60). The typed signal alone 0.623 / 0.582 (covers 0.93 / 0.86). The offline gain (+0.02-0.05) was on the next tier of ONE 400-write round; the package writes 200 a round, and its second batch is not the hard case here (the relational count holds at 0.659 offline, while the GPU's fell to 0.52 at visit 6 on its larger store). **Decision: no judge change yet; the [TYPED CONFIRMATION (evaluation)] readout rides along in the next build to show whether the typed signal holds where the GPU judge collapses.**
+- **DUPLICATION AUDIT (queue 33) - CORRECTION to every GPU keyed-units claim.** Recomputed from the GPU logs over the domains already read, without Gutenberg (domain 0) and Github (domain 5) whose training text overlaps the validation text: hand keyed units (NAME + DATE + NUMBER) save **-0.0035 to -0.0051 bits per byte**, not the -0.011 to -0.015 the all-domain mean shows (kty visits 4 / 5: -0.0146 / -0.0117 -> -0.0051 / -0.0040; kus -0.0140 / -0.0112 -> -0.0044 / -0.0035; kgk visits 6 / 7: -0.0142 / -0.0132 -> -0.0039 / -0.0046). Gutenberg alone contributes -0.040 to -0.043. **About two thirds of the reported keyed-unit gain was duplicated text.** Generic word units without the duplicated domains: -0.0047 / -0.0048 (kgk) - about the same as the hand units, not 6-10 times more. Earlier summaries quoting 'keyed units -0.013 to -0.026 on the GPU' should read about -0.004.
+
+## Consolidation anchor on replay text from every domain (16 Nov 2026, queue 24; tools/consolidate.py CS_ANCHOR; A6 stand-in trunk, 200 typed inferences in 24 frames, 600 steps; forgetting = held-out bits added on each of five domains)
+| KL anchor (every weight) | recall rank / open | wiki | prose | arxiv | pubmed | law | mean |
+|---|---|---|---|---|---|---|---|
+| anchor rows wiki only, lr 3e-4 | 0.380 / 0.285 | +0.056 | -0.035 | +0.100 | +0.044 | +0.007 | +0.034 |
+| anchor rows from all five, lr 3e-4 | 0.345 / 0.250 | +0.075 | -0.030 | -0.042 | +0.013 | -0.031 | **-0.003** |
+| anchor rows wiki only, lr 1e-3 | 0.690 / 0.515 | +0.123 | +0.007 | +0.145 | +0.120 | +0.062 | +0.091 |
+| anchor rows from all five, lr 1e-3 | 0.510 / 0.415 | +0.120 | -0.030 | -0.178 | +0.020 | -0.055 | **-0.025** |
+- **POSITIVE (partly): anchoring on replay text from every domain removes the drift on the domains a one-domain anchor never sees** (mean forgetting +0.034 / +0.091 -> -0.003 / -0.025), the failure mode of the package's consolidation path (its anchor covers stored sentences only; GPU-scale package run B: Wikipedia +0.35). Costs: recall somewhat lower at the high rate (rank 0.51 vs 0.69), and forgetting on the facts' own domain (wiki) is unchanged (+0.06-0.12): the facts compete with wiki text directly. Some 'gains' on unanchored domains (arxiv -0.18) are unexplained by a KL anchor alone - treat the sign with caution.
+- FULL (cross-entropy) with rows from every domain is not a forgetting test: it trains on those domains (arxiv -4.1 bits) - excluded.
+- Next: in the package, the consolidation path's soft anchor on DREAM / REPLAY rows of every visited domain instead of stored sentences (queue 44), against run A; pass = forgetting within noise of A with trunk recall above A's.
+- **USEFULNESS STABILITY (queue 34; loop_sim LS_STAB, rounds at visits 2-6, every written inference re-measured each round on that round's first-half text, as the GPU re-measures at every visit): the CUMULATIVE measure is the steadier and, later on, the more precise keep rule.** Latest-measure decisions flip for 37 / 52 / 69 / 83 judged inferences per round (about 20%), and its precision swings 0.83 -> 0.78 -> 0.83 -> 0.77 -> 0.71; usefulness summed over every round since the write passes more (54 / 68 / 84 / 97 vs 45 / 63 / 78 / 90) at 0.72 / 0.79 / **0.81 / 0.78** (latest 0.78 / 0.83 / 0.77 / 0.71). This matches the GPU flips (0.94 -> 0.63; 0.88 -> 0.43 -> 0.81). Candidate package option: inf_kmc_useful_cum 1 (the keep rule on the running sum of a written inference's usefulness) with inf_kmc_useful_open (queue 45).
+- WRITE CHOICE BY SURPRISE (queue 29; loop_sim LS_SURP: the trunk's bits per byte on a candidate's premise sentences at write time, Titans-style): **NOT a reliable signal.** AUC right vs wrong 0.476 / 0.513 / 0.595 over the three rounds (the sign flips); most vs least surprising half right 0.615 / 0.615, 0.561 / 0.520, 0.643 / 0.490; within the code's batch high half 0.670 / 0.600 / 0.673 vs low 0.723 / 0.551 / 0.520. Only the third round shows a gain - not enough to replace or reweight the fact-table code's ranking. Learned write choice stays open; surprise on the premises is not it.
+- **ADAPTIVE WRITE BUDGET IN THE PACKAGE (queue 5; inf_rti_adapt, tools/adapt_check.py, four write rounds, judged two visits later): a QUANTITY dial, not a precision dial - NEUTRAL, not for a build.** Off (200 a round): 800 written right 0.627, judged-kept 480 at 0.673. Threshold 0.3 (share of a 100-block with a confirming relational record): writes grow to 300 / 400 / 400, 1,300 at 0.575, kept 720 at 0.637. Threshold 0.5: 200 / 300 / 100 / 100, 700 at 0.627, kept 480 at 0.667. Threshold 0.6: 200 / 200 / 100 / 100, 600 at 0.643, kept 400 at 0.672. Precision of the kept set barely moves (0.667-0.673 except the expanding setting). The offline dial (up to 0.93) stopped on judge AND usefulness per block; confirmation alone is too loose a stop signal. Option stays off.
+
+## Key-returning memory IN THE PACKAGE (17 Nov 2026, inf_kmc_keyread readout; tools/kmi_smoke.py, cg27a_kgk, d 64 smoke model)
+| visit | the model decodes B, then asks (today) | ROUTE A pointers: first hop / C rank among 10 / C top-1 of all answers | ROUTE C (+ trunk-code fallback) |
+|---|---|---|---|
+| 2 | first hop exact 0.43, C rank 0.50 (trunk alone 0.00 / 0.03) | 0.93 / **1.00** / 0.75 | 0.93 / 1.00 / 0.72 (147 fallbacks) |
+| 3 | 0.00, 0.20 (trunk alone 0.00 / 0.10) | 0.98 / **1.00** / 0.85 | 0.98 / 1.00 / 0.82 (138 fallbacks) |
+- **POSITIVE: returning answer names from the memory's own slots composes two-hop chains far better than decoding** - C ranked first among 10 in every chain (1.00 vs 0.50 / 0.20), the exact C the top answer of all names 0.75-0.85, over 60 chains each visit of which 25-27 have an inference hop (composition through written inferences). The pointer table (answer names per slot, 1,332-1,441 slots) is built from the same addresses the memory writes with, so on chains of entries IN the memory it is close to an exact index - the test that matters is the GPU: noisy store, collisions in shared slots, far more entries.
+- The trunk-code fallback fires often (names that are answers but not written subjects) and costs a little here (top-1 0.72 / 0.82 vs 0.75 / 0.85): on exact chains it only replaces names that need no replacing. Keep it as a readout arm; it should earn its place only where aliases exist.
+- Ready to ride along in the next GPU build (readout only).
+- **cg27a_kck IN THE PACKAGE (local, run A's settings): PASSES** - HEADLINE forgetting -0.039, final BPC 2.600 (A -0.036 / 2.603). 27 retyped at visit 4. **KEY-RETURNING MEMORY at local scale (inference hops in most chains): route A first hop 0.64 / 0.58 / 0.55 / 0.55, C rank among 10 0.73 / 0.67 / 0.52 / 0.57, C top-1 of all answers 0.55 / 0.42 / 0.40 / 0.45 (visits 2-5; 11-60 chains, chance 0.10)** - well above chance but below the smoke model's 1.00, and the decoding path found too few chains to compare (1-3). Route C's fallback: top-1 0.27 / 0.25 / 0.38 / **0.50** - worse early, better than pointers alone at visit 5 (0.50 vs 0.45). [TYPED CONFIRMATION (evaluation)] AUC 0.617 vs the relational count 0.652. One readout error (COUNTER-WRITE: a long retyped prompt past the row's width) - fixed (skip such rows); readout only, caught.
+- **CONSOLIDATION PATH WITH A STRONGER, EVERY-DOMAIN ANCHOR (queue 44; B3 = run B + inf_distill_wake_akl 2.0, aklall 1 (every old slot each step), aklrows 8, aklcache 96): PARTLY FIXED, NOT YET A PASS.** HEADLINE forgetting **+0.031** (B +0.094, B2 +0.080, A -0.036), final BPC 2.676 (B 2.731, A 2.603); trunk recall of taught facts in test wordings **0.22 / 0.23** at visits 4 / 5 (B 0.19 / 0.21, A 0.03 / 0.04) - two thirds of the forgetting removed with recall kept. ArXiv / PubMed / Gutenberg now improve (-0.008 / -0.015 / -0.032, as A); **the remaining damage is Wikipedia alone: +0.186** (B +0.346, A -0.018) - held-out Wikipedia bits 2.610 / 2.610 / 2.613 then 2.822 at visit 5 (B 3.012): steady until the last domain, then a jump while the facts (Wikipedia-like sentences) are taught during FreeLaw. Matches the offline result: an all-domain anchor fixes the other domains, not the facts' own domain. Next (queue 46): the anchor weighted toward the facts' own domain (more Wikipedia rows) and / or a lower question rate in the last visits; pass = forgetting within noise of A.
+- **CONSOLIDATION, ANCHOR WEIGHTED TO THE FACTS' OWN DOMAIN (queue 46; B4 = B3 + inf_distill_wake_aklslot 1 (Wikipedia), aklfw 4.0): MOSTLY FIXED.** HEADLINE forgetting **+0.002** (B3 +0.031, B +0.094, A -0.036), final BPC 2.643 (A 2.603, B3 2.676); **Wikipedia +0.048** (B3 +0.186, B +0.346); other domains as A (Gutenberg -0.030, ArXiv +0.001, PubMed -0.005). Held-out Wikipedia bits 2.610 / 2.607 / 2.608 / **2.668** at visits 2-5 (B3 2.822 at visit 5, A 2.591). **Trunk recall of taught facts 0.22 / 0.27 at visits 4 / 5** (A 0.03 / 0.04, B3 0.22 / 0.23). Six times A's recall for about +0.04 forgetting against A - not yet within seed noise of A (about 0.02), but the closest yet. Next: aklfw 8 and / or the question rate lower in the last visit (queue 47).
+- CONSOLIDATION, WIKIPEDIA WEIGHT x8 (B5): HEADLINE forgetting +0.007 (x4 +0.002), final BPC 2.649; Wikipedia +0.039 (x4 +0.048) but ArXiv / PubMed +0.013 / +0.016 (x4 +0.001 / -0.005) - the extra weight moves the anchor away from the other domains; recall 0.21 / **0.29** at visits 4 / 5. **A plateau: x4 and x8 are equal within noise (+0.002 / +0.007); the remaining gap to A (-0.036) is about 0.04, now spread over domains rather than one jump.** Held-out Wikipedia bits 2.610 / 2.601 / 2.598 / 2.663. The next lever is not the anchor's weight but how hard the questions push in the last visit (queue 47: question rate or frames reduced after visit 3), or a longer anchor cache.
+- **CONSOLIDATION INTO THE TRUNK WITHOUT FORGETTING: PASSES (B6 = anchor on every old domain, Wikipedia x4, + the question rows halved each later visit: inf_distill_wake_decay 0.5 from visit 2).** HEADLINE forgetting **-0.032** (A -0.036: within seed noise), final BPC **2.611** (A 2.603), Wikipedia **-0.015** (A -0.018), every domain improves (Gutenberg -0.042, ArXiv -0.030, PubMed -0.033); held-out Wikipedia bits 2.610 / 2.601 / 2.590 / 2.600 - no last-visit jump. **Trunk recall of taught facts in unseen test wordings 0.19 / 0.22 at visits 4 / 5 vs A 0.03 / 0.04 - about five times, at no measurable forgetting.** The path: every weight (inf_distill_wake_params ''), 21 frames (inf_distill_forms 21), a soft KL anchor to the model at the last sleep on stored real sentences of EVERY old domain each step (akl 2.0, aklall 1, 8 rows, 96 cached), the facts' own domain weighted x4 (aklslot 1, aklfw 4.0), question rows x0.5 per later visit. Build candidate (one model change) after cg27a_kck.
+- **cg27a_kcs IN THE PACKAGE (local, run A's settings): PASSES.** HEADLINE forgetting **-0.036** (A -0.036), final BPC 2.608 (A 2.603); every domain improves (Gutenberg -0.043, Wikipedia -0.033, ArXiv -0.033, PubMed -0.031); trunk recall of taught facts in unseen wordings 0.19 / **0.22** (A 0.03 / 0.04); written WRONG inferences recalled from the trunk 0.00 (false memories stay out). Key-returning two-hop at visit 5: route A C rank 0.50, top-1 0.37 (58 of 60 chains through an inference hop). Ready for the GPU after cg27a_kck.
+
+## GPU cg27a_kcs (kck + consolidation into the trunk), interim to visit 3 (17 Nov 17:12 run; vs cg27a_kgk)
+- **CONSOLIDATION WORKS AT SCALE: taught facts recalled from the TRUNK in unseen test wordings 0.77 (198) at visit 3, vs kgk 0.35 (198)** (taught 1 visit 0.75, 2-3 visits 0.81; entered at this sleep, not yet taught, 0.02). Wrong inferences: the pool's few conclusions recalled 0.00.
+- **KEY-RETURNING MEMORY ON THE GPU: route A first hop 0.92 / 1.00, C ranked first among 10 1.00 / 1.00, C top-1 of all answers 0.46 / 0.92 (visits 2 / 3; 13 / 39 chains)**; route C 0.92 / 1.00, 1.00 / 1.00, 0.54 / 0.92. The decoding path at visit 3: first hop exact 0.40, C rank 0.87 (kgk 0.37 / 0.83). Few chains go through an inference hop yet (3).
+- **WATCH: post-train BPC higher than kgk on the current domain** - Gutenberg 2.025 / 2.022, Wikipedia 2.076 / 2.058 (+0.018), **ArXiv 2.063 / 2.024 (+0.039, beyond the ~0.02 run variation)**; held-out Wikipedia with the memory at visits 2 / 3 2.047 / 2.058 vs 2.029 / 2.044 (+0.015-0.018). The every-weight question rows (and the anchor rows) may take capacity from learning the current domain; the final forgetting and the later domains decide. Visit timing as kgk (phase 4 at 42.5 vs 40.6 min).
+
+## cg27a_kcs on the GPU, interim to visit 4, and the cg27a_kcp smoke test (17 Nov 2026, evening)
+
+**Recall (trunk, test wordings).** Compared with kgk at visit 4:
+- Facts taught for at least one visit: 0.77 (kgk 0.42).
+- Known facts answered right: 0.69 (kgk 0.38).
+- Confidence when right: 0.93 (kgk 0.54).
+- Confidence separates right answers from never-read questions with an AUC of 0.90.
+
+**False memories.**
+- Gated answers on never-read questions: given a stored name 0.11 (kgk 0.25), abstained 0.89. Known facts right when answered: 1.00.
+- Ungated stored-name rate on fresh names: 0.81. This is in line with earlier builds (0.72–0.86).
+
+**Kept inferences.**
+- Kept right 0.81 (kgk 0.79); flagged right 0.45 (kgk 0.55), a wider gap between kept and flagged.
+- Useful AND judged-kept right 0.95 (21).
+- 131 kept inferences retyped on confirmation.
+
+**Key-returning memory, visit 4.**
+- Route A: first hop 0.98, final answer ranked first among 10 in 0.98 of chains, top-1 0.93.
+- Route C: 0.98 / 0.98 / 0.90.
+- 60 chains, 27 of them with an inference hop.
+
+**Cost (learning, not consolidation).** Held-out BPC at visit 4, kcs vs kgk:
+
+| Domain | kcs | kgk | Change |
+|---|---|---|---|
+| Gutenberg | 2.013 | 2.006 | +0.007 |
+| Wikipedia | 2.064 | 2.049 | +0.015 |
+| ArXiv | 2.060 | 2.028 | +0.032 |
+| PubMed | 1.695 | 1.664 | +0.031 |
+
+The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The cost is concentrated on the newest domains: the anchor slows learning. Next test: a lighter consolidation dose. (Revised at visit 5, below: most of this was run variation.)
+
+**cg27a_kcp smoke test (synthetic names).**
+- `[COMPOSED WRITES]` runs at visits 2 and 3 with no errors.
+- 1,129–1,269 unstated two-hop conclusions found; the top 100 written per sleep.
+- The labels read 0.00 because synthetic names have no distant labels. This is not a recall result.
+
+
+## cg27a_kcs on the GPU, final (visit 5)
+
+**Held-out BPC at visit 5.**
+
+| Domain | kcs | kgk | kty |
+|---|---|---|---|
+| Gutenberg | 2.006 | 2.030 | 2.063 |
+| Wikipedia | 2.050 | 2.040 | 2.070 |
+| ArXiv | 2.058 | 2.025 | 2.024 |
+| PubMed | 1.702 | 1.686 | 1.699 |
+| FreeLaw | 1.592 | 1.579 | 1.588 |
+
+- Mean change: kcs vs kgk +0.010; kcs vs kty -0.007. kgk and kty themselves differ by up to 0.03 on a domain.
+- The visit-4 "learning cost" was mostly run variation. Only ArXiv is consistently higher (+0.033), and ArXiv is not forgotten after it is learned (2.063 post-train -> 2.058).
+
+**Facts.**
+- Trunk recall of facts taught for at least one visit: 0.80 (kgk 0.48, kty 0.46).
+- Known facts right: 0.70 (kgk 0.52); confidence when right 0.93 (kgk 0.66).
+- AUC, known-right vs never-read: 0.93 (kgk 0.84).
+
+**Gated answers.**
+- Right when answered: 0.94 (kgk 0.71).
+- Never-read given a stored name: 0.11 (kgk 0.31, kty 0.16); abstained 0.88.
+
+**Real-text inferences from the trunk, taught vs held back.**
+- kcs: right 0.14 vs 0.03, wrong 0.01 vs 0.00.
+- kgk: right 0.06; kty: right 0.33 but wrong 0.27.
+- Written at visit 2: right 0.24 vs 0.04. kcs recalls more right inferences without the false memories that kty had.
+
+**Key-returning memory, visit 5.**
+- Route A: first hop 0.95, rank 0.98, top-1 0.95.
+- Route C: 0.95 / 0.98 / 0.93.
+
+**REGRESSION: taught sleep-layer conclusions (n 22) recalled from the trunk 0.05 (kgk 0.36, kty 0.45).**
+- Hypothesis: `inf_distill_wake_decay` is GLOBAL. Every question row is weighted 0.5^(visit - 1), about x0.125 at visit 5, while the anchor (akl 2.0) is not decayed.
+- Conclusions enter the pool late and have no source sentences, so the anchor holds them out. Facts survive through source replay and early teaching.
+- This cannot be tested locally: only 2–4 conclusions are taught there.
+- Next: a local harm check of decay off (1.0), then a GPU run.
+
+## Real-text composition rules mined from typed frames: NEGATIVE (17 Nov 2026, evening; tools/rt_rules.py, distant_10k)
+
+**Setup.** The relation of a record is its typed frame: (type A, the words between, type B). Rules r1 o r2 -> r3 are mined on the first 70% of documents, against a shuffled null, with a Wilson lower bound on confidence. Composed pairs that were never stated in training are then checked two ways: stated in a later document, or carrying a distant label.
+
+| Run | Rules kept | Composed pairs | Stated later | Distant label |
+|---|---|---|---|---|
+| Surface frames, chains within one document allowed | 49 | 578 | 0.038 | 0.021 |
+| All chains, no rule (baseline) | n/a | sample of 50,000 | 0.005 | 0.009 |
+| Random same-type pairs (control) | n/a | 576 | 0.000 | 0.000 |
+| Hops from different documents, evidence from a third | 1 | n/a | n/a | n/a |
+| Cross-document, frames ending in a word | 0 | n/a | n/a | n/a |
+| Cross-document, word frames, last word only | 0 | n/a | n/a | n/a |
+| Same, threshold lowered to 0.15 | 1 (TIME frames) | 10 | n/a | n/a |
+
+- In the first run, the rules are mostly list and punctuation artefacts within one document.
+- Across documents, an A-C pair from a chain is almost never stated elsewhere (0.005). There is too little evidence to learn or verify cross-document composition in this corpus.
+- The distant labels exist only for pairs named in the same document, so they cannot score cross-document conclusions anyway.
+
+**Conclusion.** Real-text composition across documents cannot be learned or checked from this corpus with surface frames.
+- Within-document "never stated together" inference is what the typed writes already do: 0.6-0.8 right.
+- Rule-world composition works through the relational module, with verified rules and no false ones on the GPU.
+- Measuring the next step needs a corpus whose composite facts are checkable (Wikidata relation paths over the names read), not later text.
+
+## GPU cg27a_kcb (kcs + the conclusion boost), visit 4: NEGATIVE for the conclusion fix (17 Nov 2026, 20:13)
+
+**The boost worked mechanically.** Conclusion rows were sampled x2 at visit 3 and x4 at visit 4; their share of question samples was 0.132 and 0.219 (uniform 0.055 and 0.049).
+
+**Recall did not move.**
+- Taught conclusions recalled from the trunk at visit 4: 0.06 (34). kcs: 0.09 (22).
+- Never-taught CONTROL conclusions: 0.25 (8).
+- The amount of practice is not the cause. The global decay hypothesis is wrong.
+
+**Everything else as kcs.** Facts taught for at least one visit recalled 0.79. Relational-module composites taught 1.00 (8) vs held back 0.33 (3).
+
+**Next suspects.**
+- The 21 question wordings: conclusions have no source sentences to carry them. kgk used 7 wordings and recalled 0.33–0.36.
+- Every-weight training.
+
+GPU arm cg27a_kcw = kcb + inf_distill_forms_conc 7.
+
+**Local kcs with half the anchor weight (akl 1.0).** Timed out before HEADLINE. Visit-4 held-out BPC 2.913 / 2.577 / 2.658 / 2.571 vs kcs 2.904 / 2.569 / 2.643 / 2.571, and the same recall. No benefit; closed.
+
+## Correction: chain discovery is NOT a large gap (17 Nov 2026, 20:35)
+
+"Probe chains found 15 of 203" counts every planted chain, but a chain can only be found once the domains of both its facts have been read. Consecutive facts are in different domains, with 10 domains in the GPU runs.
+
+Expected number of discoverable two-hop chains after v visits: 203 x v/10 x (v-1)/9.
+
+| After visit | Discoverable | Found (kcs GPU) | Share found |
+|---|---|---|---|
+| 3 | ~14 | 15 | ~100% |
+| 4 | ~27 | 23 | ~85% |
+| 5 | ~45 | 35 | ~78% |
+| 6 | ~68 | 57 | ~84% |
+
+Sleep finds about 80% or more of the chains it can reach. The remaining inference gaps are composition by the trunk itself and real-text composition, not discovery.
+
+**Conclusion recall (kcb): not a wording mismatch.**
+- Conclusions are tested in the held-out paraphrase "A is tied to" / "The one tied to A is" (taught as "is connected to" in every form).
+- This is the same for 7 and 21 wordings, so the drop from about 0.36 (kgk, kty, kus) to about 0.06 (kcs, kcb) comes from the consolidation package itself: every weight, every-domain anchor, 21 forms, decay.
+- kcw tests the 21 forms.
+
+## COMPOSITION ON REAL TEXT WITH RELATION KEYS: POSITIVE (17 Nov 2026, 20:30-20:50; tools/latent_compose.py, Re-DocRED)
+
+### E1. Rules over relation keys (gold relation ids = the ideal relation key)
+
+- Rules mined on 3,053 training documents: 200 kept (support >= 10, Wilson LB >= 0.5).
+- On 1,000 unseen documents, the rules composed 17,661 conclusions. **Precision 0.796** (labelled with that relation in the document).
+- Of 17,572 labelled facts reachable by a two-step chain, **0.44 are composed by a rule**.
+
+| Rule | Training support | Held-out precision |
+|---|---|---|
+| located-in o located-in | 6,577 / 6,577 | 1.00 |
+| located-in o country | 4,862 / 4,889 | 0.99 |
+| birthplace o located-in -> citizenship | 504 / 770 | 0.68 |
+| performer o label -> label | 470 / 727 | 0.73 |
+
+The relation names were printed from a local table (rel_info.json was not downloaded), so some names may be mislabelled. The ids and the precision are exact.
+
+**Conclusion.** Tonight's real-text negative (tools/rt_rules.py) came from the surface-frame relation keys, not from composition itself.
+
+### E2. Latent operators on learned name keys (the user's fuzzy-composition hypothesis)
+
+Name key = the stand-in trunk's state over the name's bytes (tg_lm192_18000). Relation maps are ridge fits on the training documents (92 relations). For 13,413 composites in unseen documents, C is ranked among the document's entities (chance 0.055, about 18 entities).
+
+| Route | C ranked first | Top quarter by margin |
+|---|---|---|
+| ONE learned map W_r3 key(A) | 0.249 | 0.461 |
+| **Pure latent composition W_r2 W_r1 key(A)** | **0.248** | 0.478 |
+| **Memory hop 1 (B read) + latent hop 2 W_r2 key(B)** | **0.336** | **0.674** |
+| NULL (random r2) | 0.063 | 0.076 |
+
+- Composing two learned maps is as good as a direct map for the composite relation.
+- It is 4.5x chance, and the null shows it depends on the right relations.
+- Hop 1 through the memory raises it to 0.34, and to 0.67 when only the confident quarter answers.
+
+**Conclusion.** Fuzzy composition in a learned key space works on real text, beside the exact rules of E1 (0.80 precision). Next steps:
+1. Rules over LEARNED relation keys (the JEPA wording key) instead of gold ids.
+2. A write path in the package: rule-composed conclusions, with latent composition as the fallback where a premise is missing, judged, kept and taught.
+
+## GPU cg27a_kfc3 (integration run: kcs + conclusion boost + rule-verified composing + cumulative keep rule + rule world x4), to visit 4 (17 Nov 2026, 20:54)
+
+The rule world x4 is active: 34-116 rule-world facts per domain (kcb: 15-33).
+
+**Relational module.**
+- Both true rules are found at sleep 1: child o child -> grandchild (z +44) and supervised o supervised -> overseen. 0 false rules.
+- Composites written: 15 / 21 / 43 / 58 by visits 1-4. All are correct by the rule world's truth, and none was planted.
+
+**The trunk, by test wording.**
+
+| Visit | Taught | Held back |
+|---|---|---|
+| 2 | 1.00 (9) | **0.00** (6) |
+| 3 | 1.00 (11) | **0.00** (4) |
+| 4 | 0.74 (19) | **0.00** (6) |
+
+- Held-back answers at visit 4 are 'other' names, 6 of 6: not the middle hop, not the family.
+- The trunk does not compose on its own. kcs's held back 0.60-0.75 at visit 5 (n 4-5) was small-sample noise.
+
+**OPERATOR ALGEBRA, frozen trunk codes.**
+
+| Visit | Held-out composites | Composed operator | Shuffled null | Direct composite map | Chance |
+|---|---|---|---|---|---|
+| 3 | 45 | **1.00** for both rules | 0.00 | 0.04-0.05 | 0.006 |
+| 4 | 60 | **1.00** | 0.00-0.03 | 0.03-0.04 | 0.004 |
+
+At 4-8x the earlier sample, composition in the trunk's code space is exact while the trunk's forward pass gives 0.00.
+
+**Composing writes through verified rules (old code: stand-in names still used).**
+- Right 0.139 (36), 0.070 (100), 0.122 (90) at visits 2-4.
+- The relational module already wrote the correct composites. The remaining chains mostly go through stand-in names (986-1,967 per visit). The exact-chain fix (commit 8c9bb4c) postdates this run.
+
+**Other readouts.** Conclusions taught for at least one visit 0.12 (16) at visit 4 (kcs 0.09). Facts 0.76-0.80. No errors.
+
+**Conclusion.** Composition belongs in key space, and the trunk is taught its results. Together with the offline real-text result (tools/latent_compose.py: rules over relation keys 0.80 precision, latent maps 4.5x chance), this is the design for real-text inference: compose in key space, write, judge, keep, teach.
+
+## README updated (17 Nov 2026, 21:05)
+
+README.md has a new section, "Recent results (15-17 November)". Ten new table rows were added, and open questions 7, 17 and 18 were updated or added. The "Note from author" is unchanged.

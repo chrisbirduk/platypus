@@ -41,6 +41,9 @@ class LM(nn.Module):
         return s.o(s.n(x))
 base = LM(); base.load_state_dict(torch.load(os.environ['TG_CKPT'])); base.eval()
 wiki = open(os.environ.get('MINIPILE_DIR', '/tmp/claude-0/sweep/minipile') + '/wiki.bin', 'rb').read().replace(b'\n', b' '); WK = np.frombuffer(wiki, np.uint8); HO = len(WK) - 200000
+MP = os.environ.get('MINIPILE_DIR', '/tmp/claude-0/sweep/minipile')               # 16 Nov (queue 24) ANCHOR SOURCE: CS_ANCHOR 'wiki' (the anchor / text rows
+DOMS = {d: np.frombuffer(open(f'{MP}/{d}.bin', 'rb').read().replace(b'\n', b' '), np.uint8) for d in ('wiki', 'prose', 'arxiv', 'pubmed', 'law')}   #   on wiki
+ANCH = os.environ.get('CS_ANCHOR', 'wiki')                                         #   only) or 'mix' (replay rows from every domain); forgetting scored per domain
 def tens(bl):
     bl = [b[:L_] for b in bl]; T = max(len(b) for b in bl); X = torch.full((len(bl), T), PAD, dtype=torch.long)
     for i, b in enumerate(bl): X[i, :len(b)] = torch.tensor(list(b))
@@ -53,9 +56,11 @@ FR24 = FR + ("It is known that {h} {w} {t}.", "We read that {h} {w} {t}.", "Sour
 FR = FR24[:int(os.environ.get('CS_FRAMES', 6))]
 FACT = [f.format(h=h, w=w, t=t).encode('latin-1', 'replace')[:L_] for h, w, t, _ in CL for f in FR]
 EV = [bytes(WK[HO + k * 129:HO + (k + 1) * 129]) for k in range(64)]
+EVD = {d: [bytes(a[len(a) - 200000 + k * 129:len(a) - 200000 + (k + 1) * 129]) for k in range(64)] for d, a in DOMS.items()}
 @torch.no_grad()
-def wbits(m):
-    X, Xi = tens(EV); lg = m(Xi); return float(F.cross_entropy(lg.reshape(-1, V_), X.reshape(-1), ignore_index=PAD)) / math.log(2)
+def wbits(m, ev=None):
+    X, Xi = tens(ev or EV); lg = m(Xi); return float(F.cross_entropy(lg.reshape(-1, V_), X.reshape(-1), ignore_index=PAD)) / math.log(2)
+def dbits(m): return {d: wbits(m, e) for d, e in EVD.items()}
 tails = [c[2] for c in CL]; rr = np.random.RandomState(3)
 CANDS = [[t] + [tails[j] for j in rr.choice(len(tails), 12, replace=False) if tails[j] != t][:9] for h, w, t, _ in CL]
 @torch.no_grad()
@@ -69,7 +74,7 @@ def recall(m):
         ex.append(int(bool((lp[0, n0:n0 + len(tb) - 1].argmax(-1) == X[0, n0:n0 + len(tb) - 1]).all())))
     rk, ex = np.array(rk), np.array(ex); yv = np.array([c[3] for c in CL])
     return rk.mean(), ex.mean(), rk[yv].mean(), rk[~yv].mean()
-b0 = wbits(base); r0 = recall(base)
+b0 = wbits(base); r0 = recall(base); d0 = dbits(base)
 P(f"BASE: held-out wiki {b0:.4f} bits per byte | test-wording rank {r0[0]:.3f} (right {r0[2]:.3f}, wrong {r0[3]:.3f}), open {r0[1]:.3f}  ({time.time() - T0:.0f}s)")
 STEPS = int(os.environ.get('CS_STEPS', 300)); RK = int(os.environ.get('CS_R', 8))
 for rule in os.environ.get('CS_RULES', 'FULL,KL,MLPOUT,LORA').split(','):
@@ -85,7 +90,9 @@ for rule in os.environ.get('CS_RULES', 'FULL,KL,MLPOUT,LORA').split(','):
         else: ps = list(m.parameters())
         op = torch.optim.Adam(ps, lr=lr)
         for st in range(STEPS):
-            fb = [FACT[i] for i in rs.randint(0, len(FACT), 8)]; wb = [bytes(WK[i:i + 129]) for i in rs.randint(0, HO - 200, 24)]
+            fb = [FACT[i] for i in rs.randint(0, len(FACT), 8)]
+            if ANCH == 'mix': ds_ = list(DOMS); wb = [bytes(DOMS[ds_[j % 5]][i:i + 129]) for j, i in enumerate(rs.randint(0, min(len(a) for a in DOMS.values()) - 200400, 24))]
+            else: wb = [bytes(WK[i:i + 129]) for i in rs.randint(0, HO - 200, 24)]
             Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD) * (0.0 if rule in ('NONE', 'KLNONE') else 1.0)   # NONE / KLNONE: wiki only (the drift controls)
             Xw, Xwi = tens(wb); lw_ = m(Xwi)
             if rule in ('KL', 'KLNONE'):
@@ -93,6 +100,7 @@ for rule in os.environ.get('CS_RULES', 'FULL,KL,MLPOUT,LORA').split(','):
                 lw = F.kl_div(F.log_softmax(lw_, -1), lo, log_target=True, reduction='batchmean') / Xw.shape[1]
             else: lw = F.cross_entropy(lw_.reshape(-1, V_), Xw.reshape(-1), ignore_index=PAD)
             loss = (8 * lf + 24 * lw) / 32; op.zero_grad(); loss.backward(); op.step()
-        m.eval(); bb = wbits(m); r = recall(m)
-        P(f"   {rule:6s} lr {lr:g}: test-wording rank {r[0]:.3f} (right {r[2]:.3f}, wrong {r[3]:.3f}), open {r[1]:.3f} | wiki {bb:.4f} ({bb - b0:+.4f} bits: forgetting)  ({time.time() - T0:.0f}s)")
+        m.eval(); bb = wbits(m); r = recall(m); dd = dbits(m)
+        P(f"   {rule:6s} lr {lr:g} anchor {ANCH}: test-wording rank {r[0]:.3f} (right {r[2]:.3f}, wrong {r[3]:.3f}), open {r[1]:.3f} | wiki {bb:.4f} ({bb - b0:+.4f} bits: forgetting) | per domain "
+          + ", ".join(f"{d} {dd[d] - d0[d]:+.4f}" for d in dd) + f" (mean {np.mean([dd[d] - d0[d] for d in dd]):+.4f})  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")

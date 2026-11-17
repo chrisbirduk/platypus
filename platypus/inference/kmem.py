@@ -116,7 +116,8 @@ def kmem_readout(model, cfg, S_, S_slot, ents, held, vis):
     te = lambda e: ti_(e['r']); pa = lambda e: pi_(e['r'])
     fmt = lambda x: f"{x[0]:.2f} / {x[1]:.2f} ({x[2]})" if x[2] else "- (0)"
     RTI_R = 'is connected to'
-    kind = lambda L, t=None: [e for e in L if (e['r'] != RTI_R if t == 'fact' else (e['r'] == RTI_R and e.get('truth') is t))]
+    from platypus.inference.premises import is_rti as _is_rti            # 16 Nov: typed writes ('head wording tail') are inferences too
+    kind = lambda L, t=None: [e for e in L if (not _is_rti(e) if t == 'fact' else (_is_rti(e) and e.get('truth') is t))]
     # REBUILT: the whole pool written afresh
     M = _KMem(n_, d, dev, seed, lr_); steps = max(300, int(math.ceil(rows_ * len(fs) / 256))); write(M, fs, steps)
     rf, rh = recall(M, kind(fs, 'fact'), te), recall(M, kind(hf, 'fact'), te)
@@ -638,6 +639,261 @@ def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30, memonly=False)
           f"{m(res[False][0])}, {m(res[False][1])} (true B {m(res[False][2])}) (chance 0.10)", flush=True)
 
 
+def _kma_ptr_reads(model, K, prompts, sl):
+    """the memory's read at the FIRST answer byte of each prompt: (slot indices, read weights) per prompt (None where unaddressed)"""
+    from platypus.inference.closed_form import _ws_batch
+    out = [None] * len(prompts)
+    for i0 in range(0, len(prompts), 64):
+        ch = prompts[i0:i0 + 64]; X, _ = _ws_batch(model, [pb + b'x' for pb in ch]); p0s = [len(pb) - 1 for pb in ch]
+        a = _kma_addr_rows(model, K, X, sl, p0s, [1] * len(ch))
+        if a is None: continue
+        nk, wk, off, rr, pp = a; _, idx = _kmi_read(K, nk, wk, off); w = K['_w']
+        for k, (r, j) in enumerate(zip(rr, pp)):
+            if j == 0: out[i0 + r] = (idx[k].tolist(), w[k].tolist())
+    return out
+
+
+def _kma_tcode(model, K, names):
+    """the trunk's own code of each name (last block, mean over the name's bytes in 'About <name>.'), unit length - the LEARNED key of route C"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    C = K.setdefault('tcode', {}); new = [n for n in dict.fromkeys(names) if n not in C]
+    if new:
+        cap = {}; h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach()))
+        try:
+            for i0 in range(0, len(new), 64):
+                ch = new[i0:i0 + 64]; X, _ = _ws_batch(model, [f"About {n}.".encode('latin-1', 'replace') for n in ch])
+                with torch.no_grad(): _ws_run(model, X, 0)
+                for j, n in enumerate(ch): C[n] = cap['h'][j, 5:5 + len(n.encode('latin-1', 'replace'))].float().mean(0)
+        finally: h9.remove()
+    return torch.stack([C[n] for n in names])
+
+
+def _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis, cap=60):
+    """16 Nov READOUT, A MEMORY THAT RETURNS KEYS (route C, tools/key_return.py; inf_kmc_keyread): every written entry's slot address at its
+    answer's first byte records the ANSWER NAME (a pointer table beside the slots' byte values); a read returns a DISTRIBUTION over answer names
+    (route A); hop 2 asks about each of the top KR names with its weight - and, for a name that is not a written subject, about the nearest
+    written subject by the trunk's own name code (route C's learned fallback: aliases). Chains A r1 B, B r2 C of entries in the memory (facts
+    and inferences), never taught as a chain: first hop (the pointer's best name = B), C's rank among 10 by the composed score, and C top-1 among
+    every answer name - vs the model decoding B and asking next (the TWO-HOP readout above)."""
+    from platypus.inference.premises import is_rti
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():                                                 # the pointer table: slot -> {answer name: read weight}
+        rd = _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)
+        for e, x in zip(L, rd):
+            if x is None: continue
+            for s, w in zip(*x): d_ = PTR.setdefault(s, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w
+    subj = sorted({e['A'] for e in fs})
+    if not PTR or len(subj) < 5:
+        print(f"  [KEY-RETURNING MEMORY, TWO-HOP | visit {vis + 1}] too few entries", flush=True); return
+    SC = F.normalize(_kma_tcode(model, K, subj), dim=-1); SI = {n: i for i, n in enumerate(subj)}
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s, w in zip(*x):
+                    for n, v in PTR.get(s, {}).items(): d_[n] = d_.get(n, 0.0) + w * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    byA = {}
+    for e in fs: byA.setdefault(e['A'], []).append(e)
+    ch = [(e1, e2) for e1 in fs for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
+    if len(ch) < 5:
+        print(f"  [KEY-RETURNING MEMORY, TWO-HOP | visit {vis + 1}] too few chains ({len(ch)})", flush=True); return
+    rs = np.random.RandomState(int(cfg.seed) + 6161 + vis); ch = [ch[i] for i in rs.choice(len(ch), min(cap, len(ch)), replace=False)]
+    KR = int(getattr(cfg, 'inf_kmc_keyread_k', 5)); res = {m: [[], [], []] for m in ('A', 'C')}; nfb = 0; ninf = 0
+    with torch.no_grad():
+        for e1, e2 in ch:
+            ninf += int(is_rti(e1) or is_rti(e2)); d1 = dist([te(e1['A'], e1['r'])], int(S_slot(e1['d'])))[0]
+            Bs = sorted(d1, key=d1.get, reverse=True)[:KR]; alts = [x for x in pool if x != e2['ans']]
+            if len(alts) < 9: continue
+            cs = [e2['ans']] + [alts[j] for j in rs.choice(len(alts), 9, replace=False)]
+            for m in ('A', 'C'):
+                qs = []
+                for b in Bs:
+                    q = b
+                    if m == 'C' and b not in SI:                               # route C: not a written subject -> the nearest written subject by the trunk's code
+                        v = F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]; q = subj[int((SC @ v).argmax())]; nfb += 1
+                    qs.append(q)
+                d2s = dist([te(q, e2['r']) for q in qs], int(S_slot(e2['d']))) if qs else []
+                sc = {}
+                for b, d2 in zip(Bs, d2s):
+                    for n, v in d2.items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
+                res[m][0].append(int(bool(Bs) and Bs[0] == e1['ans']))
+                s10 = [sc.get(c, 0.0) for c in cs]; res[m][1].append(int(s10[0] > max(s10[1:])))
+                res[m][2].append(int(bool(sc) and max(sc, key=sc.get) == e2['ans']))
+    mm = lambda L: f"{np.mean(L):.2f}" if L else '-'
+    print(f"  [KEY-RETURNING MEMORY, TWO-HOP | visit {vis + 1}] {len(ch)} chains of entries in the memory ({ninf} with an inference hop; never taught as a chain), "
+          f"pointer table over {len(PTR)} slots, top {KR} names carried to hop 2 || ROUTE A (pointers): first hop {mm(res['A'][0])}, C rank among 10 {mm(res['A'][1])}, "
+          f"C top-1 among all answers {mm(res['A'][2])} | ROUTE C (pointers + the trunk's name code for names that are not written subjects; {nfb} fallbacks): "
+          f"{mm(res['C'][0])}, {mm(res['C'][1])}, {mm(res['C'][2])} (compare TWO-HOP: the model decoding B and asking next; chance 0.10)", flush=True)
+
+
+def kma_compose_write(model, cfg, K, S_slot, fs, vis):
+    """17 Nov THE COMPOSING BUILD (inf_kmc_compose; ONE model change): the key-returning memory WRITES two-hop conclusions. For entries
+    A r1 B in the memory (facts and kept inferences), the read for (A, r1) returns a distribution over answer names (pointer table, route A);
+    each top name B - or, if B is not a written subject, the nearest written subject by the trunk's own name code (route C) - is asked with
+    each wording r2 the memory holds about it; the best answer C gives the conclusion 'A r2 C' (typed by the second hop's relation; score =
+    p(B) x p(C)). Pairs already written, or stated in the memory either way, are skipped; the top inf_kmc_compose_n are written to the
+    inference ledger like the fact-table code's writes - judged by later reading, kept by the keep rule, taught (consolidated) only if kept."""
+    import platypus.inference.premises as pm
+    from platypus.inference.premises import is_rti
+    W = pm._PM.setdefault('rti', {}); LAB = pm._PM.get('LAB') or set()
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    rmode = str(getattr(cfg, 'inf_kmc_compose_rule', 'any'))                 # 17 Nov (kcp on the GPU: copying r2 wrote 'A r2 C' for any r1, r2 - wrong in
+    par9 = {}                                                                  #   general): 'rules' = only relation pairs the relational module verified
+    for a9, b9 in (model.__dict__.get('_rm_merged') or ()): par9[str(a9).strip()] = str(b9).strip()   #   (r1 o r2 -> r3), 'same' = r o r -> r,
+    def canon(r):                                                              #   'same+rules' = both; paraphrases merged by the module count as one
+        r = str(r).strip(); seen9 = set()
+        while r in par9 and r not in seen9: seen9.add(r); r = par9[r]
+        return r
+    RM = {}
+    if 'rules' in rmode:
+        for r1_, r2_, r3_ in list(model.__dict__.get('_rm_rules') or []) + list(model.__dict__.get('_rm_rules_real') or []): RM[(canon(r1_), canon(r2_))] = r3_
+    def rule3(r1, r2):
+        if rmode == 'any': return r2
+        c1, c2 = canon(r1), canon(r2)
+        if (c1, c2) in RM: return RM[(c1, c2)]
+        return str(r1).strip() if ('same' in rmode and c1 == c2) else None
+    try:                                                                       # RULE-WORLD TRUTH for composed writes about its names (the distant labels
+        from platypus.inference.probes import inf_rule_world, _RW_REL           #   cannot judge them): grand = parent o parent, skip = mgr o mgr
+        RW9 = inf_rule_world(cfg); ph9 = {k: v.split('{a} ')[1].split(' {b}')[0] for k, v in _RW_REL.items()}
+        tmap9 = {ph9['grand']: RW9.get('parent', {}), ph9['skip']: RW9.get('mgr', {})}; rwn9 = set(RW9.get('parent', {})) | set(RW9.get('mgr', {})) | set(RW9.get('parent', {}).values()) | set(RW9.get('mgr', {}).values())
+    except Exception:
+        tmap9 = {}; rwn9 = set()
+    def rwtruth(A, r3, C):                                                     # True / False for rule-world names, None otherwise
+        if A not in rwn9: return None
+        m = tmap9.get(canon(r3)) or tmap9.get(str(r3).strip())
+        if m is None: return False
+        return m.get(m.get(A)) == C
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():
+        for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+            if x is None: continue
+            for s_, w_ in zip(*x): d_ = PTR.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+    subj = {}
+    for e in fs: subj.setdefault(e['A'], []).append(e)
+    sl_of = {e['A']: int(S_slot(e['d'])) for e in fs}
+    if not PTR or len(subj) < 5:
+        print(f"  [COMPOSED WRITES | visit {vis + 1}] too few entries", flush=True); return
+    SN = sorted(subj); SC = F.normalize(_kma_tcode(model, K, SN), dim=-1)
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s_, w_ in zip(*x):
+                    for n, v in PTR.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    stated = {frozenset((e['A'], e['ans'])) for e in fs}; done = {frozenset(k) for k in W}
+    rs = np.random.RandomState(int(cfg.seed) + 7171 + vis); E1 = list(fs)
+    if len(E1) > int(getattr(cfg, 'inf_kmc_compose_src', 3000)): E1 = [E1[i] for i in rs.choice(len(E1), int(getattr(cfg, 'inf_kmc_compose_src', 3000)), replace=False)]
+    h1 = {}                                                                   # hop 1, by slot
+    for sl in sorted({int(S_slot(e['d'])) for e in E1}):
+        L = [e for e in E1 if int(S_slot(e['d'])) == sl]
+        for e, d1 in zip(L, dist([te(e['A'], e['r']) for e in L], sl)): h1[id(e)] = d1
+    q2 = {}; nfb = 0                                                          # hop 2 prompts: (B as asked, r2) -> its slot
+    for e in E1:
+        for b in sorted(h1[id(e)], key=h1[id(e)].get, reverse=True)[:3]:
+            q = b
+            if q not in subj:
+                if rmode != 'any': continue                                    # rule-based composing: exact chains only (no stand-in subject)
+                v = F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]; q = SN[int((SC @ v).argmax())]; nfb += 1
+            for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]: q2[(q, r2)] = sl_of[q]
+    a2 = {}
+    for sl in sorted(set(q2.values())):
+        ks = [k for k, v in q2.items() if v == sl]
+        for k, d2 in zip(ks, dist([te(*k) for k in ks], sl)): a2[k] = d2
+    cand = {}; nrej = 0
+    for e in E1:
+        d1 = h1[id(e)]
+        for b in sorted(d1, key=d1.get, reverse=True)[:3]:
+            if b not in subj and rmode != 'any': continue
+            q = b if b in subj else SN[int((SC @ F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]).argmax())]
+            for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]:
+                d2 = a2.get((q, r2)) or {}
+                if not d2: continue
+                r3 = rule3(e['r'], r2)
+                if r3 is None: nrej += 1; continue
+                c = max(d2, key=d2.get); sc = d1[b] * d2[c]; A = e['A']
+                if c in (A, b, q) or frozenset((A, c)) in stated or frozenset((A, c)) in done: continue
+                if sc > cand.get((A, c), (0,))[0]: cand[(A, c)] = (sc, r3, b, e)
+    top = sorted(cand.items(), key=lambda x: -x[1][0])[:int(getattr(cfg, 'inf_kmc_compose_n', 100))]; ndv = int(pm._PM.get('ndv_now', 0)); ys = []
+    yr = []
+    for i, ((A, c), (sc, r2, b, e)) in enumerate(top):
+        k = tuple(sorted((A, c))); t9 = rwtruth(A, r2, c); y = bool(t9) if t9 is not None else frozenset((A, c)) in LAB; ys.append(y)
+        if t9 is not None: yr.append(bool(t9))
+        W[k] = dict(vis=vis, d=int(e['d']), truth=bool(y), bridges=1, rank=i, novel=True, code=float(sc), ndv=ndv, prem=[b], rule='compose', score=float(sc),
+                    state='inferred', th=A, tw=r2, tt=c, comp=True)
+    print(f"  [COMPOSED WRITES | visit {vis + 1}] the memory's key reads over {len(E1)} entries ({sum(1 for x in E1 if is_rti(x))} inferences) -> {len(cand)} two-hop "
+          f"conclusions never stated ({nfb} hop-2 names by the trunk's code; relation pairs: {rmode}, {len(RM)} verified rules, {nrej} chains with no rule skipped); "
+          f"WROTE the top {len(top)}: right {np.mean(ys) if ys else float('nan'):.3f} (rule-world names by the rule world's truth: {np.mean(yr) if yr else float('nan'):.3f} of "
+          f"{len(yr)}; others by distant labels, which undercount) - judged, kept and taught like any inference || "
+          + " | ".join(f"{A} {r2} {c} via {b} ({'right' if (rwtruth(A, r2, c) if rwtruth(A, r2, c) is not None else frozenset((A, c)) in LAB) else 'wrong'})"
+          for (A, c), (sc, r2, b, e) in top[:5]), flush=True)
+
+
+def kma_probe_twohop(model, cfg, K, S_slot, fs, vis):
+    """17 Nov READOUT (inf_kmc_probe2; a PREDICTION-TIME option, nothing trained): the standard TWO-HOP PROBE QUESTIONS ('So A is connected
+    to' C, the same chains as the inference eval, C among 20 probe names, chance 0.05) answered by the key-returning memory: hop 1 reads
+    (A, r1) -> a distribution over answer names (pointer table); hop 2 reads (B, r2) for each of the top 5 names B; the candidates are ranked
+    by sum over B of p(B) p(C | B). Chains with both facts in visited domains; coverage = both facts are entries in the memory."""
+    from platypus.inference.probes import inf_probes
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():
+        for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+            if x is None: continue
+            for s_, w_ in zip(*x): d_ = PTR.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s_, w_ in zip(*x):
+                    for n, v in PTR.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+    ch = [c for c in inf_probes(cfg) if len(c['names']) >= 3 and all(int(d) in seen for d in c['doms'][:2])]
+    if not ch or not PTR:
+        print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] nothing to ask ({len(ch)} chains, {len(PTR)} pointer slots)", flush=True); return
+    alln = [n for c in inf_probes(cfg) for n in c['names']]; have = {(e['A'], str(e['r']).strip(), e['ans']) for e in fs}
+    rs = np.random.RandomState(77); KR = 5; h1 = {}
+    for sl in sorted({int(S_slot(c['doms'][0])) for c in ch}):
+        L = [c for c in ch if int(S_slot(c['doms'][0])) == sl]
+        for c, d1 in zip(L, dist([te(c['names'][0], c['rels'][0]) for c in L], sl)): h1[id(c)] = d1
+    q2 = {}
+    for c in ch:
+        for b in sorted(h1[id(c)], key=h1[id(c)].get, reverse=True)[:KR]: q2[(b, c['rels'][1], int(S_slot(c['doms'][1])))] = None
+    for sl in sorted({k[2] for k in q2}):
+        ks = [k for k in q2 if k[2] == sl]
+        for k, d2 in zip(ks, dist([te(k[0], k[1]) for k in ks], sl)): q2[k] = d2
+    ok, ok1, cov, okc = [], [], [], []
+    for c in ch:
+        A, B, C = c['names'][:3]; d1 = h1[id(c)]
+        oth = [x for x in rs.choice(alln, min(len(alln), 60), replace=False) if x not in (A, B, C)][:19]; cs = [C] + oth
+        sc = np.zeros(len(cs))
+        for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
+            d2 = q2.get((b, c['rels'][1], int(S_slot(c['doms'][1])))) or {}
+            sc += d1[b] * np.array([d2.get(x, 0.0) for x in cs])
+        r_ = bool(sc.max() > 0 and int(np.argmax(sc)) == 0); ok.append(r_)
+        ok1.append(bool(d1) and max(d1, key=d1.get) == B)
+        cv = (A, str(c['rels'][0]).strip(), B) in have and (B, str(c['rels'][1]).strip(), C) in have; cov.append(cv)
+        if cv: okc.append(r_)
+    print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] PREDICTION-TIME (nothing trained): {len(ch)} two-hop probe chains in visited domains, "
+          f"C among 20 probe names (chance 0.05) || C ranked first {np.mean(ok):.2f} | first hop right (B the top name) {np.mean(ok1):.2f} | both facts in the memory "
+          f"{np.mean(cov):.2f}; C first on those {np.mean(okc) if okc else float('nan'):.2f} (n {len(okc)}) | compare 'inference eval' two-hop FROM THE WEIGHTS", flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -678,7 +934,8 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         return f"WITH {np.mean(oon):.2f} / {np.mean(on):.2f} vs trunk {np.mean(ooff):.2f} / {np.mean(off):.2f} ({len(on)}{g_})"
     bw = lambda e: f"{e['A']} {e['r']} "                                       # 15 Nov ALL-TEXT readout: the bare sentence wording, no frame
     te = lambda e: f"It is on record that {e['A']} {e['r']} "; pa = lambda e: f"It is on record that {e['A']} {_DT_PARA[e['r']]} "
-    kind = lambda L, t=None: [e for e in L if (e['r'] != RTI_R if t == 'fact' else (e['r'] == RTI_R and e.get('truth') is t))]
+    from platypus.inference.premises import is_rti as _is_rti            # 16 Nov: typed writes ('head wording tail') are inferences too
+    kind = lambda L, t=None: [e for e in L if (not _is_rti(e) if t == 'fact' else (_is_rti(e) and e.get('truth') is t))]
     rs.shuffle(fs); rs.shuffle(hf)
     lm = K['loss']; ml = f"{np.mean(lm[:50]):.3f} -> {np.mean(lm[-50:]):.3f}" if lm else "-"
     print(f"  [INTEGRATED KEYED MEMORY | visit {vis + 1}] the model's answer = trunk + memory read ({'EVERY byte of any text, written on answer bytes' if K.get('allt') else 'question rows only'}; subject key: {K.get('namekey')}; {K['steps']} memory steps, "
@@ -692,6 +949,13 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         try:
             _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
             if int(getattr(cfg, 'inf_kmc', 0)): _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, memonly=True)
+            if int(getattr(cfg, 'inf_kmc_keyread', 0)): _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis)   # 16 Nov route C (readout)
+            if int(getattr(cfg, 'inf_kmc_probe2', 0)):
+                try: kma_probe_twohop(model, cfg, K, S_slot, fs, vis)
+                except Exception as e8: print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
+            if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
+                try: kma_compose_write(model, cfg, K, S_slot, fs, vis)
+                except Exception as e9: print(f"  [COMPOSED WRITES | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         except Exception as e9:
             from platypus.common import _fail
             _fail('inference.kmem:twohop'); print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
@@ -797,8 +1061,10 @@ def _kmi_counter_readout(model, cfg, K, S_slot, right, wrong, facts, vis):
             cb = [(c + '.').encode('latin-1', 'replace') for c in cs]; X, _ = _ws_batch(model, [pb + c for c in cb])
             with torch.no_grad():
                 lg = _ws_run(model, X, int(S_slot(e['d']))).float(); gt = K.get('gate'); K['gate'] = 0; z = kmi_logits(model, K, [pb] * len(cb), X, lg, int(S_slot(e['d']))); K['gate'] = gt
-                lp = F.log_softmax(z, -1); l0 = F.log_softmax(lg, -1); p0 = len(pb) - 1; n0 = min(len(cb[0]), lp.shape[1] - p0); ar = torch.arange(p0, p0 + n0, device=lp.device)
-                sc = [float(lp[j, torch.arange(p0, p0 + min(len(c), lp.shape[1] - p0), device=lp.device), X[j, p0 + 1:p0 + 1 + min(len(c), lp.shape[1] - p0)]].mean()) for j, c in enumerate(cb)]
+                lp = F.log_softmax(z, -1); l0 = F.log_softmax(lg, -1); p0 = len(pb) - 1; n0 = min(len(cb[0]), lp.shape[1] - p0)
+                if n0 <= 0: continue                                                   # 17 Nov: a long (retyped) prompt past the row's width
+                ar = torch.arange(p0, p0 + n0, device=lp.device)
+                sc = [float(lp[j, torch.arange(p0, p0 + max(1, min(len(c), lp.shape[1] - p0)), device=lp.device), X[j, p0 + 1:p0 + 1 + max(1, min(len(c), lp.shape[1] - p0))]].mean()) for j, c in enumerate(cb)]
                 sup.append(float((lp[0, ar, X[0, p0 + 1:p0 + 1 + n0]] - l0[0, ar, X[0, p0 + 1:p0 + 1 + n0]]).mean()) / math.log(2))
             hit.append(int(sc[0] > max(sc[1:])))
         return (np.mean(hit) if hit else float('nan'), np.mean(sup) if sup else float('nan'))
@@ -929,7 +1195,7 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         ch = sp[i0:i0 + 64]; tb = [(r[7] + '.').encode('latin-1', 'replace') for r in ch]
         X, _ = _ws_batch(model, [b + b' ' for b in tb])
         with torch.no_grad():
-            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H, no_rti=bool(int(getattr(cfg, 'inf_kma_nori', 0))))
+            lg, H = _kma_run(model, X, sl); lm, opn, _, _ = kma_logits(model, K, X, lg, H, no_rti=bool(int(getattr(cfg, 'inf_kma_nori', 0))) and not int(getattr(cfg, 'inf_kmc_useful_open', 0)))
             l0 = F.log_softmax(lg.float(), -1); l1 = F.log_softmax(lm, -1); mv = lm - lg.float()
         for k, (r, b) in enumerate(zip(ch, tb)):
             runs = [(m.start(), m.end()) for m in _KMI_RUN.finditer(b)]
@@ -959,10 +1225,12 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         if w.get('rank') is not None: rk.append((float(w['rank']), v[1] / v[0]))
         if hk.get(k9) in W:                                                    # 16 Nov USEFULNESS: the memory's mean bits saved on this inference's later text -
             sp9 = int(getattr(cfg, 'inf_kmc_useful_span', 0))                 #   on the second name (default) or on the whole span after the subject
-            W[hk[k9]]['use'] = (v[4] if sp9 else v[1]) / v[0]; W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
+            W[hk[k9]]['use_sum'] = W[hk[k9]].get('use_sum', 0.0) + (v[4] if sp9 else v[1]); W[hk[k9]]['use_nsum'] = W[hk[k9]].get('use_nsum', 0) + v[0]   # 16 Nov CUMULATIVE
+            W[hk[k9]]['use'] = (W[hk[k9]]['use_sum'] / W[hk[k9]]['use_nsum']) if int(getattr(cfg, 'inf_kmc_useful_cum', 0)) else (v[4] if sp9 else v[1]) / v[0]   #   (queue 45: summed over visits)
+            W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
     from scipy.stats import spearmanr
     rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
-    print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}] {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
+    print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}]{' (inference slots readable here: the usefulness measure, inf_kmc_useful_open; prediction keeps the gate rule)' if int(getattr(cfg, 'inf_kma_nori', 0)) and int(getattr(cfg, 'inf_kmc_useful_open', 0)) else ''} {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
           f"{opened} | bits SAVED by the memory on those names (negative = it hurt): facts {tot[('fact', 'gain')]:+.1f} ({tot[('fact', 'n')]} spans), inferences RIGHT "
           f"{tot[('inference right', 'gain')]:+.1f}, WRONG {tot[('inference wrong', 'gain')]:+.1f} ({tot[('inf', 'n')]} spans) || WRITTEN INFERENCES with feedback: {len(inf)} of {nW} "
           f"({len(inf) / max(1, nW):.2f}); AUC right vs wrong (label-free feedback; the current judge 0.64): mean bits saved {auc(mg):.3f}, confirmations - contradictions "
@@ -974,4 +1242,4 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         sn = [w for w in uw if w.get('use_span', 0) > thr]; nn = [w for w in uw if w.get('use_name', 0) > thr]
         print(f"  [USEFULNESS | visit {vis + 1}] measured on {'the WHOLE SPAN' if int(getattr(cfg, 'inf_kmc_useful_span', 0)) else 'the SECOND NAME'} (second name: useful right {f9(nn)}; "
               f"whole span: useful right {f9(sn)}) || written inferences with feedback {len(uw)} of {len(W)}: USEFUL (mean bits saved > {thr:g}) right {f9(up)}, not useful right {f9(un)}, "
-              f"no feedback right {f9([w for w in W.values() if w.get('use') is None])} | useful AND judged-kept right {f9(jk)} | NOT HARMFUL AND judged-kept right {f9([w for w in W.values() if w.get('judged') is not None and not w.get('flag') and not (w.get('use') is not None and w['use'] <= thr)])} | keep rule {('ON, judge AND not harmful (inf_kmc_useful 2)' if int(getattr(cfg, 'inf_kmc_useful', 0)) == 2 else 'ON (inf_kmc_useful)') if int(getattr(cfg, 'inf_kmc_useful', 0)) else 'off (readout)'}", flush=True)
+              f"no feedback right {f9([w for w in W.values() if w.get('use') is None])} | useful AND judged-kept right {f9(jk)} | NOT HARMFUL AND judged-kept right {f9([w for w in W.values() if w.get('judged') is not None and not w.get('flag') and not (w.get('use') is not None and w['use'] <= thr)])} | (USEFUL OR TYPED-CONFIRMED) AND judged-kept right {f9([w for w in W.values() if w.get('judged') is not None and not w.get('flag') and ((w.get('use') is not None and w['use'] > thr) or float(w.get('cc', 0.0)) > 0)])} | keep rule {('ON, judge AND not harmful (inf_kmc_useful 2)' if int(getattr(cfg, 'inf_kmc_useful', 0)) == 2 else 'ON, judge AND (useful OR typed-confirmed) (inf_kmc_useful 3)' if int(getattr(cfg, 'inf_kmc_useful', 0)) == 3 else 'ON (inf_kmc_useful)') if int(getattr(cfg, 'inf_kmc_useful', 0)) else 'off (readout)'}", flush=True)

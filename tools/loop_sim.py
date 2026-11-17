@@ -87,6 +87,7 @@ for r in R:
 RMAP = {w: c.most_common(1)[0][0] for w, c in _RMc.items()}
 def tright(c, grp): return c[1] in RMAP and _cg(RMAP[c[1]], grp) in _rels(c[0], c[2], grp)                                                            # 16 Nov LEARNED SELECTION: write-time features -> usefulness, from earlier rounds
 pm._PM['rti'] = {}
+ALLW = {}                                                                      # 16 Nov (queue 34, LS_STAB 1): every written inference across rounds
 for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5').split(',')), 1):
     before = set(pm._PM['rti']); pm._rcode_step(None, cfg, lambda d: 0, [1], [r for r in R if r[0] < h(v)], v)
     W = {k: w for k, w in pm._PM['rti'].items() if k not in before}; y = {k: w['truth'] for k, w in W.items()}; tier = {k: w['rank'] < 200 for k, w in W.items()}
@@ -94,7 +95,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
     need = {frozenset((A, b)) for (A, C), e in W.items() for b in e['prem']} | {frozenset((b, C)) for (A, C), e in W.items() for b in e['prem']}
     for r in R:
         if r[0] < h(v): nb[r[1]].add(r[2]); nb[r[2]].add(r[1])
-    DG = {n: len(s) for n, s in nb.items()}; want = {frozenset(k): k for k in W}; conf = collections.defaultdict(list)
+    DG = {n: len(s) for n, s in nb.items()}; want = {frozenset(k): k for k in W}; conf = collections.defaultdict(list); HF = collections.defaultdict(list); PWT = collections.defaultdict(list)
     for r in R:
         if r[0] < h(v) and isrel(r):
             if r[1] in DG and r[2] in DG and DG[r[1]] != DG[r[2]]:
@@ -102,15 +103,17 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 if any(ch.isalpha() for ch in w_) and w9 not in LISTW and w9 not in ('and', 'or') and (not int(os.environ.get('LS_CLEAN', 0)) or (w_[0].isalnum() and w_[-1].isalnum())): tab[(TY.get(hd, 'X'), TY.get(tl, 'X'))][(w_, fw)] += 1
             f = frozenset((r[1], r[2]))
             if f in need: pw[f].append((r[1], r[2], norm(r[3])))
+            if f in need and int(os.environ.get('LS_SURP', 0)) and len(PWT[f]) < 4: PWT[f].append(r[7].encode('latin-1', 'replace')[:L_])   # 16 Nov (queue 29)
         if h(v) <= r[0] < (mid if int(os.environ.get('LS_HALF', 1)) else h(v + 2)) and isrel(r):   # 16 Nov: the judge (and retyping) see only the FIRST half
             k = want.get(frozenset((r[1], r[2])))                              #   (the second half is the held-out scoring text)
             if k: conf[k].append((r[1], r[2], norm(r[3])))
+            HF[r[1]].append(r[2])                                              # 16 Nov (queue 35): head-first records, the typed confirmation signal
     def orient(X, Y):
         cs = pw.get(frozenset((X, Y)))
         if not cs: return None
         a, b, w = collections.Counter(cs).most_common(1)[0][0]; return w if a == X else w + ' ^R'
     spans = [(r[0] < mid, r[7], r[1]) for r in R if h(v) <= r[0] < h(v + 2) and isrel(r)]
-    names = {n for p in POL for k in list(KEPT[p]) + list(W) for n in k}
+    names = {n for p in POL for k in list(KEPT[p]) + list(W) for n in k} | {n for k in ALLW for n in k}
     spans = [s for s in spans if s[2] in names]; TXT = [s[1].encode('latin-1', 'replace')[:L_] for s in spans]; PT, EN = trunk(TXT)
     first = collections.defaultdict(list); second = [i for i, s in enumerate(spans) if not s[0]]
     for i, s in enumerate(spans):
@@ -149,6 +152,11 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
             if c is None or not first.get(c[0]): return False
             return bits([c], first[c[0]], TXT, PT, EN) > t
         judged = lambda k: bool(conf.get(k))
+        def typed_ok(k):                                                       # 16 Nov: confirmations > contradictions among head-first records of the
+            c = typed.get(k)                                                   #   judge's window; a second name the store links to the tail is no contradiction
+            if c is None: return False
+            zs = HF.get(c[0], ()); cf = sum(1 for z in zs if z == c[2]); ct = sum(1 for z in zs if z != c[2] and z not in nb.get(c[2], ()))
+            return cf > ct
         if p == 'JUDGE': keep = [k for k in W if tier[k] and judged(k)]
         elif p == 'USEFUL': keep = [k for k in W if useful(k)]
         elif p == 'JUDGE-ALL': keep = [k for k in W if judged(k)]                # 16 Nov: the judge over all 400 written (BOTH's candidate set)
@@ -173,6 +181,8 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         elif p == 'BOTH-RETRACT': keep = [k for k in W if judged(k) and useful(k)]
         elif p in ('BOTH-RETYPE', 'BOTH-RETYPE-T'): keep = [k for k in W if judged(k) and useful(k)]
         elif p == 'BOTH': keep = [k for k in W if judged(k) and useful(k)]
+        elif p == 'BOTH-OR-CC': keep = [k for k in W if judged(k) and (useful(k) or typed_ok(k))]   # 16 Nov (queue 35): coverage for the keep rule
+        elif p == 'JUDGE-CC': keep = [k for k in W if judged(k) and typed_ok(k)]
         elif p == 'JUDGE-NOHARM':                                              # 16 Nov JUDGE AND NOT HARMFUL: drop only judged pairs MEASURED as not useful;
             def harmful(k):                                                    #   pairs with no later span of the head pass on the judge alone
                 c = typed.get(k)
@@ -218,6 +228,33 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         for k in W:
             c = typed.get(k); u = bool(c is not None and first.get(c[0]) and bits([c], first[c[0]], TXT, PT, EN) > 0)
             SELX.append(fx(k)); SELY.append(u)
+    if int(os.environ.get('LS_SURP', 0)):                                      # 16 Nov LEARNED WRITE CHOICE BY SURPRISE (Titans-style): how surprised the
+        ks9 = list(W); tx9 = {k: [t for b in W[k]['prem'] for f in (frozenset((k[0], b)), frozenset((b, k[1]))) for t in PWT.get(f, ())][:8] for k in ks9}   #   trunk is
+        flat = [t for k in ks9 for t in tx9[k]]; PT9, _ = trunk(flat) if flat else ([], []); i9 = 0; sur = {}   #   by the premise sentences (bits per byte)
+        for k in ks9:
+            bb_ = [float(-np.log2(np.maximum(PT9[i9 + j], 1e-12)).mean()) for j in range(len(tx9[k]))]; i9 += len(tx9[k]); sur[k] = np.mean(bb_) if bb_ else float('nan')
+        ok9 = [k for k in ks9 if not np.isnan(sur[k])]; yv9 = np.array([y[k] for k in ok9]); sv9 = np.array([sur[k] for k in ok9])
+        from platypus.inference.compress import _cg_auc
+        o9 = sorted(ok9, key=lambda k: -sur[k]); hi9, lo9 = o9[:len(o9) // 2], o9[len(o9) // 2:]
+        out.append(f"[SURPRISE at write time over {len(ok9)} candidates with premise text: AUC right vs wrong of premise surprise {_cg_auc(sv9[yv9], sv9[~yv9]):.3f} | most surprising half right "
+                   f"{np.mean([y[k] for k in hi9]):.3f} vs least {np.mean([y[k] for k in lo9]):.3f} | code batch (rank < 200) right {np.mean([y[k] for k in W if tier[k]]):.3f} | "
+                   f"surprise within the batch: high half {np.mean([y[k] for k in hi9 if tier[k]]) if any(tier[k] for k in hi9) else float('nan'):.3f} vs low {np.mean([y[k] for k in lo9 if tier[k]]) if any(tier[k] for k in lo9) else float('nan'):.3f}]")
+    if int(os.environ.get('LS_STAB', 0)):                                      # 16 Nov USEFULNESS STABILITY: each round every written inference so far is
+        for (A, C), e in W.items():                                            #   re-measured on this round's first-half text (as the GPU re-measures at every
+            hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X'))   #   visit); keep rule on the LATEST measure
+            if tab.get(cp):                                                    #   vs the CUMULATIVE one (bits summed over every round since the write)
+                (w, fw), _ = tab[cp].most_common(1)[0]; ALLW[(A, C)] = dict(c=(hd, w, tl) if fw else (tl, w, hd), y=bool(e['truth']), j=bool(conf.get((A, C))), hist=[], prev=None)
+        for k, a in ALLW.items():
+            c = a['c']; a['hist'].append(bits([c], first[c[0]], TXT, PT, EN) if first.get(c[0]) else None)
+        J = [a for a in ALLW.values() if a['j']]; flips = 0; nlast = ncum = 0; ylast = []; ycum = []
+        for a in J:
+            ms = [b for b in a['hist'] if b is not None]; last = (ms[-1] > 0) if ms else False; cum = (sum(ms) > 0) if ms else False
+            if a['prev'] is not None and a['prev'] != last: flips += 1
+            a['prev'] = last
+            if last: ylast.append(a['y'])
+            if cum: ycum.append(a['y'])
+        out.append(f"[STABILITY over {len(J)} judged inferences so far (right {np.mean([a['y'] for a in J]) if J else float('nan'):.3f}): LATEST measure passes {len(ylast)} right {np.mean(ylast) if ylast else float('nan'):.3f}, "
+                   f"decision flips since last round {flips} | CUMULATIVE passes {len(ycum)} right {np.mean(ycum) if ycum else float('nan'):.3f} | measured this round {sum(1 for a in J if a['hist'][-1] is not None)}]")
     P(f"ROUND {rd} (visit {v + 1}): written {len(W)} (batch right {np.mean([y[k] for k in W if tier[k]]):.3f}, next tier {np.mean([y[k] for k in W if not tier[k]]):.3f}) | "
       f"{len(spans)} later spans || " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")

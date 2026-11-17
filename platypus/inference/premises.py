@@ -572,7 +572,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     from scipy.sparse import csr_matrix
     from sklearn.decomposition import TruncatedSVD
     t0 = time.time(); LAB = _PM['LAB']; W = _PM.setdefault('rti', {}); nD = len(RD); hf = float(getattr(cfg, 'inf_rcode_hold', 0.1))
-    ndv_ = (max(r[0] for r in RD) + 1) if RD else 0
+    ndv_ = (max(r[0] for r in RD) + 1) if RD else 0; _PM['ndv_now'] = int(ndv_)   # 17 Nov: composed writes are judged from here
     if int(getattr(cfg, 'inf_rret', 0)):
         try: _rret_judge(cfg, RD, ndv_, vis)
         except Exception as e9:
@@ -648,6 +648,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
             w9_ = ' '.join(t for t in w_.replace('"', ' ').split()).strip(' ,;()')
             if w_ and any(ch.isalpha() for ch in w_) and w9_ not in _RRET_LISTW and w9_ not in ('and', 'or') and (not int(getattr(cfg, 'inf_rti_clean', 0)) or (w_[0].isalnum() and w_[-1].isalnum())): TT_[(TYP_.get(hd_, 'X'), TYP_.get(tl_, 'X'))][(w_, fw_)] += 1
     done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
+    if int(getattr(cfg, 'inf_rti_adapt', 0)) and _PM.get('rti_budget'): nmax = int(_PM['rti_budget'])   # 16 Nov ADAPTIVE BUDGET (set by the last judgement)
     for j in o:
         if len(wr) >= nmax: break
         c = ks[j]
@@ -731,7 +732,11 @@ def _rret_judge(cfg, RD, ndv_, vis):
     for lo, ks in sorted(groups.items()):
         nd = max(1, ndv_ - lo); df = collections.Counter(); byp = collections.defaultdict(lambda: [set(), 0]); seenpair = set()
         want = {frozenset(k) for k in ks}; nm = {n for k in ks for n in k}; dn = set(); relA = collections.Counter(); relS = collections.Counter(); cw9 = collections.defaultdict(list)
+        hd9 = {(W[k].get('th') or k[0]): k for k in ks}; tl9 = {(W[k].get('tt') or k[1]) for k in ks}; HF9 = collections.defaultdict(list); LK9 = set()   # 16 Nov TYPED CONFIRMATION
         for r in RD:
+            if 1 <= r[5] <= 8 and not _rret_listlike(r):                       #   (inf_rret_sig 'rel+cc'): head-first records since the write; pairs the store
+                if r[0] >= lo and r[1] in hd9: HF9[r[1]].append(r[2])          #   linked before it (a container of the tail is no contradiction)
+                elif r[0] < lo and (r[1] in tl9 or r[2] in tl9): LK9.add(frozenset((r[1], r[2])))
             if frozenset((r[1], r[2])) in want and 1 <= r[5] <= 8 and not _rret_listlike(r):   # 15 Nov: RELATIONAL records of the pair (not lists)
                 relA[frozenset((r[1], r[2]))] += 1; relS[frozenset((r[1], r[2]))] += int(r[0] >= lo)
                 if r[0] >= lo: cw9[frozenset((r[1], r[2]))].append((r[1], r[2], _rnorm(r[3])))
@@ -745,9 +750,22 @@ def _rret_judge(cfg, RD, ndv_, vis):
         pmi = np.array([np.log((len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0) + 0.5) + np.log(nd) - np.log(df[k[0]] + 1) - np.log(df[k[1]] + 1) for k in ks])
         rk = lambda x: np.argsort(np.argsort(x + 1e-9 * np.random.RandomState(7).rand(len(x)), kind='stable'), kind='stable') / max(1, len(x) - 1)
         docs = np.array([len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0 for k in ks], float)
+        if int(getattr(cfg, 'inf_rti_adapt', 0)):                              # 16 Nov ADAPTIVE BUDGET (offline: a precision dial, up to 0.93): blocks of 100 by
+            stp = float(getattr(cfg, 'inf_rti_adapt_stop', 0.1)); nb9 = 0      #   write rank; the next write goes one block past the last leading block in which
+            for b0 in range(0, 10000, 100):                                    #   at least inf_rti_adapt_stop of the inferences have a confirming relational record
+                bl = [k for k in ks if b0 <= W[k]['rank'] < b0 + 100]
+                if not bl or np.mean([relS[frozenset(k)] > 0 for k in bl]) < stp: break
+                nb9 += 1
+            _PM['rti_budget'] = int(min(int(getattr(cfg, 'inf_rti_adapt_max', 400)), max(100, 100 * (nb9 + 1))))
+            out.append(f"ADAPTIVE BUDGET: {nb9} leading blocks of 100 with confirmations >= {stp:.2f} -> next write {_PM['rti_budget']}")
         sig_ = str(getattr(cfg, 'inf_rret_sig', 'short+pmi'))                  # 15 Nov: 'docs' = documents stating the pair since the write (offline on the
         ra_ = np.array([relA[frozenset(k)] for k in ks], float); rs_ = np.array([relS[frozenset(k)] for k in ks], float)
-        sc = rk(docs) if sig_ == 'docs' else rk(ra_) if sig_ == 'rel' else rk(short) + rk(pmi); thr = np.quantile(sc, q); fl = sc <= thr   # 'rel' (cg27a_kmr): relational
+        def _cc9(k):
+            hh, tt = (W[k].get('th') or k[0]), (W[k].get('tt') or k[1]); zs = HF9.get(hh, ())
+            cf = sum(1 for z in zs if z == tt); ct = sum(1 for z in zs if z != tt and frozenset((z, tt)) not in LK9); return (cf - ct) / max(1, cf + ct)
+        cc_ = np.array([_cc9(k) for k in ks], float)
+        for j9, k9 in enumerate(ks): W[k9]['cc'] = float(cc_[j9])                 # 17 Nov: the typed confirmation score, kept for the keep rule (inf_kmc_useful 3)
+        sc = (rk(docs) if sig_ == 'docs' else rk(ra_) if sig_ == 'rel' else rk(ra_) + rk(cc_) if sig_ == 'rel+cc' else rk(short) + rk(pmi)); thr = np.quantile(sc, q); fl = sc <= thr   # 'rel' (cg27a_kmr): relational
         yv_ = np.array([bool(W[k]['truth']) for k in ks]); au_ = lambda x: _cg_auc(x[yv_], x[~yv_]) if yv_.any() and (~yv_).any() else float('nan')   #   records (0.697 offline)
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
         ctl_ = np.array([_rret_key_held(cfg, k[0], k[1], '|rret') for k in ks]); ret = fl & taught & ~ctl_
@@ -770,6 +788,8 @@ def _rret_judge(cfg, RD, ndv_, vis):
                     if a1 and a2: T3[(a1, a2)][cf] += 1; nl9 += 1
             out.append(f"COMPOSITION TABLE learned {nl9} premise-pair entries from this batch's kept, confirmed inferences ({len(T3)} cells)")
         a_ = _cg_auc(sc[y], sc[~y]) if y.any() and (~y).any() else float('nan')
+        out.append(f"[TYPED CONFIRMATION (evaluation)] AUC relational count {au_(rk(ra_)):.3f}, typed confirm - contradict {au_(cc_):.3f} (covers {np.mean([bool(HF9.get(W[k].get('th') or k[0])) for k in ks]):.2f}), "
+                   f"both {au_(rk(ra_) + rk(cc_)):.3f}")
         out.append(f"[signal {sig_}] written with {lo} documents read, judged on {nd} read since: {len(ks)} inferences (taught {int(taught.sum())}), wrong {1 - y.mean():.2f} | AUC right vs wrong of "
                    f"the confirmation score {a_:.3f} | FLAGGED {int(fl.sum())}: wrong {1 - y[fl].mean() if fl.any() else float('nan'):.2f} (unflagged {1 - y[~fl].mean() if (~fl).any() else float('nan'):.2f}) "
                    f"| no confirming record {int((short == 0).sum())} | RETRACTED {int(ret.sum())} (wrong {1 - y[ret].mean() if ret.any() else float('nan'):.2f}), flagged taught kept as control "

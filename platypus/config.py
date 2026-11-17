@@ -536,6 +536,14 @@ class Config:
     inf_distill_wake=0.25           # 10 Nov INTERLEAVED DISTILLATION (on by default from 11 Nov; 0 = off): weight of a few question rows about stored facts added to every real-text
                                     #   training step (same backward and optimiser: Fisher whitening, real-text loss and dream rows apply; no burst)
     inf_distill_wake_rows=4         #   interleaved distillation: question rows per training step
+    inf_distill_wake_aklrows=0      #   17 Nov: anchor rows per step (0 = inf_distill_wake_rows)
+    inf_distill_wake_aklall=0       #   17 Nov: 1 = the soft anchor over EVERY old slot each step (replay across domains), not one random slot
+    inf_distill_wake_aklcache=32    #   17 Nov: stored real sentences per slot in the anchor cache
+    inf_distill_wake_aklslot=-1     #   17 Nov: the slot (domain) the taught facts compete with (Wikipedia = 1), weighted by inf_distill_wake_aklfw in the anchor
+    inf_distill_wake_aklfw=1.0
+    inf_distill_wake_decay=1.0      #   17 Nov: the question rows' weight x decay^(visit - inf_distill_wake_decay_from) in later visits
+    inf_distill_wake_decay_from=2
+    inf_distill_wake_concboost=0    #   17 Nov (queue 49): 1 = conclusion rows (not facts, not refusals) sampled x 1/(the decay at this visit); the budget unchanged
     inf_distill_wake_params='mlp_out' #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
@@ -672,7 +680,7 @@ class Config:
     inf_kmc_passes=8                #     byte edit: passes over the retracted rows until every answer byte is below -margin
     inf_kmc_steps=60                #     counter-write steps (32 retracted rows + 32 kept rows each)
     inf_kmc_margin=1.0              #     counter-write: the memory's support for a retracted answer pushed below -margin (nats per answer byte)
-    inf_rret_sig='short+pmi'        #     the judge's signal: 'short+pmi' (cg27a_rret), 'docs' (documents stating the pair since the write; AUC 0.64) or 'rel'
+    inf_rret_sig='short+pmi'        #     the judge's signal ('rel+cc', 16 Nov: rank of the relational count + rank of the containment-aware typed confirmation; offline +0.02-0.05 AUC on the next tier, coverage 0.8-0.9): 'short+pmi' (cg27a_rret), 'docs' (documents stating the pair since the write; AUC 0.64) or 'rel'
                                     #     (15 Nov, cg27a_kmr: RELATIONAL records of the pair - linked by words, not lists; offline 0.697)
     inf_kmi_namekey='trunk'         #     the subject half of the address: 'trunk' (the trunk's name code, recomputed each readout) or 'hash' (byte 3-gram
                                     #     identity key, independent of the trunk: no drift, no crowding)
@@ -683,6 +691,9 @@ class Config:
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
     inf_rti_retype=0                # 16 Nov RETYPE ON CONFIRMATION: a kept inference that a later relational record states is rewritten in that record's wording
+    inf_rti_adapt=0                 # 16 Nov ADAPTIVE BUDGET: the next write's size from the last judged batch (blocks of 100 by rank; stop at a block with
+    inf_rti_adapt_stop=0.1          #   fewer than this share confirmed; one block past the last passing one)
+    inf_rti_adapt_max=400           #   largest write
     inf_rti_clean=0                 #   16 Nov TYPED WORDING CLEANUP: 1 = the class-pair table ignores wordings that start or end with punctuation (') was')
                                     #   and order (memory, question rows, readouts). Offline held-out (tools/loop_sim.py BOTH-RETYPE): exact relations 0.30-0.33 ->
                                     #   0.54-0.64, the memory saves +1.05 / +1.72 vs +0.26 / +0.11 bits per 1,000 bytes in rounds 1-2
@@ -691,11 +702,21 @@ class Config:
                                     #   0.365, bits +0.69 vs -0.12; the pairs it types right 0.83
     inf_rret_list2=0                # 16 Nov WIDER LIST FILTER for the judge and typing: one comma + 'and' / 'or' ('X , Y and Z') is a list too (offline +0.02-0.03 AUC;
                                     #   with the usefulness rule the kept memory 0.80-0.83 right against 0.73-0.77)
-    inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved  (2 = judge AND NOT HARMFUL: only those measured not useful are held back)
+    inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved  (2 = judge AND NOT HARMFUL: only those measured not useful are held back; 3 = judge AND (useful OR typed-confirmed), 17 Nov)
                                     #   bits on the inference's answer in later text naming its subject (the memory-feedback readout, inf_kmfb 1, measures it)
     inf_kmc_useful_thr=0.0          #     mean bits saved per span above which it is useful
     inf_kmc_useful_span=0           #     1: usefulness over the whole span after the subject (wording + name; offline: more kept, memory 0.80-0.83 right),
                                     #     0: on the second name only (offline: 6-13 kept a round, 0.89-1.00 right)
+    inf_kmc_useful_open=0           #     16 Nov: 1 = usefulness (and the memory-feedback readout) read with the inference slots OPEN even under the gate rule
+                                    #     (inf_kma_nori): a counterfactual 'would it have helped' - GPU kgk: with the rule, 5 inferences passed
+    inf_kmc_useful_cum=0            #     16 Nov: 1 = the keep rule reads usefulness summed over every visit since the write (offline steadier: 0.81 / 0.78 vs 0.77 / 0.71)
+    inf_kmc_keyread=0               # 16 Nov KEY-RETURNING MEMORY readout (route C): pointer table of answer names per slot; two-hop by key vs decoding
+    inf_kmc_keyread_k=5             #   names carried from hop 1 to hop 2
+    inf_kmc_compose=0               # 17 Nov THE COMPOSING BUILD: the key-returning memory writes two-hop conclusions 'A r2 C' to the inference ledger
+    inf_kmc_compose_n=100           #   written per sleep (judged, kept and taught like any inference)
+    inf_kmc_compose_src=3000        #   memory entries used as first hops
+    inf_kmc_compose_rule='any'      #   17 Nov: which chains compose: 'any' (A r2 C, kcp), 'rules' (relational-module rules r1 o r2 -> r3), 'same' (r o r -> r), 'same+rules'
+    inf_kmc_probe2=0                #   17 Nov READOUT (prediction-time): the two-hop probe questions answered through the key-returning memory's two reads
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
@@ -765,6 +786,7 @@ class Config:
     inf_distill_rtx_space=0.0       #   12 Nov REPLAY BY STORAGE CHECK: alpha > 0 = replay probability ~ the trunk's own loss on each replayed sentence
                                     #     (clipped to q10-q90) ** alpha, re-measured before each visit: sentences already predicted are replayed less
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
+    inf_distill_forms_conc=0        #   17 Nov: >0 = conclusions (not facts) taught in only the first N wordings (kcs: 21 for all; kgk's conclusions recalled 0.36 with 7)
     inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
                                     #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk
                                     #   completed only 0.08 of control facts' own sentences vs 0.47 taught)
