@@ -70,16 +70,21 @@ for k_, (h_, n_) in sorted(byrule.items(), key=lambda x: -x[1][1])[:8]:
 if not os.environ.get('TG_CKPT'):
     P("E2 skipped (no TG_CKPT)"); sys.exit(0)
 import torch
+import torch.nn.functional as F_
 here = os.path.dirname(os.path.abspath(__file__)); sys.argv = [sys.argv[0], '6000', '5']
 src = open(os.path.join(here, 'trunk_guides.py')).read(); g = {}
 exec(compile(src[:src.index("for D in DOCS: D['S'], D['H'] = run(lm, D['b'])")], 'trunk_guides', 'exec'), g)
 lm, run = g['lm'], g['run']; torch.set_num_threads(2)
 name = lambda d, e: d['vertexSet'][e][0]['name']
 names = sorted({name(d, e) for d in TR + DV for e in range(len(d['vertexSet']))}); NI = {n: i for i, n in enumerate(names)}
-K = np.zeros((len(names), lm.o.in_features), np.float32)
-for i, n in enumerate(names):
-    _, H = run(lm, (' ' + n).encode('utf-8', 'replace')); K[i] = H[1:].mean(0)
-    if (i + 1) % 10000 == 0: P(f"   name keys {i + 1} of {len(names)}  ({time.time() - T0:.0f}s)")
+KC = SCR + '/lc_namekeys_' + os.path.basename(os.environ['TG_CKPT']) + '.npy'          # 17 Nov: cached name keys (same names, same trunk)
+if os.path.exists(KC) and np.load(KC, mmap_mode='r').shape[0] == len(names): K = np.load(KC); P(f"   name keys from the cache {KC}")
+else:
+    K = np.zeros((len(names), lm.o.in_features), np.float32)
+    for i, n in enumerate(names):
+        _, H = run(lm, (' ' + n).encode('utf-8', 'replace')); K[i] = H[1:].mean(0)
+        if (i + 1) % 10000 == 0: P(f"   name keys {i + 1} of {len(names)}  ({time.time() - T0:.0f}s)")
+    np.save(KC, K)
 K -= K.mean(0); K /= np.linalg.norm(K, axis=1, keepdims=True) + 1e-8; D_ = K.shape[1]
 XY = collections.defaultdict(list)
 for d in TR:
@@ -158,5 +163,37 @@ if int(os.environ.get('LC_LABELFREE', 0)):
         v = np.array(res3[k_]); acc = v[:, 0].mean()
         if k_ != 'chance' and len(v) > 8:
             q = np.quantile(v[:, 1], 0.75); P(f"   {k_:34s} C first among the document's entities {acc:.3f} (n {len(v)}) | top quarter by margin {v[v[:, 1] >= q, 0].mean():.3f}")
+        else: P(f"   {k_:34s} {acc:.3f} (n {len(v)})")
+# E4 (17 Nov, LC_JOINT 1): LEARNED KEYS for composition - name embeddings E (initialised from the trunk codes K) and one map per coarse frame
+#    key trained JOINTLY on the training documents' co-occurrence records (label-free): score(a, k, b) = cos(E_a W_k, E_b), softmax over
+#    the batch's tails (in-batch negatives), Adam, LC_JSTEPS steps; then E3's test with E and the trained maps.
+if int(os.environ.get('LC_JOINT', 0)) and int(os.environ.get('LC_LABELFREE', 0)):
+    TRP = [(NI[name(d, a)], ks2.index(k) if k in W2 else -1, NI[name(d, b)]) for d in TR for (a, b), kk in recs(d).items() for k in kk]
+    TRP = np.array([t for t in TRP if t[1] >= 0]); kix = {k: i for i, k in enumerate(ks2)}
+    Et = torch.nn.Parameter(torch.tensor(K)); Wt = torch.nn.Parameter(torch.tensor(np.stack([W2[k] for k in ks2])).float())
+    opt = torch.optim.Adam([Et, Wt], lr=float(os.environ.get('LC_JLR', 1e-3))); rsj = np.random.RandomState(5); K0 = torch.tensor(K)
+    for st in range(int(os.environ.get('LC_JSTEPS', 3000))):
+        b_ = TRP[rsj.randint(0, len(TRP), 512)]; A_ = F_.normalize(Et[b_[:, 0]], dim=-1); Bv = F_.normalize(Et[b_[:, 2]], dim=-1)
+        pred = F_.normalize(torch.einsum('nd,nde->ne', A_, Wt[b_[:, 1]]), dim=-1); lg = pred @ Bv.t() / 0.1
+        loss = F_.cross_entropy(lg, torch.arange(len(b_))) + float(os.environ.get('LC_JANCH', 1.0)) * ((Et[b_[:, 0]] - K0[b_[:, 0]]) ** 2).sum(-1).mean()
+        opt.zero_grad(); loss.backward(); opt.step()
+        if st % 1000 == 0: P(f"   E4 step {st}: loss {float(loss):.3f}  ({time.time() - T0:.0f}s)")
+    with torch.no_grad(): KJ = F_.normalize(Et, dim=-1).numpy(); WJ = Wt.detach().numpy()
+    res4 = collections.defaultdict(list); rs4 = np.random.RandomState(1)
+    for d in DV:
+        F2, _ = doc_facts(d); rc = recs(d); ents = list(range(len(d['vertexSet']))); CK = KJ[[NI[name(d, e)] for e in ents]]; seen = set()
+        for a, r1, b, r2, c, _F in chains(d):
+            if not [r for (h, r, t) in F2 if h == a and t == c] or (a, c) in seen: continue
+            k1s = [k for k in rc.get((a, b), ()) if k in kix]; k2s = [k for k in rc.get((b, c), ()) if k in kix]
+            if not k1s or not k2s: continue
+            seen.add((a, c)); ka = KJ[NI[name(d, a)]]; kb = KJ[NI[name(d, b)]]; w1, w2 = WJ[kix[k1s[0]]], WJ[kix[k2s[0]]]
+            def rank4(v, excl):
+                s_ = CK @ (v / (np.linalg.norm(v) + 1e-8)); s_[excl] = -9; o = np.argsort(-s_); return int(o[0] == c), float(s_[o[0]] - s_[o[1]])
+            res4['b LATENT (learned keys)'].append(rank4(ka @ w1 @ w2, [a])); res4['c MEMORY hop 1 + map (learned keys)'].append(rank4(kb @ w2, [a, b]))
+            res4['d NULL (learned keys)'].append(rank4(ka @ w1 @ WJ[rs4.randint(len(WJ))], [a])); res4['chance'].append((1.0 / max(1, len(ents) - 1), 0.0))
+    P(f"E4 LEARNED KEYS + MAPS (joint, label-free; {len(TRP)} training records):")
+    for k_ in sorted(res4):
+        v = np.array(res4[k_]); acc = v[:, 0].mean()
+        if k_ != 'chance' and len(v) > 8: q = np.quantile(v[:, 1], 0.75); P(f"   {k_:34s} C first {acc:.3f} (n {len(v)}) | top quarter by margin {v[v[:, 1] >= q, 0].mean():.3f}")
         else: P(f"   {k_:34s} {acc:.3f} (n {len(v)})")
 P(f"DONE ({time.time() - T0:.0f}s)")
