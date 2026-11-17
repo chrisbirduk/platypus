@@ -639,6 +639,99 @@ def _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, cap=30, memonly=False)
           f"{m(res[False][0])}, {m(res[False][1])} (true B {m(res[False][2])}) (chance 0.10)", flush=True)
 
 
+def _kma_ptr_reads(model, K, prompts, sl):
+    """the memory's read at the FIRST answer byte of each prompt: (slot indices, read weights) per prompt (None where unaddressed)"""
+    from platypus.inference.closed_form import _ws_batch
+    out = [None] * len(prompts)
+    for i0 in range(0, len(prompts), 64):
+        ch = prompts[i0:i0 + 64]; X, _ = _ws_batch(model, [pb + b'x' for pb in ch]); p0s = [len(pb) - 1 for pb in ch]
+        a = _kma_addr_rows(model, K, X, sl, p0s, [1] * len(ch))
+        if a is None: continue
+        nk, wk, off, rr, pp = a; _, idx = _kmi_read(K, nk, wk, off); w = K['_w']
+        for k, (r, j) in enumerate(zip(rr, pp)):
+            if j == 0: out[i0 + r] = (idx[k].tolist(), w[k].tolist())
+    return out
+
+
+def _kma_tcode(model, K, names):
+    """the trunk's own code of each name (last block, mean over the name's bytes in 'About <name>.'), unit length - the LEARNED key of route C"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    C = K.setdefault('tcode', {}); new = [n for n in dict.fromkeys(names) if n not in C]
+    if new:
+        cap = {}; h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach()))
+        try:
+            for i0 in range(0, len(new), 64):
+                ch = new[i0:i0 + 64]; X, _ = _ws_batch(model, [f"About {n}.".encode('latin-1', 'replace') for n in ch])
+                with torch.no_grad(): _ws_run(model, X, 0)
+                for j, n in enumerate(ch): C[n] = cap['h'][j, 5:5 + len(n.encode('latin-1', 'replace'))].float().mean(0)
+        finally: h9.remove()
+    return torch.stack([C[n] for n in names])
+
+
+def _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis, cap=60):
+    """16 Nov READOUT, A MEMORY THAT RETURNS KEYS (route C, tools/key_return.py; inf_kmc_keyread): every written entry's slot address at its
+    answer's first byte records the ANSWER NAME (a pointer table beside the slots' byte values); a read returns a DISTRIBUTION over answer names
+    (route A); hop 2 asks about each of the top KR names with its weight - and, for a name that is not a written subject, about the nearest
+    written subject by the trunk's own name code (route C's learned fallback: aliases). Chains A r1 B, B r2 C of entries in the memory (facts
+    and inferences), never taught as a chain: first hop (the pointer's best name = B), C's rank among 10 by the composed score, and C top-1 among
+    every answer name - vs the model decoding B and asking next (the TWO-HOP readout above)."""
+    from platypus.inference.premises import is_rti
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():                                                 # the pointer table: slot -> {answer name: read weight}
+        rd = _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)
+        for e, x in zip(L, rd):
+            if x is None: continue
+            for s, w in zip(*x): d_ = PTR.setdefault(s, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w
+    subj = sorted({e['A'] for e in fs})
+    if not PTR or len(subj) < 5:
+        print(f"  [KEY-RETURNING MEMORY, TWO-HOP | visit {vis + 1}] too few entries", flush=True); return
+    SC = F.normalize(_kma_tcode(model, K, subj), dim=-1); SI = {n: i for i, n in enumerate(subj)}
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s, w in zip(*x):
+                    for n, v in PTR.get(s, {}).items(): d_[n] = d_.get(n, 0.0) + w * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    byA = {}
+    for e in fs: byA.setdefault(e['A'], []).append(e)
+    ch = [(e1, e2) for e1 in fs for e2 in byA.get(e1['ans'], ()) if e2['ans'] not in (e1['A'], e1['ans'])]
+    if len(ch) < 5:
+        print(f"  [KEY-RETURNING MEMORY, TWO-HOP | visit {vis + 1}] too few chains ({len(ch)})", flush=True); return
+    rs = np.random.RandomState(int(cfg.seed) + 6161 + vis); ch = [ch[i] for i in rs.choice(len(ch), min(cap, len(ch)), replace=False)]
+    KR = int(getattr(cfg, 'inf_kmc_keyread_k', 5)); res = {m: [[], [], []] for m in ('A', 'C')}; nfb = 0; ninf = 0
+    with torch.no_grad():
+        for e1, e2 in ch:
+            ninf += int(is_rti(e1) or is_rti(e2)); d1 = dist([te(e1['A'], e1['r'])], int(S_slot(e1['d'])))[0]
+            Bs = sorted(d1, key=d1.get, reverse=True)[:KR]; alts = [x for x in pool if x != e2['ans']]
+            if len(alts) < 9: continue
+            cs = [e2['ans']] + [alts[j] for j in rs.choice(len(alts), 9, replace=False)]
+            for m in ('A', 'C'):
+                qs = []
+                for b in Bs:
+                    q = b
+                    if m == 'C' and b not in SI:                               # route C: not a written subject -> the nearest written subject by the trunk's code
+                        v = F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]; q = subj[int((SC @ v).argmax())]; nfb += 1
+                    qs.append(q)
+                d2s = dist([te(q, e2['r']) for q in qs], int(S_slot(e2['d']))) if qs else []
+                sc = {}
+                for b, d2 in zip(Bs, d2s):
+                    for n, v in d2.items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
+                res[m][0].append(int(bool(Bs) and Bs[0] == e1['ans']))
+                s10 = [sc.get(c, 0.0) for c in cs]; res[m][1].append(int(s10[0] > max(s10[1:])))
+                res[m][2].append(int(bool(sc) and max(sc, key=sc.get) == e2['ans']))
+    mm = lambda L: f"{np.mean(L):.2f}" if L else '-'
+    print(f"  [KEY-RETURNING MEMORY, TWO-HOP | visit {vis + 1}] {len(ch)} chains of entries in the memory ({ninf} with an inference hop; never taught as a chain), "
+          f"pointer table over {len(PTR)} slots, top {KR} names carried to hop 2 || ROUTE A (pointers): first hop {mm(res['A'][0])}, C rank among 10 {mm(res['A'][1])}, "
+          f"C top-1 among all answers {mm(res['A'][2])} | ROUTE C (pointers + the trunk's name code for names that are not written subjects; {nfb} fallbacks): "
+          f"{mm(res['C'][0])}, {mm(res['C'][1])}, {mm(res['C'][2])} (compare TWO-HOP: the model decoding B and asking next; chance 0.10)", flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -694,6 +787,7 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         try:
             _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
             if int(getattr(cfg, 'inf_kmc', 0)): _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, memonly=True)
+            if int(getattr(cfg, 'inf_kmc_keyread', 0)): _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis)   # 16 Nov route C (readout)
         except Exception as e9:
             from platypus.common import _fail
             _fail('inference.kmem:twohop'); print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
