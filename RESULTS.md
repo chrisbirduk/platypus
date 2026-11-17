@@ -3452,3 +3452,41 @@ Signals per typed inference over later relational records whose FIRST name is it
 - **CONSOLIDATION WORKS AT SCALE: taught facts recalled from the TRUNK in unseen test wordings 0.77 (198) at visit 3, vs kgk 0.35 (198)** (taught 1 visit 0.75, 2-3 visits 0.81; entered at this sleep, not yet taught, 0.02). Wrong inferences: the pool's few conclusions recalled 0.00.
 - **KEY-RETURNING MEMORY ON THE GPU: route A first hop 0.92 / 1.00, C ranked first among 10 1.00 / 1.00, C top-1 of all answers 0.46 / 0.92 (visits 2 / 3; 13 / 39 chains)**; route C 0.92 / 1.00, 1.00 / 1.00, 0.54 / 0.92. The decoding path at visit 3: first hop exact 0.40, C rank 0.87 (kgk 0.37 / 0.83). Few chains go through an inference hop yet (3).
 - **WATCH: post-train BPC higher than kgk on the current domain** - Gutenberg 2.025 / 2.022, Wikipedia 2.076 / 2.058 (+0.018), **ArXiv 2.063 / 2.024 (+0.039, beyond the ~0.02 run variation)**; held-out Wikipedia with the memory at visits 2 / 3 2.047 / 2.058 vs 2.029 / 2.044 (+0.015-0.018). The every-weight question rows (and the anchor rows) may take capacity from learning the current domain; the final forgetting and the later domains decide. Visit timing as kgk (phase 4 at 42.5 vs 40.6 min).
+
+## cg27a_kcs on the GPU, interim to visit 4, and the cg27a_kcp smoke test (17 Nov 2026, evening)
+
+**Recall (trunk, test wordings).** Compared with kgk at visit 4:
+- Facts taught for at least one visit: 0.77 (kgk 0.42).
+- Known facts answered right: 0.69 (kgk 0.38).
+- Confidence when right: 0.93 (kgk 0.54).
+- Confidence separates right answers from never-read questions with an AUC of 0.90.
+
+**False memories.**
+- Gated answers on never-read questions: given a stored name 0.11 (kgk 0.25), abstained 0.89. Known facts right when answered: 1.00.
+- Ungated stored-name rate on fresh names: 0.81. This is in line with earlier builds (0.72–0.86).
+
+**Kept inferences.**
+- Kept right 0.81 (kgk 0.79); flagged right 0.45 (kgk 0.55), a wider gap between kept and flagged.
+- Useful AND judged-kept right 0.95 (21).
+- 131 kept inferences retyped on confirmation.
+
+**Key-returning memory, visit 4.**
+- Route A: first hop 0.98, final answer ranked first among 10 in 0.98 of chains, top-1 0.93.
+- Route C: 0.98 / 0.98 / 0.90.
+- 60 chains, 27 of them with an inference hop.
+
+**Cost (learning, not consolidation).** Held-out BPC at visit 4, kcs vs kgk:
+
+| Domain | kcs | kgk | Change |
+|---|---|---|---|
+| Gutenberg | 2.013 | 2.006 | +0.007 |
+| Wikipedia | 2.064 | 2.049 | +0.015 |
+| ArXiv | 2.060 | 2.028 | +0.032 |
+| PubMed | 1.695 | 1.664 | +0.031 |
+
+The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The cost is concentrated on the newest domains: the anchor slows learning. Next test: a lighter consolidation dose.
+
+**cg27a_kcp smoke test (synthetic names).**
+- `[COMPOSED WRITES]` runs at visits 2 and 3 with no errors.
+- 1,129–1,269 unstated two-hop conclusions found; the top 100 written per sleep.
+- The labels read 0.00 because synthetic names have no distant labels. This is not a recall result.
