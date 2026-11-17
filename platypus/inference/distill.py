@@ -1419,6 +1419,7 @@ def _dw_relmod(model, cfg, ents, held, vis):
         WR = model.__dict__.setdefault('_rm_written', {})                     # STEP 4 (inf_distill_relmod_write): facts written at earlier sleeps -
         for (r9, a9, c9) in WR: pairs.setdefault(r9, set()).add((a9, c9))      #   hops for later chains, never evidence (provenance)
         R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}), derived=set(WR))
+        model.__dict__['_rm_rules'] = [tuple(str(x).strip() for x in t[:3]) for t in R['rules']]   # 17 Nov: for the composing writes (inf_kmc_compose_rule)
         rels = R['rels']; mg9 = model.__dict__.setdefault('_rm_merged', set())   # 12 Nov: the paraphrase merges, kept across sleeps (paraphrase alignment)
         for a9, b9 in R['merged']: mg9.add((str(a9), str(b9)))
         if len(rels) < 2: print(f"  [RELATIONAL MODULE | visit {vis + 1}] too few relations recorded ({len(rels)})", flush=True); return
@@ -1496,6 +1497,7 @@ def _dw_relmod_real(model, cfg, S_, vis):
             for b in ob:
                 if b in keep and b != a and nf < 20000: pairs.setdefault(dec(r), set()).add((dec(a), dec(b))); nf += 1
         R = _rm_mine(pairs, min(800, int(getattr(cfg, 'inf_distill_relmod', 800))), int(cfg.seed) * 100 + 919, hist=model.__dict__.setdefault('_rm_hist_real', {}))
+        model.__dict__['_rm_rules_real'] = [tuple(str(x).strip() for x in t[:3]) for t in R['rules']]
         G = _bench(cfg); t2e = G['_t2e']; gold = {(min(h, t), max(h, t)) for h, t, _, _ in G['rel']}
         def ents(x):
             es = set()

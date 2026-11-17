@@ -743,6 +743,32 @@ def kma_compose_write(model, cfg, K, S_slot, fs, vis):
     from platypus.inference.premises import is_rti
     W = pm._PM.setdefault('rti', {}); LAB = pm._PM.get('LAB') or set()
     te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    rmode = str(getattr(cfg, 'inf_kmc_compose_rule', 'any'))                 # 17 Nov (kcp on the GPU: copying r2 wrote 'A r2 C' for any r1, r2 - wrong in
+    par9 = {}                                                                  #   general): 'rules' = only relation pairs the relational module verified
+    for a9, b9 in (model.__dict__.get('_rm_merged') or ()): par9[str(a9).strip()] = str(b9).strip()   #   (r1 o r2 -> r3), 'same' = r o r -> r,
+    def canon(r):                                                              #   'same+rules' = both; paraphrases merged by the module count as one
+        r = str(r).strip(); seen9 = set()
+        while r in par9 and r not in seen9: seen9.add(r); r = par9[r]
+        return r
+    RM = {}
+    if 'rules' in rmode:
+        for r1_, r2_, r3_ in list(model.__dict__.get('_rm_rules') or []) + list(model.__dict__.get('_rm_rules_real') or []): RM[(canon(r1_), canon(r2_))] = r3_
+    def rule3(r1, r2):
+        if rmode == 'any': return r2
+        c1, c2 = canon(r1), canon(r2)
+        if (c1, c2) in RM: return RM[(c1, c2)]
+        return str(r1).strip() if ('same' in rmode and c1 == c2) else None
+    try:                                                                       # RULE-WORLD TRUTH for composed writes about its names (the distant labels
+        from platypus.inference.probes import inf_rule_world, _RW_REL           #   cannot judge them): grand = parent o parent, skip = mgr o mgr
+        RW9 = inf_rule_world(cfg); ph9 = {k: v.split('{a} ')[1].split(' {b}')[0] for k, v in _RW_REL.items()}
+        tmap9 = {ph9['grand']: RW9.get('parent', {}), ph9['skip']: RW9.get('mgr', {})}; rwn9 = set(RW9.get('parent', {})) | set(RW9.get('mgr', {})) | set(RW9.get('parent', {}).values()) | set(RW9.get('mgr', {}).values())
+    except Exception:
+        tmap9 = {}; rwn9 = set()
+    def rwtruth(A, r3, C):                                                     # True / False for rule-world names, None otherwise
+        if A not in rwn9: return None
+        m = tmap9.get(canon(r3)) or tmap9.get(str(r3).strip())
+        if m is None: return False
+        return m.get(m.get(A)) == C
     by_d = {}
     for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
     PTR = {}
@@ -783,7 +809,7 @@ def kma_compose_write(model, cfg, K, S_slot, fs, vis):
     for sl in sorted(set(q2.values())):
         ks = [k for k, v in q2.items() if v == sl]
         for k, d2 in zip(ks, dist([te(*k) for k in ks], sl)): a2[k] = d2
-    cand = {}
+    cand = {}; nrej = 0
     for e in E1:
         d1 = h1[id(e)]
         for b in sorted(d1, key=d1.get, reverse=True)[:3]:
@@ -791,17 +817,23 @@ def kma_compose_write(model, cfg, K, S_slot, fs, vis):
             for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]:
                 d2 = a2.get((q, r2)) or {}
                 if not d2: continue
+                r3 = rule3(e['r'], r2)
+                if r3 is None: nrej += 1; continue
                 c = max(d2, key=d2.get); sc = d1[b] * d2[c]; A = e['A']
                 if c in (A, b, q) or frozenset((A, c)) in stated or frozenset((A, c)) in done: continue
-                if sc > cand.get((A, c), (0,))[0]: cand[(A, c)] = (sc, r2, b, e)
+                if sc > cand.get((A, c), (0,))[0]: cand[(A, c)] = (sc, r3, b, e)
     top = sorted(cand.items(), key=lambda x: -x[1][0])[:int(getattr(cfg, 'inf_kmc_compose_n', 100))]; ndv = int(pm._PM.get('ndv_now', 0)); ys = []
+    yr = []
     for i, ((A, c), (sc, r2, b, e)) in enumerate(top):
-        k = tuple(sorted((A, c))); y = frozenset((A, c)) in LAB; ys.append(y)
+        k = tuple(sorted((A, c))); t9 = rwtruth(A, r2, c); y = bool(t9) if t9 is not None else frozenset((A, c)) in LAB; ys.append(y)
+        if t9 is not None: yr.append(bool(t9))
         W[k] = dict(vis=vis, d=int(e['d']), truth=bool(y), bridges=1, rank=i, novel=True, code=float(sc), ndv=ndv, prem=[b], rule='compose', score=float(sc),
                     state='inferred', th=A, tw=r2, tt=c, comp=True)
     print(f"  [COMPOSED WRITES | visit {vis + 1}] the memory's key reads over {len(E1)} entries ({sum(1 for x in E1 if is_rti(x))} inferences) -> {len(cand)} two-hop "
-          f"conclusions never stated ({nfb} hop-2 names by the trunk's code); WROTE the top {len(top)}: right {np.mean(ys) if ys else float('nan'):.3f} (distant labels; "
-          f"they undercount) - judged, kept and taught like any inference || " + " | ".join(f"{A} {r2} {c} via {b} ({'right' if frozenset((A, c)) in LAB else 'wrong'})"
+          f"conclusions never stated ({nfb} hop-2 names by the trunk's code; relation pairs: {rmode}, {len(RM)} verified rules, {nrej} chains with no rule skipped); "
+          f"WROTE the top {len(top)}: right {np.mean(ys) if ys else float('nan'):.3f} (rule-world names by the rule world's truth: {np.mean(yr) if yr else float('nan'):.3f} of "
+          f"{len(yr)}; others by distant labels, which undercount) - judged, kept and taught like any inference || "
+          + " | ".join(f"{A} {r2} {c} via {b} ({'right' if (rwtruth(A, r2, c) if rwtruth(A, r2, c) is not None else frozenset((A, c)) in LAB) else 'wrong'})"
           for (A, c), (sc, r2, b, e) in top[:5]), flush=True)
 
 
