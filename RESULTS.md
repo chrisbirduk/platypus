@@ -3630,3 +3630,43 @@ Name key = the stand-in trunk's state over the name's bytes (tg_lm192_18000). Re
 **Conclusion.** Fuzzy composition in a learned key space works on real text, beside the exact rules of E1 (0.80 precision). Next steps:
 1. Rules over LEARNED relation keys (the JEPA wording key) instead of gold ids.
 2. A write path in the package: rule-composed conclusions, with latent composition as the fallback where a premise is missing, judged, kept and taught.
+
+## GPU cg27a_kfc3 (integration run: kcs + conclusion boost + rule-verified composing + cumulative keep rule + rule world x4), to visit 4 (17 Nov 2026, 20:54)
+
+The rule world x4 is active: 34-116 rule-world facts per domain (kcb: 15-33).
+
+**Relational module.**
+- Both true rules are found at sleep 1: child o child -> grandchild (z +44) and supervised o supervised -> overseen. 0 false rules.
+- Composites written: 15 / 21 / 43 / 58 by visits 1-4. All are correct by the rule world's truth, and none was planted.
+
+**The trunk, by test wording.**
+
+| Visit | Taught | Held back |
+|---|---|---|
+| 2 | 1.00 (9) | **0.00** (6) |
+| 3 | 1.00 (11) | **0.00** (4) |
+| 4 | 0.74 (19) | **0.00** (6) |
+
+- Held-back answers at visit 4 are 'other' names, 6 of 6: not the middle hop, not the family.
+- The trunk does not compose on its own. kcs's held back 0.60-0.75 at visit 5 (n 4-5) was small-sample noise.
+
+**OPERATOR ALGEBRA, frozen trunk codes.**
+
+| Visit | Held-out composites | Composed operator | Shuffled null | Direct composite map | Chance |
+|---|---|---|---|---|---|
+| 3 | 45 | **1.00** for both rules | 0.00 | 0.04-0.05 | 0.006 |
+| 4 | 60 | **1.00** | 0.00-0.03 | 0.03-0.04 | 0.004 |
+
+At 4-8x the earlier sample, composition in the trunk's code space is exact while the trunk's forward pass gives 0.00.
+
+**Composing writes through verified rules (old code: stand-in names still used).**
+- Right 0.139 (36), 0.070 (100), 0.122 (90) at visits 2-4.
+- The relational module already wrote the correct composites. The remaining chains mostly go through stand-in names (986-1,967 per visit). The exact-chain fix (commit 8c9bb4c) postdates this run.
+
+**Other readouts.** Conclusions taught for at least one visit 0.12 (16) at visit 4 (kcs 0.09). Facts 0.76-0.80. No errors.
+
+**Conclusion.** Composition belongs in key space, and the trunk is taught its results. Together with the offline real-text result (tools/latent_compose.py: rules over relation keys 0.80 precision, latent maps 4.5x chance), this is the design for real-text inference: compose in key space, write, judge, keep, teach.
+
+## README updated (17 Nov 2026, 21:05)
+
+README.md has a new section, "Recent results (15-17 November)". Ten new table rows were added, and open questions 7, 17 and 18 were updated or added. The "Note from author" is unchanged.
