@@ -2231,7 +2231,9 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
             sls = [int(s) for s in olds if int(s) in C]
             if sls:
                 nr9 = int(getattr(cfg, 'inf_distill_wake_aklrows', 0)) or int(getattr(cfg, 'inf_distill_wake_rows', 4))   # 17 Nov (queue 44): anchor rows
-                if int(getattr(cfg, 'inf_distill_wake_aklall', 0)): kl = sum(_dw_kl(model, C, s9, D['rs'], nr9) for s9 in sls) / len(sls)   #   from EVERY old slot each step
+                if int(getattr(cfg, 'inf_distill_wake_aklall', 0)):            #   from EVERY old slot each step; inf_distill_wake_aklslot / aklfw (queue 46):
+                    fs9 = int(getattr(cfg, 'inf_distill_wake_aklslot', -1)); fw9 = float(getattr(cfg, 'inf_distill_wake_aklfw', 1.0))   #   the facts' own domain weighted up
+                    ww9 = [fw9 if s9 == fs9 else 1.0 for s9 in sls]; kl = sum(w9 * _dw_kl(model, C, s9, D['rs'], nr9) for w9, s9 in zip(ww9, sls)) / sum(ww9)
                 else: kl = _dw_kl(model, C, sls[D['rs'].randint(len(sls))], D['rs'], nr9)
                 tot = tot + akl * kl; D['akl'].append(float(kl.detach()))
         tot.backward()
