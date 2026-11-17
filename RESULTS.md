@@ -3817,3 +3817,23 @@ The author chose to stay label-free (no distant supervision for the reader).
   - Name keys from a stand-in trunk.
   - Chains where both hops are readable in one sentence.
 - Next: compose with these maps, CONFIRM by later reading (tools/compose_confirm.py: confirmation x4), and teach.
+
+## Conclusion paraphrase transfer under consolidation, offline (17 Nov 2026, 21:45-22:40; tools/consolidate.py CS_CONC 1, A6 stand-in trunk, 600 steps, anchor mix)
+
+**Setup.** Untyped conclusions 'A is connected to C', tested in the paraphrase 'A is tied to' (never taught), as the package tests conclusions.
+
+| Rule, lr | Frames 6: rank / open | Frames 21: rank / open |
+|---|---|---|
+| Every weight + KL anchor, 3e-4 | 0.128 / 0.020 | 0.107 / 0.030 |
+| Every weight + KL anchor, 1e-3 | **0.150 / 0.055** | 0.122 / 0.037 |
+| MLP output only, 3e-4 | 0.102 / 0.007 | 0.115 / 0.015 |
+| MLP output only, 1e-3 | 0.110 / 0.025 | 0.110 / 0.013 |
+
+Base 0.113 / 0.000; chance 0.10.
+
+**Conclusions.**
+- Neither every-weight training nor 21 frames reduces paraphrase transfer here. Every weight with the anchor is if anything best (6 frames, lr 1e-3).
+- But the stand-in learns untyped conclusions barely in any wording (taught wording 0.10-0.15), so the test is weak.
+- The output-weights-only arm is not supported as a fix. kcw (7 wordings) was negative on the GPU at visit 4.
+- The open lead for the GPU conclusion regression remains the late recovery in kfc3 (0.36 at visit 5). kcw's visit 5 decides it.
+- The MLPOUT per-domain changes come from the stand-in learning the anchor's domains, not from forgetting.
