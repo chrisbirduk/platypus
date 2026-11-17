@@ -3700,3 +3700,46 @@ README.md has a new section, "Recent results (15-17 November)". Ten new table ro
 
 **Next.** Premise quality: compose only over judged-kept and typed-confirmed facts. In the rule world, composition through verified rules is already exact.
 - **Label-free premise filters (same tool, FC_READERS).** None helps. The pair co-occurring in 2+ sentences gives 48 / 10 composed pairs (precision 0.29 / 0.00). A short gap ending in a preposition gives 62 / 96 (0.00). Both together give 0 rules. They are too sparse within one document. A premise filter needs the package's own judged and kept facts, or the label-free extractor (tools/consistency_teacher.py, top 5% 0.54).
+
+## READER DIAGNOSIS (17 Nov 2026, 21:20-21:45; tools/reader_diag.py on distant_10k and distant_50k; tools/consistency_teacher.py CT_COMPOSE)
+
+**R1. Where gold is lost (Re-DocRED, 1,000 held-out docs, 21,390 gold related pairs).**
+
+| Reader's candidates | Gold visible | Precision |
+|---|---|---|
+| Mention pairs within 12 tokens | 0.359 | 0.258 |
+| Same sentence | 0.464 | 0.226 |
+| + pronoun-led sentences resolved (the title, or the previous same-type name) | **0.578** | 0.223 |
+
+Simple cross-sentence resolution adds 60% coverage at the same precision.
+
+**R2. Cross-document redundancy (distant_50k, 605,667 pairs).** Label rate by the number of distinct documents with the same coarse frame:
+
+| Documents | 1 | 2 | 3-4 | 5+ |
+|---|---|---|---|---|
+| Label rate | 0.124 | 0.263 | 0.311 | 0.401 |
+
+Strong but narrow: under 3% of pairs recur.
+
+**R3. Self-trained reader on redundancy pseudo-labels: NEGATIVE.**
+- AUC 0.55 on held-out distant records, 0.50 on Re-DocRED. The pseudo-positives mark popular names, not relational wording.
+- The same reader trained on DISTANT LABELS (outside knowledge, the upper bound): AUC 0.81 / 0.79, Re-DocRED top 10% 0.69-0.70 related.
+- **R4.** Pair redundancy from the whole distant corpus as the Re-DocRED reader: gold rate 0.26 / 0.35 / 0.36 / 0.30 for 0 / 1 / 2 / 3+ documents. Weak.
+
+**Composition over each reader's premises** (rules over coarse keys; composed pair gold-related; base 0.132, every co-occurrence 0.155):
+
+| Reader | Premise precision | Composed precision |
+|---|---|---|
+| Self-trained, top 10-25% | n/a | 0.22-0.25 |
+| Redundancy, top 25% | 0.30 | 0.27 |
+| Distant-label reader, top 10% | 0.68-0.70 | **0.36-0.42** |
+| Distant-label reader, top 25% | 0.54-0.56 | 0.25-0.28 |
+| **13 Nov label-free extractor** (consistency teachers + self-training, AUC 0.63, top 10% 0.45) | 0.43 / 0.37 (top 10 / 25%) | 0.07 (30) / 0.18 (122) |
+
+The extractor's composed figures (top 10 / 25%) are too few to count.
+
+**Conclusion.** The reader's signal is in the wording features (a labelled reader reaches AUC 0.79), but no label-free teacher tried so far gives it (0.50-0.63). Composition over real text needs premises right about 0.7. Today only a reader trained on outside (distant) labels gets there, and composes at 0.36-0.42 precision.
+
+**Decision for the author.** Use distant supervision (Wikidata labels, an outside source, labelled as such), or keep the system label-free and find a better internal teacher, e.g. the package's typed confirmations of written inferences, which separated right from wrong at AUC 0.63-0.71 on the GPU.
+
+**New build ready: cg27a_kcr.** kcb + the POWERED COMPOSITION TEST (rule world x4, half the relational module's written composites held back, as cg27a_step4p) + the two-hop probe readout. The local safety run is queued after the consolidation paraphrase test.

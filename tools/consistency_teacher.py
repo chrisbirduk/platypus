@@ -180,3 +180,50 @@ for rnd in range(1, 4):
     lr_ = LogisticRegression(C=1.0, max_iter=2000).fit(Xtr, lab >= np.percentile(lab, 75)); s_tr = lr_.decision_function(Xtr)
     rep(f"round {rnd}: LEARNER (kept {len(keep)} training records; functional {len(FUNC)}, selective {len(SEL)} wordings)", lr_.decision_function(Xte))
 P(f"DONE ({time.time() - T0:.0f}s)")
+
+# ---- COMPOSITION OVER THE LABEL-FREE READER (17 Nov, CT_COMPOSE 1; tools/frame_compose.py's measure): rules over coarse keys (the two names'
+#      shapes + the last word between) mined on the training documents' candidates kept by the reader (top q), applied to the held-out
+#      documents' kept candidates; a composed pair (never a kept premise) is right if gold-related in its document. Compare (frame_compose /
+#      reader_diag): every co-occurrence 0.155, a distant-supervised reader's top 10% 0.36-0.42, gold facts 0.45-0.53, base about 0.13.
+if int(os.environ.get('CT_COMPOSE', 0)):
+    s_all = np.zeros(len(C)); s_all[TR] = lr_.decision_function(Xtr); s_all[TE] = lr_.decision_function(Xte)
+    gold_ab = {}
+    for di, d in enumerate(docs):
+        cn = [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
+        gold_ab[di] = {(cn[l['h']], cn[l['t']]) for l in d['labels']} | {(cn[l['t']], cn[l['h']]) for l in d['labels']}
+    def kprem(ix, thr):
+        by = collections.defaultdict(lambda: collections.defaultdict(set))
+        for i in ix:
+            if s_all[i] < thr: continue
+            c = C[i]; lw = c['mid'][-1].lower() if c['mid'] else ''
+            by[c['di']][(c['cA'], c['cB'])].add((shape(c['A']), lw, shape(c['B']), 'f')); by[c['di']][(c['cB'], c['cA'])].add((shape(c['B']), lw, shape(c['A']), 'r'))
+        return by
+    def chains_(prem):
+        byh = collections.defaultdict(list)
+        for (a, b), ks in prem.items():
+            for k in ks: byh[a].append((k, b))
+        for (a, b), ks in prem.items():
+            for k1 in ks:
+                for k2, c in byh.get(b, ()):
+                    if c != a and c != b: yield a, k1, b, k2, c
+    def wlb_(k, n, z=1.96):
+        p = k / n; dd = 1 + z * z / n
+        return (p + z * z / (2 * n) - z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / dd
+    P("COMPOSITION OVER THE LABEL-FREE READER (self-trained learner, round 3):")
+    for q in (0.10, 0.25, 0.50, 1.0):
+        thr = np.quantile(s_all[TR], 1 - q) if q < 1 else -1e9; thr_te = np.quantile(s_all[TE], 1 - q) if q < 1 else -1e9
+        PT = kprem(TR, thr); cnt = collections.Counter(); hit = collections.Counter()
+        for di, prem in PT.items():
+            seen = set()
+            for a, k1, b, k2, c in chains_(prem):
+                if (a, k1, k2, c) in seen: continue
+                seen.add((a, k1, k2, c)); cnt[(k1, k2)] += 1; hit[(k1, k2)] += bool(prem.get((a, c)) or prem.get((c, a)))
+        rules = {k for k, n in cnt.items() if hit[k] >= 10 and wlb_(hit[k], n) >= 0.5}
+        PD = kprem(TE, thr_te); comp = rl = 0; pr = []
+        for di, prem in PD.items():
+            g = gold_ab[di]; pr += [p in g for p in prem]
+            out = {(a, c) for a, k1, b, k2, c in chains_(prem) if (k1, k2) in rules and not ((a, c) in prem or (c, a) in prem)}
+            comp += len(out); rl += sum(p in g for p in out)
+        base = np.mean([len(gold_ab[di]) / max(1, len({x for p in gold_ab[di] for x in p}) * (len({x for p in gold_ab[di] for x in p}) - 1)) for di in TEST if gold_ab[di]])
+        P(f"   top {q:.0%}: premise precision {np.mean(pr) if pr else float('nan'):.3f} | rules {len(rules)} | composed {comp}, precision {rl / max(1, comp):.3f}  ({time.time() - T0:.0f}s)")
+    P(f"DONE COMPOSE ({time.time() - T0:.0f}s)")
