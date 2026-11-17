@@ -95,7 +95,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
     need = {frozenset((A, b)) for (A, C), e in W.items() for b in e['prem']} | {frozenset((b, C)) for (A, C), e in W.items() for b in e['prem']}
     for r in R:
         if r[0] < h(v): nb[r[1]].add(r[2]); nb[r[2]].add(r[1])
-    DG = {n: len(s) for n, s in nb.items()}; want = {frozenset(k): k for k in W}; conf = collections.defaultdict(list); HF = collections.defaultdict(list)
+    DG = {n: len(s) for n, s in nb.items()}; want = {frozenset(k): k for k in W}; conf = collections.defaultdict(list); HF = collections.defaultdict(list); PWT = collections.defaultdict(list)
     for r in R:
         if r[0] < h(v) and isrel(r):
             if r[1] in DG and r[2] in DG and DG[r[1]] != DG[r[2]]:
@@ -103,6 +103,7 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
                 if any(ch.isalpha() for ch in w_) and w9 not in LISTW and w9 not in ('and', 'or') and (not int(os.environ.get('LS_CLEAN', 0)) or (w_[0].isalnum() and w_[-1].isalnum())): tab[(TY.get(hd, 'X'), TY.get(tl, 'X'))][(w_, fw)] += 1
             f = frozenset((r[1], r[2]))
             if f in need: pw[f].append((r[1], r[2], norm(r[3])))
+            if f in need and int(os.environ.get('LS_SURP', 0)) and len(PWT[f]) < 4: PWT[f].append(r[7].encode('latin-1', 'replace')[:L_])   # 16 Nov (queue 29)
         if h(v) <= r[0] < (mid if int(os.environ.get('LS_HALF', 1)) else h(v + 2)) and isrel(r):   # 16 Nov: the judge (and retyping) see only the FIRST half
             k = want.get(frozenset((r[1], r[2])))                              #   (the second half is the held-out scoring text)
             if k: conf[k].append((r[1], r[2], norm(r[3])))
@@ -227,6 +228,17 @@ for rd, v in enumerate(tuple(int(x) for x in os.environ.get('LS_ROUNDS', '1,3,5'
         for k in W:
             c = typed.get(k); u = bool(c is not None and first.get(c[0]) and bits([c], first[c[0]], TXT, PT, EN) > 0)
             SELX.append(fx(k)); SELY.append(u)
+    if int(os.environ.get('LS_SURP', 0)):                                      # 16 Nov LEARNED WRITE CHOICE BY SURPRISE (Titans-style): how surprised the
+        ks9 = list(W); tx9 = {k: [t for b in W[k]['prem'] for f in (frozenset((k[0], b)), frozenset((b, k[1]))) for t in PWT.get(f, ())][:8] for k in ks9}   #   trunk is
+        flat = [t for k in ks9 for t in tx9[k]]; PT9, _ = trunk(flat) if flat else ([], []); i9 = 0; sur = {}   #   by the premise sentences (bits per byte)
+        for k in ks9:
+            bb_ = [float(-np.log2(np.maximum(PT9[i9 + j], 1e-12)).mean()) for j in range(len(tx9[k]))]; i9 += len(tx9[k]); sur[k] = np.mean(bb_) if bb_ else float('nan')
+        ok9 = [k for k in ks9 if not np.isnan(sur[k])]; yv9 = np.array([y[k] for k in ok9]); sv9 = np.array([sur[k] for k in ok9])
+        from platypus.inference.compress import _cg_auc
+        o9 = sorted(ok9, key=lambda k: -sur[k]); hi9, lo9 = o9[:len(o9) // 2], o9[len(o9) // 2:]
+        out.append(f"[SURPRISE at write time over {len(ok9)} candidates with premise text: AUC right vs wrong of premise surprise {_cg_auc(sv9[yv9], sv9[~yv9]):.3f} | most surprising half right "
+                   f"{np.mean([y[k] for k in hi9]):.3f} vs least {np.mean([y[k] for k in lo9]):.3f} | code batch (rank < 200) right {np.mean([y[k] for k in W if tier[k]]):.3f} | "
+                   f"surprise within the batch: high half {np.mean([y[k] for k in hi9 if tier[k]]) if any(tier[k] for k in hi9) else float('nan'):.3f} vs low {np.mean([y[k] for k in lo9 if tier[k]]) if any(tier[k] for k in lo9) else float('nan'):.3f}]")
     if int(os.environ.get('LS_STAB', 0)):                                      # 16 Nov USEFULNESS STABILITY: each round every written inference so far is
         for (A, C), e in W.items():                                            #   re-measured on this round's first-half text (as the GPU re-measures at every
             hd, tl = (A, C) if DG.get(A, 0) <= DG.get(C, 0) else (C, A); cp = (TY.get(hd, 'X'), TY.get(tl, 'X'))   #   visit); keep rule on the LATEST measure
