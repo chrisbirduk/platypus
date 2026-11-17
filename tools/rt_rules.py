@@ -8,55 +8,64 @@ is kept when it predicts at least MIN_SUP stated A-C pairs, with a Wilson 95% lo
 same count on chains whose C is shuffled among r2's objects (null). Then every training chain with a kept rule and an A-C pair NEVER
 STATED in training is a COMPOSED conclusion 'A r3 C', checked by (a) the pair stated in a held-out document (later reading), (b) a
 distant label (Wikidata relation between A and C; undercounts), and the same for ALL chains (no rule) and random pairs of the same types.
-Usage: python3 tools/rt_rules.py <distant.json.gz>   env RR_TRAIN (0.7) RR_FAN (30) RR_MINSUP (5) RR_MINLB (0.3) RR_SEED (4)"""
+v2 options: RR_WORDS 1 = frames must end in a word (no punctuation-only or 'and'/'or' list frames); RR_XDOC 1 = the two hops come from
+DIFFERENT documents and a rule's evidence (A-C stated) must come from a third document (composition across reading, not one list).
+Usage: python3 tools/rt_rules.py <distant.json.gz>   env RR_TRAIN (0.7) RR_FAN (30) RR_MINSUP (5) RR_MINLB (0.3) RR_SEED (4) RR_WORDS (0) RR_XDOC (0)"""
 import os, sys, types, collections, math, time
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import platypus.inference.premises as pm
 
 TR = float(os.environ.get('RR_TRAIN', 0.7)); FAN = int(os.environ.get('RR_FAN', 30)); MINSUP = int(os.environ.get('RR_MINSUP', 5))
-MINLB = float(os.environ.get('RR_MINLB', 0.3)); rs = np.random.RandomState(int(os.environ.get('RR_SEED', 4)))
+MINLB = float(os.environ.get('RR_MINLB', 0.3)); WORDS = int(os.environ.get('RR_WORDS', 0)); XDOC = int(os.environ.get('RR_XDOC', 0)); rs = np.random.RandomState(int(os.environ.get('RR_SEED', 4)))
 t0 = time.time()
 pm._load_distant(types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_rret_list2=0))
 R, TY, LAB, ND = pm._PM['R'], pm._PM['TY'], pm._PM['LAB'], pm._PM['ND']
 cut = int(ND * TR)
 
 
+STOP = {'and', 'or', 'the', 'a', 'an', ',', '(', ')', ';', ':', '-', '"', "'s"}
 def frame(r):
     mid = r[3].split()
     w = r[3] if 1 <= len(mid) <= 3 else (r[4] if mid else '')
+    if WORDS and (not mid or not mid[-1].isalpha() or mid[-1] in STOP): return None
     return (TY.get(r[1], 'X'), w, TY.get(r[2], 'X'))
 
 
-tr_f = collections.defaultdict(set); tr_pair = set(); ho_pair = set()
+tr_f = collections.defaultdict(dict); tr_pair = collections.defaultdict(set); ho_pair = set()
 for r in R:
     if r[0] < cut:
+        tr_pair[frozenset((r[1], r[2]))].add(r[0])
         if r[5] > 6: continue
-        tr_f[(r[1], r[2])].add(frame(r)); tr_pair.add(frozenset((r[1], r[2])))
+        f = frame(r)
+        if f is not None: tr_f[(r[1], r[2])].setdefault(f, set()).add(r[0])
     else: ho_pair.add(frozenset((r[1], r[2])))
 out_ = collections.defaultdict(list); fr_obj = collections.defaultdict(list)
 for (a, b), fs in tr_f.items():
-    for f in fs: out_[a].append((f, b)); fr_obj[f].append(b)
+    for f, ds in fs.items(): out_[a].append((f, b, ds)); fr_obj[f].append(b)
 print(f"distant docs {ND} (train {cut}), records {len(R)}, training (A, B) pairs {len(tr_f)}, frames {len(fr_obj)}, read {time.time() - t0:.0f}s", flush=True)
 
 
 def chains(shuffle=False):
     for a, L in out_.items():
-        for f1, b in L:
+        for f1, b, d1 in L:
             L2 = out_.get(b) or []
             if len(L2) > FAN: L2 = [L2[i] for i in rs.choice(len(L2), FAN, replace=False)]
-            for f2, c in L2:
+            for f2, c, d2 in L2:
+                if XDOC and not (d2 - d1 or d1 - d2): continue                 # the hops must be readable in different documents
                 if shuffle:
                     ob = fr_obj[f2]; c = ob[rs.randint(len(ob))]
                 if c == a or c == b: continue
-                yield a, f1, b, f2, c
+                yield a, f1, b, f2, c, d1 | d2
 
 
 def mine(shuffle):
     cnt = collections.Counter(); hit = collections.Counter()
-    for a, f1, b, f2, c in chains(shuffle):
+    for a, f1, b, f2, c, dd in chains(shuffle):
         cnt[(f1, f2)] += 1
-        for f3 in tr_f.get((a, c), ()): hit[(f1, f2, f3)] += 1
+        for f3, d3 in tr_f.get((a, c), {}).items():
+            if XDOC and not (d3 - dd): continue                                # evidence from a third document
+            hit[(f1, f2, f3)] += 1
     return cnt, hit
 
 
@@ -86,7 +95,7 @@ def check(P):
 
 
 comp = set(); allc = set()
-for a, f1, b, f2, c in chains(False):
+for a, f1, b, f2, c, dd in chains(False):
     if frozenset((a, c)) in tr_pair: continue
     allc.add((a, c))
     if (f1, f2) in rules: comp.add((a, c))
@@ -101,7 +110,7 @@ print(f"COMPOSED by kept rules (never stated in training): {check(comp)}", flush
 print(f"ALL CHAINS (no rule; sample): {check(sub)}", flush=True)
 print(f"RANDOM same-type pairs (control): {check(rnd)}", flush=True)
 byr = collections.defaultdict(set)
-for a, f1, b, f2, c in chains(False):
+for a, f1, b, f2, c, dd in chains(False):
     if (f1, f2) in rules and frozenset((a, c)) not in tr_pair: byr[(f1, f2)].add((a, c))
 for k_, P in sorted(byr.items(), key=lambda x: -len(x[1]))[:10]:
     print(f"  rule {k_[0]} o {k_[1]} -> {rules[k_][0]}: {check(P)}", flush=True)
