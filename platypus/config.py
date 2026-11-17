@@ -536,6 +536,9 @@ class Config:
     inf_distill_wake=0.25           # 10 Nov INTERLEAVED DISTILLATION (on by default from 11 Nov; 0 = off): weight of a few question rows about stored facts added to every real-text
                                     #   training step (same backward and optimiser: Fisher whitening, real-text loss and dream rows apply; no burst)
     inf_distill_wake_rows=4         #   interleaved distillation: question rows per training step
+    inf_distill_wake_aklrows=0      #   17 Nov: anchor rows per step (0 = inf_distill_wake_rows)
+    inf_distill_wake_aklall=0       #   17 Nov: 1 = the soft anchor over EVERY old slot each step (replay across domains), not one random slot
+    inf_distill_wake_aklcache=32    #   17 Nov: stored real sentences per slot in the anchor cache
     inf_distill_wake_params='mlp_out' #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed

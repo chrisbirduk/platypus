@@ -554,7 +554,7 @@ def _dw_cache(model, cfg, S_, S_slot, slots, vis):
     ra = np.random.RandomState(int(cfg.seed) + 9696 + vis); by = {}
     for i in ra.permutation(len(real)):
         x = real[int(i)]; sl = int(S_slot(x['d']))
-        if sl in slots and len(by.setdefault(sl, [])) < 32: by[sl].append(bytes(x['s']))
+        if sl in slots and len(by.setdefault(sl, [])) < int(getattr(cfg, 'inf_distill_wake_aklcache', 32)): by[sl].append(bytes(x['s']))
     C = {}
     for sl, txt in by.items():
         if len(txt) < 4: continue
@@ -2230,7 +2230,9 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
         if akl > 0 and C and olds:
             sls = [int(s) for s in olds if int(s) in C]
             if sls:
-                kl = _dw_kl(model, C, sls[D['rs'].randint(len(sls))], D['rs'], int(getattr(cfg, 'inf_distill_wake_rows', 4)))
+                nr9 = int(getattr(cfg, 'inf_distill_wake_aklrows', 0)) or int(getattr(cfg, 'inf_distill_wake_rows', 4))   # 17 Nov (queue 44): anchor rows
+                if int(getattr(cfg, 'inf_distill_wake_aklall', 0)): kl = sum(_dw_kl(model, C, s9, D['rs'], nr9) for s9 in sls) / len(sls)   #   from EVERY old slot each step
+                else: kl = _dw_kl(model, C, sls[D['rs'].randint(len(sls))], D['rs'], nr9)
                 tot = tot + akl * kl; D['akl'].append(float(kl.detach()))
         tot.backward()
         if proj:
