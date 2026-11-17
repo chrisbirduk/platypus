@@ -3863,3 +3863,21 @@ Base 0.113 / 0.000; chance 0.10.
 
 - 22:40-23:30 kcr local safety run: killed with its waiter shell at the 2-hour background limit, in phase 2. Phase 1 took 53 min with another job alongside and the 4x rule world. To re-run alone after compose-then-confirm, with a longer local timeout (LR_TIMEOUT).
 - 23:35 container restart: compose-then-confirm (tools/latent_confirm.py) restarted. Queue after it, one at a time: kcr local safety run, then the long synthetic composition run (tools/compose_synth.py CS_STEPS 20000, CS_NTRAIN 2000, CS_NHELD 200).
+
+## COMPOSE WITH LABEL-FREE MAPS, THEN CONFIRM (17 Nov 2026, 23:40; tools/latent_confirm.py, distant_10k, 5,000 training docs, 502 maps, fixed trunk name keys)
+
+| Conclusions | Precision (distant labels) | n |
+|---|---|---|
+| Base: random within-document pair never recorded together | 0.066 | 61,320 |
+| Every chain's C (no map) | 0.078 | 228,358 |
+| Map's choice (memory hop 1 + map) | 0.073 | 129,535 |
+| Map's choice, confident quarter | 0.101 | 32,385 |
+| Map's choice + confirmed later, any wording | 0.261 | 3,374 |
+| Map's choice + confirmed later, relational wording | 0.311 | 1,609 |
+| **Map's choice, confident quarter + confirmed (relational)** | **0.397** | 526 |
+
+**Conclusions.**
+- On the noisy distant corpus the maps alone add little over chains. Their confident quarter is 0.10 vs 0.078.
+- Margin and later-reading confirmation STACK: 0.40, 6x base. That beats rules + confirmation (0.31-0.34) at a smaller n.
+- **Below the about 0.5 target, so not yet a GPU build.**
+- Next, cheap: the same with the JOINT LEARNED KEYS (+25-28% on Re-DocRED), and two independent confirmations.
