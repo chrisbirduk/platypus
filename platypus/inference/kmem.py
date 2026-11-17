@@ -803,6 +803,7 @@ def kma_compose_write(model, cfg, K, S_slot, fs, vis):
         for b in sorted(h1[id(e)], key=h1[id(e)].get, reverse=True)[:3]:
             q = b
             if q not in subj:
+                if rmode != 'any': continue                                    # rule-based composing: exact chains only (no stand-in subject)
                 v = F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]; q = SN[int((SC @ v).argmax())]; nfb += 1
             for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]: q2[(q, r2)] = sl_of[q]
     a2 = {}
@@ -813,6 +814,7 @@ def kma_compose_write(model, cfg, K, S_slot, fs, vis):
     for e in E1:
         d1 = h1[id(e)]
         for b in sorted(d1, key=d1.get, reverse=True)[:3]:
+            if b not in subj and rmode != 'any': continue
             q = b if b in subj else SN[int((SC @ F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]).argmax())]
             for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]:
                 d2 = a2.get((q, r2)) or {}
