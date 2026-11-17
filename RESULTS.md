@@ -3837,3 +3837,24 @@ Base 0.113 / 0.000; chance 0.10.
 - The output-weights-only arm is not supported as a fix. kcw (7 wordings) was negative on the GPU at visit 4.
 - The open lead for the GPU conclusion regression remains the late recovery in kfc3 (0.36 at visit 5). kcw's visit 5 decides it.
 - The MLPOUT per-domain changes come from the stand-in learning the anchor's domains, not from forgetting.
+
+## LEARNED KEYS FOR COMPOSITION (label-free, jointly with the maps): POSITIVE (17 Nov 2026, 23:35; tools/latent_compose.py LC_JOINT 1)
+
+**Setup.** Name embeddings start from the trunk codes and are trained jointly with the 524 label-free coarse-frame maps on the training documents' co-occurrence records only. Objective: in-batch contrastive (tails), with an anchor to the initial codes; 3,000 steps; 140,238 records; no labels. Test: the same held-out composites as E3 (n 2,367; chance 0.057).
+
+| Route | Fixed trunk codes (E3) | **Learned keys (E4)** | Gold relation types (E2) |
+|---|---|---|---|
+| Pure latent composition | 0.153 | **0.192** (+25%) | 0.254 |
+| Memory hop 1 + map | 0.217 | **0.278** (+28%) | 0.339 |
+| Memory hop 1 + map, confident quarter | 0.441 | **0.651** | 0.677 |
+| Null (random second map) | 0.045 | 0.062 | 0.066 |
+
+**Conclusions.**
+- Keys learned for composition, without labels, beat the trunk's fixed codes by a quarter.
+- In the confident quarter they reach the gold-relation result (0.65 vs 0.68).
+- **This supports the author's hypothesis: learned keys make (fuzzy) composition work on real text.**
+- Caveats:
+  - Ranking among a document's entities.
+  - A stand-in trunk.
+  - Chains readable in one sentence per hop.
+  - Names that occur only in held-out documents keep their initial codes; there is no leakage of held-out relations.
