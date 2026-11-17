@@ -10,14 +10,14 @@ STATED in training is a COMPOSED conclusion 'A r3 C', checked by (a) the pair st
 distant label (Wikidata relation between A and C; undercounts), and the same for ALL chains (no rule) and random pairs of the same types.
 v2 options: RR_WORDS 1 = frames must end in a word (no punctuation-only or 'and'/'or' list frames); RR_XDOC 1 = the two hops come from
 DIFFERENT documents and a rule's evidence (A-C stated) must come from a third document (composition across reading, not one list).
-Usage: python3 tools/rt_rules.py <distant.json.gz>   env RR_TRAIN (0.7) RR_FAN (30) RR_MINSUP (5) RR_MINLB (0.3) RR_SEED (4) RR_WORDS (0) RR_XDOC (0)"""
+Usage: python3 tools/rt_rules.py <distant.json.gz>   env RR_TRAIN (0.7) RR_FAN (30) RR_MINSUP (5) RR_MINLB (0.3) RR_SEED (4) RR_WORDS (0) RR_XDOC (0) RR_COARSE (0: 1 = the last word between only)"""
 import os, sys, types, collections, math, time
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import platypus.inference.premises as pm
 
 TR = float(os.environ.get('RR_TRAIN', 0.7)); FAN = int(os.environ.get('RR_FAN', 30)); MINSUP = int(os.environ.get('RR_MINSUP', 5))
-MINLB = float(os.environ.get('RR_MINLB', 0.3)); WORDS = int(os.environ.get('RR_WORDS', 0)); XDOC = int(os.environ.get('RR_XDOC', 0)); rs = np.random.RandomState(int(os.environ.get('RR_SEED', 4)))
+MINLB = float(os.environ.get('RR_MINLB', 0.3)); WORDS = int(os.environ.get('RR_WORDS', 0)); COARSE = int(os.environ.get('RR_COARSE', 0)); XDOC = int(os.environ.get('RR_XDOC', 0)); rs = np.random.RandomState(int(os.environ.get('RR_SEED', 4)))
 t0 = time.time()
 pm._load_distant(types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_rret_list2=0))
 R, TY, LAB, ND = pm._PM['R'], pm._PM['TY'], pm._PM['LAB'], pm._PM['ND']
@@ -27,7 +27,7 @@ cut = int(ND * TR)
 STOP = {'and', 'or', 'the', 'a', 'an', ',', '(', ')', ';', ':', '-', '"', "'s"}
 def frame(r):
     mid = r[3].split()
-    w = r[3] if 1 <= len(mid) <= 3 else (r[4] if mid else '')
+    w = r[3] if 1 <= len(mid) <= 3 and not COARSE else (r[4] if mid else '')
     if WORDS and (not mid or not mid[-1].isalpha() or mid[-1] in STOP): return None
     return (TY.get(r[1], 'X'), w, TY.get(r[2], 'X'))
 
