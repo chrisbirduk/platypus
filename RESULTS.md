@@ -3572,3 +3572,23 @@ The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The 
 GPU arm cg27a_kcw = kcb + inf_distill_forms_conc 7.
 
 **Local kcs with half the anchor weight (akl 1.0).** Timed out before HEADLINE. Visit-4 held-out BPC 2.913 / 2.577 / 2.658 / 2.571 vs kcs 2.904 / 2.569 / 2.643 / 2.571, and the same recall. No benefit; closed.
+
+## Correction: chain discovery is NOT a large gap (17 Nov 2026, 20:35)
+
+"Probe chains found 15 of 203" counts every planted chain, but a chain can only be found once the domains of both its facts have been read. Consecutive facts are in different domains, with 10 domains in the GPU runs.
+
+Expected number of discoverable two-hop chains after v visits: 203 x v/10 x (v-1)/9.
+
+| After visit | Discoverable | Found (kcs GPU) | Share found |
+|---|---|---|---|
+| 3 | ~14 | 15 | ~100% |
+| 4 | ~27 | 23 | ~85% |
+| 5 | ~45 | 35 | ~78% |
+| 6 | ~68 | 57 | ~84% |
+
+Sleep finds about 80% or more of the chains it can reach. The remaining inference gaps are composition by the trunk itself and real-text composition, not discovery.
+
+**Conclusion recall (kcb): not a wording mismatch.**
+- Conclusions are tested in the held-out paraphrase "A is tied to" / "The one tied to A is" (taught as "is connected to" in every form).
+- This is the same for 7 and 21 wordings, so the drop from about 0.36 (kgk, kty, kus) to about 0.06 (kcs, kcb) comes from the consolidation package itself: every weight, every-domain anchor, 21 forms, decay.
+- kcw tests the 21 forms.
