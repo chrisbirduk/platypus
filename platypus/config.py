@@ -701,7 +701,7 @@ class Config:
                                     #   0.365, bits +0.69 vs -0.12; the pairs it types right 0.83
     inf_rret_list2=0                # 16 Nov WIDER LIST FILTER for the judge and typing: one comma + 'and' / 'or' ('X , Y and Z') is a list too (offline +0.02-0.03 AUC;
                                     #   with the usefulness rule the kept memory 0.80-0.83 right against 0.73-0.77)
-    inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved  (2 = judge AND NOT HARMFUL: only those measured not useful are held back)
+    inf_kmc_useful=0                # 16 Nov THE USEFULNESS KEEP RULE: an inference reaches the trunk only if judged and kept AND useful - the keyed memory saved  (2 = judge AND NOT HARMFUL: only those measured not useful are held back; 3 = judge AND (useful OR typed-confirmed), 17 Nov)
                                     #   bits on the inference's answer in later text naming its subject (the memory-feedback readout, inf_kmfb 1, measures it)
     inf_kmc_useful_thr=0.0          #     mean bits saved per span above which it is useful
     inf_kmc_useful_span=0           #     1: usefulness over the whole span after the subject (wording + name; offline: more kept, memory 0.80-0.83 right),

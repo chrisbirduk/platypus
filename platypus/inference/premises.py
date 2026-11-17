@@ -764,6 +764,7 @@ def _rret_judge(cfg, RD, ndv_, vis):
             hh, tt = (W[k].get('th') or k[0]), (W[k].get('tt') or k[1]); zs = HF9.get(hh, ())
             cf = sum(1 for z in zs if z == tt); ct = sum(1 for z in zs if z != tt and frozenset((z, tt)) not in LK9); return (cf - ct) / max(1, cf + ct)
         cc_ = np.array([_cc9(k) for k in ks], float)
+        for j9, k9 in enumerate(ks): W[k9]['cc'] = float(cc_[j9])                 # 17 Nov: the typed confirmation score, kept for the keep rule (inf_kmc_useful 3)
         sc = (rk(docs) if sig_ == 'docs' else rk(ra_) if sig_ == 'rel' else rk(ra_) + rk(cc_) if sig_ == 'rel+cc' else rk(short) + rk(pmi)); thr = np.quantile(sc, q); fl = sc <= thr   # 'rel' (cg27a_kmr): relational
         yv_ = np.array([bool(W[k]['truth']) for k in ks]); au_ = lambda x: _cg_auc(x[yv_], x[~yv_]) if yv_.any() and (~yv_).any() else float('nan')   #   records (0.697 offline)
         y = np.array([bool(W[k]['truth']) for k in ks]); taught = np.array([not _rret_key_held(cfg, k[0], k[1], '|rti') for k in ks])
