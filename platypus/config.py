@@ -543,6 +543,7 @@ class Config:
     inf_distill_wake_aklfw=1.0
     inf_distill_wake_decay=1.0      #   17 Nov: the question rows' weight x decay^(visit - inf_distill_wake_decay_from) in later visits
     inf_distill_wake_decay_from=2
+    inf_distill_wake_concboost=0    #   17 Nov (queue 49): 1 = conclusion rows (not facts, not refusals) sampled x 1/(the decay at this visit); the budget unchanged
     inf_distill_wake_params='mlp_out' #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed
