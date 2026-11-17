@@ -837,6 +837,61 @@ def kma_compose_write(model, cfg, K, S_slot, fs, vis):
           for (A, c), (sc, r2, b, e) in top[:5]), flush=True)
 
 
+def kma_probe_twohop(model, cfg, K, S_slot, fs, vis):
+    """17 Nov READOUT (inf_kmc_probe2; a PREDICTION-TIME option, nothing trained): the standard TWO-HOP PROBE QUESTIONS ('So A is connected
+    to' C, the same chains as the inference eval, C among 20 probe names, chance 0.05) answered by the key-returning memory: hop 1 reads
+    (A, r1) -> a distribution over answer names (pointer table); hop 2 reads (B, r2) for each of the top 5 names B; the candidates are ranked
+    by sum over B of p(B) p(C | B). Chains with both facts in visited domains; coverage = both facts are entries in the memory."""
+    from platypus.inference.probes import inf_probes
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():
+        for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+            if x is None: continue
+            for s_, w_ in zip(*x): d_ = PTR.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s_, w_ in zip(*x):
+                    for n, v in PTR.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+    ch = [c for c in inf_probes(cfg) if len(c['names']) >= 3 and all(int(d) in seen for d in c['doms'][:2])]
+    if not ch or not PTR:
+        print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] nothing to ask ({len(ch)} chains, {len(PTR)} pointer slots)", flush=True); return
+    alln = [n for c in inf_probes(cfg) for n in c['names']]; have = {(e['A'], str(e['r']).strip(), e['ans']) for e in fs}
+    rs = np.random.RandomState(77); KR = 5; h1 = {}
+    for sl in sorted({int(S_slot(c['doms'][0])) for c in ch}):
+        L = [c for c in ch if int(S_slot(c['doms'][0])) == sl]
+        for c, d1 in zip(L, dist([te(c['names'][0], c['rels'][0]) for c in L], sl)): h1[id(c)] = d1
+    q2 = {}
+    for c in ch:
+        for b in sorted(h1[id(c)], key=h1[id(c)].get, reverse=True)[:KR]: q2[(b, c['rels'][1], int(S_slot(c['doms'][1])))] = None
+    for sl in sorted({k[2] for k in q2}):
+        ks = [k for k in q2 if k[2] == sl]
+        for k, d2 in zip(ks, dist([te(k[0], k[1]) for k in ks], sl)): q2[k] = d2
+    ok, ok1, cov, okc = [], [], [], []
+    for c in ch:
+        A, B, C = c['names'][:3]; d1 = h1[id(c)]
+        oth = [x for x in rs.choice(alln, min(len(alln), 60), replace=False) if x not in (A, B, C)][:19]; cs = [C] + oth
+        sc = np.zeros(len(cs))
+        for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
+            d2 = q2.get((b, c['rels'][1], int(S_slot(c['doms'][1])))) or {}
+            sc += d1[b] * np.array([d2.get(x, 0.0) for x in cs])
+        r_ = bool(sc.max() > 0 and int(np.argmax(sc)) == 0); ok.append(r_)
+        ok1.append(bool(d1) and max(d1, key=d1.get) == B)
+        cv = (A, str(c['rels'][0]).strip(), B) in have and (B, str(c['rels'][1]).strip(), C) in have; cov.append(cv)
+        if cv: okc.append(r_)
+    print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] PREDICTION-TIME (nothing trained): {len(ch)} two-hop probe chains in visited domains, "
+          f"C among 20 probe names (chance 0.05) || C ranked first {np.mean(ok):.2f} | first hop right (B the top name) {np.mean(ok1):.2f} | both facts in the memory "
+          f"{np.mean(cov):.2f}; C first on those {np.mean(okc) if okc else float('nan'):.2f} (n {len(okc)}) | compare 'inference eval' two-hop FROM THE WEIGHTS", flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -893,6 +948,9 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
             _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
             if int(getattr(cfg, 'inf_kmc', 0)): _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, memonly=True)
             if int(getattr(cfg, 'inf_kmc_keyread', 0)): _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis)   # 16 Nov route C (readout)
+            if int(getattr(cfg, 'inf_kmc_probe2', 0)):
+                try: kma_probe_twohop(model, cfg, K, S_slot, fs, vis)
+                except Exception as e8: print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
                 try: kma_compose_write(model, cfg, K, S_slot, fs, vis)
                 except Exception as e9: print(f"  [COMPOSED WRITES | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
