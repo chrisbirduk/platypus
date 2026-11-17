@@ -3781,3 +3781,16 @@ The author chose to stay label-free (no distant supervision for the reader).
 - Rules over label-free keys add little on top: 0.31-0.34 vs 0.27 for chains confirmed without a rule.
 - The confirmed pairs are later STATED, so this is anticipation (as rtc), not inference of something never read.
 - **For label-free real-text inference, the judge (later reading) matters more than the composer.** Composition rules earn their place only once relation keys are clean, as in the rule world.
+
+## Local: two-hop probe questions through the key-returning memory (17 Nov 2026; inf_kmc_probe2 readout, kcs preset, local run to visit 5)
+
+| Visit | Trunk from the weights | Through the memory, C first | First hop right | Both facts in the memory |
+|---|---|---|---|---|
+| 2 | 0.02 | 0.00 (22 chains) | 0.23 | 0.00 |
+| 3 | 0.02 | 0.07 (46) | 0.24 | 0.02 |
+| 4 | 0.04 | 0.02 (89) | 0.15 | 0.01 |
+| 5 | 0.02 | n/a | n/a | n/a |
+
+- Locally, the probe facts are almost never in the memory: the memory holds the question pool, which is small here. The readout measures coverage, not composition. On the 1 covered chain, C was first (1.00).
+- The existing KEY-RETURNING readout (chains of entries in the memory) composes above chance locally: top-1 0.33-0.55, rank 0.52-0.75 (chance 0.10).
+- The probe readout rides in cg27a_kcr for the GPU, where the pool is up to 2,000 facts.
