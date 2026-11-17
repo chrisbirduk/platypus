@@ -195,6 +195,7 @@ def run(cfg):
     if int(getattr(cfg,'data_overlap_check',1)):                                 # issue #30: validation text must not appear in the training text
         try:
             ov_=[(d,)+overlap_check(stream_bytes(d,vseed_(i),500_000),(raw_tr_[i] if fresh_ else stream_bytes(d,tseed_(i),TRN_))) for i,d in enumerate(PILE_DOMAINS)]
+            import platypus.inference.kunits as _kuz_; _kuz_._DUP = {i for i,(d,h_,n_) in enumerate(ov_) if h_>0.001*max(1,n_)}   # 16 Nov: readouts report totals without them
             print("  [data] train/validation overlap (128-byte training chunks also found in the validation text): "
                   +", ".join(f"{d[:10]} {h_}/{n_}" for d,h_,n_ in ov_)+f" | total {sum(x_[1] for x_ in ov_)} of {sum(x_[2] for x_ in ov_)} ({'NONE' if not sum(x_[1] for x_ in ov_) else ('boilerplate level' if sum(x_[1] for x_ in ov_)<=0.001*max(1,sum(x_[2] for x_ in ov_)) else 'LEAK: validation text is in the training text')})",flush=True)
         except Exception as e_: _fail('runner:overlap'); print(f"  [data] train/validation overlap check unavailable ({type(e_).__name__}: {e_})")

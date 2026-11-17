@@ -22,6 +22,7 @@ _isyear = re.compile(rb'1[0-9]{3}|20[0-9]{2}').fullmatch; _isnum = re.compile(rb
 CL = 24
 
 
+_DUP = set()                                                                   # domain indices whose train / validation text overlaps (set by the runner)
 def ku_fires(b, word=False):
     """causal firings of a byte string: (fires, stores) as lists of (unit, key, position where the continuation starts); word=True adds the
     GENERIC units W1 / W2 (16 Nov, inf_ku_word): a firing at EVERY word end, key = the sentence's last 1 / 2 words, no hand rule"""
@@ -111,7 +112,7 @@ def ku_readout(model, cfg, vals, seen_d, next_d, slot_of, tag, nb=8):
     st = model.__dict__.get('_ku')
     if not st or not st['nfill']: return
     try:
-        lr = float(getattr(cfg, 'inf_ku_lr', 0.05)); Ts = int(model.cfg.seq_len); parts = []; tot = [0.0, 0.0, 0.0, 0, 0.0, 0.0]
+        lr = float(getattr(cfg, 'inf_ku_lr', 0.05)); Ts = int(model.cfg.seq_len); parts = []; tot = [0.0, 0.0, 0.0, 0, 0.0, 0.0]; tnd = [0.0, 0.0, 0.0, 0, 0.0, 0.0]
         wd = int(getattr(cfg, 'inf_ku_word', 0)) and bool(st['mem']['W1'])
         doms = [(d, 'read') for d in seen_d] + ([(next_d, 'NEXT')] if next_d is not None and next_d not in seen_d else [])
         was = model.training; model.eval()
@@ -131,17 +132,21 @@ def ku_readout(model, cfg, vals, seen_d, next_d, slot_of, tag, nb=8):
                             acc[4] += _row_bits(st, b, pt[r], ent[r], ('W1', 'W2'), 'WORD', lr)[0]
                             acc[5] += _row_bits(st, b, pt[r], ent[r], ('NAME', 'DATE', 'NUMBER', 'W1', 'W2'), 'WORD+HAND', lr)[0]
                 for i in range(6): tot[i] += acc[i]
+                if d not in _DUP:                                              # 16 Nov (queue 43): totals without domains whose training text overlaps
+                    for i in range(6): tnd[i] += acc[i]                        #   their validation text (data overlap check > 0.1%: Gutenberg, Github)
                 n = max(1, acc[3]); parts.append(f"domain {d} ({kind}): trunk {acc[0] / n:.4f}, + NAME {-acc[1] / n:+.4f}, + NAME + DATE + NUMBER {-acc[2] / n:+.4f}"
                                                  + (f", GENERIC WORDS {-acc[4] / n:+.4f}, WORDS + NAME + DATE + NUMBER {-acc[5] / n:+.4f}" if wd else ''))
         finally: model.train(was)
         n = max(1, tot[3]); M = st['mem']
         print(f"  [KEYED UNITS | {tag}] change in held-out bits per byte (negative = the units help; learned gate, prequential) || ALL DOMAINS: trunk {tot[0] / n:.4f}, + NAME "
-              f"{-tot[1] / n:+.4f}, + NAME + DATE + NUMBER {-tot[2] / n:+.4f} (DATE + NUMBER on top of NAME {-(tot[2] - tot[1]) / n:+.4f}) || " + " | ".join(parts)
+              f"{-tot[1] / n:+.4f}, + NAME + DATE + NUMBER {-tot[2] / n:+.4f} (DATE + NUMBER on top of NAME {-(tot[2] - tot[1]) / n:+.4f}) || WITHOUT DUPLICATED DOMAINS {sorted(_DUP)}: "
+              f"+ NAME {-tnd[1] / max(1, tnd[3]):+.4f}, + NAME + DATE + NUMBER {-tnd[2] / max(1, tnd[3]):+.4f} || " + " | ".join(parts)
               + f" || memory: {st['bytes'] / 1e6:.1f} MB read, keys NAME {len(M['NAME'])}, DATE {len(M['DATE'])}, NUMBER {len(M['NUMBER'])}", flush=True)
         if wd:
             print(f"  [GENERIC KEYED UNITS | {tag}] every word end keyed by its last 1-2 words (no hand rule; learned gate, prequential), change in held-out "
                   f"bits per byte || ALL DOMAINS: GENERIC WORDS {-tot[4] / n:+.4f} vs hand NAME + DATE + NUMBER {-tot[2] / n:+.4f}; WORDS + HAND {-tot[5] / n:+.4f} "
-                  f"(hand units on top of words {-(tot[5] - tot[4]) / n:+.4f}) || keys W1 {len(M['W1'])}, W2 {len(M['W2'])}", flush=True)
+                  f"(hand units on top of words {-(tot[5] - tot[4]) / n:+.4f}) || WITHOUT DUPLICATED DOMAINS {sorted(_DUP)}: GENERIC WORDS {-tnd[4] / max(1, tnd[3]):+.4f} vs hand "
+                  f"{-tnd[2] / max(1, tnd[3]):+.4f}; WORDS + HAND {-tnd[5] / max(1, tnd[3]):+.4f} || keys W1 {len(M['W1'])}, W2 {len(M['W2'])}", flush=True)
     except Exception as e:
         from platypus.common import _fail
         _fail('inference.kunits'); print(f"  [KEYED UNITS] readout unavailable ({type(e).__name__}: {e})"[:240], flush=True)

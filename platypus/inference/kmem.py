@@ -961,7 +961,9 @@ def kmfb_readout(model, cfg, S_slot, ents, vis):
         if w.get('rank') is not None: rk.append((float(w['rank']), v[1] / v[0]))
         if hk.get(k9) in W:                                                    # 16 Nov USEFULNESS: the memory's mean bits saved on this inference's later text -
             sp9 = int(getattr(cfg, 'inf_kmc_useful_span', 0))                 #   on the second name (default) or on the whole span after the subject
-            W[hk[k9]]['use'] = (v[4] if sp9 else v[1]) / v[0]; W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
+            W[hk[k9]]['use_sum'] = W[hk[k9]].get('use_sum', 0.0) + (v[4] if sp9 else v[1]); W[hk[k9]]['use_nsum'] = W[hk[k9]].get('use_nsum', 0) + v[0]   # 16 Nov CUMULATIVE
+            W[hk[k9]]['use'] = (W[hk[k9]]['use_sum'] / W[hk[k9]]['use_nsum']) if int(getattr(cfg, 'inf_kmc_useful_cum', 0)) else (v[4] if sp9 else v[1]) / v[0]   #   (queue 45: summed over visits)
+            W[hk[k9]]['use_n'] = v[0]; W[hk[k9]]['use_name'] = v[1] / v[0]; W[hk[k9]]['use_span'] = v[4] / v[0]
     from scipy.stats import spearmanr
     rho = spearmanr([a for a, b in rk], [b for a, b in rk])[0] if len(rk) >= 10 else float('nan')
     print(f"  [MEMORY FEEDBACK FROM READING | visit {vis + 1}]{' (inference slots readable here: the usefulness measure, inf_kmc_useful_open; prediction keeps the gate rule)' if int(getattr(cfg, 'inf_kma_nori', 0)) and int(getattr(cfg, 'inf_kmc_useful_open', 0)) else ''} {len(sp)} spans of documents {lo_}-{hi_} naming a written subject; the gate open on the second name in "
