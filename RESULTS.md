@@ -3858,3 +3858,8 @@ Base 0.113 / 0.000; chance 0.10.
   - A stand-in trunk.
   - Chains readable in one sentence per hop.
   - Names that occur only in held-out documents keep their initial codes; there is no leakage of held-out relations.
+
+## Overnight run log (17-18 Nov 2026)
+
+- 22:40-23:30 kcr local safety run: killed with its waiter shell at the 2-hour background limit, in phase 2. Phase 1 took 53 min with another job alongside and the 4x rule world. To re-run alone after compose-then-confirm, with a longer local timeout (LR_TIMEOUT).
+- 23:35 container restart: compose-then-confirm (tools/latent_confirm.py) restarted. Queue after it, one at a time: kcr local safety run, then the long synthetic composition run (tools/compose_synth.py CS_STEPS 20000, CS_NTRAIN 2000, CS_NHELD 200).
