@@ -786,6 +786,7 @@ class Config:
     inf_distill_rtx_space=0.0       #   12 Nov REPLAY BY STORAGE CHECK: alpha > 0 = replay probability ~ the trunk's own loss on each replayed sentence
                                     #     (clipped to q10-q90) ** alpha, re-measured before each visit: sentences already predicted are replayed less
     inf_distill_forms=7             #   12 Nov: number of self-written question wordings (7 = the original set; up to 21 = + 14 more, none a test wording)
+    inf_distill_forms_conc=0        #   17 Nov: >0 = conclusions (not facts) taught in only the first N wordings (kcs: 21 for all; kgk's conclusions recalled 0.36 with 7)
     inf_distill_replay=0            #   12 Nov SOURCE REPLAY: N > 0 = N stored source sentences of pool facts (and of the control fifth: read, never asked) replayed
                                     #   as plain text (next-byte loss) with every question-row step - storage by repeated reading (GPU cg27a_align: the trunk
                                     #   completed only 0.08 of control facts' own sentences vs 0.47 taught)

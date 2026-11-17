@@ -1845,7 +1845,8 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             own9 = f"{e['A']} {e['r']} {e['ans']}.".encode('latin-1', 'replace')   #   (never the row's own fact as its descriptor)
             d1 = [d for d in brd.get(e['ans'], []) if d != own9] if e['key'][0] == 'fact' else None
             d2 = [d for d in brd.get(e['A'], []) if d != own9] if e['key'][0] == 'fact' else None
-            for j9, fm in enumerate(FORMS9):
+            nfc9 = int(getattr(cfg, 'inf_distill_forms_conc', 0))           # 17 Nov (queue 50): conclusions (no source sentences) taught in FEWER wordings
+            for j9, fm in enumerate(FORMS9[:nfc9] if (nfc9 > 0 and e['key'][0] != 'fact') else FORMS9):
                 pb = fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'); ab = (e['ans'] + '.').encode('latin-1', 'replace'); tl = None
                 if d2:                                                         #   BRIDGE ANCHORING: the bridge as SUBJECT - its descriptor before the question,
                     rm9 = L09 - 1 - len(pb) - len(ab) - 1                          #   trimmed from the left to keep the answer in the window

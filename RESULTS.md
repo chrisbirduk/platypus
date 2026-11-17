@@ -3553,3 +3553,22 @@ The ArXiv and PubMed changes exceed GPU run variation (about 0.015–0.02). The 
 - Within-document "never stated together" inference is what the typed writes already do: 0.6-0.8 right.
 - Rule-world composition works through the relational module, with verified rules and no false ones on the GPU.
 - Measuring the next step needs a corpus whose composite facts are checkable (Wikidata relation paths over the names read), not later text.
+
+## GPU cg27a_kcb (kcs + the conclusion boost), visit 4: NEGATIVE for the conclusion fix (17 Nov 2026, 20:13)
+
+**The boost worked mechanically.** Conclusion rows were sampled x2 at visit 3 and x4 at visit 4; their share of question samples was 0.132 and 0.219 (uniform 0.055 and 0.049).
+
+**Recall did not move.**
+- Taught conclusions recalled from the trunk at visit 4: 0.06 (34). kcs: 0.09 (22).
+- Never-taught CONTROL conclusions: 0.25 (8).
+- The amount of practice is not the cause. The global decay hypothesis is wrong.
+
+**Everything else as kcs.** Facts taught for at least one visit recalled 0.79. Relational-module composites taught 1.00 (8) vs held back 0.33 (3).
+
+**Next suspects.**
+- The 21 question wordings: conclusions have no source sentences to carry them. kgk used 7 wordings and recalled 0.33–0.36.
+- Every-weight training.
+
+GPU arm cg27a_kcw = kcb + inf_distill_forms_conc 7.
+
+**Local kcs with half the anchor weight (akl 1.0).** Timed out before HEADLINE. Visit-4 held-out BPC 2.913 / 2.577 / 2.658 / 2.571 vs kcs 2.904 / 2.569 / 2.643 / 2.571, and the same recall. No benefit; closed.
