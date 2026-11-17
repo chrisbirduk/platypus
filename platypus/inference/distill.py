@@ -1884,17 +1884,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         if sp:
             for sl, pool in bysl.items():
                 a_ = np.array([1.0 / iv.get(rw[3], 1) for rw in pool]); w[sl] = a_ / a_.sum()
-        cb9 = int(getattr(cfg, 'inf_distill_wake_concboost', 0))              # 17 Nov (queue 49): CONCLUSION ROWS SAMPLED x 1/decay - the question budget
-        dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))              #   stays as decayed (forgetting as B6), but conclusions (no source sentences
-        if cb9 and dc9 < 1.0:                                                  #   to replay) get the share they had before the decay
-            f9 = (1.0 / dc9) ** max(0, int(vis) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))); ncb9 = 0; sh9 = []
-            for sl, pool in bysl.items():
-                a_ = np.array(w[sl]) * len(pool) if sl in w else np.ones(len(pool))
-                isc = np.array([not (rw[3].startswith("('fact'") or rw[3].startswith('refuse|')) for rw in pool]); ncb9 += int(isc.sum())
-                a_ = a_ * np.where(isc, f9, 1.0); w[sl] = a_ / a_.sum(); sh9.append(float(w[sl][isc].sum()))
-            nall9 = max(1, sum(len(v) for v in bysl.values()))
-            print(f"  [DISTILLATION, CONCLUSION BOOST | visit {vis + 1}] {ncb9} conclusion rows of {nall9} sampled x{f9:.1f} (the inverse of the question decay at this "
-                  f"visit; the question budget unchanged) | their share of samples {np.mean(sh9) if sh9 else 0.0:.3f} (uniform {ncb9 / nall9:.3f})", flush=True)
+        _dw_concboost(cfg, bysl, w, vis)
         anc = {}                                                               # ANCHOR SENTENCES per slot (stored real text) for the projection
         if int(getattr(cfg, 'inf_distill_wake_proj', 0)):
             it = S_.get('it', []); real = [x for x in it if x.get('k') == 'real' and 30 <= len(x['s']) <= 200]; ra = np.random.RandomState(int(cfg.seed) + 9595 + vis)
@@ -2009,6 +1999,21 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
         model.__dict__['_dtw'] = dict(vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
+
+
+def _dw_concboost(cfg, bysl, w, vis):
+    """17 Nov (queue 49, inf_distill_wake_concboost): CONCLUSION ROWS SAMPLED x 1/decay - the question budget stays as decayed (forgetting as
+    B6), but conclusions (no source sentences to replay) get the share they had before the decay. Edits w (slot -> row probabilities) in place."""
+    dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))
+    if not int(getattr(cfg, 'inf_distill_wake_concboost', 0)) or dc9 >= 1.0 or not bysl: return
+    f9 = (1.0 / dc9) ** max(0, int(vis) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))); ncb9 = 0; sh9 = []
+    for sl, pool in bysl.items():
+        a_ = np.asarray(w[sl], float) * len(pool) if sl in w else np.ones(len(pool))
+        isc = np.array([not (str(rw[3]).startswith("('fact'") or str(rw[3]).startswith('refuse|')) for rw in pool], bool); ncb9 += int(isc.sum())
+        a_ = a_ * np.where(isc, f9, 1.0); w[sl] = a_ / a_.sum(); sh9.append(float(w[sl][isc].sum()))
+    nall9 = max(1, sum(len(v) for v in bysl.values()))
+    print(f"  [DISTILLATION, CONCLUSION BOOST | visit {vis + 1}] {ncb9} conclusion rows of {nall9} sampled x{f9:.1f} (the inverse of the question decay at this "
+          f"visit; the question budget unchanged) | their share of samples {np.mean(sh9) if sh9 else 0.0:.3f} (uniform {ncb9 / nall9:.3f})", flush=True)
 
 
 def _kmc_pending(cfg, items):
