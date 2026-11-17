@@ -572,7 +572,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     from scipy.sparse import csr_matrix
     from sklearn.decomposition import TruncatedSVD
     t0 = time.time(); LAB = _PM['LAB']; W = _PM.setdefault('rti', {}); nD = len(RD); hf = float(getattr(cfg, 'inf_rcode_hold', 0.1))
-    ndv_ = (max(r[0] for r in RD) + 1) if RD else 0
+    ndv_ = (max(r[0] for r in RD) + 1) if RD else 0; _PM['ndv_now'] = int(ndv_)   # 17 Nov: composed writes are judged from here
     if int(getattr(cfg, 'inf_rret', 0)):
         try: _rret_judge(cfg, RD, ndv_, vis)
         except Exception as e9:

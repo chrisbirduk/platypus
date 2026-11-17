@@ -732,6 +732,79 @@ def _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis, cap=60):
           f"{mm(res['C'][0])}, {mm(res['C'][1])}, {mm(res['C'][2])} (compare TWO-HOP: the model decoding B and asking next; chance 0.10)", flush=True)
 
 
+def kma_compose_write(model, cfg, K, S_slot, fs, vis):
+    """17 Nov THE COMPOSING BUILD (inf_kmc_compose; ONE model change): the key-returning memory WRITES two-hop conclusions. For entries
+    A r1 B in the memory (facts and kept inferences), the read for (A, r1) returns a distribution over answer names (pointer table, route A);
+    each top name B - or, if B is not a written subject, the nearest written subject by the trunk's own name code (route C) - is asked with
+    each wording r2 the memory holds about it; the best answer C gives the conclusion 'A r2 C' (typed by the second hop's relation; score =
+    p(B) x p(C)). Pairs already written, or stated in the memory either way, are skipped; the top inf_kmc_compose_n are written to the
+    inference ledger like the fact-table code's writes - judged by later reading, kept by the keep rule, taught (consolidated) only if kept."""
+    import platypus.inference.premises as pm
+    from platypus.inference.premises import is_rti
+    W = pm._PM.setdefault('rti', {}); LAB = pm._PM.get('LAB') or set()
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():
+        for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+            if x is None: continue
+            for s_, w_ in zip(*x): d_ = PTR.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+    subj = {}
+    for e in fs: subj.setdefault(e['A'], []).append(e)
+    sl_of = {e['A']: int(S_slot(e['d'])) for e in fs}
+    if not PTR or len(subj) < 5:
+        print(f"  [COMPOSED WRITES | visit {vis + 1}] too few entries", flush=True); return
+    SN = sorted(subj); SC = F.normalize(_kma_tcode(model, K, SN), dim=-1)
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s_, w_ in zip(*x):
+                    for n, v in PTR.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    stated = {frozenset((e['A'], e['ans'])) for e in fs}; done = {frozenset(k) for k in W}
+    rs = np.random.RandomState(int(cfg.seed) + 7171 + vis); E1 = list(fs)
+    if len(E1) > int(getattr(cfg, 'inf_kmc_compose_src', 3000)): E1 = [E1[i] for i in rs.choice(len(E1), int(getattr(cfg, 'inf_kmc_compose_src', 3000)), replace=False)]
+    h1 = {}                                                                   # hop 1, by slot
+    for sl in sorted({int(S_slot(e['d'])) for e in E1}):
+        L = [e for e in E1 if int(S_slot(e['d'])) == sl]
+        for e, d1 in zip(L, dist([te(e['A'], e['r']) for e in L], sl)): h1[id(e)] = d1
+    q2 = {}; nfb = 0                                                          # hop 2 prompts: (B as asked, r2) -> its slot
+    for e in E1:
+        for b in sorted(h1[id(e)], key=h1[id(e)].get, reverse=True)[:3]:
+            q = b
+            if q not in subj:
+                v = F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]; q = SN[int((SC @ v).argmax())]; nfb += 1
+            for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]: q2[(q, r2)] = sl_of[q]
+    a2 = {}
+    for sl in sorted(set(q2.values())):
+        ks = [k for k, v in q2.items() if v == sl]
+        for k, d2 in zip(ks, dist([te(*k) for k in ks], sl)): a2[k] = d2
+    cand = {}
+    for e in E1:
+        d1 = h1[id(e)]
+        for b in sorted(d1, key=d1.get, reverse=True)[:3]:
+            q = b if b in subj else SN[int((SC @ F.normalize(_kma_tcode(model, K, [b]), dim=-1)[0]).argmax())]
+            for r2 in list(dict.fromkeys(x['r'] for x in subj[q]))[:4]:
+                d2 = a2.get((q, r2)) or {}
+                if not d2: continue
+                c = max(d2, key=d2.get); sc = d1[b] * d2[c]; A = e['A']
+                if c in (A, b, q) or frozenset((A, c)) in stated or frozenset((A, c)) in done: continue
+                if sc > cand.get((A, c), (0,))[0]: cand[(A, c)] = (sc, r2, b, e)
+    top = sorted(cand.items(), key=lambda x: -x[1][0])[:int(getattr(cfg, 'inf_kmc_compose_n', 100))]; ndv = int(pm._PM.get('ndv_now', 0)); ys = []
+    for i, ((A, c), (sc, r2, b, e)) in enumerate(top):
+        k = tuple(sorted((A, c))); y = frozenset((A, c)) in LAB; ys.append(y)
+        W[k] = dict(vis=vis, d=int(e['d']), truth=bool(y), bridges=1, rank=i, novel=True, code=float(sc), ndv=ndv, prem=[b], rule='compose', score=float(sc),
+                    state='inferred', th=A, tw=r2, tt=c, comp=True)
+    print(f"  [COMPOSED WRITES | visit {vis + 1}] the memory's key reads over {len(E1)} entries ({sum(1 for x in E1 if is_rti(x))} inferences) -> {len(cand)} two-hop "
+          f"conclusions never stated ({nfb} hop-2 names by the trunk's code); WROTE the top {len(top)}: right {np.mean(ys) if ys else float('nan'):.3f} (distant labels; "
+          f"they undercount) - judged, kept and taught like any inference || " + " | ".join(f"{A} {r2} {c} via {b} ({'right' if frozenset((A, c)) in LAB else 'wrong'})"
+          for (A, c), (sc, r2, b, e) in top[:5]), flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -788,6 +861,9 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
             _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis)
             if int(getattr(cfg, 'inf_kmc', 0)): _kma_twohop(model, cfg, K, S_slot, fs, pool, te, vis, memonly=True)
             if int(getattr(cfg, 'inf_kmc_keyread', 0)): _kma_twohop_key(model, cfg, K, S_slot, fs, pool, vis)   # 16 Nov route C (readout)
+            if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
+                try: kma_compose_write(model, cfg, K, S_slot, fs, vis)
+                except Exception as e9: print(f"  [COMPOSED WRITES | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         except Exception as e9:
             from platypus.common import _fail
             _fail('inference.kmem:twohop'); print(f"  [INTEGRATED KEYED MEMORY, TWO-HOP] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)

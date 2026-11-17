@@ -711,6 +711,9 @@ class Config:
     inf_kmc_useful_cum=0            #     16 Nov: 1 = the keep rule reads usefulness summed over every visit since the write (offline steadier: 0.81 / 0.78 vs 0.77 / 0.71)
     inf_kmc_keyread=0               # 16 Nov KEY-RETURNING MEMORY readout (route C): pointer table of answer names per slot; two-hop by key vs decoding
     inf_kmc_keyread_k=5             #   names carried from hop 1 to hop 2
+    inf_kmc_compose=0               # 17 Nov THE COMPOSING BUILD: the key-returning memory writes two-hop conclusions 'A r2 C' to the inference ledger
+    inf_kmc_compose_n=100           #   written per sleep (judged, kept and taught like any inference)
+    inf_kmc_compose_src=3000        #   memory entries used as first hops
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
