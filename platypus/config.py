@@ -541,6 +541,8 @@ class Config:
     inf_distill_wake_aklcache=32    #   17 Nov: stored real sentences per slot in the anchor cache
     inf_distill_wake_aklslot=-1     #   17 Nov: the slot (domain) the taught facts compete with (Wikipedia = 1), weighted by inf_distill_wake_aklfw in the anchor
     inf_distill_wake_aklfw=1.0
+    inf_distill_wake_decay=1.0      #   17 Nov: the question rows' weight x decay^(visit - inf_distill_wake_decay_from) in later visits
+    inf_distill_wake_decay_from=2
     inf_distill_wake_params='mlp_out' #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
                                     #   stored real sentences (inf_distill_wake_rows of one slot per step) is removed

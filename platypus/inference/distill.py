@@ -1995,7 +1995,7 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 for fm in FORMS9: rret9.append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), sl9))
             print(f"  [RETRACTION | visit {vis + 1}] next visit: {len(model.__dict__.get('_rret_x') or [])} retracted inferences, {len(rret9)} unlikelihood rows, "
                   f"{int(getattr(cfg, 'inf_rret_rows', 8))} a step at weight {float(getattr(cfg, 'inf_rret_w', 0.1)):g}", flush=True)
-        model.__dict__['_dtw'] = dict(rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        model.__dict__['_dtw'] = dict(vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -2187,6 +2187,8 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     ond = int(getattr(cfg, 'inf_distill_wake_ondream', 0))
     if ond and not dream: return
     w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
+    dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))                   # 17 Nov (queue 47): question rows pushed less in later visits
+    if dc9 != 1.0: w *= dc9 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2)))
     if int(getattr(cfg, 'inf_distill_spindle', 0)): return                 # spindle coupling: questions only inside the sleep's replay burst
     if int(getattr(cfg, 'inf_distill_readonly', 0)): return                # CONTROL RUN: the pool and every readout as usual, no question rows trained
     gw = _gate_weight(model, cfg, dkl)
