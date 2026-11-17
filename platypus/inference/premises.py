@@ -648,6 +648,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
             w9_ = ' '.join(t for t in w_.replace('"', ' ').split()).strip(' ,;()')
             if w_ and any(ch.isalpha() for ch in w_) and w9_ not in _RRET_LISTW and w9_ not in ('and', 'or') and (not int(getattr(cfg, 'inf_rti_clean', 0)) or (w_[0].isalnum() and w_[-1].isalnum())): TT_[(TYP_.get(hd_, 'X'), TYP_.get(tl_, 'X'))][(w_, fw_)] += 1
     done = {frozenset(x) for x in W}; o = np.argsort(-sc_); o = o[np.isfinite(sc_[o])]; nmax = int(getattr(cfg, 'inf_rti_max', 200)); dsl = 1 if 1 in seen else seen[-1]; wr = []
+    if int(getattr(cfg, 'inf_rti_adapt', 0)) and _PM.get('rti_budget'): nmax = int(_PM['rti_budget'])   # 16 Nov ADAPTIVE BUDGET (set by the last judgement)
     for j in o:
         if len(wr) >= nmax: break
         c = ks[j]
@@ -749,6 +750,14 @@ def _rret_judge(cfg, RD, ndv_, vis):
         pmi = np.array([np.log((len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0) + 0.5) + np.log(nd) - np.log(df[k[0]] + 1) - np.log(df[k[1]] + 1) for k in ks])
         rk = lambda x: np.argsort(np.argsort(x + 1e-9 * np.random.RandomState(7).rand(len(x)), kind='stable'), kind='stable') / max(1, len(x) - 1)
         docs = np.array([len(byp[frozenset(k)][0]) if frozenset(k) in byp else 0 for k in ks], float)
+        if int(getattr(cfg, 'inf_rti_adapt', 0)):                              # 16 Nov ADAPTIVE BUDGET (offline: a precision dial, up to 0.93): blocks of 100 by
+            stp = float(getattr(cfg, 'inf_rti_adapt_stop', 0.1)); nb9 = 0      #   write rank; the next write goes one block past the last leading block in which
+            for b0 in range(0, 10000, 100):                                    #   at least inf_rti_adapt_stop of the inferences have a confirming relational record
+                bl = [k for k in ks if b0 <= W[k]['rank'] < b0 + 100]
+                if not bl or np.mean([relS[frozenset(k)] > 0 for k in bl]) < stp: break
+                nb9 += 1
+            _PM['rti_budget'] = int(min(int(getattr(cfg, 'inf_rti_adapt_max', 400)), max(100, 100 * (nb9 + 1))))
+            out.append(f"ADAPTIVE BUDGET: {nb9} leading blocks of 100 with confirmations >= {stp:.2f} -> next write {_PM['rti_budget']}")
         sig_ = str(getattr(cfg, 'inf_rret_sig', 'short+pmi'))                  # 15 Nov: 'docs' = documents stating the pair since the write (offline on the
         ra_ = np.array([relA[frozenset(k)] for k in ks], float); rs_ = np.array([relS[frozenset(k)] for k in ks], float)
         def _cc9(k):

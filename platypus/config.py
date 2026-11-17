@@ -683,6 +683,9 @@ class Config:
                                     #     (bits the gated memory saves on the name after a written subject; confirm / contradict), AUC right vs wrong, coverage, selection
     inf_kmfb_n=4000                 #     spans per readout
     inf_rti_retype=0                # 16 Nov RETYPE ON CONFIRMATION: a kept inference that a later relational record states is rewritten in that record's wording
+    inf_rti_adapt=0                 # 16 Nov ADAPTIVE BUDGET: the next write's size from the last judged batch (blocks of 100 by rank; stop at a block with
+    inf_rti_adapt_stop=0.1          #   fewer than this share confirmed; one block past the last passing one)
+    inf_rti_adapt_max=400           #   largest write
     inf_rti_clean=0                 #   16 Nov TYPED WORDING CLEANUP: 1 = the class-pair table ignores wordings that start or end with punctuation (') was')
                                     #   and order (memory, question rows, readouts). Offline held-out (tools/loop_sim.py BOTH-RETYPE): exact relations 0.30-0.33 ->
                                     #   0.54-0.64, the memory saves +1.05 / +1.72 vs +0.26 / +0.11 bits per 1,000 bytes in rounds 1-2
