@@ -17,7 +17,7 @@ fact rows + 24 replayed pretraining rows per batch), four arms from the same che
   F4 TYPED ONLY     the new city's code is its country's; 'B lies in C' is never taught        (inheritance from the type alone)
 Recall: the right answer first among it and 9 others of its kind (chance 0.10): citizenship ('A is a citizen of '), the city ('A lives
 in '), the city's country ('B lies in ').
-Usage: CS_D=192 CS_NL=3 CS_STEPS=6000 CS_IMPL=1 CS_SEED=0 python3 tools/compose_synth.py"""
+Usage: CS_D=192 CS_NL=3 CS_STEPS=6000 CS_IMPL=1 CS_SEED=0 [CS_NTRAIN=400 CS_NHELD=100] python3 tools/compose_synth.py"""
 import os
 import math
 import collections
@@ -51,8 +51,8 @@ def pcode(bi, informative=0.8):                                                #
     c = OLD[bi][1]; return CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]   #   code (80%, like the cities' codes)
 def pnew(bi):
     n = person(); return (f"{n}-{pcode(bi)}" if PCODE else n), bi
-TRAINP = [pnew(int(rs.randint(len(OLD)))) for _ in range(400)]
-HELDP = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
+TRAINP = [pnew(int(rs.randint(len(OLD)))) for _ in range(int(os.environ.get('CS_NTRAIN', 400)))]   # 17 Nov: CS_NTRAIN / CS_NHELD
+HELDP = [pnew(int(rs.randint(len(OLD)))) for _ in range(int(os.environ.get('CS_NHELD', 100)))]
 F1P = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
 if PCODE == 2:                                                                 # 14 Nov CS_PCODE 2 - codes from REAL COMPRESSION of the fact graph: names lose the
     from scipy.sparse import csr_matrix                                        #   handed-out codes; the graph of what is stated (person-city, city-country, and
