@@ -2216,7 +2216,7 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     if ond and not dream: return
     w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
     dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))                   # 17 Nov (queue 47): question rows pushed less in later visits
-    if dc9 != 1.0: w *= dc9 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2)))
+    if dc9 != 1.0: w *= max(float(getattr(cfg, 'inf_distill_wake_decay_min', 0.0)), dc9 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))))   # 18 Nov floor
     if int(getattr(cfg, 'inf_distill_spindle', 0)): return                 # spindle coupling: questions only inside the sleep's replay burst
     if int(getattr(cfg, 'inf_distill_readonly', 0)): return                # CONTROL RUN: the pool and every readout as usual, no question rows trained
     gw = _gate_weight(model, cfg, dkl)

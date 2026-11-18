@@ -4079,3 +4079,25 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 - **Conclusion: at this scale the trunk does not compose untaught facts.** kcr's 0.21-0.32 and kcr2's 0.09-0.17 held back were association with planted or taught siblings, not composition. This agrees with the long synthetic run (2,000 taught, 200 held out at chance) and the two-hop literature.
 - The working route is the one already in place: compose in key space (the relational module, exact rules), write, and teach. The trunk then recalls taught composites at 0.80-1.00.
 - Two-hop probes through the memory at visit 3: 0.70 (10 chains), 1.00 where both facts are in memory.
+
+## kcr3 final readouts; memory COVERAGE is the experimental control; cg27a_kcf (decay floor) (18 Nov 2026, 12:10)
+
+**kcr3, pure families.**
+
+| Visit | 4 | 5 | 6 |
+|---|---|---|---|
+| Taught | 0.95 (20) | 0.96 (24) | 0.96 (24) |
+| Held back | **0.00 (20)** | **0.00 (28)** | **0.00 (33)** |
+
+- 0 of 81 across visits 2-6: the trunk does not compose.
+- All families, held back: 0.06 / 0.06 / 0.10.
+- Gated never-read 0.01-0.08; facts 0.78-0.87.
+
+**Memory coverage is mostly the control, not a limit.**
+- The pool is every fact the store holds (780 at visit 5, budget 2000). 1 in 5 is held back as the consolidation control (by key hash), and held-back facts are not written to the memory.
+- A chain has both facts in the memory with probability about 0.8 x 0.8 = 0.64. That matches the readout's 0.52-0.66.
+- Every chain whose two facts ARE in the memory is answered right (0.97-1.00). Without the experimental hold-out (deployment), two-hop answering through the memory is about that rate. No coverage build is needed.
+
+**cg27a_kcf (decay floor).**
+- kcr2 facts decline 0.81 -> 0.77 -> 0.67 at visits 5-7, as the global question decay reaches 1/16-1/64.
+- kcf = kcr + inf_distill_wake_decay_min 0.125. Visits 1-5 are identical to kcr by construction. The 5-domain local harness cannot see it; tests pass.
