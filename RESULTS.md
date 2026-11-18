@@ -4140,3 +4140,21 @@ Chance for the never-taught people is 0.10.
 - Both trunks know both hops (1.00) and memorise all 2,000 taught composites (1.00). Neither composes the 200 held-out people's (0.12-0.14, chance 0.10, n 200).
 - A second pass through shared weights does not overcome the two-hop curse at this scale and training length.
 - Composition in the weights (route B) is negative here. Route A, two reads through the integrated memory layer, is the remaining route to composition inside the model.
+
+## Route A: composition through two reads of the integrated memory (18 Nov 2026, local package run, cg27a_kcr3 + inf_kmc_rulecomp 2)
+
+A composite-relation question ('A is a grandchild of') is answered at prediction time by two reads of the integrated keyed memory. Read 1 (A, r1) gives B, read 2 (B, r2) gives C, and C is ranked among the rule world's 672 names (chance 0.001). The rule r3 = r1 o r2 is the TRUE rule (ORACLE), because the relational module learns none at this local scale. The pointer table, which maps memory slots back to names, covers every rule-world premise read (mode 2). Mode 1, which covers only question-pool facts, held both premises for only 3 of 269 composites and is not informative.
+
+| Visit | Pure families | All composites never planted | First hop right |
+|---|---|---|---|
+| 2 | 0.66 (88) | 0.66 (111) | 0.86 |
+| 3 | 0.77 (112) | 0.78 (157) | 0.89 |
+| 4 | 0.52 (168) | 0.50 (239) | 0.82 |
+| 5 | 0.47 (208) | 0.45 (294) | 0.77 |
+
+- On the GPU (cg27a_kcr3), the trunk alone answered 0 of 81 pure-family held-back composites.
+- The model's own memory composes facts never stated together, at about 470x chance by visit 5.
+- Accuracy falls as the memory fills (pointer slots 910 -> 1,553 at visit 4). Both hops lose accuracy: the first falls 0.89 -> 0.77, and the product is below first hop squared by visit 4-5 (0.47 vs 0.59). This is likely interference in the small local memory; the GPU memory has 65,536 slots.
+- Headline (readout only, no model change): forgetting -0.041, final BPC 2.623.
+- Claims: this is composition at prediction time through the memory, NOT consolidation into the trunk. The rules are oracle here. The learned-rule test is the GPU build cg27a_kra.
+
