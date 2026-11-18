@@ -59,7 +59,7 @@ if int(os.environ.get('LF_JOINT', 0)):                                         #
         if st % 1000 == 0: P(f"   joint step {st}: loss {loss.item():.3f}  ({time.time() - T0:.0f}s)")
     with torch.no_grad(): K = F_.normalize(Et, dim=-1).numpy(); W = {k: Wt[kix[k]].detach().numpy() for k in ks}
     P(f"LEARNED KEYS jointly with the maps ({len(TRP)} training records)  ({time.time() - T0:.0f}s)")
-res = collections.defaultdict(list); margins = []; mapped = []
+res = collections.defaultdict(list); margins = []; mapped = []; meta = []
 for d in range(cut, ND):
     pr = by_doc[d]; ents = sorted({x for p in pr for x in p})
     if len(ents) < 3: continue
@@ -68,6 +68,7 @@ for d in range(cut, ND):
         for k in ks: byh[a].append((k, b))
     done = set()
     for (a, b), ks in pr.items():
+        k1_ = sorted(ks)[0]
         for k2, c in byh.get(b, ()):
             if c == a or (a, c) in pr: continue
             res['every chain C (no map)'].append(frozenset((a, c)) in LAB)
@@ -78,7 +79,7 @@ for d in range(cut, ND):
             p_ = frozenset((a, ch)); y = p_ in LAB; m = float(s[o[0]] - s[o[1]])
             later = any(x > d for x in seen_docs.get(p_, ())); later_rel = any(x > d for x in rel_docs.get(p_, ()))
             two = sum(1 for x in rel_docs.get(p_, ()) if x > d) >= 2
-            mapped.append((y, m, later, later_rel, two))
+            mapped.append((y, m, later, later_rel, two)); meta.append((d, (k1_, k2), p_))
     rs = np.random.RandomState(d)
     for _ in range(min(20, len(ents))):
         i, j = rs.randint(len(ents)), rs.randint(len(ents))
@@ -94,4 +95,18 @@ show("MAP'S CHOICE + CONFIRMED later (relational wording)", M[M[:, 3] > 0, 0])
 show("MAP'S CHOICE, confident quarter + CONFIRMED (relational)", M[(M[:, 1] >= q) & (M[:, 3] > 0), 0])
 show("MAP'S CHOICE + CONFIRMED TWICE (relational, 2+ later docs)", M[M[:, 4] > 0, 0])
 show("MAP'S CHOICE, confident quarter + CONFIRMED TWICE", M[(M[:, 1] >= q) & (M[:, 4] > 0), 0])
+# 18 Nov RELIABILITY LEARNED FROM CONFIRMATION (writable BEFORE confirmation): confirmation cannot filter a write - a twice-confirmed pair has
+#   been READ twice. Instead, the confirmation history of each (k1, k2) key pair is learned on a CALIBRATION period (predictions in the first
+#   half of the held-out documents, confirmed by documents before the TEST period starts), and new predictions in the TEST period are written
+#   if their key pair's past confirmation rate is high - judged by the distant labels, with no confirmation of their own.
+cut2 = cut + (ND - cut) // 2; cal = collections.defaultdict(lambda: [0, 0])
+for (y, m, la, lr, tw), (d, u, p_) in zip(mapped, meta):
+    if d < cut2: cal[u][0] += any(d < x < cut2 for x in rel_docs.get(p_, ())); cal[u][1] += 1
+test = [(i, cal[u][0] / cal[u][1] if cal[u][1] >= 5 else None) for i, (d, u, p_) in enumerate(meta) if d >= cut2]
+P(f"RELIABILITY FROM CONFIRMATION: calibration predictions {sum(v[1] for v in cal.values())} in docs {cut}-{cut2}, {sum(1 for v in cal.values() if v[1] >= 5)} key pairs with 5+; "
+  f"test predictions {len(test)} in docs {cut2}-{ND}")
+Mt = M[[i for i, _ in test]]; rr = np.array([r if r is not None else -1 for _, r in test]); qt = np.quantile(Mt[:, 1], 0.75)
+show("TEST: map's choice (all)", Mt[:, 0]); show("TEST: confident quarter", Mt[Mt[:, 1] >= qt, 0])
+for thr in (0.05, 0.10, 0.20, 0.30):
+    show(f"TEST: key pair confirmed >= {thr:.2f} in calibration", Mt[rr >= thr, 0]); show(f"TEST: ... and confident quarter", Mt[(rr >= thr) & (Mt[:, 1] >= qt), 0])
 P(f"DONE ({time.time() - T0:.0f}s)")
