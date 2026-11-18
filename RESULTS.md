@@ -4179,3 +4179,253 @@ Local diagnostics (kra3, visit 2): second hop from the true B 0.91; composite 0.
 Local diagnostics (kra3) at visits 3-4: top B only 0.77 / 0.73 vs top 5 0.71 / 0.57; second hop from the true B 0.88 / 0.87; first hop 0.85 / 0.83. With the top B only, the composite reaches about first hop x second hop (0.83 x 0.87 = 0.72). The remaining decline is the first hop. No domain-age effect: 0.53-0.63 across domains at visit 4. On the GPU, the first hop falls further (0.94 -> 0.75 by visit 5), so top-1 alone will not remove the whole GPU decline.
 kra3 visit 5: top B only 0.63 vs top 5 0.45; first hop 0.79, second hop from the true B 0.79 (both falling now). BY DOMAIN at visit 5: the newest domain (d4) 0.75 composite / 0.89 second hop vs the older four 0.31-0.41 / 0.74-0.78. So by visit 5 older domains ARE hit after a new domain is written: interference from later writes, in both hops. Headline (readout only): forgetting -0.041, final BPC 2.622.
 
+### kraw (local, 18 Nov 2026 evening): top B only, slot-normalised decoding, route A writes (ORACLE rules locally)
+
+| Visit | Route A, pure families, top B only (raw table) | Slot-normalised table: first hop / composite | kra3 top 5 (raw) | Never-read AUC | Route A write precision |
+|---|---|---|---|---|---|
+| 2 | 0.82 | 0.97 / 0.95 | 0.66 | 0.80 | 0.33 (3) |
+| 3 | 0.84 | 0.99 / 0.99 | 0.70 | 0.75 | 0.50 (4) |
+| 4 | 0.77 | 0.95 / 0.92 | 0.58 | 0.58 | 0.33 (6) |
+| 5 | 0.65 | 0.94 / 0.88 | 0.47 | n/a | 0.10 (10) |
+
+- **The decline is mostly decoding through crowded pointer slots.** With the slot-normalised table, route A stays 0.88-0.99 through visit 5 (all composites never planted, top B only), against 0.45-0.71 for the original readout. The first hop stays 0.94-0.99.
+- **The false-memory check fails.** For families never read, the memory gives a name 0.97 of the time, and the composite score separates right answers from never-read ones at AUC 0.80 falling to 0.58. Route A needs an abstention rule before its answers are trusted.
+- **The writes are mostly WRONG locally:** precision 0.10-0.50 at tiny n (relational module write precision 0.09-0.14 overall). They decode through the POOL's facts only, about 90 locally, with the raw table at score >= 0.5. Trunk recall of them: TAUGHT 0.25-0.67 vs HELD BACK 0.17-0.50 (n 2-8).
+- **kra2 (GPU)** uses the slot-normalised table for writes and a much larger pool, but its write precision must be checked at visits 2-3 before it is trusted.
+- Headline: forgetting -0.041, final BPC 2.623, unchanged.
+
+### cg27a_kra2 GPU (18 Nov 2026, seed 4; route A writes with learned rules, slot-normalised pool table, top B only), visit 2
+
+- **Route A writes:** 20 composites written for 46 subjects. The route A line said precision 0.77 (n 13), but that count left out subjects with no true composite. The relational module's line at visit 3 gives the TRUE precision for all 20: **0.50**. The 7 left out are middle names whose parent is a root; they have no grandparent, yet the memory returned a name. The readout is now fixed (2bb6b61).
+- **Slot-normalised readout:** first hop 0.97 (raw 0.85), composite 0.97 (raw 0.76). Pure families, raw table: 0.90 (20).
+- **Never-read subjects:** the memory gives a name 0.89; AUC 0.67. Abstention is still missing.
+
+kra2 visit 3:
+- **Route A writes:** 27 new. The old readout gave 1.00 (n 18); counting the 9 subjects with no true composite as wrong gives about 0.67.
+- **Slot-normalised table:** first hop 0.97, composite 0.96 (raw 0.80 / 0.71). Pure families, raw table: 0.80 (40).
+- **Never-read subjects:** given a name 0.92, AUC 0.73.
+- **Trunk recall of written composites:** first measurable at visit 4.
+- **The main write error is the same as the abstention failure:** route A answers for subjects that have no composite. kra3's gate requires the first read's top name to be a written subject of the memory. A root is not a subject of a parent fact, so the gate should block these writes.
+
+kra2 visit 4: THE LOOP CLOSES MECHANICALLY, BUT WITH WRONG WRITES.
+
+From the trunk, test wording, composites written at an earlier sleep:
+
+| | Taught | Held back |
+|---|---|---|
+| Recall of the written answer | **0.82** (11) | 0.00 (7) |
+| ... never planted | 0.71 (7) | 0.00 (4) |
+| ... with the closed-form edits subtracted | 0.82 / 0.71 | 0.00 / 0.00 |
+
+- The composites route A writes ARE consolidated into the trunk's weights, not into the closed-form edits.
+- **But many written answers are wrong.** Precision over all 47 writes is 0.53. Of the 11 taught and recalled, the trunk's answer matches the rule world's truth for 3 (others: middle hop 1, hub 4, other 3). The trunk learned false composites written by route A: a measured false-memory cost.
+- Visit 4's batch: precision 0.92 (n 13) by the OLD readout, which leaves out subjects with no composite.
+- Route A, slot-normalised: 0.93 / 0.92. Pure families, raw table: 0.79. Never-read subjects given a name 0.96, AUC 0.78.
+- The gate (cg27a_kra3) is required before route A writes are trusted.
+
+### CORRECTION (18 Nov 2026, 20:00): what route A measures
+
+Route A's reads use only the memory's ADDRESSING: the slots that the model's keys select (_kma_ptr_reads returns slot indices and read weights). They never use the memory's learned values. The pointer table that turns slots into names is built from the same prompts' recorded answers, so route A is a lookup table keyed by the model's addresses, holding recorded facts:
+- **Mode 2:** every rule-world premise in the visited domains, a HARNESS ASSIST.
+- **Mode 1 and the writes:** the question pool's facts, what the reader recorded.
+
+Composition through it chains two recorded facts by address. That is the same function as the relational module's symbolic chaining over STORED hops, which already writes composites at precision 1.00. Route A's writes were less precise (0.50-0.67 before the gate).
+
+Hence:
+- 'The model's own memory composes facts never stated' (route A 0.85-0.97) is NOT supported as worded. It is retrieval and chaining of recorded facts through the model's addressing. The slot-normalised gain fixes address collisions.
+- **Still supported:**
+  - the trunk does not compose untaught composites (0 of 81, synthetic negatives);
+  - the relational module learns the true rules from read facts, 2 found, 0 false;
+  - written composites are consolidated into the trunk's weights (relational module writes: taught 0.80-0.96 vs held back 0.00-0.09; kra2's route A writes: taught 0.82 vs 0.00).
+- The earlier KEY-RETURNING MEMORY two-hop readouts (0.97-1.00) are the same address lookup over pool facts.
+- **The honest in-model test is ROUTE D** (inf_kmc_rulecomp_decode): the trunk decodes B for 'A r1', then C for 'B r2', with store and memory OFF, compared with the composite asked directly. Local run started.
+
+### The correction tested, and routes D and E (local, krc, visit 2; ORACLE rules)
+
+| Same composites (n 111) | Right |
+|---|---|
+| Route A, top B only | 0.80 |
+| The same reads, table answers SHUFFLED among the facts | **0.01** |
+| A PLAIN DICTIONARY over the same recorded facts, no model | **1.00** |
+
+Route A's answers come entirely from the table: confirmed.
+
+| Asking the composite | First step B | Two-step C | Asked directly | Pure families, two-step |
+|---|---|---|---|---|
+| Route D: trunk decodes, store and memory off (n 60) | **0.00** | 0.00 | 0.00 | 0.00 (45) |
+| Route E: trunk + integrated memory's learned values (n 30) | 0.10 | 0.03 | 0.00 | 0.05 (22) |
+
+- Route D writes: 0 written; 14 of 17 refused because B was not a recorded name.
+- Locally, neither the trunk nor the memory's learned values can produce the FIRST hop of a rule-world composite: the premise 'A is a child of B', read in text but not taught. The bottleneck is knowing read premises (trunk recall of read-only facts on the GPU: 0.19-0.30), not the composition step.
+- The GPU (kra4) gives the learned-rule, larger-trunk figures.
+
+### Real-text location chains (tools/loc_chain.py, distant 10k; labels for evaluation only)
+
+Within one document (the labels annotate a document's own pairs), pairs never recorded together:
+
+| | Precision | n |
+|---|---|---|
+| Random pair | 0.064 | 116,624 |
+| Any two-record chain | 0.075 | 182,658 |
+| **Containment chains** (A in/, B; B in/, C; B and C places) | **0.167** | 2,313 |
+
+- 2.2x the chain baseline, but far below the existing writer (0.6-0.7 at the top). Containment alone is weak; it needs the reader's typing or confirmation on top.
+- Across documents, the precision is 0.013-0.025, but the labels annotate only same-document pairs, so that figure is not meaningful.
+
+### cg27a_kra4 GPU, visit 2 (18 Nov 2026, seed 4): ROUTE D - THE TRUNK COMPOSES BY DECODING TWO STEPS (learned rules)
+
+Store and memory OFF, nothing looked up. The relational module's LEARNED rule splits the composite question; the trunk decodes B for 'A r1', then C for 'B r2':
+
+| Composites never planted | First step B | Two-step C | Asked directly |
+|---|---|---|---|
+| All (n 34) | 0.44 | **0.44** | 0.09 |
+| Pure families (n 20) | — | **0.60** | **0.00** |
+
+- **The first in-model composition result:** where the trunk alone answers 0 of 20 pure-family composites directly, it answers 0.60 when the learned rule splits the question into two steps.
+- **The second step is perfect given B** (C right 0.44 = B right 0.44). The limit is the first step: premises the trunk knows (0.44 on the GPU, 0.00 on the small local trunk).
+- This matches the literature: composition works when the bridge entity is written out (Balesni et al., v4). Here the decomposition comes from a rule the system learned itself.
+- **Route D writes:** 24 written, precision **0.50** (subjects with no composite count as wrong). Refused: B unknown 4, B unstable 8, same name 10. The gate does not block middle names whose parent is a root: the decoder still outputs a known name for the root's 'parent'.
+- One seed, small n.
+
+kra4 visit 3:
+- **Route D:** first step B 0.42; two-step C 0.35 vs asked directly 0.07 (n 69); pure families 0.38 vs 0.00 (n 40). Composition by two decoding steps holds, lower than visit 2 (0.60, n 20).
+- **Route D writes:** precision 0.27 (n 37); 56 written in all. Refused: B unknown 15, B unstable 23, C unknown 1, same name 12.
+- **The writes must not be trusted without abstention.** cg27a_kra5 adds it (B must have a recorded fact for the second relation).
+
+### LEARNED DECOMPOSITION in the synthetic world (18 Nov 2026, evening; tools/compose_synth.py CS_COT 1, 3 blocks x 192, 2,000 training people, 200 held out, seed 0)
+
+The training people's citizenship is written as its chain, 'A is a citizen of B > C.'. Held-out people never have citizenship in any form. Asked 'A is a citizen of ', their greedy continuation is parsed.
+
+| Step | Taught: B / C | **NEVER TAUGHT: B / C** |
+|---|---|---|
+| 4,000 | 0.06 / 0.11 | 0.08 / 0.12 |
+| 5,000 | 0.50 / 0.52 | 0.24 / 0.25 |
+| 6,000 | 0.82 / 0.83 | 0.66 / 0.68 |
+| 7,000 | 0.99 / 0.99 | 0.81 / 0.81 |
+| 8,000 | 0.96 / 0.96 | **0.92 / 0.92** |
+| 10,000 | 1.00 / 1.00 | 0.99 / 0.99 |
+| 12,000 | 1.00 / 1.00 | **1.00 / 1.00** |
+
+- The same world with the implication taught DIRECTLY ('A is a citizen of C') never composed for held-out people: 0.12-0.14 at every depth (3, 6, looped 3x2; chance 0.10).
+- **Trained to write the bridge, the model composes for people it was never told about: 0.92 (n 200).** It learned the decomposition itself. No rule table and no lookup; every step is its own decoding.
+- This matches Balesni et al. (step-by-step reasoning composes where latent composition fails) and gives the in-package route: the model learns from its consolidated composites to write the chain.
+- Caveats: synthetic, one seed. Every person's city fact is known (person's city 1.00). The second step has B in context.
+
+### cg27a_kra5 GPU (18 Nov 2026, seed 4; route D abstention + source replay 8), visits 2-3
+
+| | kra4 v2 | **kra5 v2** | kra4 v3 | **kra5 v3** |
+|---|---|---|---|---|
+| Route D first step B | 0.44 | **0.65** | 0.42 | 0.41 |
+| Route D two-step C, all (asked directly) | 0.44 (0.09) | **0.50** (0.12) | 0.35 (0.07) | 0.39 (0.07) |
+| Route D, PURE FAMILIES (asked directly) | 0.60 (0.00) | 0.60 (0.00) | 0.38 (0.00) | 0.40 (0.00) |
+| **Route D write precision** (n) | 0.50 (24) | **1.00 (12)** | 0.27 (37) | **0.89 (9)** |
+
+- **The abstention works.** "B has no recorded r2 fact" refused 23 and 39 candidates; write precision 0.50 / 0.27 -> 1.00 / 0.89. It writes far fewer: 12 + 4.
+- **Premises:**
+  - Reading wording: first step 0.74 / 0.46, composite 0.68 / 0.48, pure families 0.70 / 0.50. Better than the test wording (0.65 / 0.41).
+  - Composites whose premises are TAUGHT pool facts: 0.67 (15) / 0.25 (40). Not better.
+  - The first step falls from visit 2 to visit 3 as domains are added: premise forgetting, not just never-learned.
+- **Route E** (trunk + integrated memory's learned values): first step 0.63 / 0.50; composite 0.47 / 0.40 vs direct 0.10 / 0.03; pure families 0.58 / 0.38. About the same as route D. The memory's values do not add much beyond the trunk.
+- **Route A controls on the GPU:** shuffled table 0.00 / 0.01; plain dictionary 1.00 / 1.00. The correction is confirmed at scale.
+
+### cg27a_kra6 GPU (18 Nov 2026, seed 4): ROUTE J, the JEPA-style relational memory, visit 2
+
+One linear operator per relation on the trunk's name codes, fitted on the 364 facts the reader recorded (15 relations). The learned rule's two operators are applied in latent space (the bridge is never decoded); C is the nearest of 572 recorded names (chance 0.002).
+
+| Visit 2 (n 34; pure families n 20) | Route J | Route D (same run) | Route E | Asked directly |
+|---|---|---|---|---|
+| First hop B | **0.76** | 0.56 | 0.53 | — |
+| Composite C | 0.47 | 0.41 | 0.37 | 0.09 |
+| **Pure families** | **0.65** | 0.40 | 0.37 | 0.00 |
+| Null (operators fitted on shuffled facts) | **0.00** | | | |
+
+- **Margin gate >= 0.05:** answers 0.79, right when answering 0.59.
+- **Never-read families:** 0.52 pass the gate; AUC right vs never-read **0.89**. The separation is good, but the threshold is too low.
+- **Route J writes:** 17, precision **1.00** (17). Refused: margin 10, same name 3, B has no recorded r2 fact 16.
+- **The best composition so far that is the model's own.** The facts are in learned operators fitted on reading (null 0.00), the composition is latent, and the rules are learned.
+- The second step loses the most: first hop 0.76, composite 0.47. The predicted B code is applied directly, not snapped to the nearest name. Snapping is the obvious next test.
+
+**BELIEF REVISION (CS_REV, same run).** 100 held-out people move to an old city in ANOTHER country. Only the new 'lives in' fact is taught briefly, with replay; the country is never mentioned.
+
+| Steps | Chain gives the NEW city / NEW country | Still the OLD city / OLD country |
+|---|---|---|
+| 100 | 0.77 / 0.78 | 0.13 / 0.13 |
+| 300 | **0.96 / 0.95** | 0.04 / 0.04 |
+
+- Learned decomposition updates its conclusions for free: the composite is recomputed from the current premise, not stored.
+- Composites consolidated as facts go stale when a premise changes (RippleEdits). Writing the chain is how the model can avoid that.
+
+### Self-supervised pronoun linker (18 Nov 2026, night; tools/pron_link.py, distant 10k, stand-in trunk 192 x 3, 128-byte window)
+
+Held out (a later mention replaced by a pronoun; 1,435 training and 285 held-out examples):
+
+| Linker | Accuracy |
+|---|---|
+| Learned linker (best epoch) | 0.18-0.23 |
+| First mention (title) | **0.22** |
+| Nearest earlier mention | 0.05 |
+| Nearest earlier mention of the matching type | 0.15 |
+
+Real pronouns in 1,000 documents:
+- New records through linked pronouns: precision 0.091 (n 6,324), against 0.138 for the reader's name-pair records (n 25,755).
+- 574 right pairs added (+16%), at lower precision.
+
+**NEGATIVE as built.** The learned linker does not beat 'link to the title'. Likely causes:
+- The stand-in trunk's states see only 128 bytes, and a pronoun's referent is often further back.
+- It uses one state per mention.
+- 1,435 examples.
+
+Next: the title heuristic as the baseline to beat; the GPU trunk's states; context-wide features (the mention's sentence and the pronoun's sentence).
+
+### Bootstrapped reader, Snowball-style without labels (18 Nov 2026, night; tools/boot_reader.py, distant 10k; held-out last 20% of documents)
+
+- **Seeds:** 23 generic connective templates (', born in', 'is located in', 'was founded in' ...). 588 records, labelled 0.367 against a base rate of 0.151.
+- **Negatives:** list glue (',', 'and' ...).
+- **Model:** a logistic classifier over the text between the names, the type pair and the distance, with its confident records added each round.
+
+| Ranker | Held-out AUC | Precision, top 1% / 5% / 20% |
+|---|---|---|
+| Distance only | 0.560 | 0.079 / 0.161 / 0.184 |
+| Last word is relational | 0.534 | 0.156 / 0.162 / 0.183 |
+| Bootstrapped, rounds 0-3 | **0.49 -> 0.49** | 0.18 -> 0.14 / 0.17 -> 0.15 / 0.17 -> 0.16 |
+| Same, list glue only between names of the same type | 0.49 -> 0.47 | 0.15 -> 0.14 / ... |
+
+**NEGATIVE.** The bootstrapped reader is no better than chance on held-out documents and drifts with each round. In round 3, the 2,000 records it was surest were WRONG are labelled 0.58.
+- **The assumption fails:** pairs joined by commas ('Paris , France') are often related (glue negatives labelled 0.15-0.17, the base rate).
+- **The seeds are too narrow** (588 records) to generalise from wording features.
+- **Surface wording does not carry the relation in this data.** That agrees with the earlier frame-based results (AUC 0.62 at best).
+- The next reader attempt should use what the model knows (trunk states, cross-document consistency), not surface wording.
+
+### cg27a_kra6 visits 3-4: THE CLOSED LOOP WITH THE MODEL'S OWN LATENT MEMORY
+
+| Route J | Visit 2 | Visit 3 | Visit 4 |
+|---|---|---|---|
+| Recorded facts fitted / relations / names decoded among | 364 / 15 / 572 | 514 / 20 / 745 | 758 / 22 / 1,059 |
+| First hop B | 0.76 | 0.81 | 0.77 |
+| Composite C (all never planted) | 0.47 | **0.65** | **0.61** |
+| PURE FAMILIES | 0.65 | **0.78** | **0.67** |
+| Null (shuffled facts) | 0.00 | 0.01 | 0.05 |
+| Margin gate: answers / right when answering | 0.79 / 0.59 | 0.81 / 0.77 | 0.77 / 0.79 |
+| Never-read families passing the gate / AUC | 0.52 / 0.89 | 0.47 / 0.92 | 0.37 / **0.95** |
+| Writes this sleep (total) / precision | 17 (17) / 1.00 | 29 (46) / 1.00 (39) | 13 (59) / **1.00** (37) |
+
+**Consolidation of route J's writes** (visit 4, from the trunk, test wording, memory off):
+
+| | Taught | Held back |
+|---|---|---|
+| All written composites | **1.00** (7) | 0.00 (8) |
+| Never planted | **1.00** (7) | 0.00 (8) |
+| With the closed-form edits subtracted | 1.00 (7) | 0.00 (8) |
+| Pure families | 1.00 (5) | 0.00 (7) |
+| What the trunk answers | right 7 of 7 | 'other' 8 of 8 |
+
+- **THE LOOP CLOSES, CORRECTLY, WITH THE MODEL'S OWN MECHANISMS:**
+  1. it reads;
+  2. its reader records facts;
+  3. its relational module learns the true rules;
+  4. its latent relational memory (operators fitted on the records; null 0.00-0.05) composes facts never stated;
+  5. the gated writes are all right (59 written, precision 1.00 where truth is known);
+  6. the trunk then knows the taught ones in an unseen wording with the memory off (1.00 vs 0.00 held back), in its weights.
+- Route D in the same run: pure families 0.35 / 0.52 (asked directly 0.00 / 0.10).
+- One seed; small n for the consolidation (7 / 8).
+
