@@ -978,6 +978,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
             for r3, (r1, r2) in rules.items():
                 if str(e['r']).strip() == r1 and (e['A'], r3) not in hasr: subj[(e['A'], r3)] = int(S_slot(e['d']))
         thr = float(getattr(cfg, 'inf_kmc_rulecomp_wthr', 0.5)); RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; ngt = 0; WS = K.get('subj', set()); GV = []
+        gA9, gB9, gd9 = int(getattr(cfg, 'inf_kmc_rulecomp_gA', 1)), int(getattr(cfg, 'inf_kmc_rulecomp_gB', 1)), float(getattr(cfg, 'inf_kmc_rulecomp_gd1', 0.5))
+        gate9 = lambda A_, B_, p_: (A_ in WS or not gA9) and (B_ in WS or not gB9) and p_ >= gd9   # the write gate (parts switchable)
         for sl in sorted(set(subj.values())):
             Q = [(A, r3) for (A, r3), s2 in subj.items() if s2 == sl]
             d1s = dist([te(A, rules[r3][0]) for A, r3 in Q], sl, PW)
@@ -994,10 +996,27 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     GV.append((C == m9.get(m9.get(A)) if m9 is not None and A in m9 else None, sc[C], mg, A in WS, B1 in WS, d1[B1], C in WS, C == A or C == B1))
                 except Exception: pass
                 if sc[C] < thr or C == A or C == B1: continue
-                if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not (A in WS and B1 in WS and d1[B1] >= 0.5): ngt += 1; continue
+                if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not gate9(A, B1, d1[B1]): ngt += 1; continue
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
                 m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)   # FIX (18 Nov, labelled): a subject with NO true composite (a middle
                 if m_ is not None and A in m_: ok_.append(C == m_.get(m_.get(A)))               #   name whose parent is a root) counts as WRONG, as in the relational module's line
+        if int(getattr(cfg, 'inf_kmc_rulecomp_reverify', 0)) and RW:           # 18 Nov MODEL CHANGE (combined with the gate, by the user's decision): RE-VERIFY every
+            WRm = model.__dict__.get('_rm_written', {}); rt_ = []; kp_ = []        #   earlier route A write at each sleep with today's memory - retracted (no longer taught)
+            subj_of = {e['A']: int(S_slot(e['d'])) for e in fs0}                   #   unless the gated two reads still give the same answer
+            for (r3, A, C) in list(RW):
+                sl = subj_of.get(A)
+                if sl is None or r3 not in rules: continue
+                d1 = dist([te(A, rules[r3][0])], sl, PW)[0]; ok9 = False
+                if d1:
+                    B1 = max(d1, key=d1.get)
+                    if gate9(A, B1, d1[B1]) and B1 != C:
+                        d2 = dist([te(B1, rules[r3][1])], sl, PW)[0]; ok9 = bool(d2) and max(d2, key=d2.get) == C and d1[B1] * d2[C] >= thr
+                m9 = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3); tr9 = (C == m9.get(m9.get(A))) if m9 is not None and A in m9 else None
+                if ok9: kp_.append(tr9); continue
+                RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); rt_.append(tr9)
+            pr = lambda L: f"{np.mean([x for x in L if x is not None]) if any(x is not None for x in L) else float('nan'):.2f}"
+            print(f"  [ROUTE A RE-VERIFY | visit {vis + 1}] MODEL CHANGE: earlier route A writes checked with today's gated two reads: KEPT {len(kp_)} (right {pr(kp_)}) | "
+                  f"RETRACTED {len(rt_)} (right {pr(rt_)}; no longer taught) | {len(RW)} written composites remain", flush=True)
         try:
             V = [g for g in GV if g[0] is not None and not g[7]]
             def pv(nm, f):
