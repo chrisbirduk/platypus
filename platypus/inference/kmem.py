@@ -977,7 +977,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
         for e in fs0:
             for r3, (r1, r2) in rules.items():
                 if str(e['r']).strip() == r1 and (e['A'], r3) not in hasr: subj[(e['A'], r3)] = int(S_slot(e['d']))
-        thr = float(getattr(cfg, 'inf_kmc_rulecomp_wthr', 0.5)); RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; ngt = 0; WS = K.get('subj', set())
+        thr = float(getattr(cfg, 'inf_kmc_rulecomp_wthr', 0.5)); RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; ngt = 0; WS = K.get('subj', set()); GV = []
         for sl in sorted(set(subj.values())):
             Q = [(A, r3) for (A, r3), s2 in subj.items() if s2 == sl]
             d1s = dist([te(A, rules[r3][0]) for A, r3 in Q], sl, PW)
@@ -988,11 +988,27 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     for n, v in (dist([te(b, rules[r3][1])], sl, PW)[0]).items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
                 if not sc: continue
                 C = max(sc, key=sc.get); B1 = max(d1, key=d1.get)
+                try:                                                           # 18 Nov READOUT, GATE VARIANTS (nothing changed by it): every candidate
+                    m9 = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)   #   with its truth and which gates it passes
+                    s2 = sorted(sc.values(), reverse=True); mg = s2[0] - (s2[1] if len(s2) > 1 else 0.0)
+                    GV.append((C == m9.get(m9.get(A)) if m9 is not None and A in m9 else None, sc[C], mg, A in WS, B1 in WS, d1[B1], C in WS, C == A or C == B1))
+                except Exception: pass
                 if sc[C] < thr or C == A or C == B1: continue
                 if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not (A in WS and B1 in WS and d1[B1] >= 0.5): ngt += 1; continue
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
                 m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)   # FIX (18 Nov, labelled): a subject with NO true composite (a middle
                 if m_ is not None and A in m_: ok_.append(C == m_.get(m_.get(A)))               #   name whose parent is a root) counts as WRONG, as in the relational module's line
+        try:
+            V = [g for g in GV if g[0] is not None and not g[7]]
+            def pv(nm, f):
+                L = [g[0] for g in V if f(g)]; return f"{nm} {np.mean(L) if L else float('nan'):.2f} ({len(L)})"
+            print(f"  [ROUTE A, GATE VARIANTS | visit {vis + 1}] READOUT: every route A candidate this sleep (truth known, n {len(V)}), precision (n passing) under each gate || "
+                  + " | ".join([pv('no gate', lambda g: True), pv('score >= 0.5', lambda g: g[1] >= 0.5), pv('score >= 0.8', lambda g: g[1] >= 0.8),
+                                pv('subject written', lambda g: g[3]), pv('first-read name written', lambda g: g[4]), pv('both written', lambda g: g[3] and g[4]),
+                                pv('both + first read >= 0.5 + score >= 0.5 (kra3)', lambda g: g[3] and g[4] and g[5] >= 0.5 and g[1] >= 0.5),
+                                pv('kra3 + margin >= 0.3', lambda g: g[3] and g[4] and g[5] >= 0.5 and g[1] >= 0.5 and g[2] >= 0.3),
+                                pv('answer NOT a written subject', lambda g: not g[6]), pv('kra3 + answer not a written subject', lambda g: g[3] and g[4] and g[5] >= 0.5 and g[1] >= 0.5 and not g[6])]), flush=True)
+        except Exception as e9: print(f"  [ROUTE A, GATE VARIANTS | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
         print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}, {'slot-normalised' if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)) else 'raw'} pool table: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
               f"write path (composite score >= {thr}; {len(RW)} so far; {ngt} refused by the gate: both subjects written in the memory and the first read's top name >= 0.5) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
     PN = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}   # DIAGNOSTIC: each slot's
