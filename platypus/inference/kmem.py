@@ -960,7 +960,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
           f"relation, answered by two memory reads (C first among {len(names)} rule-world names, chance {1 / max(1, len(names)):.3f}) || ALL {m(out['all'])} | "
           f"PURE FAMILIES {m(out['pure'])} | first hop right {np.mean(first) if first else float('nan'):.2f} || both premises in the memory: ALL {m(out['cov'])}, "
           f"PURE {m(out['covpure'])} | compare the trunk alone on pure-family held-back composites (RELATIONAL MODULE WRITES, PURE FAMILIES)", flush=True)
-    if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)) and not int(getattr(cfg, 'inf_kmc_rulecomp_dwrite', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
+    if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)) and not int(getattr(cfg, 'inf_kmc_rulecomp_dwrite', 0)) and not int(getattr(cfg, 'inf_kmc_rulej_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
         # 18 Nov ROUTE A WRITES (MODEL CHANGE, inf_kmc_rulecomp_write): the model's own composition through two memory reads becomes what the relational
         # module writes into the question pool (instead of its symbolic chaining over stored facts). LABEL-FREE: the subjects are those with a recorded
         # r1 fact and no recorded r3 fact; the pointer table maps slots to names through the POOL'S facts only (what the reader recorded).
@@ -1135,6 +1135,64 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                       f"{nw} new composites written ({len(RW)} so far) | refused: " + ", ".join(f"{k} {v}" for k, v in why.items())
                       + f" | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)}; a subject with no composite counts as wrong)", flush=True)
         except Exception as e9: print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
+    if int(getattr(cfg, 'inf_kmc_rulej', 0)):                                  # 18 Nov ROUTE J, THE JEPA-STYLE RELATIONAL MEMORY: one linear operator per relation on the trunk's
+        try:                                                                   #   name codes, fitted (closed form, ridge) on the facts the READER RECORDED (the pool); the
+            old9 = K.get('tcode'); K['tcode'] = {}                             #   composite = the learned rule's two operators applied in LATENT space (the bridge B is never
+            try:                                                               #   decoded), decoded as the nearest code among ALL recorded names (no fact table at question time)
+                rel9 = {}
+                for e in fs0: rel9.setdefault(str(e['r']).strip(), []).append((e['A'], e['ans']))
+                tuJ = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
+                NM = sorted({e['A'] for e in fs0} | {e['ans'] for e in fs0} | {l for _, l, _, _ in tg} | {l for _, l, _, _ in tuJ})
+                Z = _kma_tcode(model, K, NM).float(); Z = Z - Z.mean(0); Z = Z / (Z.norm(dim=-1, keepdim=True) + 1e-8); NI = {n: k for k, n in enumerate(NM)}
+                dec = {e['A'] for e in fs0} | {e['ans'] for e in fs0}; DI = torch.tensor([NI[n] for n in sorted(dec)], device=Z.device); DN = sorted(dec)
+                lam = float(getattr(cfg, 'inf_kmc_rulej_lam', 0.1)); D9 = Z.shape[1]; Id = torch.eye(D9, device=Z.device)
+                def fit(pairs, shuffle=False):
+                    X = Z[[NI[a] for a, b in pairs]]; Y = Z[[NI[b] for a, b in pairs]]
+                    if shuffle: Y = Y[torch.randperm(len(Y), generator=torch.Generator().manual_seed(5)).to(Y.device)]
+                    return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
+                OP = {r: fit(p) for r, p in rel9.items() if len(p) >= 5}; ON = {r: fit(p, True) for r, p in rel9.items() if len(p) >= 5}
+                def comp(A, r3, O):
+                    r1, r2 = rules[r3]
+                    if r1 not in O or r2 not in O: return None
+                    v1 = Z[NI[A]] @ O[r1]; s1 = F.normalize(v1, dim=-1) @ Z[DI].t(); b1 = DN[int(s1.argmax())]
+                    v2 = v1 @ O[r2]; s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
+                    return b1, DN[int(s2.indices[0])], float(s2.values[0] - s2.values[1])
+                oJ = {'b': [], 'c': [], 'pure': [], 'null': [], 'mr': [], 'mw': []}
+                for (d, l, r3, C) in tg:
+                    x = comp(l, r3, OP)
+                    if x is None: continue
+                    oJ['b'].append(x[0] == par.get(l)); oJ['c'].append(x[1] == C); (oJ['mr'] if x[1] == C else oJ['mw']).append(x[2])
+                    if l in pure: oJ['pure'].append(x[1] == C)
+                    y = comp(l, r3, ON); oJ['null'].append(y is not None and y[1] == C)
+                mu = []                                                        # never-read subjects (families the model never read): their margins
+                for (d, l, r3, C) in tuJ:
+                    x = comp(l, r3, OP); mu.append(x[2] if x else 0.0)
+                auc = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in mu] for a_ in oJ['mr']]) if oJ['mr'] and mu else float('nan')
+                thr9 = float(getattr(cfg, 'inf_kmc_rulej_thr', 0.05))
+                cov = np.mean([m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']]) if oJ['mr'] or oJ['mw'] else float('nan')
+                pg = np.mean([1.0] * sum(m_ >= thr9 for m_ in oJ['mr']) + [0.0] * sum(m_ >= thr9 for m_ in oJ['mw'])) if any(m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']) else float('nan')
+                print(f"  [ROUTE J: JEPA-STYLE RELATIONAL MEMORY | visit {vis + 1}] {src}; one operator per relation on the trunk's name codes, fitted on {len(fs0)} RECORDED facts "
+                      f"({len(OP)} relations); composites never planted, the bridge kept LATENT, C the nearest of {len(DN)} recorded names (chance {1 / max(1, len(DN)):.3f}) || "
+                      f"first hop B {m(oJ['b'])} | COMPOSITE C {m(oJ['c'])} | PURE FAMILIES {m(oJ['pure'])} | NULL (operators fitted on shuffled facts) {m(oJ['null'])} || "
+                      f"margin gate >= {thr9}: answers {cov:.2f}, right when answering {pg:.2f} | NEVER-READ families: margin >= gate {np.mean([x >= thr9 for x in mu]) if mu else float('nan'):.2f} (n {len(mu)}), "
+                      f"AUC right-vs-never-read {auc:.2f}", flush=True)
+                if int(getattr(cfg, 'inf_kmc_rulej_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
+                    hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; why = {'margin': 0, 'same name': 0, 'B has no recorded r2 fact': 0}
+                    for e in fs0:
+                        for r3, (r1, r2) in rules.items():
+                            if str(e['r']).strip() != r1 or (e['A'], r3) in hasr: continue
+                            x = comp(e['A'], r3, OP)
+                            if x is None: continue
+                            if x[2] < thr9: why['margin'] += 1; continue
+                            if len({e['A'], x[0], x[1]}) < 3: why['same name'] += 1; continue
+                            if (x[0], r2) not in hasr: why['B has no recorded r2 fact'] += 1; continue
+                            if (r3, e['A'], x[1]) not in RW: RW[(r3, e['A'], x[1])] = vis; nw += 1
+                            m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
+                            if m_ is not None and e['A'] in m_: ok_.append(x[1] == m_.get(m_.get(e['A'])))
+                    print(f"  [ROUTE J WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {nw} new composites written ({len(RW)} so far) | refused: " + ", ".join(f"{k} {v}" for k, v in why.items())
+                          + f" | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)}; a subject with no composite counts as wrong)", flush=True)
+            finally: K['tcode'] = old9 if old9 is not None else {}
+        except Exception as e7: print(f"  [ROUTE J | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:120]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
     if tu:                                                                     # FALSE-MEMORY CHECK: the same two reads for composites whose subjects were NEVER READ
         sl = int(S_slot(max(seen))) if seen else 0; uc = []

@@ -735,6 +735,10 @@ class Config:
     inf_kmc_rulecomp_dwrite=0       #   18 Nov MODEL CHANGE (kra4): route D's two-step decoded composites are the relational module's writes (needs inf_kmc_rulecomp_write 1)
     inf_kmc_rulecomp_dwrite_n=150   #   route D writes: subjects asked per sleep
     inf_kmc_rulecomp_dgate=0        #   route D writes: abstain unless the decoded B has a RECORDED fact for the second relation (blocks a top-level name with no parent)
+    inf_kmc_rulej=0                 #   18 Nov ROUTE J readout: operators per relation on the trunk's name codes fitted on recorded facts, composed latently via the learned rule
+    inf_kmc_rulej_lam=0.1           #   route J: ridge
+    inf_kmc_rulej_thr=0.05          #   route J: margin gate (nearest minus second-nearest name similarity)
+    inf_kmc_rulej_write=0           #   18 Nov MODEL CHANGE: route J's gated composites are the relational module's writes
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values
     inf_kmc_rulecomp_clarify=0      #   readout: what route A uses (shuffled-table and plain-dictionary controls)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
