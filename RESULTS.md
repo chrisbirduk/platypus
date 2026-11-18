@@ -4102,6 +4102,26 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 - kcr2 facts decline 0.81 -> 0.77 -> 0.67 at visits 5-7, as the global question decay reaches 1/16-1/64.
 - kcf = kcr + inf_distill_wake_decay_min 0.125. Visits 1-5 are identical to kcr by construction. The 5-domain local harness cannot see it; tests pass.
 
+**cg27a_kcf GPU result (18 Nov 2026, A100, seed 4, 7 visits; compared with cg27a_kcr2, which has no floor).**
+
+| Visit 7, from the trunk | kcr2 | kcf |
+|---|---|---|
+| Facts taught at least one visit (n 246) | 0.67 | **0.72** |
+| ... taught 1 visit (n 42) | 0.33 | **0.48** |
+| ... taught 2-3 visits (n 68) | 0.60 | **0.75** |
+| ... taught 4+ visits (n 136) | 0.80 | 0.79 |
+| Gated: known facts right overall / never-read given a stored name | 0.31 / 0.02 | **0.50** / 0.03 |
+| Confidence AUC, known-right vs never-read | 0.93 | 0.96 |
+| Conclusions taught (n 30) | 0.50 | 0.23 |
+| Fixed set of conclusions, every memory off (n 178-192) | 0.34 | 0.20 |
+| Held-out bits per byte, read domains | 1.8796 | 1.8849 |
+
+- Visits 5-6 are the same in both (facts 0.81-0.82, then 0.77).
+- The floor halves the visit-7 fact decline (0.77 -> 0.72 instead of 0.67). The gain is in recently taught facts. Facts taught for 4+ visits were not declining.
+- Gated answering improves (0.31 -> 0.50 right overall). Never-read stays at 0.03.
+- Conclusions are lower (fixed set 0.34 -> 0.20). Their share of replay samples is unchanged (0.64 vs 0.61), so the floor does not crowd them out. The fixed set depends on the closed-form edits (0.01-0.02 without them; 4 kept vs 5, norm 57.7 vs 63.4). This may be seed variation in the edits, but it is not settled with one seed.
+- Bits per byte are within noise (+0.005; noise about 0.017).
+
 ## Looped (weight-shared) trunk vs a deeper trunk: NO composition (18 Nov 2026, 12:10-13:50; tools/compose_synth.py CS_LOOP, 2,000 taught, 200 held out)
 
 | Step | Looped (3 shared blocks x 2 passes): taught / NEVER taught | Deeper (6 blocks): taught / NEVER taught |
