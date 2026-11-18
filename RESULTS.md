@@ -4355,3 +4355,25 @@ One linear operator per relation on the trunk's name codes, fitted on the 364 fa
 - Learned decomposition updates its conclusions for free: the composite is recomputed from the current premise, not stored.
 - Composites consolidated as facts go stale when a premise changes (RippleEdits). Writing the chain is how the model can avoid that.
 
+### Self-supervised pronoun linker (18 Nov 2026, night; tools/pron_link.py, distant 10k, stand-in trunk 192 x 3, 128-byte window)
+
+Held out (a later mention replaced by a pronoun; 1,435 training and 285 held-out examples):
+
+| Linker | Accuracy |
+|---|---|
+| Learned linker (best epoch) | 0.18-0.23 |
+| First mention (title) | **0.22** |
+| Nearest earlier mention | 0.05 |
+| Nearest earlier mention of the matching type | 0.15 |
+
+Real pronouns in 1,000 documents:
+- New records through linked pronouns: precision 0.091 (n 6,324), against 0.138 for the reader's name-pair records (n 25,755).
+- 574 right pairs added (+16%), at lower precision.
+
+**NEGATIVE as built.** The learned linker does not beat 'link to the title'. Likely causes:
+- The stand-in trunk's states see only 128 bytes, and a pronoun's referent is often further back.
+- It uses one state per mention.
+- 1,435 examples.
+
+Next: the title heuristic as the baseline to beat; the GPU trunk's states; context-wide features (the mention's sentence and the pronoun's sentence).
+
