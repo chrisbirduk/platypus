@@ -960,7 +960,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
           f"relation, answered by two memory reads (C first among {len(names)} rule-world names, chance {1 / max(1, len(names)):.3f}) || ALL {m(out['all'])} | "
           f"PURE FAMILIES {m(out['pure'])} | first hop right {np.mean(first) if first else float('nan'):.2f} || both premises in the memory: ALL {m(out['cov'])}, "
           f"PURE {m(out['covpure'])} | compare the trunk alone on pure-family held-back composites (RELATIONAL MODULE WRITES, PURE FAMILIES)", flush=True)
-    if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
+    if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)) and not int(getattr(cfg, 'inf_kmc_rulecomp_dwrite', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
         # 18 Nov ROUTE A WRITES (MODEL CHANGE, inf_kmc_rulecomp_write): the model's own composition through two memory reads becomes what the relational
         # module writes into the question pool (instead of its symbolic chaining over stored facts). LABEL-FREE: the subjects are those with a recorded
         # r1 fact and no recorded r3 fact; the pointer table maps slots to names through the POOL'S facts only (what the reader recorded).
@@ -1054,6 +1054,28 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if l in pure: o9['pure'].append(c_ == C); o9['pdirect'].append(dr == C)
             print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] {src}; store and memory OFF, nothing looked up: composites never planted (n {len(T9)}): "
                   f"first step B right {m(o9['b'])} | TWO-STEP C right {m(o9['c'])} vs the composite asked DIRECTLY {m(o9['direct'])} || PURE FAMILIES: two-step {m(o9['pure'])} vs direct {m(o9['pdirect'])}", flush=True)
+            if int(getattr(cfg, 'inf_kmc_rulecomp_dwrite', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
+                # 18 Nov MODEL CHANGE (kra4, combined by the user's decision): ROUTE D WRITES - the trunk's own two-step decoding via the learned rule is what
+                # the relational module writes into the question pool. LABEL-FREE subjects (a recorded r1 fact, no recorded r3 fact); GATE: B and C must be
+                # names the system has recorded (a subject or answer of a pool fact), all three different, and B decoded the same in a second wording.
+                known = {e['A'] for e in fs0} | {e['ans'] for e in fs0}; hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; sj = {}
+                for e in fs0:
+                    for r3, (r1, r2) in rules.items():
+                        if str(e['r']).strip() == r1 and (e['A'], r3) not in hasr: sj[(e['A'], r3)] = int(S_slot(e['d']))
+                RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; why = {'B unknown': 0, 'B unstable': 0, 'C unknown': 0, 'same name': 0}
+                for (A, r3), sl in list(sj.items())[:int(getattr(cfg, 'inf_kmc_rulecomp_dwrite_n', 150))]:
+                    r1, r2 = rules[r3]; b_ = _dw_greedy(model, te(A, r1), sl, 20)
+                    if b_ not in known: why['B unknown'] += 1; continue
+                    if _dw_greedy(model, f"{A} {r1} ".encode('latin-1', 'replace'), sl, 20) != b_: why['B unstable'] += 1; continue
+                    c_ = _dw_greedy(model, te(b_, r2), sl, 20)
+                    if c_ not in known: why['C unknown'] += 1; continue
+                    if len({A, b_, c_}) < 3: why['same name'] += 1; continue
+                    if (r3, A, c_) not in RW: RW[(r3, A, c_)] = vis; nw += 1
+                    m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
+                    if m_ is not None and A in m_: ok_.append(c_ == m_.get(m_.get(A)))
+                print(f"  [ROUTE D WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {len(sj)} subjects with an r1 fact and no r3 fact (up to {int(getattr(cfg, 'inf_kmc_rulecomp_dwrite_n', 150))} asked); "
+                      f"{nw} new composites written ({len(RW)} so far) | refused: " + ", ".join(f"{k} {v}" for k, v in why.items())
+                      + f" | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)}; a subject with no composite counts as wrong)", flush=True)
         except Exception as e9: print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
     if tu:                                                                     # FALSE-MEMORY CHECK: the same two reads for composites whose subjects were NEVER READ
