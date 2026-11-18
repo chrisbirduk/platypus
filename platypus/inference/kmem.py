@@ -1124,6 +1124,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     r1, r2 = rules[r3]; b_ = _dw_greedy(model, te(A, r1), sl, 20)
                     if b_ not in known: why['B unknown'] += 1; continue
                     if _dw_greedy(model, f"{A} {r1} ".encode('latin-1', 'replace'), sl, 20) != b_: why['B unstable'] += 1; continue
+                    if int(getattr(cfg, 'inf_kmc_rulecomp_dgate', 0)) and (b_, r2) not in hasr: why['B has no recorded r2 fact'] = why.get('B has no recorded r2 fact', 0) + 1; continue
                     c_ = _dw_greedy(model, te(b_, r2), sl, 20)
                     if c_ not in known: why['C unknown'] += 1; continue
                     if len({A, b_, c_}) < 3: why['same name'] += 1; continue
