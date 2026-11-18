@@ -4377,3 +4377,22 @@ Real pronouns in 1,000 documents:
 
 Next: the title heuristic as the baseline to beat; the GPU trunk's states; context-wide features (the mention's sentence and the pronoun's sentence).
 
+### Bootstrapped reader, Snowball-style without labels (18 Nov 2026, night; tools/boot_reader.py, distant 10k; held-out last 20% of documents)
+
+- **Seeds:** 23 generic connective templates (', born in', 'is located in', 'was founded in' ...). 588 records, labelled 0.367 against a base rate of 0.151.
+- **Negatives:** list glue (',', 'and' ...).
+- **Model:** a logistic classifier over the text between the names, the type pair and the distance, with its confident records added each round.
+
+| Ranker | Held-out AUC | Precision, top 1% / 5% / 20% |
+|---|---|---|
+| Distance only | 0.560 | 0.079 / 0.161 / 0.184 |
+| Last word is relational | 0.534 | 0.156 / 0.162 / 0.183 |
+| Bootstrapped, rounds 0-3 | **0.49 -> 0.49** | 0.18 -> 0.14 / 0.17 -> 0.15 / 0.17 -> 0.16 |
+| Same, list glue only between names of the same type | 0.49 -> 0.47 | 0.15 -> 0.14 / ... |
+
+**NEGATIVE.** The bootstrapped reader is no better than chance on held-out documents and drifts with each round. In round 3, the 2,000 records it was surest were WRONG are labelled 0.58.
+- **The assumption fails:** pairs joined by commas ('Paris , France') are often related (glue negatives labelled 0.15-0.17, the base rate).
+- **The seeds are too narrow** (588 records) to generalise from wording features.
+- **Surface wording does not carry the relation in this data.** That agrees with the earlier frame-based results (AUC 0.62 at best).
+- The next reader attempt should use what the model knows (trunk states, cross-document consistency), not surface wording.
+
