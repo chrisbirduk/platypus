@@ -4179,3 +4179,18 @@ Local diagnostics (kra3, visit 2): second hop from the true B 0.91; composite 0.
 Local diagnostics (kra3) at visits 3-4: top B only 0.77 / 0.73 vs top 5 0.71 / 0.57; second hop from the true B 0.88 / 0.87; first hop 0.85 / 0.83. With the top B only, the composite reaches about first hop x second hop (0.83 x 0.87 = 0.72). The remaining decline is the first hop. No domain-age effect: 0.53-0.63 across domains at visit 4. On the GPU, the first hop falls further (0.94 -> 0.75 by visit 5), so top-1 alone will not remove the whole GPU decline.
 kra3 visit 5: top B only 0.63 vs top 5 0.45; first hop 0.79, second hop from the true B 0.79 (both falling now). BY DOMAIN at visit 5: the newest domain (d4) 0.75 composite / 0.89 second hop vs the older four 0.31-0.41 / 0.74-0.78. So by visit 5 older domains ARE hit after a new domain is written: interference from later writes, in both hops. Headline (readout only): forgetting -0.041, final BPC 2.622.
 
+### kraw (local, 18 Nov 2026 evening): top B only, slot-normalised decoding, route A writes (ORACLE rules locally)
+
+| Visit | Route A, pure families, top B only (raw table) | Slot-normalised table: first hop / composite | kra3 top 5 (raw) | Never-read AUC | Route A write precision |
+|---|---|---|---|---|---|
+| 2 | 0.82 | 0.97 / 0.95 | 0.66 | 0.80 | 0.33 (3) |
+| 3 | 0.84 | 0.99 / 0.99 | 0.70 | 0.75 | 0.50 (4) |
+| 4 | 0.77 | 0.95 / 0.92 | 0.58 | 0.58 | 0.33 (6) |
+| 5 | 0.65 | 0.94 / 0.88 | 0.47 | n/a | 0.10 (10) |
+
+- **The decline is mostly decoding through crowded pointer slots.** With the slot-normalised table, route A stays 0.88-0.99 through visit 5 (all composites never planted, top B only), against 0.45-0.71 for the original readout. The first hop stays 0.94-0.99.
+- **The false-memory check fails.** For families never read, the memory gives a name 0.97 of the time, and the composite score separates right answers from never-read ones at AUC 0.80 falling to 0.58. Route A needs an abstention rule before its answers are trusted.
+- **The writes are mostly WRONG locally:** precision 0.10-0.50 at tiny n (relational module write precision 0.09-0.14 overall). They decode through the POOL's facts only, about 90 locally, with the raw table at score >= 0.5. Trunk recall of them: TAUGHT 0.25-0.67 vs HELD BACK 0.17-0.50 (n 2-8).
+- **kra2 (GPU)** uses the slot-normalised table for writes and a much larger pool, but its write precision must be checked at visits 2-3 before it is trusted.
+- Headline: forgetting -0.041, final BPC 2.623, unchanged.
+
