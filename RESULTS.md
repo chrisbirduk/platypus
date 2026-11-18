@@ -4272,3 +4272,18 @@ Within one document (the labels annotate a document's own pairs), pairs never re
 - 2.2x the chain baseline, but far below the existing writer (0.6-0.7 at the top). Containment alone is weak; it needs the reader's typing or confirmation on top.
 - Across documents, the precision is 0.013-0.025, but the labels annotate only same-document pairs, so that figure is not meaningful.
 
+### cg27a_kra4 GPU, visit 2 (18 Nov 2026, seed 4): ROUTE D - THE TRUNK COMPOSES BY DECODING TWO STEPS (learned rules)
+
+Store and memory OFF, nothing looked up. The relational module's LEARNED rule splits the composite question; the trunk decodes B for 'A r1', then C for 'B r2':
+
+| Composites never planted | First step B | Two-step C | Asked directly |
+|---|---|---|---|
+| All (n 34) | 0.44 | **0.44** | 0.09 |
+| Pure families (n 20) | — | **0.60** | **0.00** |
+
+- **The first in-model composition result:** where the trunk alone answers 0 of 20 pure-family composites directly, it answers 0.60 when the learned rule splits the question into two steps.
+- **The second step is perfect given B** (C right 0.44 = B right 0.44). The limit is the first step: premises the trunk knows (0.44 on the GPU, 0.00 on the small local trunk).
+- This matches the literature: composition works when the bridge entity is written out (Balesni et al., v4). Here the decomposition comes from a rule the system learned itself.
+- **Route D writes:** 24 written, precision **0.50** (subjects with no composite count as wrong). Refused: B unknown 4, B unstable 8, same name 10. The gate does not block middle names whose parent is a root: the decoder still outputs a known name for the root's 'parent'.
+- One seed, small n.
+
