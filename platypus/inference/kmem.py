@@ -932,7 +932,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     tg = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) in seen and ph.get(k) in rules for r3 in [ph.get(k)]]
     if not tg or not PTR:
         print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] nothing to ask ({len(tg)} composites, {len(PTR)} pointer slots)", flush=True); return
-    names = sorted(set(par) | set(par.values())); KR = 5; out = {'all': [], 'pure': [], 'cov': [], 'covpure': []}; first = []
+    names = sorted(set(par) | set(par.values())); KR = 5; out = {'all': [], 'pure': [], 'cov': [], 'covpure': []}; first = []; dg = {'hop2': [], 'top1': []}
     for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
         L = [t for t in tg if int(S_slot(t[0])) == sl]
         d1s = dist([te(l, rules[r3][0]) for d, l, r3, C in L], sl); q2 = {}
@@ -940,13 +940,18 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
             for b in sorted(d1, key=d1.get, reverse=True)[:KR]: q2[(b, rules[r3][1])] = None
         ks = list(q2)
         for k, d2 in zip(ks, dist([te(b, r) for b, r in ks], sl)): q2[k] = d2
+        tb = list({(par.get(l), rules[r3][1]) for d, l, r3, C in L if par.get(l)})       # DIAGNOSTIC: the second hop alone, from the TRUE B
+        tbd = dict(zip(tb, dist([te(b_, r_) for b_, r_ in tb], sl)))
         for (d, l, r3, C), d1 in zip(L, d1s):
+            d2t = tbd.get((par.get(l), rules[r3][1])) or {}; h2 = bool(d2t) and max(d2t, key=d2t.get) == C; dg['hop2'].append(h2)
+            b1 = max(d1, key=d1.get) if d1 else None; d21 = q2.get((b1, rules[r3][1])) or {}
+            dg['top1'].append(bool(d21) and max(d21, key=d21.get) == C); dg.setdefault(('dom', int(d)), []).append(h2)
             sc = {}
             for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
                 for n, v in (q2.get((b, rules[r3][1])) or {}).items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
             ok = bool(sc) and max(sc, key=sc.get) == C; first.append(bool(d1) and max(d1, key=d1.get) == par.get(l))
             cov = (l, rules[r3][0], par.get(l)) in have and (par.get(l), rules[r3][1], C) in have
-            out['all'].append(ok)
+            out['all'].append(ok); dg.setdefault(('f1', first[-1]), []).append(ok); dg.setdefault(('d', int(d)), []).append(ok)
             if l in pure: out['pure'].append(ok)
             if cov: out['cov'].append(ok)
             if cov and l in pure: out['covpure'].append(ok)
@@ -955,6 +960,9 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
           f"relation, answered by two memory reads (C first among {len(names)} rule-world names, chance {1 / max(1, len(names)):.3f}) || ALL {m(out['all'])} | "
           f"PURE FAMILIES {m(out['pure'])} | first hop right {np.mean(first) if first else float('nan'):.2f} || both premises in the memory: ALL {m(out['cov'])}, "
           f"PURE {m(out['covpure'])} | compare the trunk alone on pure-family held-back composites (RELATIONAL MODULE WRITES, PURE FAMILIES)", flush=True)
+    print(f"  [ROUTE A, DIAGNOSTICS | visit {vis + 1}] second hop alone (read 2 from the TRUE B) {m(dg['hop2'])} | composite when the first hop was right {m(dg.get(('f1', True), []))}, "
+          f"wrong {m(dg.get(('f1', False), []))} | only the top B carried {m(dg['top1'])} (top {KR}: {m(out['all'])}) || BY DOMAIN (composite / second hop alone): "
+          + " ".join(f"d{d_} {np.mean(dg[('d', d_)]):.2f}/{np.mean(dg[('dom', d_)]):.2f} (n {len(dg[('d', d_)])})" for d_ in sorted(k[1] for k in dg if isinstance(k, tuple) and k[0] == 'd')), flush=True)
 
 
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
