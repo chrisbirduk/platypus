@@ -4167,9 +4167,11 @@ The relational module learned 2 rules from reading at every sleep, with 0 false:
 | 2 | **0.85** (20) | 0.76 (34) | 0.94 | 0.00 (8) |
 | 3 | **0.88** (40) | 0.77 (69) | 0.90 | 0.00 (12) |
 | 4 | 0.65 (52) | 0.65 (92) | 0.82 | 0.00 (20) |
+| 5 | 0.40 (60) | 0.42 (106) | 0.75 | 0.07 (28) |
 
 - End to end and label-free: the model learns the rules from text it read, then its own memory composes facts never stated, where its trunk answers 0. Chance is 0.001.
 - The same visit-4 decline as locally. Claims: prediction time through the memory, NOT consolidation into the trunk.
 
 Local diagnostics (kra3, visit 2): second hop from the true B 0.91; composite 0.70 when the first hop is right, 0.40 when wrong. CARRYING ONLY THE TOP B: 0.80 vs 0.66 carrying the top 5. Mixing in the lower-ranked candidates costs 0.14.
+Local diagnostics (kra3) at visits 3-4: top B only 0.77 / 0.73 vs top 5 0.71 / 0.57; second hop from the true B 0.88 / 0.87; first hop 0.85 / 0.83. With the top B only, the composite reaches about first hop x second hop (0.83 x 0.87 = 0.72). The remaining decline is the first hop. No domain-age effect: 0.53-0.63 across domains at visit 4. On the GPU, the first hop falls further (0.94 -> 0.75 by visit 5), so top-1 alone will not remove the whole GPU decline.
 
