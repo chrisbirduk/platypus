@@ -970,6 +970,9 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
             for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
                 if x is None: continue
                 for s_, w_ in zip(*x): d_ = PW.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+        if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)):                      # 18 Nov: the SLOT-NORMALISED table (crowded slots count less; local kraw visit 2:
+            nW = max(2, len({n for dd in PW.values() for n in dd}))           #   first hop 0.97 vs 0.86 raw, composite 0.95 vs 0.80)
+            PW = {s_: {n: v / sum(dd.values()) * np.log(1.0 + nW / len(dd)) for n, v in dd.items()} for s_, dd in PW.items()}
         hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; subj = {}
         for e in fs0:
             for r3, (r1, r2) in rules.items():
@@ -989,7 +992,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
                 t_ = par.get(par.get(A)) if A in par and par.get(A) in par else None
                 if t_ is not None: ok_.append(C == t_)
-        print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
+        print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}, {'slot-normalised' if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)) else 'raw'} pool table: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
               f"write path (composite score >= {thr}; {len(RW)} so far) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
     PN = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}   # DIAGNOSTIC: each slot's
     fn, cn = [], []                                                            #   names normalised and weighted by how few names share it (crowded slots count less)

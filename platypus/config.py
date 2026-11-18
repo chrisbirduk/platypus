@@ -725,6 +725,7 @@ class Config:
     inf_kmc_rulecomp_write=0        #   18 Nov MODEL CHANGE: route A's composites (two memory reads, pool pointer table) are what the relational module writes
     inf_kmc_rulecomp_wthr=0.5       #   route A writes: minimum composite score
     inf_kmc_rulecomp_oracle_write=0 #   local only: allow route A writes with the ORACLE rule when none is learned (labelled)
+    inf_kmc_rulecomp_norm=0         #   route A writes decode through the slot-normalised pool table (crowded slots count less)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text
