@@ -964,7 +964,7 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         rels = sorted({e['r'] for e in fs}); g9 = np.random.RandomState(int(cfg.seed) + 5454 + vis); op9 = []
         for k in range(60):
             nm = ''.join(g9.choice(_DT_REFUSE_SYL, 2)).title() + ' ' + ''.join(g9.choice(_DT_REFUSE_SYL, 3)).title()
-            pb = f"It is on record that {nm} {rels[g9.randint(len(rels))]} ".encode('latin-1'); X, _ = _ws_batch(model, [pb + b'Xx.'])
+            pb = f"It is on record that {nm} {rels[g9.randint(len(rels))]} ".encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + b'Xx.'])
             with torch.no_grad(): lg = _ws_run(model, X, 0).float(); K['_open'] = {}; kmi_logits(model, K, [pb], X, lg, 0)
             op9.append(int(bool(K['_open'].get(0, False))))
         print(f"  [INTEGRATED KEYED MEMORY, GATE | visit {vis + 1}] the memory answers only where its address was written ({len(K.get('subj', ()))} subjects written, "

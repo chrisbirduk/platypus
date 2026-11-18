@@ -1556,6 +1556,12 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     def ask():                                                                 #   generic conclusions ('A is connected to C') are taught by edits
         return [_dt_recall(model, S_slot, L) for L in (old(T_), old(H_), nv(old(T_)), nv(old(H_)), nog(old(T_)), nog(old(H_)))]
     rT, rH, rTn, rHn, rTg, rHg = ask(); sub = None
+    PURE9 = (inf_rule_world(cfg).get('pure') or set()) if float(getattr(cfg, 'inf_rule_world_pure', 0.0)) > 0 else set()
+    if PURE9:                                                                  # 18 Nov: HELD BACK in PURE families (no composite planted in the family, none
+        pH = [e for e in old(H_) if e['A'] in PURE9]; pT = [e for e in old(T_) if e['A'] in PURE9]   #   taught with the same answer): only composition
+        rpT, rpH = _dt_recall(model, S_slot, pT), _dt_recall(model, S_slot, pH)
+        print(f"  [RELATIONAL MODULE WRITES, PURE FAMILIES | visit {vis + 1}] families with NO planted composite ({len(PURE9)} leaves): from the trunk, test wording: "
+              f"TAUGHT {f(rpT)} vs HELD BACK {f(rpH)} (a held-back one here can only come from composing the two read hops)", flush=True)
     E = model.__dict__.get('_cf_E'); mo = _nm_layer(model, cfg) if E is not None else None
     if E is not None and mo is not None and tuple(E.shape) == tuple(mo.weight.shape):
         W0 = mo.weight.detach().clone()

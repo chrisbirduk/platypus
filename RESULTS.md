@@ -4006,3 +4006,35 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
   - before confirmation, 0.26-0.36 at best vs the writer's 0.6-0.7;
   - as a vote, no gain.
 - Label-free learned maps remain useful for TYPING and as a judge signal, not as a writer.
+
+## GPU cg27a_kcr (powered composition test) to visit 6, and cg27a_kcr2 (held back by answer) to visit 4 (18 Nov 2026, 09:04)
+
+**Relational-module composites, never planted, recalled by the trunk (test wording).** Chance among 168 names is about 0.006.
+
+| Visit | kcr: taught | kcr: held back | kcr2: taught | kcr2: held back BY ANSWER |
+|---|---|---|---|---|
+| 2 | 1.00 (7) | 0.12 (8) | 1.00 (9) | 0.00 (6) |
+| 3 | 1.00 (8) | 0.23 (13) | 1.00 (10) | 0.18 (11) |
+| 4 | 0.89 (18) | 0.32 (25) | 0.84 (19) | 0.17 (24) |
+| 5 | 0.86 (28) | 0.30 (30) | n/a | n/a |
+| 6 | 0.91 (32) | 0.21 (34) | n/a | n/a |
+
+- Holding back by answer (no TAUGHT sibling shares the answer) lowers held-back recall from 0.30 to 0.17, but it stays far above chance.
+- However, half of each family's grandchildren composites are PLANTED in the text (by name hash), so association with a planted sibling remains possible.
+- The definitive test is cg27a_kcr3: half the families with NO composite planted at all (inf_rule_world_pure 0.5), and a new readout for them.
+
+**kcr, other readouts.**
+- Taught conclusions recalled: 0.00 (4) / 0.06 (18) / **0.19 (16)** / **0.29 (24)** at visits 3-6. The late recovery is confirmed, but control conclusions also reach 0.21 (14) at visit 6, so it may not be the teaching.
+- Facts 0.75-0.83.
+- Gated: right when answered 0.94-1.00; never-read given a stored name 0.14 / 0.02 / 0.05 / **0.00** at visits 3-6.
+- **TWO-HOP PROBES THROUGH THE MEMORY** (chance 0.05; the trunk's own two-hop 0.02-0.06):
+
+| Visit | Chains | C first | Chains with both facts in memory: C first |
+|---|---|---|---|
+| 3 | 10 | 0.80 | 1.00 (n 5) |
+| 4 | 16 | 0.81 | 1.00 (n 10) |
+| 5 | 29 | 0.83 | 1.00 (n 19) |
+| 6 | 50 | 0.62 | 1.00 (n 27) |
+
+- Held-out BPC at visit 5 vs kcs: 1.959 / 2.083 / 2.063 / 1.716 / 1.599 vs 2.006 / 2.050 / 2.058 / 1.702 / 1.592. Mean -0.002, within run variation.
+- Fix: [INTEGRATED KEYED MEMORY] crashed at visit 6 on non-latin names (Github). The encode now uses 'replace'.
