@@ -721,6 +721,10 @@ class Config:
     inf_kmc_compose_rule='any'      #   17 Nov: which chains compose: 'any' (A r2 C, kcp), 'rules' (relational-module rules r1 o r2 -> r3), 'same' (r o r -> r), 'same+rules'
     inf_kmc_probe2=0                #   17 Nov READOUT (prediction-time): the two-hop probe questions answered through the key-returning memory's two reads
     inf_kmc_rulecomp=0              #   18 Nov READOUT, route A (prediction-time): composite-relation questions answered by two memory reads via the relational module's rule
+    inf_kmc_rulecomp_k=5            #   route A: names carried from read 1 to read 2 (local kra3 visit 2: top 1 0.80 vs top 5 0.66)
+    inf_kmc_rulecomp_write=0        #   18 Nov MODEL CHANGE: route A's composites (two memory reads, pool pointer table) are what the relational module writes
+    inf_kmc_rulecomp_wthr=0.5       #   route A writes: minimum composite score
+    inf_kmc_rulecomp_oracle_write=0 #   local only: allow route A writes with the ORACLE rule when none is learned (labelled)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text

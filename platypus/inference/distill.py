@@ -1453,6 +1453,8 @@ def _dw_relmod(model, cfg, ents, held, vis):
             emA = {}                                                           #   distill_wake_sleep puts them in the question pool (_dw_relmod_write)
             for e in ents + held:
                 if e['key'][0] == 'fact': emA.setdefault(e['A'], e)
+            if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)):                 # 18 Nov ROUTE A WRITES: the model's composites through two memory reads (kmem.kma_rule_compose,
+                wr = [(a9, r9, c9, 0) for (r9, a9, c9) in model.__dict__.get('_ra_written', {})]   #   at the last readout) replace the symbolic chaining
             for a9, r9, c9, _ in wr:
                 if (r9, a9, c9) in WR or a9 not in emA: continue
                 WR[(r9, a9, c9)] = dict(d=emA[a9]['d'], src=tuple(emA[a9].get('src') or ()), vis=vis); nw9 += 1
