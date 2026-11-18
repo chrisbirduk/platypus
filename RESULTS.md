@@ -4168,6 +4168,9 @@ The relational module learned 2 rules from reading at every sleep, with 0 false:
 | 3 | **0.88** (40) | 0.77 (69) | 0.90 | 0.00 (12) |
 | 4 | 0.65 (52) | 0.65 (92) | 0.82 | 0.00 (20) |
 | 5 | 0.40 (60) | 0.42 (106) | 0.75 | 0.07 (28) |
+| 6 | 0.57 (88) | 0.53 (148) | 0.85 | 0.00 (33) |
+
+(Run stopped at visit 7 by the user. Visit 6: taught facts from the trunk 0.74; gated never-read given a stored name 0.04.)
 
 - End to end and label-free: the model learns the rules from text it read, then its own memory composes facts never stated, where its trunk answers 0. Chance is 0.001.
 - The same visit-4 decline as locally. Claims: prediction time through the memory, NOT consolidation into the trunk.
