@@ -3934,3 +3934,29 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
   - Confirmed pairs are later stated (anticipation, as cg27a_rtc), so the value is in writing and teaching them BEFORE they are read.
   - Distant labels undercount.
 - **Candidate build:** compose with label-free maps, hold as predictions, write when confirmed twice, then judge, keep and teach. Needs a package implementation, a local test, then the GPU.
+
+## Replication at 50,000 documents (18 Nov 2026, 03:00; fixed keys: joint keys for 351k names exceeded 8 GB)
+
+1,462 label-free maps. Precision by distant labels:
+
+| Conclusions | 50k, fixed keys | n | 10k, learned keys |
+|---|---|---|---|
+| Base | 0.070 | 308,149 | 0.066 |
+| Every chain's C | 0.085 | 1,170,051 | 0.078 |
+| Map's choice, confident quarter | 0.116 | 191,995 | 0.100 |
+| + confirmed once (relational) | 0.290 | 28,331 | 0.341 |
+| Confident quarter + confirmed once | 0.391 | 8,487 | 0.353 |
+| Confirmed twice | 0.398 | 11,858 | 0.533 |
+| **Confident quarter + confirmed twice** | **0.499** | **3,951** | 0.565 |
+
+**Conclusions.**
+- At 40x the sample, margin + two confirmations hold at about 0.50 (7x base). The 10k figures were optimistic at small n, or helped by the learned keys.
+- Each filter adds:
+
+| Filter added | Precision |
+|---|---|
+| Margin alone | 0.12 |
+| Two confirmations alone | 0.40 |
+| Both | 0.50 |
+
+- **A label-free write path at about 0.5 precision is feasible, at about 0.5% of composed candidates (3,951 of 767,950).**
