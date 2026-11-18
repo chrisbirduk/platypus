@@ -731,6 +731,7 @@ class Config:
     inf_kmc_rulecomp_gA=1           #   write gate parts: the subject is a written subject of the memory
     inf_kmc_rulecomp_gB=1           #   ... the first read's top name is a written subject
     inf_kmc_rulecomp_gd1=0.5        #   ... the first read's top name has at least this weight
+    inf_kmc_rulecomp_decode=0       #   N > 0: ROUTE D readout on N composites - the trunk decodes B, then C, via the learned rule (store and memory off)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text

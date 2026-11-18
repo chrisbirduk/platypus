@@ -1041,6 +1041,20 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     sz = [len(dd) for dd in PTR.values()]
     print(f"  [ROUTE A, CROWDED SLOTS | visit {vis + 1}] names per pointer slot: median {np.median(sz):.0f}, 90th percentile {np.percentile(sz, 90):.0f}, max {max(sz)} | "
           f"SLOT-NORMALISED table: first hop {np.mean(fn):.2f} (raw {np.mean(first):.2f}) | composite, top B only {np.mean(cn):.2f} (raw {np.mean(dg['top1']):.2f})", flush=True)
+    if int(getattr(cfg, 'inf_kmc_rulecomp_decode', 0)):                       # 18 Nov READOUT, ROUTE D (the honest in-model test): the TRUNK ITSELF answers the composite
+        try:                                                                   #   question in two DECODING steps via the learned rule - it decodes B for 'A r1', then C for
+            from platypus.inference.distill import _dw_greedy                 #   'B r2' (store and memory off; no pointer table, no recorded facts used at question time)
+            rs9 = np.random.RandomState(vis); T9 = [tg[k] for k in rs9.permutation(len(tg))[:int(getattr(cfg, 'inf_kmc_rulecomp_decode', 0))]]
+            o9 = {'b': [], 'c': [], 'direct': [], 'pure': [], 'pdirect': []}
+            for (d, l, r3, C) in T9:
+                sl = int(S_slot(d)); r1, r2 = rules[r3]
+                b_ = _dw_greedy(model, te(l, r1), sl, 20); c_ = _dw_greedy(model, te(b_, r2), sl, 20) if b_ else ''
+                dr = _dw_greedy(model, te(l, r3), sl, 20)
+                o9['b'].append(b_ == par.get(l)); o9['c'].append(c_ == C); o9['direct'].append(dr == C)
+                if l in pure: o9['pure'].append(c_ == C); o9['pdirect'].append(dr == C)
+            print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] {src}; store and memory OFF, nothing looked up: composites never planted (n {len(T9)}): "
+                  f"first step B right {m(o9['b'])} | TWO-STEP C right {m(o9['c'])} vs the composite asked DIRECTLY {m(o9['direct'])} || PURE FAMILIES: two-step {m(o9['pure'])} vs direct {m(o9['pdirect'])}", flush=True)
+        except Exception as e9: print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
     if tu:                                                                     # FALSE-MEMORY CHECK: the same two reads for composites whose subjects were NEVER READ
         sl = int(S_slot(max(seen))) if seen else 0; uc = []
