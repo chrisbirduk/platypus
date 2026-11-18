@@ -4194,3 +4194,9 @@ kra3 visit 5: top B only 0.63 vs top 5 0.45; first hop 0.79, second hop from the
 - **kra2 (GPU)** uses the slot-normalised table for writes and a much larger pool, but its write precision must be checked at visits 2-3 before it is trusted.
 - Headline: forgetting -0.041, final BPC 2.623, unchanged.
 
+### cg27a_kra2 GPU (18 Nov 2026, seed 4; route A writes with learned rules, slot-normalised pool table, top B only), visit 2
+
+- **Route A writes:** 20 composites written for 46 subjects; precision against the rule world's truth **0.77** (n 13).
+- **Slot-normalised readout:** first hop 0.97 (raw 0.85), composite 0.97 (raw 0.76). Pure families, raw table: 0.90 (20).
+- **Never-read subjects:** the memory gives a name 0.89; AUC 0.67. Abstention is still missing.
+
