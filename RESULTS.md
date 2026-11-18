@@ -4207,3 +4207,19 @@ kra2 visit 3:
 - **Trunk recall of written composites:** first measurable at visit 4.
 - **The main write error is the same as the abstention failure:** route A answers for subjects that have no composite. kra3's gate requires the first read's top name to be a written subject of the memory. A root is not a subject of a parent fact, so the gate should block these writes.
 
+kra2 visit 4: THE LOOP CLOSES MECHANICALLY, BUT WITH WRONG WRITES.
+
+From the trunk, test wording, composites written at an earlier sleep:
+
+| | Taught | Held back |
+|---|---|---|
+| Recall of the written answer | **0.82** (11) | 0.00 (7) |
+| ... never planted | 0.71 (7) | 0.00 (4) |
+| ... with the closed-form edits subtracted | 0.82 / 0.71 | 0.00 / 0.00 |
+
+- The composites route A writes ARE consolidated into the trunk's weights, not into the closed-form edits.
+- **But many written answers are wrong.** Precision over all 47 writes is 0.53. Of the 11 taught and recalled, the trunk's answer matches the rule world's truth for 3 (others: middle hop 1, hub 4, other 3). The trunk learned false composites written by route A: a measured false-memory cost.
+- Visit 4's batch: precision 0.92 (n 13) by the OLD readout, which leaves out subjects with no composite.
+- Route A, slot-normalised: 0.93 / 0.92. Pure families, raw table: 0.79. Never-read subjects given a name 0.96, AUC 0.78.
+- The gate (cg27a_kra3) is required before route A writes are trusted.
+
