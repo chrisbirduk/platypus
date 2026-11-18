@@ -3911,3 +3911,26 @@ Base 0.113 / 0.000; chance 0.10.
 - This is memorisation instead of composition, as in the 6,000-step runs and the literature. Composition reported by Wang et al. needs training far past memorisation.
 - The GPU's late hint (held back 2/6, kfc3) is therefore more likely noise. kcr's powered test (about 30 held back) settles it.
 - The working route stays compose in key space, then teach.
+
+## Compose with LEARNED keys, then confirm ONCE or TWICE (18 Nov 2026, 02:15-02:37; tools/latent_confirm.py LF_JOINT 1, distant_10k)
+
+Name keys learned jointly with 502 label-free maps (161,610 training records). Precision by distant labels:
+
+| Conclusions | Fixed keys (23:40) | **Learned keys** | n (learned) |
+|---|---|---|---|
+| Base: random pair never recorded together | 0.066 | 0.066 | 61,320 |
+| Every chain's C | 0.078 | 0.078 | 228,358 |
+| Map's choice | 0.073 | 0.076 | 129,301 |
+| Map's choice, confident quarter | 0.101 | 0.100 | 32,327 |
+| + confirmed later, relational wording | 0.311 | 0.341 | 1,552 |
+| Confident quarter + confirmed (relational) | 0.397 | 0.353 | 589 |
+| **+ confirmed TWICE (2+ later documents, relational)** | n/a | **0.533** | 304 |
+| **Confident quarter + confirmed twice** | n/a | **0.565** | 131 |
+
+**Conclusions.**
+- Two independent confirmations by later reading take label-free composed conclusions **above 0.5 precision (8x base)**, the threshold for a real-text composition write path. Learned keys add a little to single confirmation (0.34 vs 0.31).
+- Caveats:
+  - Small n (131-304 of 129,301 composed). The write path would be selective, about 0.2% of candidates.
+  - Confirmed pairs are later stated (anticipation, as cg27a_rtc), so the value is in writing and teaching them BEFORE they are read.
+  - Distant labels undercount.
+- **Candidate build:** compose with label-free maps, hold as predictions, write when confirmed twice, then judge, keep and teach. Needs a package implementation, a local test, then the GPU.
