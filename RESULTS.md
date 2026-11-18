@@ -4287,3 +4287,8 @@ Store and memory OFF, nothing looked up. The relational module's LEARNED rule sp
 - **Route D writes:** 24 written, precision **0.50** (subjects with no composite count as wrong). Refused: B unknown 4, B unstable 8, same name 10. The gate does not block middle names whose parent is a root: the decoder still outputs a known name for the root's 'parent'.
 - One seed, small n.
 
+kra4 visit 3:
+- **Route D:** first step B 0.42; two-step C 0.35 vs asked directly 0.07 (n 69); pure families 0.38 vs 0.00 (n 40). Composition by two decoding steps holds, lower than visit 2 (0.60, n 20).
+- **Route D writes:** precision 0.27 (n 37); 56 written in all. Refused: B unknown 15, B unstable 23, C unknown 1, same name 12.
+- **The writes must not be trusted without abstention.** cg27a_kra5 adds it (B must have a recorded fact for the second relation).
+
