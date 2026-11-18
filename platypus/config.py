@@ -734,6 +734,8 @@ class Config:
     inf_kmc_rulecomp_decode=0       #   N > 0: ROUTE D readout on N composites - the trunk decodes B, then C, via the learned rule (store and memory off)
     inf_kmc_rulecomp_dwrite=0       #   18 Nov MODEL CHANGE (kra4): route D's two-step decoded composites are the relational module's writes (needs inf_kmc_rulecomp_write 1)
     inf_kmc_rulecomp_dwrite_n=150   #   route D writes: subjects asked per sleep
+    inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values
+    inf_kmc_rulecomp_clarify=0      #   readout: what route A uses (shuffled-table and plain-dictionary controls)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text

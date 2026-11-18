@@ -1041,6 +1041,27 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     sz = [len(dd) for dd in PTR.values()]
     print(f"  [ROUTE A, CROWDED SLOTS | visit {vis + 1}] names per pointer slot: median {np.median(sz):.0f}, 90th percentile {np.percentile(sz, 90):.0f}, max {max(sz)} | "
           f"SLOT-NORMALISED table: first hop {np.mean(fn):.2f} (raw {np.mean(first):.2f}) | composite, top B only {np.mean(cn):.2f} (raw {np.mean(dg['top1']):.2f})", flush=True)
+    if int(getattr(cfg, 'inf_kmc_rulecomp_clarify', 0)):                      # 18 Nov READOUT, WHAT ROUTE A USES (the correction, tested): if route A is an address lookup over
+        try:                                                                   #   recorded facts, (1) a table whose answers are SHUFFLED among the facts collapses it, (2) a plain
+            rs8 = np.random.RandomState(7); ans8 = [e['ans'] for e in fs]; perm = rs8.permutation(len(ans8))   # dictionary over the same facts (no model at all) matches it
+            PS = {}
+            idx8 = {id(e): k for k, e in enumerate(fs)}
+            for sl, L in by_d.items():
+                for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+                    if x is None: continue
+                    a8 = ans8[perm[idx8[id(e)]]]
+                    for s_, w_ in zip(*x): d_ = PS.setdefault(s_, {}); d_[a8] = d_.get(a8, 0.0) + w_
+            DCT = {(e['A'], str(e['r']).strip()): e['ans'] for e in fs}; sh, dc = [], []
+            for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
+                L = [t for t in tg if int(S_slot(t[0])) == sl]; d1s = dist([te(l, rules[r3][0]) for d, l, r3, C in L], sl, PS)
+                for (d, l, r3, C), d1 in zip(L, d1s):
+                    b1 = max(d1, key=d1.get) if d1 else None; d2 = dist([te(b1, rules[r3][1])], sl, PS)[0] if b1 else {}
+                    sh.append(bool(d2) and max(d2, key=d2.get) == C)
+                    dc.append(DCT.get((DCT.get((l, rules[r3][0])), rules[r3][1])) == C)
+            print(f"  [ROUTE A, WHAT IT USES | visit {vis + 1}] the same composites (n {len(tg)}): route A, top B only {np.mean(dg['top1']):.2f} | the SAME reads with the table's answers SHUFFLED among "
+                  f"the facts {np.mean(sh):.2f} | a PLAIN DICTIONARY over the same recorded facts, no model at all {np.mean(dc):.2f} || route A never reads the memory's learned values: "
+                  f"its answers come from the table", flush=True)
+        except Exception as e9: print(f"  [ROUTE A, WHAT IT USES | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
     if int(getattr(cfg, 'inf_kmc_rulecomp_decode', 0)):                       # 18 Nov READOUT, ROUTE D (the honest in-model test): the TRUNK ITSELF answers the composite
         try:                                                                   #   question in two DECODING steps via the learned rule - it decodes B for 'A r1', then C for
             from platypus.inference.distill import _dw_greedy                 #   'B r2' (store and memory off; no pointer table, no recorded facts used at question time)
@@ -1052,6 +1073,26 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 dr = _dw_greedy(model, te(l, r3), sl, 20)
                 o9['b'].append(b_ == par.get(l)); o9['c'].append(c_ == C); o9['direct'].append(dr == C)
                 if l in pure: o9['pure'].append(c_ == C); o9['pdirect'].append(dr == C)
+            try:
+              from platypus.inference.closed_form import _ws_batch, _ws_run
+              def decm(pb, sl, n=20):                                            # ROUTE E: greedy decoding WITH the integrated memory's learned values (kmi_logits)
+                  o = b''
+                  for _ in range(n):
+                      Xg, _ = _ws_batch(model, [pb + o + b' ']); zg = _ws_run(model, Xg, sl).float(); zg = kmi_logits(model, K, [pb + o], Xg, zg, sl)
+                      q = len(pb) + len(o) - 1
+                      if q >= zg.shape[1]: break
+                      c = int(zg[0, q].argmax())
+                      if c in (46, 10): break
+                      o += bytes([c])
+                  return o.decode('latin-1', 'replace').strip()
+              oE = {'b': [], 'c': [], 'direct': [], 'pure': []}
+              for (d, l, r3, C) in T9[:int(getattr(cfg, 'inf_kmc_rulecomp_decode_e', 30))]:
+                  sl = int(S_slot(d)); r1, r2 = rules[r3]; b_ = decm(te(l, r1), sl); c_ = decm(te(b_, r2), sl) if b_ else ''
+                  oE['b'].append(b_ == par.get(l)); oE['c'].append(c_ == C); oE['direct'].append(decm(te(l, r3), sl) == C)
+                  if l in pure: oE['pure'].append(c_ == C)
+              print(f"  [ROUTE E: TWO STEPS WITH THE MEMORY'S LEARNED VALUES | visit {vis + 1}] trunk + integrated memory logits (no table): first step B right {m(oE['b'])} | "
+                    f"TWO-STEP C right {m(oE['c'])} vs direct {m(oE['direct'])} | pure families two-step {m(oE['pure'])}", flush=True)
+            except Exception as e8: print(f"  [ROUTE E | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:100]})", flush=True)
             print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] {src}; store and memory OFF, nothing looked up: composites never planted (n {len(T9)}): "
                   f"first step B right {m(o9['b'])} | TWO-STEP C right {m(o9['c'])} vs the composite asked DIRECTLY {m(o9['direct'])} || PURE FAMILIES: two-step {m(o9['pure'])} vs direct {m(o9['pdirect'])}", flush=True)
             if int(getattr(cfg, 'inf_kmc_rulecomp_dwrite', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
