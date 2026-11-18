@@ -4240,3 +4240,35 @@ Hence:
 - The earlier KEY-RETURNING MEMORY two-hop readouts (0.97-1.00) are the same address lookup over pool facts.
 - **The honest in-model test is ROUTE D** (inf_kmc_rulecomp_decode): the trunk decodes B for 'A r1', then C for 'B r2', with store and memory OFF, compared with the composite asked directly. Local run started.
 
+### The correction tested, and routes D and E (local, krc, visit 2; ORACLE rules)
+
+| Same composites (n 111) | Right |
+|---|---|
+| Route A, top B only | 0.80 |
+| The same reads, table answers SHUFFLED among the facts | **0.01** |
+| A PLAIN DICTIONARY over the same recorded facts, no model | **1.00** |
+
+Route A's answers come entirely from the table: confirmed.
+
+| Asking the composite | First step B | Two-step C | Asked directly | Pure families, two-step |
+|---|---|---|---|---|
+| Route D: trunk decodes, store and memory off (n 60) | **0.00** | 0.00 | 0.00 | 0.00 (45) |
+| Route E: trunk + integrated memory's learned values (n 30) | 0.10 | 0.03 | 0.00 | 0.05 (22) |
+
+- Route D writes: 0 written; 14 of 17 refused because B was not a recorded name.
+- Locally, neither the trunk nor the memory's learned values can produce the FIRST hop of a rule-world composite: the premise 'A is a child of B', read in text but not taught. The bottleneck is knowing read premises (trunk recall of read-only facts on the GPU: 0.19-0.30), not the composition step.
+- The GPU (kra4) gives the learned-rule, larger-trunk figures.
+
+### Real-text location chains (tools/loc_chain.py, distant 10k; labels for evaluation only)
+
+Within one document (the labels annotate a document's own pairs), pairs never recorded together:
+
+| | Precision | n |
+|---|---|---|
+| Random pair | 0.064 | 116,624 |
+| Any two-record chain | 0.075 | 182,658 |
+| **Containment chains** (A in/, B; B in/, C; B and C places) | **0.167** | 2,313 |
+
+- 2.2x the chain baseline, but far below the existing writer (0.6-0.7 at the top). Containment alone is weak; it needs the reader's typing or confirmation on top.
+- Across documents, the precision is 0.013-0.025, but the labels annotate only same-document pairs, so that figure is not meaningful.
+
