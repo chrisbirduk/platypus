@@ -4223,3 +4223,20 @@ From the trunk, test wording, composites written at an earlier sleep:
 - Route A, slot-normalised: 0.93 / 0.92. Pure families, raw table: 0.79. Never-read subjects given a name 0.96, AUC 0.78.
 - The gate (cg27a_kra3) is required before route A writes are trusted.
 
+### CORRECTION (18 Nov 2026, 20:00): what route A measures
+
+Route A's reads use only the memory's ADDRESSING: the slots that the model's keys select (_kma_ptr_reads returns slot indices and read weights). They never use the memory's learned values. The pointer table that turns slots into names is built from the same prompts' recorded answers, so route A is a lookup table keyed by the model's addresses, holding recorded facts:
+- **Mode 2:** every rule-world premise in the visited domains, a HARNESS ASSIST.
+- **Mode 1 and the writes:** the question pool's facts, what the reader recorded.
+
+Composition through it chains two recorded facts by address. That is the same function as the relational module's symbolic chaining over STORED hops, which already writes composites at precision 1.00. Route A's writes were less precise (0.50-0.67 before the gate).
+
+Hence:
+- 'The model's own memory composes facts never stated' (route A 0.85-0.97) is NOT supported as worded. It is retrieval and chaining of recorded facts through the model's addressing. The slot-normalised gain fixes address collisions.
+- **Still supported:**
+  - the trunk does not compose untaught composites (0 of 81, synthetic negatives);
+  - the relational module learns the true rules from read facts, 2 found, 0 false;
+  - written composites are consolidated into the trunk's weights (relational module writes: taught 0.80-0.96 vs held back 0.00-0.09; kra2's route A writes: taught 0.82 vs 0.00).
+- The earlier KEY-RETURNING MEMORY two-hop readouts (0.97-1.00) are the same address lookup over pool facts.
+- **The honest in-model test is ROUTE D** (inf_kmc_rulecomp_decode): the trunk decodes B for 'A r1', then C for 'B r2', with store and memory OFF, compared with the composite asked directly. Local run started.
+
