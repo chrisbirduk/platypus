@@ -3895,3 +3895,19 @@ Base 0.113 / 0.000; chance 0.10.
 - Locally the relational module writes nothing ('none yet' at visits 1-5: the rules need the GPU's larger sample). Conclusions n 2. The composition test and conclusion recall can only be read on the GPU.
 - Probe readout: memory coverage of both facts 0.01-0.09; C first on the covered chains 1.00 (2).
 - **Ready for the GPU:** colab/platypus_gpu_kcr.ipynb (branch cg27a-distill).
+
+## Long synthetic composition test: NEGATIVE (18 Nov 2026, 01:25-02:15; tools/compose_synth.py, 3 x 192, 20,000 steps, 2,000 taught people, 200 held out)
+
+| Step | Person's city | Citizenship TAUGHT (2,000) | Citizenship NEVER TAUGHT (200; chance 0.10) |
+|---|---|---|---|
+| 5,000 | 0.20 | 0.15 | 0.12 |
+| 10,000 | 0.86 | 0.15 | 0.10 |
+| 12,000 | 1.00 | 0.32 | 0.11 |
+| 15,000 | 1.00 | 0.68 | 0.10 |
+| 20,000 | 1.00 | **0.97** | **0.10** |
+
+- The trunk knows both hops perfectly, and has MEMORISED all 2,000 taught composites (0.97). It composes none of the 200 held-out ones (chance).
+- After pretraining, new facts taught briefly: CITIZENSHIP 0.09-0.15 in all four arms (old city, new random, new typed, typed only), with both hops at 0.83-1.00.
+- This is memorisation instead of composition, as in the 6,000-step runs and the literature. Composition reported by Wang et al. needs training far past memorisation.
+- The GPU's late hint (held back 2/6, kfc3) is therefore more likely noise. kcr's powered test (about 30 held back) settles it.
+- The working route stays compose in key space, then teach.
