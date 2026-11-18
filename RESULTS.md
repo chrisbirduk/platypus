@@ -4446,3 +4446,32 @@ kra6 visit 5:
 - **Route D:** pure families 0.64 vs asked directly 0.27. The direct answers now include composites route J wrote and the trunk was taught.
 - The consolidation result holds at a larger n: 22 taught, all right, vs 0.05 held back.
 
+### Synthetic world, overnight (CS_IMPL 0: pretrained with NO citizenship at all; 2,000 + 200 people, 3 x 192, 12,000 steps)
+
+**1. LATE CHAIN TEACHING WORKS (the package's situation).** After pretraining, 300 people are taught 'A is a citizen of B > C.' briefly (8 rows + 24 replayed per batch). The other people are never taught.
+
+| Steps | Taught C | **Never taught: B / C** |
+|---|---|---|
+| 300 | 0.97 | 0.81 / 0.81 |
+| 750 | 0.98 | 0.83 / 0.84 |
+| 1,500 | 1.00 | **0.88 / 0.86** |
+| 3,000 | 1.00 | 0.84 / 0.84 |
+
+- A trained trunk learns the decomposition from a few hundred chains in a few hundred steps, and generalises it to untaught people at 0.81-0.88. Direct teaching of the same 300 is in the log for comparison.
+- Chain-form teaching of consolidated composites (kra7) is supported.
+
+**2. ROUTE J AT SCALE FAILS HERE: capacity.**
+
+| Held-out people (n 200) | Right |
+|---|---|
+| First hop, city among 300 | **0.04** |
+| Composite, country among 20 (chance 0.05) | 0.17 |
+| Composite among all 2,520 names | 0.14 |
+| With B snapped to the nearest city | 0.10 |
+| Null | 0.07 |
+
+- One linear operator per relation on 192-d name codes cannot hold 2,200 arbitrary person-city facts. A linear map memorises at most about D facts.
+- On the GPU rule world it holds about 35 facts per relation (758 facts over 22 relations), within capacity.
+- **Route J must become a higher-capacity memory before it scales:** a keyed or nonlinear associative memory, the JEPA predictor as an MLP, or random-feature expansion.
+- Snapping does not help when the first hop is wrong.
+
