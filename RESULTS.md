@@ -4458,6 +4458,8 @@ kra6 visit 5:
 | 3,000 | 1.00 | 0.84 / 0.84 |
 
 - A trained trunk learns the decomposition from a few hundred chains in a few hundred steps, and generalises it to untaught people at 0.81-0.88. Direct teaching of the same 300 is in the log for comparison.
+- **DIRECT teaching of the same 300 people** ('A is a citizen of C.'): taught 0.37 / 0.65 / 0.95 / 0.99 at 300 / 750 / 1,500 / 3,000 steps, but NEVER TAUGHT **0.10 at every step** (rank among 10, chance 0.10).
+- The same teaching budget in chain form generalises (0.81-0.88); in direct form it does not generalise at all.
 - Chain-form teaching of consolidated composites (kra7) is supported.
 
 **2. ROUTE J AT SCALE FAILS HERE: capacity.**
