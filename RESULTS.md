@@ -3882,3 +3882,16 @@ Base 0.113 / 0.000; chance 0.10.
 - **Below the about 0.5 target, so not yet a GPU build.**
 - Next, cheap: the same with the JOINT LEARNED KEYS (+25-28% on Re-DocRED), and two independent confirmations.
 - 00:12 second container restart: the kcr local run was lost in visit 3. It ran alone at normal speed: phase 3 at 23.7 min. Its partial log (scratchpad lr_kcr_part1.log) shows no errors through visit 2: the conclusion boost ran, the memory two-hop readout ran, and the probe readout covered both facts of 9% of probe chains (C first on those, 2 of 2). Relational writes were 'none yet' at visit 2 locally. Restarted at 00:13.
+
+## cg27a_kcr local safety run: PASSES (18 Nov 2026, 01:24; kcb + rule world x4 + half the written composites held back + probe readout)
+
+| Run | HEADLINE forgetting | Final BPC |
+|---|---|---|
+| kcr | **-0.041** | **2.596** |
+| kcs (reference) | -0.036 | 2.608 |
+
+- Within local noise, and slightly better. No errors.
+- Facts taught at least one visit, from the trunk: 0.13 / 0.17 / 0.19 at visits 3-5. Gated never-read 0.17 at visit 4.
+- Locally the relational module writes nothing ('none yet' at visits 1-5: the rules need the GPU's larger sample). Conclusions n 2. The composition test and conclusion recall can only be read on the GPU.
+- Probe readout: memory coverage of both facts 0.01-0.09; C first on the covered chains 1.00 (2).
+- **Ready for the GPU:** colab/platypus_gpu_kcr.ipynb (branch cg27a-distill).
