@@ -991,8 +991,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if sc[C] < thr or C == A or C == B1: continue
                 if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not (A in WS and B1 in WS and d1[B1] >= 0.5): ngt += 1; continue
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
-                t_ = par.get(par.get(A)) if A in par and par.get(A) in par else None
-                if t_ is not None: ok_.append(C == t_)
+                m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)   # FIX (18 Nov, labelled): a subject with NO true composite (a middle
+                if m_ is not None and A in m_: ok_.append(C == m_.get(m_.get(A)))               #   name whose parent is a root) counts as WRONG, as in the relational module's line
         print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}, {'slot-normalised' if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)) else 'raw'} pool table: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
               f"write path (composite score >= {thr}; {len(RW)} so far; {ngt} refused by the gate: both subjects written in the memory and the first read's top name >= 0.5) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
     PN = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}   # DIAGNOSTIC: each slot's
