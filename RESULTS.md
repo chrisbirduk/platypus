@@ -4429,3 +4429,20 @@ Next: the title heuristic as the baseline to beat; the GPU trunk's states; conte
 - Route D in the same run: pure families 0.35 / 0.52 (asked directly 0.00 / 0.10).
 - One seed; small n for the consolidation (7 / 8).
 
+kra6 visit 5:
+
+**Consolidation of route J's writes** (from the trunk, test wording, memory off):
+
+| | Taught | Held back |
+|---|---|---|
+| All | **1.00** (22) | 0.05 (22) |
+| Never planted | 1.00 (22) | 0.05 (21) |
+| With the closed-form edits subtracted | 1.00 (22) | 0.05 (22) |
+| Pure families | **1.00** (15) | 0.00 (14) |
+| What the trunk answers | right 22 of 22 | right 1, middle hop 4, other 17 of 22 |
+
+- **Route J:** fitted on 888 recorded facts, 25 relations, 1,236 names. First hop 0.78; composite 0.59; pure families 0.65; null 0.01. Gate: answers 0.73, right 0.81. Never-read families passing 0.42, AUC 0.93.
+- **Writes:** 68 in all, precision **1.00** (42).
+- **Route D:** pure families 0.64 vs asked directly 0.27. The direct answers now include composites route J wrote and the trunk was taught.
+- The consolidation result holds at a larger n: 22 taught, all right, vs 0.05 held back.
+
