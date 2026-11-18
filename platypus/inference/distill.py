@@ -1544,7 +1544,8 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
         e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=w['d'], pfs=[f"{A} {r} "], seen=2, src=w['src'], rm=w['vis'])
         if repr(e['key']) in have or (A, r) in haveAr: rep += 1; continue    # recorded by the reader meanwhile: the observation wins
         wc9 = float(getattr(cfg, 'inf_distill_relmod_write_ctl', 0.0))        # 12 Nov POWERED STEP 4: a separate, larger held-back share for written facts
-        held9 = (zlib.crc32((repr(e['key']) + '|w').encode()) % 1000 < wc9 * 1000) if wc9 > 0 else ctl(e)
+        gk9 = (repr((r, C)) if int(getattr(cfg, 'inf_distill_relmod_ctl_tail', 0)) else repr(e['key'])) + '|w'   # 18 Nov: held back BY ANSWER (all of a
+        held9 = (zlib.crc32(gk9.encode()) % 1000 < wc9 * 1000) if wc9 > 0 else ctl(e)                         #   family's grandchildren together)
         (H_ if held9 else T_).append(e)
     kn = [(k, truth(k[1], k[0])) for k in WR]; kn = [(k, t) for k, t in kn if t is not None]
     prec = sum(1 for k, t in kn if k[2] == t) / len(kn) if kn else float('nan')
