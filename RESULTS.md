@@ -4110,7 +4110,9 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 | 10,000 | 0.79 / 0.14 | 0.91 / 0.13 |
 | 12,000 | 0.95 / 0.10 | 1.00 / 0.12 |
 | 15,000 | 1.00 / 0.12 | 1.00 / 0.14 |
-| 16,000 | 1.00 / 0.12 | n/a |
+| 16,000 | 1.00 / 0.12 | 1.00 / 0.14 |
+
+Deeper (6 blocks), taught briefly after pretraining (citizenship never taught for these people; 100 / 300 steps): old city 0.20 / 0.16; new random city 0.05 / 0.09; new typed city 0.09 / 0.10; typed only 0.09 / 0.08. Both hops are learned (city 0.91-1.00, city's country 0.75-1.00) but composition stays at chance.
 
 Chance for the never-taught people is 0.10.
 
