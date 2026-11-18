@@ -33,7 +33,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 P = lambda *a: print(*a, flush=True); T0 = time.time()
 DW = int(os.environ.get('CS_D', 192)); NL = int(os.environ.get('CS_NL', 3)); STEPS = int(os.environ.get('CS_STEPS', 6000)); IMPL = int(os.environ.get('CS_IMPL', 1))
-COT = int(os.environ.get('CS_COT', 0)); REV = int(os.environ.get('CS_REV', 0)); SEED = int(os.environ.get('CS_SEED', 0)); LOOP = int(os.environ.get('CS_LOOP', 1)); torch.set_num_threads(int(os.environ.get('CS_THREADS', 1))); torch.manual_seed(SEED); rs = np.random.RandomState(SEED)
+COT = int(os.environ.get('CS_COT', 0)); COTLATE = int(os.environ.get('CS_COTLATE', 0)); OPJ = int(os.environ.get('CS_OPJ', 0)); REV = int(os.environ.get('CS_REV', 0)); SEED = int(os.environ.get('CS_SEED', 0)); LOOP = int(os.environ.get('CS_LOOP', 1)); torch.set_num_threads(int(os.environ.get('CS_THREADS', 1))); torch.manual_seed(SEED); rs = np.random.RandomState(SEED)
 L = int(os.environ.get('CS_L', 64)); PAD = 256; V = 257; B_ = 32
 SY = ['ka', 'lo', 'mi', 'ra', 'ven', 'tor', 'sa', 'bel', 'dun', 'fi', 'gar', 'hu', 'jo', 'ke', 'lin', 'mor', 'na', 'pe', 'qui', 'ro', 'sel', 'ta', 'ul', 'vo', 'wen', 'yo', 'zen']
 used = set()
@@ -115,12 +115,13 @@ class LM(nn.Module):
     def __init__(s, d=DW, nl=NL):
         super().__init__(); s.emb = nn.Embedding(V, d); s.pos = nn.Parameter(torch.randn(L, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl))
         s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V); s.lp = nn.Parameter(torch.zeros(LOOP, d))   # 18 Nov: CS_LOOP passes through the SAME blocks
-    def forward(s, X):                                                         #   (weight-shared looped trunk; a learned per-pass offset)
+    def hid(s, X):
         T = X.shape[1]; am = torch.triu(torch.ones(T, T, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:T]
         for p_ in range(LOOP):
             x = x + s.lp[p_]
             for b in s.b: x = b(x, am)
-        return s.o(s.n(x))
+        return s.n(x)
+    def forward(s, X): return s.o(s.hid(X))                                    #   (weight-shared looped trunk; a learned per-pass offset)
 def win(src, n, rr):
     i0 = rr.randint(0, len(src) - L - 1, n); return [bytes(src[i:i + L]) for i in i0]
 def tens(seqs):
@@ -173,6 +174,43 @@ for st in range(1, STEPS + 1):
           f"citizenship TAUGHT (training people) {rank1(m, cit(TRAINP[:100], OLD), re_):.2f} | IDEA 1 citizenship NEVER TAUGHT (held-out people) {rank1(m, cit(HELDP, OLD), re_):.2f}  ({time.time() - T0:.0f}s)"
           + (" || LEARNED DECOMPOSITION (greedy chain 'B > C'): taught B {:.2f} C {:.2f} | NEVER TAUGHT B {:.2f} C {:.2f}".format(*chain(m, TRAINP[:100], OLD), *chain(m, HELDP, OLD)) if COT else ""))
 st0 = {k: v.clone() for k, v in m.state_dict().items()}
+if OPJ:                                                                        # 18 Nov ROUTE J IN THE SYNTHETIC WORLD: one linear operator per relation on the model's
+    @torch.no_grad()                                                           #   name codes (mean final state over the name's bytes in 'About X.'), fitted on facts
+    def codes(names):                                                          #   ('lives in' for every person, 'lies in' for every old city); citizenship of the HELD-OUT
+        out = []                                                               #   people (never taught) by composing the two operators in latent space
+        for n_ in names:
+            b_ = f"About {n_}.".encode('latin-1'); X = torch.tensor([[PAD] + list(b_)])[:, :L]; h = m.hid(X)[0]
+            out.append(h[7:7 + len(n_)].mean(0))
+        Z_ = torch.stack(out); Z_ = Z_ - Z_.mean(0); return Z_ / (Z_.norm(dim=-1, keepdim=True) + 1e-8)
+    ppl = TRAINP + HELDP; CIT = [b for b, c in OLD]; ALL = [a for a, _ in ppl] + CIT + CN
+    Z = codes(ALL); ix = {n_: k for k, n_ in enumerate(ALL)}; lam = float(os.environ.get('CS_OPJ_LAM', 0.1)); Id = torch.eye(Z.shape[1])
+    def fit(pairs, shuf=False):
+        X = Z[[ix[a] for a, b in pairs]]; Y = Z[[ix[b] for a, b in pairs]]
+        if shuf: Y = Y[torch.randperm(len(Y), generator=torch.Generator().manual_seed(3))]
+        return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
+    Pl = fit([(a, OLD[bi][0]) for a, bi in ppl]); Pc = fit([(b, CN[c]) for b, c in OLD]); Pls = fit([(a, OLD[bi][0]) for a, bi in ppl], True)
+    ci = torch.tensor([ix[c] for c in CIT]); ki = torch.tensor([ix[c] for c in CN]); ai = torch.arange(len(ALL))
+    h1, cc, cs, call, nul = [], [], [], [], []
+    for a, bi in HELDP:
+        v1 = Z[ix[a]] @ Pl; b1 = CIT[int((v1 @ Z[ci].t()).argmax())]; h1.append(b1 == OLD[bi][0])
+        v2 = v1 @ Pc; cc.append(CN[int((v2 @ Z[ki].t()).argmax())] == CN[OLD[bi][1]]); call.append(ALL[int((v2 @ Z.t()).argmax())] == CN[OLD[bi][1]])
+        cs.append(CN[int(((Z[ix[b1]] @ Pc) @ Z[ki].t()).argmax())] == CN[OLD[bi][1]])
+        nul.append(CN[int(((Z[ix[a]] @ Pls @ Pc) @ Z[ki].t()).argmax())] == CN[OLD[bi][1]])
+    P(f"ROUTE J (synthetic, {Z.shape[1]}-d codes, {len(ALL)} names): HELD-OUT people's citizenship never taught (n {len(HELDP)}) || first hop: city {np.mean(h1):.2f} (among {len(CIT)}) | "
+      f"COMPOSITE country {np.mean(cc):.2f} (among {NC}; chance {1 / NC:.2f}), among ALL names {np.mean(call):.2f} | with B SNAPPED to the nearest city {np.mean(cs):.2f} | "
+      f"NULL (lives-in operator fitted on shuffled facts) {np.mean(nul):.2f} | the model asked directly (rank among 10) {rank1(m, cit(HELDP, OLD), np.random.RandomState(9)):.2f}  ({time.time() - T0:.0f}s)")
+if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
+    NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
+    for tag, fmt in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}.")):
+        sents = [fmt(a, bi) for a, bi in TP]                                   #   24 replayed rows a batch); held-out people never taught
+        mm = LM(); mm.load_state_dict(st0); mm.train(); op2 = torch.optim.AdamW(mm.parameters(), lr=3e-4, weight_decay=0.01); r2 = np.random.RandomState(SEED + 31); out = []
+        for s_ in range(1, int(os.environ.get('CS_COTLATE_STEPS', 1500)) + 1):
+            step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8)] + win(PRES, B_ - 8, r2))
+            if s_ in (300, 750, 1500, 3000):
+                if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
+                else: out.append(f"{s_}: taught {rank1(mm, cit(TP[:100], OLD), np.random.RandomState(9)):.2f} | NEVER TAUGHT {rank1(mm, cit(HELDP, OLD), np.random.RandomState(9)):.2f} (rank among 10)")
+        P(f"   LATE TEACHING, {tag} form, {NT} people: " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
+if OPJ or COTLATE: P(f"DONE ({time.time() - T0:.0f}s)"); raise SystemExit
 if COT and REV:                                                                # BELIEF REVISION: 100 held-out people move to an old city in ANOTHER country
     mv = []
     for a, bi in HELDP[:100]:
