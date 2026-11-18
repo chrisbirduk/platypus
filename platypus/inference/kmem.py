@@ -894,6 +894,67 @@ def kma_probe_twohop(model, cfg, K, S_slot, fs, vis):
           f"{np.mean(cov):.2f}; C first on those {np.mean(okc) if okc else float('nan'):.2f} (n {len(okc)}) | compare 'inference eval' two-hop FROM THE WEIGHTS", flush=True)
 
 
+def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
+    """18 Nov READOUT, ROUTE A (inf_kmc_rulecomp; PREDICTION-TIME, nothing trained): COMPOSITION INSIDE THE MODEL through the key-returning
+    memory - a question with a composite relation ('A is a grandchild of') is answered by TWO READS of the memory: the relational module's
+    verified rule r3 = r1 o r2 gives the two relations; read 1 (A, r1) returns a distribution over names B; read 2 (B, r2) for the top 5 B
+    returns C; C is ranked among the rule world's names. On the rule world's composites NEVER planted - and separately on the PURE families
+    (inf_rule_world_pure: no composite planted in the family) where the trunk's own forward pass got 0 of 81 on the GPU (cg27a_kcr3). With no
+    learned rule yet, the true rule (ORACLE) is used and labelled as such."""
+    from platypus.inference.probes import inf_rule_world, _RW_REL
+    W = inf_rule_world(cfg)
+    if not W.get('held'): return
+    ph = {k: v.split('{a} ')[1].split(' {b}')[0] for k, v in _RW_REL.items()}
+    rules = {str(t[2]).strip(): (str(t[0]).strip(), str(t[1]).strip()) for t in (model.__dict__.get('_rm_rules') or [])}
+    src = 'LEARNED rules' if rules else 'ORACLE rules (none learned yet)'
+    if not rules: rules = {ph['grand']: (ph['parent'], ph['parent']), ph['skip']: (ph['mgr'], ph['mgr'])}
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():
+        for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+            if x is None: continue
+            for s_, w_ in zip(*x): d_ = PTR.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+    def dist(prompts, sl):
+        res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s_, w_ in zip(*x):
+                    for n, v in PTR.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); pure = W.get('pure') or set()
+    have = {(e['A'], str(e['r']).strip(), e['ans']) for e in fs}; par = {**W.get('parent', {}), **W.get('mgr', {})}
+    tg = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) in seen and ph.get(k) in rules for r3 in [ph.get(k)]]
+    if not tg or not PTR:
+        print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] nothing to ask ({len(tg)} composites, {len(PTR)} pointer slots)", flush=True); return
+    names = sorted(set(par) | set(par.values())); KR = 5; out = {'all': [], 'pure': [], 'cov': [], 'covpure': []}; first = []
+    for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
+        L = [t for t in tg if int(S_slot(t[0])) == sl]
+        d1s = dist([te(l, rules[r3][0]) for d, l, r3, C in L], sl); q2 = {}
+        for (d, l, r3, C), d1 in zip(L, d1s):
+            for b in sorted(d1, key=d1.get, reverse=True)[:KR]: q2[(b, rules[r3][1])] = None
+        ks = list(q2)
+        for k, d2 in zip(ks, dist([te(b, r) for b, r in ks], sl)): q2[k] = d2
+        for (d, l, r3, C), d1 in zip(L, d1s):
+            sc = {}
+            for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
+                for n, v in (q2.get((b, rules[r3][1])) or {}).items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
+            ok = bool(sc) and max(sc, key=sc.get) == C; first.append(bool(d1) and max(d1, key=d1.get) == par.get(l))
+            cov = (l, rules[r3][0], par.get(l)) in have and (par.get(l), rules[r3][1], C) in have
+            out['all'].append(ok)
+            if l in pure: out['pure'].append(ok)
+            if cov: out['cov'].append(ok)
+            if cov and l in pure: out['covpure'].append(ok)
+    m = lambda v: f"{np.mean(v):.2f} (n {len(v)})" if v else "n/a"
+    print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] PREDICTION-TIME, {src}: composites NEVER planted, asked with the composite "
+          f"relation, answered by two memory reads (C first among {len(names)} rule-world names, chance {1 / max(1, len(names)):.3f}) || ALL {m(out['all'])} | "
+          f"PURE FAMILIES {m(out['pure'])} | first hop right {np.mean(first) if first else float('nan'):.2f} || both premises in the memory: ALL {m(out['cov'])}, "
+          f"PURE {m(out['covpure'])} | compare the trunk alone on pure-family held-back composites (RELATIONAL MODULE WRITES, PURE FAMILIES)", flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -953,6 +1014,9 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
             if int(getattr(cfg, 'inf_kmc_probe2', 0)):
                 try: kma_probe_twohop(model, cfg, K, S_slot, fs, vis)
                 except Exception as e8: print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
+            if int(getattr(cfg, 'inf_kmc_rulecomp', 0)):
+                try: kma_rule_compose(model, cfg, K, S_slot, fs, vis)
+                except Exception as e8: print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
                 try: kma_compose_write(model, cfg, K, S_slot, fs, vis)
                 except Exception as e9: print(f"  [COMPOSED WRITES | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
