@@ -17,7 +17,9 @@ fact rows + 24 replayed pretraining rows per batch), four arms from the same che
   F4 TYPED ONLY     the new city's code is its country's; 'B lies in C' is never taught        (inheritance from the type alone)
 Recall: the right answer first among it and 9 others of its kind (chance 0.10): citizenship ('A is a citizen of '), the city ('A lives
 in '), the city's country ('B lies in ').
-Usage: CS_D=192 CS_NL=3 CS_STEPS=6000 CS_IMPL=1 CS_SEED=0 python3 tools/compose_synth.py"""
+CS_LOOP (18 Nov): passes through the same blocks - a weight-shared LOOPED trunk (the two-hop literature: a second pass lets the bridge entity
+resolved in pass 1 be used in pass 2).
+Usage: CS_D=192 CS_NL=3 CS_STEPS=6000 CS_IMPL=1 CS_SEED=0 [CS_NTRAIN=400 CS_NHELD=100 CS_LOOP=1] python3 tools/compose_synth.py"""
 import os
 import math
 import collections
@@ -28,7 +30,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 P = lambda *a: print(*a, flush=True); T0 = time.time()
 DW = int(os.environ.get('CS_D', 192)); NL = int(os.environ.get('CS_NL', 3)); STEPS = int(os.environ.get('CS_STEPS', 6000)); IMPL = int(os.environ.get('CS_IMPL', 1))
-SEED = int(os.environ.get('CS_SEED', 0)); torch.set_num_threads(int(os.environ.get('CS_THREADS', 1))); torch.manual_seed(SEED); rs = np.random.RandomState(SEED)
+SEED = int(os.environ.get('CS_SEED', 0)); LOOP = int(os.environ.get('CS_LOOP', 1)); torch.set_num_threads(int(os.environ.get('CS_THREADS', 1))); torch.manual_seed(SEED); rs = np.random.RandomState(SEED)
 L = 64; PAD = 256; V = 257; B_ = 32
 SY = ['ka', 'lo', 'mi', 'ra', 'ven', 'tor', 'sa', 'bel', 'dun', 'fi', 'gar', 'hu', 'jo', 'ke', 'lin', 'mor', 'na', 'pe', 'qui', 'ro', 'sel', 'ta', 'ul', 'vo', 'wen', 'yo', 'zen']
 used = set()
@@ -51,8 +53,8 @@ def pcode(bi, informative=0.8):                                                #
     c = OLD[bi][1]; return CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]   #   code (80%, like the cities' codes)
 def pnew(bi):
     n = person(); return (f"{n}-{pcode(bi)}" if PCODE else n), bi
-TRAINP = [pnew(int(rs.randint(len(OLD)))) for _ in range(400)]
-HELDP = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
+TRAINP = [pnew(int(rs.randint(len(OLD)))) for _ in range(int(os.environ.get('CS_NTRAIN', 400)))]   # 17 Nov: CS_NTRAIN / CS_NHELD
+HELDP = [pnew(int(rs.randint(len(OLD)))) for _ in range(int(os.environ.get('CS_NHELD', 100)))]
 F1P = [pnew(int(rs.randint(len(OLD)))) for _ in range(100)]
 if PCODE == 2:                                                                 # 14 Nov CS_PCODE 2 - codes from REAL COMPRESSION of the fact graph: names lose the
     from scipy.sparse import csr_matrix                                        #   handed-out codes; the graph of what is stated (person-city, city-country, and
@@ -107,10 +109,12 @@ class Blk(nn.Module):
 class LM(nn.Module):
     def __init__(s, d=DW, nl=NL):
         super().__init__(); s.emb = nn.Embedding(V, d); s.pos = nn.Parameter(torch.randn(L, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl))
-        s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V)
-    def forward(s, X):
+        s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V); s.lp = nn.Parameter(torch.zeros(LOOP, d))   # 18 Nov: CS_LOOP passes through the SAME blocks
+    def forward(s, X):                                                         #   (weight-shared looped trunk; a learned per-pass offset)
         T = X.shape[1]; am = torch.triu(torch.ones(T, T, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:T]
-        for b in s.b: x = b(x, am)
+        for p_ in range(LOOP):
+            x = x + s.lp[p_]
+            for b in s.b: x = b(x, am)
         return s.o(s.n(x))
 def win(src, n, rr):
     i0 = rr.randint(0, len(src) - L - 1, n); return [bytes(src[i:i + L]) for i in i0]
@@ -138,7 +142,7 @@ cit = lambda people, cities: [(f"{a} is a citizen of ", CN[cities[bi][1]], CN) f
 liv = lambda people, cities: [(f"{a} lives in ", cities[bi][0], [c[0] for c in cities]) for a, bi in people]
 lie = lambda cities: [(f"{b} lies in ", CN[c], CN) for b, c in cities]
 P(f"synthetic world: {NC} countries, {len(OLD)} old cities (code = country's 80%), {len(TRAINP)} training people{' with implications' if IMPL else ' (NO implications)'}, "
-  f"{len(HELDP)} held-out people | pretraining sentences {len(PRE)}, stream {len(PRES)} bytes | LM {NL} layers x {DW}, {STEPS} steps, seed {SEED}")
+  f"{len(HELDP)} held-out people | pretraining sentences {len(PRE)}, stream {len(PRES)} bytes | LM {NL} layers x {DW} x {LOOP} pass(es), {STEPS} steps, seed {SEED}")
 m = LM(); op = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.1); sch = torch.optim.lr_scheduler.OneCycleLR(op, 1e-3, total_steps=STEPS, pct_start=0.05)
 rr = np.random.RandomState(SEED + 1); ls = []
 for st in range(1, STEPS + 1):

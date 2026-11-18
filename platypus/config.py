@@ -543,6 +543,7 @@ class Config:
     inf_distill_wake_aklfw=1.0
     inf_distill_wake_decay=1.0      #   17 Nov: the question rows' weight x decay^(visit - inf_distill_wake_decay_from) in later visits
     inf_distill_wake_decay_from=2
+    inf_distill_wake_decay_min=0.0  #   18 Nov: FLOOR on that decay (0 = none). GPU kcr2: facts recalled 0.81 at visits 4-5 -> 0.67 at visit 7, when the decay reaches 1/32-1/64; 0.125 keeps visits 1-5 as kcs
     inf_distill_wake_concboost=0    #   17 Nov (queue 49): 1 = conclusion rows (not facts, not refusals) sampled x 1/(the decay at this visit); the budget unchanged
     inf_distill_wake_params='mlp_out' #   11 Nov: 'mlp_out' = only the blocks' mlp_out weights take the question gradient ('' = every parameter)
     inf_distill_wake_proj=0         #   11 Nov: 1 = ANCHOR PROJECTION (A-GEM): the question gradient's component that would raise next-byte loss on
@@ -568,6 +569,8 @@ class Config:
     inf_reader_gold=1               # 11 Nov READOUT (with inf_bench): the evidence record(s) scored against the benchmark's gold relations each sleep
     inf_rw_nosleep=0                # 12 Nov: 1 = the sleep layer never concludes the rule world's two-hop pairs (held out like inf_kgx_hold): composites reach the trunk only via step 4
     inf_distill_relmod_write_ctl=0.0  # 12 Nov POWERED STEP 4: > 0 = this share of the relational module's written facts held back (own hash) instead of the general fifth
+    inf_distill_relmod_ctl_tail=0   #   18 Nov: 1 = the held-back share is drawn BY ANSWER (relation, C): every composite with the same answer (a family's grandchildren) is held back together, so none can be answered from a taught sibling
+    inf_rule_world_pure=0.0         #   18 Nov: share of rule-world families / charts with NO composite planted (pure test families; readout RELATIONAL MODULE WRITES, PURE FAMILIES)
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
     inf_distill_bridge_syn=0        #   11 Nov: 1 = bridge anchoring on the HELD-OUT chains only (inf_kgx_hold), half by hash, with one invented attribute each
@@ -717,6 +720,12 @@ class Config:
     inf_kmc_compose_src=3000        #   memory entries used as first hops
     inf_kmc_compose_rule='any'      #   17 Nov: which chains compose: 'any' (A r2 C, kcp), 'rules' (relational-module rules r1 o r2 -> r3), 'same' (r o r -> r), 'same+rules'
     inf_kmc_probe2=0                #   17 Nov READOUT (prediction-time): the two-hop probe questions answered through the key-returning memory's two reads
+    inf_kmc_rulecomp=0              #   18 Nov READOUT, route A (prediction-time): composite-relation questions answered by two memory reads via the relational module's rule
+    inf_kmc_rulecomp_k=5            #   route A: names carried from read 1 to read 2 (local kra3 visit 2: top 1 0.80 vs top 5 0.66)
+    inf_kmc_rulecomp_write=0        #   18 Nov MODEL CHANGE: route A's composites (two memory reads, pool pointer table) are what the relational module writes
+    inf_kmc_rulecomp_wthr=0.5       #   route A writes: minimum composite score
+    inf_kmc_rulecomp_oracle_write=0 #   local only: allow route A writes with the ORACLE rule when none is learned (labelled)
+    inf_kmc_rulecomp_norm=0         #   route A writes decode through the slot-normalised pool table (crowded slots count less)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
                                     #   pair, head = the more specific name) instead of 'A is connected to C'; identity, judge and retraction unchanged
     inf_ku=0                        # 16 Nov KEYED CONTINUATION UNITS (inference.kunits): NAME, DATE, NUMBER keys with continuation memories from the text

@@ -894,6 +894,136 @@ def kma_probe_twohop(model, cfg, K, S_slot, fs, vis):
           f"{np.mean(cov):.2f}; C first on those {np.mean(okc) if okc else float('nan'):.2f} (n {len(okc)}) | compare 'inference eval' two-hop FROM THE WEIGHTS", flush=True)
 
 
+def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
+    """18 Nov READOUT, ROUTE A (inf_kmc_rulecomp; PREDICTION-TIME, nothing trained): COMPOSITION INSIDE THE MODEL through the key-returning
+    memory - a question with a composite relation ('A is a grandchild of') is answered by TWO READS of the memory: the relational module's
+    verified rule r3 = r1 o r2 gives the two relations; read 1 (A, r1) returns a distribution over names B; read 2 (B, r2) for the top 5 B
+    returns C; C is ranked among the rule world's names. On the rule world's composites NEVER planted - and separately on the PURE families
+    (inf_rule_world_pure: no composite planted in the family) where the trunk's own forward pass got 0 of 81 on the GPU (cg27a_kcr3). With no
+    learned rule yet, the true rule (ORACLE) is used and labelled as such."""
+    from platypus.inference.probes import inf_rule_world, _RW_REL
+    W = inf_rule_world(cfg)
+    if not W.get('held'): return
+    ph = {k: v.split('{a} ')[1].split(' {b}')[0] for k, v in _RW_REL.items()}
+    rules = {str(t[2]).strip(): (str(t[0]).strip(), str(t[1]).strip()) for t in (model.__dict__.get('_rm_rules') or [])}
+    src = 'LEARNED rules' if rules else 'ORACLE rules (none learned yet)'
+    if not rules: rules = {ph['grand']: (ph['parent'], ph['parent']), ph['skip']: (ph['mgr'], ph['mgr'])}
+    te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
+    by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = list(fs); fs0 = list(fs)
+    if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2:                         # mode 2: the pointer table also covers every rule-world PREMISE the model has READ
+        fs += [{'d': d_, 'A': a_, 'r': ph[k_], 'ans': b_} for (d_, s_, k_, a_, b_) in W['planted'] if int(d_) in seen and k_ in ('parent', 'mgr')]   # (the memory is written on every byte of read text; only the decoding table is extended)
+    for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
+    PTR = {}
+    for sl, L in by_d.items():
+        for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+            if x is None: continue
+            for s_, w_ in zip(*x): d_ = PTR.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+    def dist(prompts, sl, P_=None):
+        P_ = PTR if P_ is None else P_; res = []
+        for x in _kma_ptr_reads(model, K, prompts, sl):
+            d_ = {}
+            if x is not None:
+                for s_, w_ in zip(*x):
+                    for n, v in P_.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
+            z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
+        return res
+    pure = W.get('pure') or set()
+    have = {(e['A'], str(e['r']).strip(), e['ans']) for e in fs}; par = {**W.get('parent', {}), **W.get('mgr', {})}
+    tg = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) in seen and ph.get(k) in rules for r3 in [ph.get(k)]]
+    if not tg or not PTR:
+        print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] nothing to ask ({len(tg)} composites, {len(PTR)} pointer slots)", flush=True); return
+    names = sorted(set(par) | set(par.values())); KR = int(getattr(cfg, 'inf_kmc_rulecomp_k', 5)); out = {'all': [], 'pure': [], 'cov': [], 'covpure': []}; first = []; dg = {'hop2': [], 'top1': [], 'conf': []}
+    for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
+        L = [t for t in tg if int(S_slot(t[0])) == sl]
+        d1s = dist([te(l, rules[r3][0]) for d, l, r3, C in L], sl); q2 = {}
+        for (d, l, r3, C), d1 in zip(L, d1s):
+            for b in sorted(d1, key=d1.get, reverse=True)[:KR]: q2[(b, rules[r3][1])] = None
+        ks = list(q2)
+        for k, d2 in zip(ks, dist([te(b, r) for b, r in ks], sl)): q2[k] = d2
+        tb = list({(par.get(l), rules[r3][1]) for d, l, r3, C in L if par.get(l)})       # DIAGNOSTIC: the second hop alone, from the TRUE B
+        tbd = dict(zip(tb, dist([te(b_, r_) for b_, r_ in tb], sl)))
+        for (d, l, r3, C), d1 in zip(L, d1s):
+            d2t = tbd.get((par.get(l), rules[r3][1])) or {}; h2 = bool(d2t) and max(d2t, key=d2t.get) == C; dg['hop2'].append(h2)
+            b1 = max(d1, key=d1.get) if d1 else None; d21 = q2.get((b1, rules[r3][1])) or {}
+            dg['top1'].append(bool(d21) and max(d21, key=d21.get) == C); dg.setdefault(('dom', int(d)), []).append(h2)
+            sc = {}
+            for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
+                for n, v in (q2.get((b, rules[r3][1])) or {}).items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
+            ok = bool(sc) and max(sc, key=sc.get) == C; dg['conf'].append((max(sc.values()) if sc else 0.0, ok)); first.append(bool(d1) and max(d1, key=d1.get) == par.get(l))
+            cov = (l, rules[r3][0], par.get(l)) in have and (par.get(l), rules[r3][1], C) in have
+            out['all'].append(ok); dg.setdefault(('f1', first[-1]), []).append(ok); dg.setdefault(('d', int(d)), []).append(ok)
+            if l in pure: out['pure'].append(ok)
+            if cov: out['cov'].append(ok)
+            if cov and l in pure: out['covpure'].append(ok)
+    m = lambda v: f"{np.mean(v):.2f} (n {len(v)})" if v else "n/a"
+    print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] PREDICTION-TIME, {src}, pointer table over {'every premise read' if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2 else 'pool facts'}: composites NEVER planted, asked with the composite "
+          f"relation, answered by two memory reads (C first among {len(names)} rule-world names, chance {1 / max(1, len(names)):.3f}) || ALL {m(out['all'])} | "
+          f"PURE FAMILIES {m(out['pure'])} | first hop right {np.mean(first) if first else float('nan'):.2f} || both premises in the memory: ALL {m(out['cov'])}, "
+          f"PURE {m(out['covpure'])} | compare the trunk alone on pure-family held-back composites (RELATIONAL MODULE WRITES, PURE FAMILIES)", flush=True)
+    if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
+        # 18 Nov ROUTE A WRITES (MODEL CHANGE, inf_kmc_rulecomp_write): the model's own composition through two memory reads becomes what the relational
+        # module writes into the question pool (instead of its symbolic chaining over stored facts). LABEL-FREE: the subjects are those with a recorded
+        # r1 fact and no recorded r3 fact; the pointer table maps slots to names through the POOL'S facts only (what the reader recorded).
+        PW = {}; bw = {}
+        for e in fs0: bw.setdefault(int(S_slot(e['d'])), []).append(e)
+        for sl, L in bw.items():
+            for e, x in zip(L, _kma_ptr_reads(model, K, [te(e['A'], e['r']) for e in L], sl)):
+                if x is None: continue
+                for s_, w_ in zip(*x): d_ = PW.setdefault(s_, {}); d_[e['ans']] = d_.get(e['ans'], 0.0) + w_
+        if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)):                      # 18 Nov: the SLOT-NORMALISED table (crowded slots count less; local kraw visit 2:
+            nW = max(2, len({n for dd in PW.values() for n in dd}))           #   first hop 0.97 vs 0.86 raw, composite 0.95 vs 0.80)
+            PW = {s_: {n: v / sum(dd.values()) * np.log(1.0 + nW / len(dd)) for n, v in dd.items()} for s_, dd in PW.items()}
+        hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; subj = {}
+        for e in fs0:
+            for r3, (r1, r2) in rules.items():
+                if str(e['r']).strip() == r1 and (e['A'], r3) not in hasr: subj[(e['A'], r3)] = int(S_slot(e['d']))
+        thr = float(getattr(cfg, 'inf_kmc_rulecomp_wthr', 0.5)); RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []
+        for sl in sorted(set(subj.values())):
+            Q = [(A, r3) for (A, r3), s2 in subj.items() if s2 == sl]
+            d1s = dist([te(A, rules[r3][0]) for A, r3 in Q], sl, PW)
+            for (A, r3), d1 in zip(Q, d1s):
+                if not d1: continue
+                sc = {}
+                for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
+                    for n, v in (dist([te(b, rules[r3][1])], sl, PW)[0]).items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
+                if not sc: continue
+                C = max(sc, key=sc.get)
+                if sc[C] < thr or C == A or C == max(d1, key=d1.get): continue
+                if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
+                t_ = par.get(par.get(A)) if A in par and par.get(A) in par else None
+                if t_ is not None: ok_.append(C == t_)
+        print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}, {'slot-normalised' if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)) else 'raw'} pool table: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
+              f"write path (composite score >= {thr}; {len(RW)} so far) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
+    PN = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}   # DIAGNOSTIC: each slot's
+    fn, cn = [], []                                                            #   names normalised and weighted by how few names share it (crowded slots count less)
+    for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
+        L = [t for t in tg if int(S_slot(t[0])) == sl]; d1s = dist([te(l, rules[r3][0]) for d, l, r3, C in L], sl, PN)
+        bq = list({(max(d1, key=d1.get), rules[r3][1]) for (d, l, r3, C), d1 in zip(L, d1s) if d1}); bd = dict(zip(bq, dist([te(b_, r_) for b_, r_ in bq], sl, PN)))
+        for (d, l, r3, C), d1 in zip(L, d1s):
+            b1 = max(d1, key=d1.get) if d1 else None; fn.append(b1 is not None and b1 == par.get(l)); d2 = bd.get((b1, rules[r3][1])) or {}
+            cn.append(bool(d2) and max(d2, key=d2.get) == C)
+    sz = [len(dd) for dd in PTR.values()]
+    print(f"  [ROUTE A, CROWDED SLOTS | visit {vis + 1}] names per pointer slot: median {np.median(sz):.0f}, 90th percentile {np.percentile(sz, 90):.0f}, max {max(sz)} | "
+          f"SLOT-NORMALISED table: first hop {np.mean(fn):.2f} (raw {np.mean(first):.2f}) | composite, top B only {np.mean(cn):.2f} (raw {np.mean(dg['top1']):.2f})", flush=True)
+    tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
+    if tu:                                                                     # FALSE-MEMORY CHECK: the same two reads for composites whose subjects were NEVER READ
+        sl = int(S_slot(max(seen))) if seen else 0; uc = []
+        d1u = dist([te(l, rules[r3][0]) for d, l, r3, C in tu], sl)
+        for (d, l, r3, C), d1 in zip(tu, d1u):
+            sc = {}
+            for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
+                for (d2,) in [dist([te(b, rules[r3][1])], sl)]:
+                    for n, v in d2.items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
+            uc.append(max(sc.values()) if sc else 0.0)
+        rc = [c for c, o in dg['conf'] if o]; auc = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in uc] for a_ in rc]) if rc and uc else float('nan')
+        print(f"  [ROUTE A, NEVER-READ SUBJECTS | visit {vis + 1}] {len(tu)} composites whose family was NEVER READ, asked the same way: the memory gives a name {np.mean([c > 0 for c in uc]):.2f} | "
+              f"composite score: never read median {np.median(uc):.3f} vs right answers on read families {np.median(rc) if rc else float('nan'):.3f} | AUC right-vs-never-read {auc:.2f} "
+              f"(1.0 = a threshold on the composite score abstains on every never-read subject and keeps every right answer)", flush=True)
+    print(f"  [ROUTE A, DIAGNOSTICS | visit {vis + 1}] second hop alone (read 2 from the TRUE B) {m(dg['hop2'])} | composite when the first hop was right {m(dg.get(('f1', True), []))}, "
+          f"wrong {m(dg.get(('f1', False), []))} | only the top B carried {m(dg['top1'])} (top {KR}: {m(out['all'])}) || BY DOMAIN (composite / second hop alone): "
+          + " ".join(f"d{d_} {np.mean(dg[('d', d_)]):.2f}/{np.mean(dg[('dom', d_)]):.2f} (n {len(dg[('d', d_)])})" for d_ in sorted(k[1] for k in dg if isinstance(k, tuple) and k[0] == 'd')), flush=True)
+
+
 def kmi_readout(model, cfg, S_slot, ents, held, vis):
     """READOUT: the model's answers WITH the memory vs WITHOUT (trunk only), test wording, on the pool's facts and the written inferences"""
     from platypus.inference.distill import _DT_PARA
@@ -953,6 +1083,9 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
             if int(getattr(cfg, 'inf_kmc_probe2', 0)):
                 try: kma_probe_twohop(model, cfg, K, S_slot, fs, vis)
                 except Exception as e8: print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
+            if int(getattr(cfg, 'inf_kmc_rulecomp', 0)):
+                try: kma_rule_compose(model, cfg, K, S_slot, fs, vis)
+                except Exception as e8: print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
                 try: kma_compose_write(model, cfg, K, S_slot, fs, vis)
                 except Exception as e9: print(f"  [COMPOSED WRITES | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
@@ -964,7 +1097,7 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
         rels = sorted({e['r'] for e in fs}); g9 = np.random.RandomState(int(cfg.seed) + 5454 + vis); op9 = []
         for k in range(60):
             nm = ''.join(g9.choice(_DT_REFUSE_SYL, 2)).title() + ' ' + ''.join(g9.choice(_DT_REFUSE_SYL, 3)).title()
-            pb = f"It is on record that {nm} {rels[g9.randint(len(rels))]} ".encode('latin-1'); X, _ = _ws_batch(model, [pb + b'Xx.'])
+            pb = f"It is on record that {nm} {rels[g9.randint(len(rels))]} ".encode('latin-1', 'replace'); X, _ = _ws_batch(model, [pb + b'Xx.'])
             with torch.no_grad(): lg = _ws_run(model, X, 0).float(); K['_open'] = {}; kmi_logits(model, K, [pb], X, lg, 0)
             op9.append(int(bool(K['_open'].get(0, False))))
         print(f"  [INTEGRATED KEYED MEMORY, GATE | visit {vis + 1}] the memory answers only where its address was written ({len(K.get('subj', ()))} subjects written, "

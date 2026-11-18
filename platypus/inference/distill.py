@@ -1453,6 +1453,8 @@ def _dw_relmod(model, cfg, ents, held, vis):
             emA = {}                                                           #   distill_wake_sleep puts them in the question pool (_dw_relmod_write)
             for e in ents + held:
                 if e['key'][0] == 'fact': emA.setdefault(e['A'], e)
+            if int(getattr(cfg, 'inf_kmc_rulecomp_write', 0)):                 # 18 Nov ROUTE A WRITES: the model's composites through two memory reads (kmem.kma_rule_compose,
+                wr = [(a9, r9, c9, 0) for (r9, a9, c9) in model.__dict__.get('_ra_written', {})]   #   at the last readout) replace the symbolic chaining
             for a9, r9, c9, _ in wr:
                 if (r9, a9, c9) in WR or a9 not in emA: continue
                 WR[(r9, a9, c9)] = dict(d=emA[a9]['d'], src=tuple(emA[a9].get('src') or ()), vis=vis); nw9 += 1
@@ -1544,7 +1546,8 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
         e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=w['d'], pfs=[f"{A} {r} "], seen=2, src=w['src'], rm=w['vis'])
         if repr(e['key']) in have or (A, r) in haveAr: rep += 1; continue    # recorded by the reader meanwhile: the observation wins
         wc9 = float(getattr(cfg, 'inf_distill_relmod_write_ctl', 0.0))        # 12 Nov POWERED STEP 4: a separate, larger held-back share for written facts
-        held9 = (zlib.crc32((repr(e['key']) + '|w').encode()) % 1000 < wc9 * 1000) if wc9 > 0 else ctl(e)
+        gk9 = (repr((r, C)) if int(getattr(cfg, 'inf_distill_relmod_ctl_tail', 0)) else repr(e['key'])) + '|w'   # 18 Nov: held back BY ANSWER (all of a
+        held9 = (zlib.crc32(gk9.encode()) % 1000 < wc9 * 1000) if wc9 > 0 else ctl(e)                         #   family's grandchildren together)
         (H_ if held9 else T_).append(e)
     kn = [(k, truth(k[1], k[0])) for k in WR]; kn = [(k, t) for k, t in kn if t is not None]
     prec = sum(1 for k, t in kn if k[2] == t) / len(kn) if kn else float('nan')
@@ -1555,6 +1558,12 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     def ask():                                                                 #   generic conclusions ('A is connected to C') are taught by edits
         return [_dt_recall(model, S_slot, L) for L in (old(T_), old(H_), nv(old(T_)), nv(old(H_)), nog(old(T_)), nog(old(H_)))]
     rT, rH, rTn, rHn, rTg, rHg = ask(); sub = None
+    PURE9 = (inf_rule_world(cfg).get('pure') or set()) if float(getattr(cfg, 'inf_rule_world_pure', 0.0)) > 0 else set()
+    if PURE9:                                                                  # 18 Nov: HELD BACK in PURE families (no composite planted in the family, none
+        pH = [e for e in old(H_) if e['A'] in PURE9]; pT = [e for e in old(T_) if e['A'] in PURE9]   #   taught with the same answer): only composition
+        rpT, rpH = _dt_recall(model, S_slot, pT), _dt_recall(model, S_slot, pH)
+        print(f"  [RELATIONAL MODULE WRITES, PURE FAMILIES | visit {vis + 1}] families with NO planted composite ({len(PURE9)} leaves): from the trunk, test wording: "
+              f"TAUGHT {f(rpT)} vs HELD BACK {f(rpH)} (a held-back one here can only come from composing the two read hops)", flush=True)
     E = model.__dict__.get('_cf_E'); mo = _nm_layer(model, cfg) if E is not None else None
     if E is not None and mo is not None and tuple(E.shape) == tuple(mo.weight.shape):
         W0 = mo.weight.detach().clone()
@@ -2209,7 +2218,7 @@ def distill_wake_step(model, cfg, olds=None, dream=None, dk=1, dkl=None):
     if ond and not dream: return
     w = float(cfg.inf_distill_wake) * (max(1, int(dk)) if ond else 1)
     dc9 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))                   # 17 Nov (queue 47): question rows pushed less in later visits
-    if dc9 != 1.0: w *= dc9 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2)))
+    if dc9 != 1.0: w *= max(float(getattr(cfg, 'inf_distill_wake_decay_min', 0.0)), dc9 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))))   # 18 Nov floor
     if int(getattr(cfg, 'inf_distill_spindle', 0)): return                 # spindle coupling: questions only inside the sleep's replay burst
     if int(getattr(cfg, 'inf_distill_readonly', 0)): return                # CONTROL RUN: the pool and every readout as usual, no question rows trained
     gw = _gate_weight(model, cfg, dkl)

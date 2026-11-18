@@ -9,7 +9,10 @@ into a trunk's own weights, on the stand-in trunk (TG_CKPT, d 192, 3 blocks): th
   LORA      a rank-CS_R adapter on every block's MLP (input and output), the base frozen
 Readouts: recall in a test wording never taught ('It is on record that <head> <wording> ') - rank of the true tail among 10 tails of written
 inferences, open-ended exact; for right and wrong inferences; held-out wiki bits per byte added (forgetting).
-Usage: TG_CKPT=<trunk> python3 tools/consolidate.py <distant_50k.json.gz>   env CS_STEPS (300), CS_LRS (1e-4,3e-4,1e-3), CS_RULES, CS_R (8)"""
+CS_CONC 1 (17 Nov): the inferences taught as UNTYPED CONCLUSIONS ('A is connected to C', as the sleep layer's) and tested also in the package's
+conclusion test, the PARAPHRASE 'A is tied to ' / 'The one tied to A is ' (never taught) - does every-weight training or more frames lose
+the paraphrase transfer that the GPU's conclusion recall needs?
+Usage: TG_CKPT=<trunk> python3 tools/consolidate.py <distant_50k.json.gz>   env CS_STEPS (300), CS_LRS (1e-4,3e-4,1e-3), CS_RULES, CS_R (8), CS_CONC (0)"""
 import os, sys, types, copy, time, math
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
@@ -54,6 +57,8 @@ FR24 = FR + ("It is known that {h} {w} {t}.", "We read that {h} {w} {t}.", "Sour
              "As written elsewhere, {h} {w} {t}.", "{h}? {h} {w} {t}.", "Remember: {h} {w} {t}.", "On {h}: {h} {w} {t}.", "Summary - {h} {w} {t}.",
              "Earlier we saw that {h} {w} {t}.", "Briefly, {h} {w} {t}.")       # 16 Nov CS_FRAMES 24: knowledge augmentation (varied wordings while learning)
 FR = FR24[:int(os.environ.get('CS_FRAMES', 6))]
+CONC = int(os.environ.get('CS_CONC', 0))
+if CONC: CL = [(h, 'is connected to', t, y) for h, w, t, y in CL]
 FACT = [f.format(h=h, w=w, t=t).encode('latin-1', 'replace')[:L_] for h, w, t, _ in CL for f in FR]
 EV = [bytes(WK[HO + k * 129:HO + (k + 1) * 129]) for k in range(64)]
 EVD = {d: [bytes(a[len(a) - 200000 + k * 129:len(a) - 200000 + (k + 1) * 129]) for k in range(64)] for d, a in DOMS.items()}
@@ -63,18 +68,22 @@ def wbits(m, ev=None):
 def dbits(m): return {d: wbits(m, e) for d, e in EVD.items()}
 tails = [c[2] for c in CL]; rr = np.random.RandomState(3)
 CANDS = [[t] + [tails[j] for j in rr.choice(len(tails), 12, replace=False) if tails[j] != t][:9] for h, w, t, _ in CL]
+PROMPTS = [lambda h, w: f"It is on record that {h} {w} "]
 @torch.no_grad()
-def recall(m):
+def recall(m, prompts=None):
     rk, ex = [], []
     for (h, w, t, y), cs in zip(CL, CANDS):
-        pb = f"It is on record that {h} {w} ".encode('latin-1', 'replace'); bl = [(pb + c.encode('latin-1', 'replace') + b'.')[:L_] for c in cs]
+      for pf_ in (prompts or PROMPTS):
+        pb = pf_(h, w).encode('latin-1', 'replace'); bl = [(pb + c.encode('latin-1', 'replace') + b'.')[:L_] for c in cs]
         X, Xi = tens(bl); lp = F.log_softmax(m(Xi), -1); n0 = len(pb)
         sc = [float(lp[i, n0:len(b)].gather(-1, X[i, n0:len(b), None]).mean()) for i, b in enumerate(bl)]
         rk.append(int(np.argmax(sc) == 0)); tb = (t + '.').encode('latin-1', 'replace')
         ex.append(int(bool((lp[0, n0:n0 + len(tb) - 1].argmax(-1) == X[0, n0:n0 + len(tb) - 1]).all())))
-    rk, ex = np.array(rk), np.array(ex); yv = np.array([c[3] for c in CL])
+    rk, ex = np.array(rk), np.array(ex); yv = np.repeat(np.array([c[3] for c in CL]), len(prompts or PROMPTS))
     return rk.mean(), ex.mean(), rk[yv].mean(), rk[~yv].mean()
+PARA = [lambda h, w: f"{h} is tied to ", lambda h, w: f"The one tied to {h} is "]
 b0 = wbits(base); r0 = recall(base); d0 = dbits(base)
+if CONC: rp0 = recall(base, PARA); P(f"BASE paraphrase 'tied to': rank {rp0[0]:.3f}, open {rp0[1]:.3f}")
 P(f"BASE: held-out wiki {b0:.4f} bits per byte | test-wording rank {r0[0]:.3f} (right {r0[2]:.3f}, wrong {r0[3]:.3f}), open {r0[1]:.3f}  ({time.time() - T0:.0f}s)")
 STEPS = int(os.environ.get('CS_STEPS', 300)); RK = int(os.environ.get('CS_R', 8))
 for rule in os.environ.get('CS_RULES', 'FULL,KL,MLPOUT,LORA').split(','):
@@ -101,6 +110,8 @@ for rule in os.environ.get('CS_RULES', 'FULL,KL,MLPOUT,LORA').split(','):
             else: lw = F.cross_entropy(lw_.reshape(-1, V_), Xw.reshape(-1), ignore_index=PAD)
             loss = (8 * lf + 24 * lw) / 32; op.zero_grad(); loss.backward(); op.step()
         m.eval(); bb = wbits(m); r = recall(m); dd = dbits(m)
-        P(f"   {rule:6s} lr {lr:g} anchor {ANCH}: test-wording rank {r[0]:.3f} (right {r[2]:.3f}, wrong {r[3]:.3f}), open {r[1]:.3f} | wiki {bb:.4f} ({bb - b0:+.4f} bits: forgetting) | per domain "
+        rp = recall(m, PARA) if CONC else None
+        P(f"   {rule:6s} lr {lr:g} anchor {ANCH} frames {len(FR)}: test-wording rank {r[0]:.3f} (right {r[2]:.3f}, wrong {r[3]:.3f}), open {r[1]:.3f}"
+          + (f" | PARAPHRASE 'tied to' rank {rp[0]:.3f}, open {rp[1]:.3f}" if rp else "") + f" | wiki {bb:.4f} ({bb - b0:+.4f} bits: forgetting) | per domain "
           + ", ".join(f"{d} {dd[d] - d0[d]:+.4f}" for d in dd) + f" (mean {np.mean([dd[d] - d0[d] for d in dd]):+.4f})  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")

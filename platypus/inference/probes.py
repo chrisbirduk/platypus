@@ -252,10 +252,12 @@ def inf_rule_world(cfg):
         for f_ in range(n_):
             d_ = int(rs_.randint(nd_)); root_ = nm(); mids_ = [nm(), nm()]; leaves_ = [(m_, nm()) for m_ in mids_ for _ in range(2)]
             for m_ in mids_: W_['planted'].append((d_, _RW_REL[r1_].format(a=m_, b=root_), r1_, m_, root_)); W_[kind_][m_] = root_
-            for m_, l_ in leaves_:
-                W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_
-                rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)
-                (W_['held'] if zlib.crc32(l_.encode()) % 2 else W_['planted']).append(rec_)
+            pure_ = float(getattr(cfg, 'inf_rule_world_pure', 0.0)) > 0 and zlib.crc32(('pure|' + root_).encode()) % 1000 < float(getattr(cfg, 'inf_rule_world_pure', 0.0)) * 1000
+            for m_, l_ in leaves_:                                             # 18 Nov PURE families (inf_rule_world_pure): NO composite planted for any of
+                W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_   #   their leaves, so a composite about them can
+                rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)                                 #   only come from composing the two hops
+                if pure_: W_.setdefault('pure', set()).add(l_)
+                (W_['held'] if (pure_ or zlib.crc32(l_.encode()) % 2) else W_['planted']).append(rec_)
     W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
     _INF['rulew'] = W_; return W_
 def _inf_plant_probes(raw,cfg,d,p):

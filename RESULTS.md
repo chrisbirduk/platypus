@@ -3670,3 +3670,512 @@ At 4-8x the earlier sample, composition in the trunk's code space is exact while
 ## README updated (17 Nov 2026, 21:05)
 
 README.md has a new section, "Recent results (15-17 November)". Ten new table rows were added, and open questions 7, 17 and 18 were updated or added. The "Note from author" is unchanged.
+
+## Rules over LABEL-FREE relation keys: the reader, not the key, is the blocker (17 Nov 2026, 21:20; tools/frame_compose.py, Re-DocRED)
+
+**Setup.** Premises are facts readable in one sentence (both names within 12 tokens). Held-out precision = the composed pair is gold-related in the document. The base rate for random pairs in the same documents is 0.132.
+
+| Key \ reader | Rules | Composed | Precision | Recall of chain-reachable gold pairs |
+|---|---|---|---|---|
+| GOLD relation id, ideal reader (gold facts) | 16 | 826 | **0.527** | 0.368 |
+| FINE frame (types + 1-3 words between), ideal reader | 29 | 152 | 0.382 | 0.049 |
+| COARSE frame (types + last word), ideal reader | 30 | 260 | 0.423 | 0.093 |
+| TYPES only (type pair + order), ideal reader | 7 | 1,052 | **0.452** | **0.402** |
+| FINE / COARSE / TYPES, REAL reader (every mention pair within 12 tokens) | 2,226 / 2,546 / 365 | 5,668 / 7,872 / 26,006 | **0.150 / 0.155 / 0.149** | 0.11 / 0.16 / 0.51 |
+| Same, REAL reader within 5 tokens | 305 / 442 / 153 | n/a | 0.22 / 0.22 / 0.20 | n/a |
+
+**Simulated readers (ideal premises plus non-gold records to a premise precision).** COARSE / TYPES rules:
+
+| Premise precision | Composed precision | Recall (TYPES) |
+|---|---|---|
+| 0.8 | 0.32 / 0.41 | 0.38 |
+| 0.6 | 0.31 / 0.33 | n/a |
+| 0.4 | 0.30 / 0.28 | n/a |
+
+**Conclusions.**
+- With an ideal reader, label-free keys keep about 85% of the gold key's precision (0.45 vs 0.53), and the type pair alone matches its recall. A better relation key is NOT the main blocker.
+- Deciding which co-occurrences are facts (the reader) is. Over every co-occurrence, composition is barely above base (0.15 vs 0.13).
+- Precision degrades gracefully with premise quality. Composing only over premises the package already trusts, such as judged-kept inferences (right about 0.8), should give conclusions about 3x base (~0.4).
+- That is below what the fact-table code writes today (0.6-0.7 right, distant labels; a different metric). A real-text composition write path is NOT yet worth a GPU build.
+
+**Next.** Premise quality: compose only over judged-kept and typed-confirmed facts. In the rule world, composition through verified rules is already exact.
+- **Label-free premise filters (same tool, FC_READERS).** None helps. The pair co-occurring in 2+ sentences gives 48 / 10 composed pairs (precision 0.29 / 0.00). A short gap ending in a preposition gives 62 / 96 (0.00). Both together give 0 rules. They are too sparse within one document. A premise filter needs the package's own judged and kept facts, or the label-free extractor (tools/consistency_teacher.py, top 5% 0.54).
+
+## READER DIAGNOSIS (17 Nov 2026, 21:20-21:45; tools/reader_diag.py on distant_10k and distant_50k; tools/consistency_teacher.py CT_COMPOSE)
+
+**R1. Where gold is lost (Re-DocRED, 1,000 held-out docs, 21,390 gold related pairs).**
+
+| Reader's candidates | Gold visible | Precision |
+|---|---|---|
+| Mention pairs within 12 tokens | 0.359 | 0.258 |
+| Same sentence | 0.464 | 0.226 |
+| + pronoun-led sentences resolved (the title, or the previous same-type name) | **0.578** | 0.223 |
+
+Simple cross-sentence resolution adds 60% coverage at the same precision.
+
+**R2. Cross-document redundancy (distant_50k, 605,667 pairs).** Label rate by the number of distinct documents with the same coarse frame:
+
+| Documents | 1 | 2 | 3-4 | 5+ |
+|---|---|---|---|---|
+| Label rate | 0.124 | 0.263 | 0.311 | 0.401 |
+
+Strong but narrow: under 3% of pairs recur.
+
+**R3. Self-trained reader on redundancy pseudo-labels: NEGATIVE.**
+- AUC 0.55 on held-out distant records, 0.50 on Re-DocRED. The pseudo-positives mark popular names, not relational wording.
+- The same reader trained on DISTANT LABELS (outside knowledge, the upper bound): AUC 0.81 / 0.79, Re-DocRED top 10% 0.69-0.70 related.
+- **R4.** Pair redundancy from the whole distant corpus as the Re-DocRED reader: gold rate 0.26 / 0.35 / 0.36 / 0.30 for 0 / 1 / 2 / 3+ documents. Weak.
+
+**Composition over each reader's premises** (rules over coarse keys; composed pair gold-related; base 0.132, every co-occurrence 0.155):
+
+| Reader | Premise precision | Composed precision |
+|---|---|---|
+| Self-trained, top 10-25% | n/a | 0.22-0.25 |
+| Redundancy, top 25% | 0.30 | 0.27 |
+| Distant-label reader, top 10% | 0.68-0.70 | **0.36-0.42** |
+| Distant-label reader, top 25% | 0.54-0.56 | 0.25-0.28 |
+| **13 Nov label-free extractor** (consistency teachers + self-training, AUC 0.63, top 10% 0.45) | 0.43 / 0.37 (top 10 / 25%) | 0.07 (30) / 0.18 (122) |
+
+The extractor's composed figures (top 10 / 25%) are too few to count.
+
+**Conclusion.** The reader's signal is in the wording features (a labelled reader reaches AUC 0.79), but no label-free teacher tried so far gives it (0.50-0.63). Composition over real text needs premises right about 0.7. Today only a reader trained on outside (distant) labels gets there, and composes at 0.36-0.42 precision.
+
+**Decision for the author.** Use distant supervision (Wikidata labels, an outside source, labelled as such), or keep the system label-free and find a better internal teacher, e.g. the package's typed confirmations of written inferences, which separated right from wrong at AUC 0.63-0.71 on the GPU.
+
+**New build ready: cg27a_kcr.** kcb + the POWERED COMPOSITION TEST (rule world x4, half the relational module's written composites held back, as cg27a_step4p) + the two-hop probe readout. The local safety run is queued after the consolidation paraphrase test.
+
+## GPU cg27a_kcw (kcb + conclusions in 7 wordings), visit 4; label-free AGREEMENT teacher for the reader (17 Nov 2026, 21:35)
+
+**kcw, visit 4.**
+- Taught conclusions recalled from the trunk: 0.09 (22). kcs 0.09, kcb 0.06, kfc3 0.12. **Fewer wordings is not the fix at visit 4.** Visit 5 decides whether kfc3's 0.36 at visit 5 was a late effect of the boost (x8).
+- Facts 0.81-0.82. Gated: right when answered 1.00; never-read given a stored name 0.21.
+- Relational-module composites held back recalled 2 of 3 (taught 0.88). The late held-back recall seen in kcs and kfc3, on tiny n; kcr powers it.
+
+**Reader, label-free AGREEMENT teacher (tools/reader_diag.py RD_TEACH agree, distant_50k).** Positives: a pair in 2+ documents with the same relational last word. Negatives: pairs joined only by list glue, or seen once.
+- AUC 0.51 (distant held-out), 0.54 (Re-DocRED); top 10% 0.36.
+- Composition over its top 10%: 0.35 (34 conclusions), top 25% 0.16. **Negative.** No label-free teacher yet approaches the labelled reader (AUC 0.79).
+
+The author chose to stay label-free (no distant supervision for the reader).
+
+## Label-free reader teachers and COMPOSE-THEN-CONFIRM (17 Nov 2026, 21:40-21:50)
+
+**TYPED-CONFIRMATION teacher for the reader (tools/reader_diag.py RD_TEACH typed, distant_50k).**
+- Teacher: a record is confirmed by a later document with the same head, last word and tail (11,235 records), or only contradicted (63,836).
+- Pseudo-positive label rate 0.445 vs negative 0.148.
+- The reader reaches AUC 0.62 on both corpora: the best label-free reader, level with the 13 Nov extractor (0.63) and far below the labelled reader (0.79).
+- Composition over its top 25 / 50%: 0.20 / 0.22.
+
+**COMPOSE, THEN CONFIRM (tools/compose_confirm.py; label-free, distant labels for evaluation only).** Compose from every co-occurrence, then keep conclusions that later reading confirms.
+
+| distant_50k (10k in brackets) | Precision | n |
+|---|---|---|
+| Base: random within-document pair never recorded together | 0.070 (0.066) | 308,149 |
+| Two-step chain, no rule | 0.082 (0.075) | 462,383 |
+| Chain, CONFIRMED by a later document | 0.265 (0.275) | 25,834 |
+| Composed by a rule (TYPES / COARSE keys) | 0.083 / 0.098 | n/a |
+| Composed + confirmed, any wording (TYPES / COARSE) | 0.261 / 0.281 | n/a |
+| **Composed + confirmed, relational wording (TYPES / COARSE)** | **0.311 / 0.337 (0.344 / 0.296)** | 13,752 / 5,543 |
+
+**Conclusions.**
+- Confirmation by later reading does the work: x3.8-4.8 over base, matching the GPU's predict-then-confirm (cg27a_rtc: 0.49 vs 0.21).
+- Rules over label-free keys add little on top: 0.31-0.34 vs 0.27 for chains confirmed without a rule.
+- The confirmed pairs are later STATED, so this is anticipation (as rtc), not inference of something never read.
+- **For label-free real-text inference, the judge (later reading) matters more than the composer.** Composition rules earn their place only once relation keys are clean, as in the rule world.
+
+## Local: two-hop probe questions through the key-returning memory (17 Nov 2026; inf_kmc_probe2 readout, kcs preset, local run to visit 5)
+
+| Visit | Trunk from the weights | Through the memory, C first | First hop right | Both facts in the memory |
+|---|---|---|---|---|
+| 2 | 0.02 | 0.00 (22 chains) | 0.23 | 0.00 |
+| 3 | 0.02 | 0.07 (46) | 0.24 | 0.02 |
+| 4 | 0.04 | 0.02 (89) | 0.15 | 0.01 |
+| 5 | 0.02 | n/a | n/a | n/a |
+
+- Locally, the probe facts are almost never in the memory: the memory holds the question pool, which is small here. The readout measures coverage, not composition. On the 1 covered chain, C was first (1.00).
+- The existing KEY-RETURNING readout (chains of entries in the memory) composes above chance locally: top-1 0.33-0.55, rank 0.52-0.75 (chance 0.10).
+- The probe readout rides in cg27a_kcr for the GPU, where the pool is up to 2,000 facts.
+
+## LABEL-FREE RELATION OPERATORS ON REAL TEXT: POSITIVE (17 Nov 2026, 22:25; tools/latent_compose.py LC_LABELFREE 1, Re-DocRED, tg_lm192_18000 name keys)
+
+**Setup.** The relation key is what a reader sees: the coarse frame (type A, last word between, type B, order) of every mention pair within 12 tokens in one sentence. No gold facts or relations are used. 524 ridge maps (keys with 50+ training records).
+
+**Test.** Held-out gold composites whose chain A-B-C is readable as two records. C is ranked among the document's entities.
+
+| Route (n 2,367) | Label-free keys: C first | Confident quarter | Gold relation keys (E2, n 13,413) | Gold, confident quarter |
+|---|---|---|---|---|
+| Pure latent composition W_k2 W_k1 key(A) | **0.155** | 0.279 | 0.254 | 0.481 |
+| Memory hop 1 + latent hop 2, W_k2 key(B) | **0.216** | **0.442** | 0.339 | 0.677 |
+| Null (random second map) | 0.045 | 0.042 | 0.066 | 0.078 |
+| Chance | 0.057 | n/a | 0.055 | n/a |
+
+**Conclusions.**
+- The system CAN learn relation operators from its own reading of real text, without labels, and compose them. Pure composition is 2.7x chance, and 3.8x with the first hop read from memory. The null is at chance.
+- That is about 60-65% of the gold-key result, and 0.44 for the confident quarter.
+- This is the label-free route to real-text composition that the rule mining lacked: learned maps degrade gracefully where symbolic rules over noisy keys did not.
+- Caveats:
+  - Ranking among a document's entities (about 18).
+  - Name keys from a stand-in trunk.
+  - Chains where both hops are readable in one sentence.
+- Next: compose with these maps, CONFIRM by later reading (tools/compose_confirm.py: confirmation x4), and teach.
+
+## Conclusion paraphrase transfer under consolidation, offline (17 Nov 2026, 21:45-22:40; tools/consolidate.py CS_CONC 1, A6 stand-in trunk, 600 steps, anchor mix)
+
+**Setup.** Untyped conclusions 'A is connected to C', tested in the paraphrase 'A is tied to' (never taught), as the package tests conclusions.
+
+| Rule, lr | Frames 6: rank / open | Frames 21: rank / open |
+|---|---|---|
+| Every weight + KL anchor, 3e-4 | 0.128 / 0.020 | 0.107 / 0.030 |
+| Every weight + KL anchor, 1e-3 | **0.150 / 0.055** | 0.122 / 0.037 |
+| MLP output only, 3e-4 | 0.102 / 0.007 | 0.115 / 0.015 |
+| MLP output only, 1e-3 | 0.110 / 0.025 | 0.110 / 0.013 |
+
+Base 0.113 / 0.000; chance 0.10.
+
+**Conclusions.**
+- Neither every-weight training nor 21 frames reduces paraphrase transfer here. Every weight with the anchor is if anything best (6 frames, lr 1e-3).
+- But the stand-in learns untyped conclusions barely in any wording (taught wording 0.10-0.15), so the test is weak.
+- The output-weights-only arm is not supported as a fix. kcw (7 wordings) was negative on the GPU at visit 4.
+- The open lead for the GPU conclusion regression remains the late recovery in kfc3 (0.36 at visit 5). kcw's visit 5 decides it.
+- The MLPOUT per-domain changes come from the stand-in learning the anchor's domains, not from forgetting.
+
+## LEARNED KEYS FOR COMPOSITION (label-free, jointly with the maps): POSITIVE (17 Nov 2026, 23:35; tools/latent_compose.py LC_JOINT 1)
+
+**Setup.** Name embeddings start from the trunk codes and are trained jointly with the 524 label-free coarse-frame maps on the training documents' co-occurrence records only. Objective: in-batch contrastive (tails), with an anchor to the initial codes; 3,000 steps; 140,238 records; no labels. Test: the same held-out composites as E3 (n 2,367; chance 0.057).
+
+| Route | Fixed trunk codes (E3) | **Learned keys (E4)** | Gold relation types (E2) |
+|---|---|---|---|
+| Pure latent composition | 0.153 | **0.192** (+25%) | 0.254 |
+| Memory hop 1 + map | 0.217 | **0.278** (+28%) | 0.339 |
+| Memory hop 1 + map, confident quarter | 0.441 | **0.651** | 0.677 |
+| Null (random second map) | 0.045 | 0.062 | 0.066 |
+
+**Conclusions.**
+- Keys learned for composition, without labels, beat the trunk's fixed codes by a quarter.
+- In the confident quarter they reach the gold-relation result (0.65 vs 0.68).
+- **This supports the author's hypothesis: learned keys make (fuzzy) composition work on real text.**
+- Caveats:
+  - Ranking among a document's entities.
+  - A stand-in trunk.
+  - Chains readable in one sentence per hop.
+  - Names that occur only in held-out documents keep their initial codes; there is no leakage of held-out relations.
+
+## Overnight run log (17-18 Nov 2026)
+
+- 22:40-23:30 kcr local safety run: killed with its waiter shell at the 2-hour background limit, in phase 2. Phase 1 took 53 min with another job alongside and the 4x rule world. To re-run alone after compose-then-confirm, with a longer local timeout (LR_TIMEOUT).
+- 23:35 container restart: compose-then-confirm (tools/latent_confirm.py) restarted. Queue after it, one at a time: kcr local safety run, then the long synthetic composition run (tools/compose_synth.py CS_STEPS 20000, CS_NTRAIN 2000, CS_NHELD 200).
+
+## COMPOSE WITH LABEL-FREE MAPS, THEN CONFIRM (17 Nov 2026, 23:40; tools/latent_confirm.py, distant_10k, 5,000 training docs, 502 maps, fixed trunk name keys)
+
+| Conclusions | Precision (distant labels) | n |
+|---|---|---|
+| Base: random within-document pair never recorded together | 0.066 | 61,320 |
+| Every chain's C (no map) | 0.078 | 228,358 |
+| Map's choice (memory hop 1 + map) | 0.073 | 129,535 |
+| Map's choice, confident quarter | 0.101 | 32,385 |
+| Map's choice + confirmed later, any wording | 0.261 | 3,374 |
+| Map's choice + confirmed later, relational wording | 0.311 | 1,609 |
+| **Map's choice, confident quarter + confirmed (relational)** | **0.397** | 526 |
+
+**Conclusions.**
+- On the noisy distant corpus the maps alone add little over chains. Their confident quarter is 0.10 vs 0.078.
+- Margin and later-reading confirmation STACK: 0.40, 6x base. That beats rules + confirmation (0.31-0.34) at a smaller n.
+- **Below the about 0.5 target, so not yet a GPU build.**
+- Next, cheap: the same with the JOINT LEARNED KEYS (+25-28% on Re-DocRED), and two independent confirmations.
+- 00:12 second container restart: the kcr local run was lost in visit 3. It ran alone at normal speed: phase 3 at 23.7 min. Its partial log (scratchpad lr_kcr_part1.log) shows no errors through visit 2: the conclusion boost ran, the memory two-hop readout ran, and the probe readout covered both facts of 9% of probe chains (C first on those, 2 of 2). Relational writes were 'none yet' at visit 2 locally. Restarted at 00:13.
+
+## cg27a_kcr local safety run: PASSES (18 Nov 2026, 01:24; kcb + rule world x4 + half the written composites held back + probe readout)
+
+| Run | HEADLINE forgetting | Final BPC |
+|---|---|---|
+| kcr | **-0.041** | **2.596** |
+| kcs (reference) | -0.036 | 2.608 |
+
+- Within local noise, and slightly better. No errors.
+- Facts taught at least one visit, from the trunk: 0.13 / 0.17 / 0.19 at visits 3-5. Gated never-read 0.17 at visit 4.
+- Locally the relational module writes nothing ('none yet' at visits 1-5: the rules need the GPU's larger sample). Conclusions n 2. The composition test and conclusion recall can only be read on the GPU.
+- Probe readout: memory coverage of both facts 0.01-0.09; C first on the covered chains 1.00 (2).
+- **Ready for the GPU:** colab/platypus_gpu_kcr.ipynb (branch cg27a-distill).
+
+## Long synthetic composition test: NEGATIVE (18 Nov 2026, 01:25-02:15; tools/compose_synth.py, 3 x 192, 20,000 steps, 2,000 taught people, 200 held out)
+
+| Step | Person's city | Citizenship TAUGHT (2,000) | Citizenship NEVER TAUGHT (200; chance 0.10) |
+|---|---|---|---|
+| 5,000 | 0.20 | 0.15 | 0.12 |
+| 10,000 | 0.86 | 0.15 | 0.10 |
+| 12,000 | 1.00 | 0.32 | 0.11 |
+| 15,000 | 1.00 | 0.68 | 0.10 |
+| 20,000 | 1.00 | **0.97** | **0.10** |
+
+- The trunk knows both hops perfectly, and has MEMORISED all 2,000 taught composites (0.97). It composes none of the 200 held-out ones (chance).
+- After pretraining, new facts taught briefly: CITIZENSHIP 0.09-0.15 in all four arms (old city, new random, new typed, typed only), with both hops at 0.83-1.00.
+- This is memorisation instead of composition, as in the 6,000-step runs and the literature. Composition reported by Wang et al. needs training far past memorisation.
+- The GPU's late hint (held back 2/6, kfc3) is therefore more likely noise. kcr's powered test (about 30 held back) settles it.
+- The working route stays compose in key space, then teach.
+
+## Compose with LEARNED keys, then confirm ONCE or TWICE (18 Nov 2026, 02:15-02:37; tools/latent_confirm.py LF_JOINT 1, distant_10k)
+
+Name keys learned jointly with 502 label-free maps (161,610 training records). Precision by distant labels:
+
+| Conclusions | Fixed keys (23:40) | **Learned keys** | n (learned) |
+|---|---|---|---|
+| Base: random pair never recorded together | 0.066 | 0.066 | 61,320 |
+| Every chain's C | 0.078 | 0.078 | 228,358 |
+| Map's choice | 0.073 | 0.076 | 129,301 |
+| Map's choice, confident quarter | 0.101 | 0.100 | 32,327 |
+| + confirmed later, relational wording | 0.311 | 0.341 | 1,552 |
+| Confident quarter + confirmed (relational) | 0.397 | 0.353 | 589 |
+| **+ confirmed TWICE (2+ later documents, relational)** | n/a | **0.533** | 304 |
+| **Confident quarter + confirmed twice** | n/a | **0.565** | 131 |
+
+**Conclusions.**
+- Two independent confirmations by later reading take label-free composed conclusions **above 0.5 precision (8x base)**, the threshold for a real-text composition write path. Learned keys add a little to single confirmation (0.34 vs 0.31).
+- Caveats:
+  - Small n (131-304 of 129,301 composed). The write path would be selective, about 0.2% of candidates.
+  - Confirmed pairs are later stated (anticipation, as cg27a_rtc), so the value is in writing and teaching them BEFORE they are read.
+  - Distant labels undercount.
+- **Candidate build:** compose with label-free maps, hold as predictions, write when confirmed twice, then judge, keep and teach. Needs a package implementation, a local test, then the GPU.
+
+## Replication at 50,000 documents (18 Nov 2026, 03:00; fixed keys: joint keys for 351k names exceeded 8 GB)
+
+1,462 label-free maps. Precision by distant labels:
+
+| Conclusions | 50k, fixed keys | n | 10k, learned keys |
+|---|---|---|---|
+| Base | 0.070 | 308,149 | 0.066 |
+| Every chain's C | 0.085 | 1,170,051 | 0.078 |
+| Map's choice, confident quarter | 0.116 | 191,995 | 0.100 |
+| + confirmed once (relational) | 0.290 | 28,331 | 0.341 |
+| Confident quarter + confirmed once | 0.391 | 8,487 | 0.353 |
+| Confirmed twice | 0.398 | 11,858 | 0.533 |
+| **Confident quarter + confirmed twice** | **0.499** | **3,951** | 0.565 |
+
+**Conclusions.**
+- At 40x the sample, margin + two confirmations hold at about 0.50 (7x base). The 10k figures were optimistic at small n, or helped by the learned keys.
+- Each filter adds:
+
+| Filter added | Precision |
+|---|---|
+| Margin alone | 0.12 |
+| Two confirmations alone | 0.40 |
+| Both | 0.50 |
+
+- **A label-free write path at about 0.5 precision is feasible, at about 0.5% of composed candidates (3,951 of 767,950).**
+
+## CORRECTION and RELIABILITY LEARNED FROM CONFIRMATION (18 Nov 2026, 07:00; tools/latent_confirm.py, distant_50k, strict time order)
+
+**Correction.** The overnight 0.50 (map's choice + confident + confirmed twice) is the precision of conclusions that later reading STATES TWICE. Such a pair has been read, so a write path that waits for two confirmations teaches nothing new. Before confirmation, the map's confident quarter alone is 0.116 (base 0.070).
+
+**Confirmation as a TEACHER (label-free).**
+- Maps are trained on docs 0-25k.
+- Each (k1, k2) key pair's confirmation rate is learned on predictions in docs 25k-37.5k, confirmed only by docs before 37.5k (12,664 key pairs with 5+ predictions).
+- Predictions in docs 37.5k-50k are kept by their key pair's past rate, with NO confirmation of their own, and judged by distant labels.
+
+| Test predictions (382,539) | Precision | n |
+|---|---|---|
+| Map's choice, all | 0.080 | 382,539 |
+| Confident quarter | 0.116 | 95,635 |
+| Key pair confirmed >= 0.10 | 0.095 | 15,616 |
+| Key pair confirmed >= 0.10, confident quarter | 0.183 | 3,640 |
+| Key pair confirmed >= 0.20 | 0.120 | 4,711 |
+| Key pair confirmed >= 0.20, confident quarter | 0.258 | 1,215 |
+| Key pair confirmed >= 0.30 | 0.168 | 1,297 |
+| **Key pair confirmed >= 0.30, confident quarter** | **0.356** | **427** |
+
+**Conclusions.**
+- Learned reliability + margin reach 0.26-0.36 BEFORE confirmation (4-5x base): genuine anticipation, label-free.
+- But that is below what the package's fact-table code already writes (right 0.6-0.7 on its own candidates). As a separate write path, kcl would add lower-precision conclusions.
+- Better use: as a SECOND, independent vote (typed by a relation map) on the code writer's candidates, or to type them. Test offline before any build.
+
+## AGREEMENT TEST: learned maps as a second vote on the package's writer: NEGATIVE (18 Nov 2026, 08:00; tools/agree_test.py, distant_10k)
+
+**Setup.** The writer is premises._rcode_step: code + Adamic-Adar, pairs never stated together. The vote is pure latent composition of the two bridge records' maps (A -> B -> C, both directions). Rank among 50 random same-type names (+ the true one). Within the writer's top N:
+
+| Visit | Writer's top N | All | Map rank 1 | Map top 3 | Map rank > 10 | No usable map |
+|---|---|---|---|---|---|---|
+| 4 | 100 | 0.630 | 0.646 (65) | 0.650 (80) | 0.500 (6) | n/a |
+| 4 | 400 | 0.438 | 0.410 (234) | 0.415 | 0.621 (29) | 0.273 (22) |
+| 4 | 3000 | 0.144 | 0.163 (1,372) | 0.153 | 0.227 (181) | 0.083 (663) |
+| 7 | 100 | 0.680 | 0.721 (68) | 0.735 (83) | 0.750 (4) | 0.000 (2) |
+| 7 | 400 | 0.505 | 0.490 (261) | 0.502 | 0.609 (23) | 0.231 (13) |
+| 7 | 1000 | 0.359 | 0.341 (628) | 0.347 | 0.508 (61) | 0.233 (43) |
+
+**Conclusions.**
+- The maps' vote adds nothing to the writer. Agreeing candidates are as right as the writer's own ranking, and the few disagreeing ones are, if anything, more often right.
+- Only "no usable map" (no bridge with fitted maps) marks worse candidates. Chain existence is already in the writer's Adamic-Adar term.
+- **kcl, the label-free composition write path, is POSTPONED.** On real text, the existing compressed-fact-table writer already captures what label-free composition offers:
+  - before confirmation, 0.26-0.36 at best vs the writer's 0.6-0.7;
+  - as a vote, no gain.
+- Label-free learned maps remain useful for TYPING and as a judge signal, not as a writer.
+
+## GPU cg27a_kcr (powered composition test) to visit 6, and cg27a_kcr2 (held back by answer) to visit 4 (18 Nov 2026, 09:04)
+
+**Relational-module composites, never planted, recalled by the trunk (test wording).** Chance among 168 names is about 0.006.
+
+| Visit | kcr: taught | kcr: held back | kcr2: taught | kcr2: held back BY ANSWER |
+|---|---|---|---|---|
+| 2 | 1.00 (7) | 0.12 (8) | 1.00 (9) | 0.00 (6) |
+| 3 | 1.00 (8) | 0.23 (13) | 1.00 (10) | 0.18 (11) |
+| 4 | 0.89 (18) | 0.32 (25) | 0.84 (19) | 0.17 (24) |
+| 5 | 0.86 (28) | 0.30 (30) | n/a | n/a |
+| 6 | 0.91 (32) | 0.21 (34) | n/a | n/a |
+
+- Holding back by answer (no TAUGHT sibling shares the answer) lowers held-back recall from 0.30 to 0.17, but it stays far above chance.
+- However, half of each family's grandchildren composites are PLANTED in the text (by name hash), so association with a planted sibling remains possible.
+- The definitive test is cg27a_kcr3: half the families with NO composite planted at all (inf_rule_world_pure 0.5), and a new readout for them.
+
+**kcr, other readouts.**
+- Taught conclusions recalled: 0.00 (4) / 0.06 (18) / **0.19 (16)** / **0.29 (24)** at visits 3-6. The late recovery is confirmed, but control conclusions also reach 0.21 (14) at visit 6, so it may not be the teaching.
+- Facts 0.75-0.83.
+- Gated: right when answered 0.94-1.00; never-read given a stored name 0.14 / 0.02 / 0.05 / **0.00** at visits 3-6.
+- **TWO-HOP PROBES THROUGH THE MEMORY** (chance 0.05; the trunk's own two-hop 0.02-0.06):
+
+| Visit | Chains | C first | Chains with both facts in memory: C first |
+|---|---|---|---|
+| 3 | 10 | 0.80 | 1.00 (n 5) |
+| 4 | 16 | 0.81 | 1.00 (n 10) |
+| 5 | 29 | 0.83 | 1.00 (n 19) |
+| 6 | 50 | 0.62 | 1.00 (n 27) |
+
+- Held-out BPC at visit 5 vs kcs: 1.959 / 2.083 / 2.063 / 1.716 / 1.599 vs 2.006 / 2.050 / 2.058 / 1.702 / 1.592. Mean -0.002, within run variation.
+- Fix: [INTEGRATED KEYED MEMORY] crashed at visit 6 on non-latin names (Github). The encode now uses 'replace'.
+
+## GPU cg27a_kcr2 final (to visit 7; held back by answer) (18 Nov 2026, 10:02)
+
+**Relational-module composites, never planted** (chance about 0.006):
+
+| Visit | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|
+| Taught | 0.84 (19) | 0.96 (23) | 0.92 (25) | 0.80 (40) |
+| Held back | 0.17 (24) | 0.14 (35) | 0.10 (41) | 0.09 (55) |
+
+- Held-back answers that are RIGHT: 4 / 5 / 4 / 5. The count stays flat while n grows, so this is a small fixed set (association with planted siblings or hubs, or a few genuine), not composition that generalises.
+- kcr3 (pure families) settles it.
+
+**Conclusions.**
+
+| Visit | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|
+| Taught | 0.11 | 0.14 | 0.36 | 0.50 |
+| CONTROL (never taught) | 0.00 | 0.30 | 0.21 | 0.80 (10) |
+
+- The late rise happens WITHOUT teaching: conclusions reach the trunk through another channel (closed-form edits / conclusion replay). The question rows add nothing for conclusions.
+- The 'regression' under consolidation is a timing effect of that channel, not the teaching.
+
+**Other readouts.**
+- Facts 0.81 / 0.81 / 0.77 / 0.67 at visits 4-7. A decline at visit 7.
+- Gated never-read given a stored name 0.02-0.06.
+- Two-hop probes through the memory: 0.69 / 0.72 / 0.60 / 0.60 (16-63 chains); 0.97-1.00 where both facts are in memory (coverage 0.54-0.66).
+
+## GPU cg27a_kcr3 (pure test families) to visit 3: the trunk does NOT compose (18 Nov 2026, 11:03)
+
+- The pure families (no composite planted anywhere in the family; 164 leaves) are active. Rule-world facts per domain dropped (32-75 vs 34-116).
+
+| Visit | Pure families: taught | Pure families: held back | All written composites: taught | All: held back |
+|---|---|---|---|---|
+| 2 | n/a | 0.00 (8) | 1.00 (3) | 0.00 (8) |
+| 3 | 1.00 (8) | **0.00 (12)** | 1.00 (16) | 0.12 (17) |
+
+- The 2 held-back hits at visit 3 are both in families with PLANTED sibling composites.
+- **Conclusion: at this scale the trunk does not compose untaught facts.** kcr's 0.21-0.32 and kcr2's 0.09-0.17 held back were association with planted or taught siblings, not composition. This agrees with the long synthetic run (2,000 taught, 200 held out at chance) and the two-hop literature.
+- The working route is the one already in place: compose in key space (the relational module, exact rules), write, and teach. The trunk then recalls taught composites at 0.80-1.00.
+- Two-hop probes through the memory at visit 3: 0.70 (10 chains), 1.00 where both facts are in memory.
+
+## kcr3 final readouts; memory COVERAGE is the experimental control; cg27a_kcf (decay floor) (18 Nov 2026, 12:10)
+
+**kcr3, pure families.**
+
+| Visit | 4 | 5 | 6 |
+|---|---|---|---|
+| Taught | 0.95 (20) | 0.96 (24) | 0.96 (24) |
+| Held back | **0.00 (20)** | **0.00 (28)** | **0.00 (33)** |
+
+- 0 of 81 across visits 2-6: the trunk does not compose.
+- All families, held back: 0.06 / 0.06 / 0.10.
+- Gated never-read 0.01-0.08; facts 0.78-0.87.
+
+**Memory coverage is mostly the control, not a limit.**
+- The pool is every fact the store holds (780 at visit 5, budget 2000). 1 in 5 is held back as the consolidation control (by key hash), and held-back facts are not written to the memory.
+- A chain has both facts in the memory with probability about 0.8 x 0.8 = 0.64. That matches the readout's 0.52-0.66.
+- Every chain whose two facts ARE in the memory is answered right (0.97-1.00). Without the experimental hold-out (deployment), two-hop answering through the memory is about that rate. No coverage build is needed.
+
+**cg27a_kcf (decay floor).**
+- kcr2 facts decline 0.81 -> 0.77 -> 0.67 at visits 5-7, as the global question decay reaches 1/16-1/64.
+- kcf = kcr + inf_distill_wake_decay_min 0.125. Visits 1-5 are identical to kcr by construction. The 5-domain local harness cannot see it; tests pass.
+
+**cg27a_kcf GPU result (18 Nov 2026, A100, seed 4, 7 visits; compared with cg27a_kcr2, which has no floor).**
+
+| Visit 7, from the trunk | kcr2 | kcf |
+|---|---|---|
+| Facts taught at least one visit (n 246) | 0.67 | **0.72** |
+| ... taught 1 visit (n 42) | 0.33 | **0.48** |
+| ... taught 2-3 visits (n 68) | 0.60 | **0.75** |
+| ... taught 4+ visits (n 136) | 0.80 | 0.79 |
+| Gated: known facts right overall / never-read given a stored name | 0.31 / 0.02 | **0.50** / 0.03 |
+| Confidence AUC, known-right vs never-read | 0.93 | 0.96 |
+| Conclusions taught (n 30) | 0.50 | 0.23 |
+| Fixed set of conclusions, every memory off (n 178-192) | 0.34 | 0.20 |
+| Held-out bits per byte, read domains | 1.8796 | 1.8849 |
+
+- Visits 5-6 are the same in both (facts 0.81-0.82, then 0.77).
+- The floor halves the visit-7 fact decline (0.77 -> 0.72 instead of 0.67). The gain is in recently taught facts. Facts taught for 4+ visits were not declining.
+- Gated answering improves (0.31 -> 0.50 right overall). Never-read stays at 0.03.
+- Conclusions are lower (fixed set 0.34 -> 0.20). Their share of replay samples is unchanged (0.64 vs 0.61), so the floor does not crowd them out. The fixed set depends on the closed-form edits (0.01-0.02 without them; 4 kept vs 5, norm 57.7 vs 63.4). This may be seed variation in the edits, but it is not settled with one seed.
+- Bits per byte are within noise (+0.005; noise about 0.017).
+
+## Looped (weight-shared) trunk vs a deeper trunk: NO composition (18 Nov 2026, 12:10-13:50; tools/compose_synth.py CS_LOOP, 2,000 taught, 200 held out)
+
+| Step | Looped (3 shared blocks x 2 passes): taught / NEVER taught | Deeper (6 blocks): taught / NEVER taught |
+|---|---|---|
+| 6,000 | 0.12 / 0.09 | 0.24 / 0.14 |
+| 10,000 | 0.79 / 0.14 | 0.91 / 0.13 |
+| 12,000 | 0.95 / 0.10 | 1.00 / 0.12 |
+| 15,000 | 1.00 / 0.12 | 1.00 / 0.14 |
+| 16,000 | 1.00 / 0.12 | 1.00 / 0.14 |
+
+Deeper (6 blocks), taught briefly after pretraining (citizenship never taught for these people; 100 / 300 steps): old city 0.20 / 0.16; new random city 0.05 / 0.09; new typed city 0.09 / 0.10; typed only 0.09 / 0.08. Both hops are learned (city 0.91-1.00, city's country 0.75-1.00) but composition stays at chance.
+
+Chance for the never-taught people is 0.10.
+
+**Conclusions.**
+- Both trunks know both hops (1.00) and memorise all 2,000 taught composites (1.00). Neither composes the 200 held-out people's (0.12-0.14, chance 0.10, n 200).
+- A second pass through shared weights does not overcome the two-hop curse at this scale and training length.
+- Composition in the weights (route B) is negative here. Route A, two reads through the integrated memory layer, is the remaining route to composition inside the model.
+
+## Route A: composition through two reads of the integrated memory (18 Nov 2026, local package run, cg27a_kcr3 + inf_kmc_rulecomp 2)
+
+A composite-relation question ('A is a grandchild of') is answered at prediction time by two reads of the integrated keyed memory. Read 1 (A, r1) gives B, read 2 (B, r2) gives C, and C is ranked among the rule world's 672 names (chance 0.001). The rule r3 = r1 o r2 is the TRUE rule (ORACLE), because the relational module learns none at this local scale. The pointer table, which maps memory slots back to names, covers every rule-world premise read (mode 2). Mode 1, which covers only question-pool facts, held both premises for only 3 of 269 composites and is not informative.
+
+| Visit | Pure families | All composites never planted | First hop right |
+|---|---|---|---|
+| 2 | 0.66 (88) | 0.66 (111) | 0.86 |
+| 3 | 0.77 (112) | 0.78 (157) | 0.89 |
+| 4 | 0.52 (168) | 0.50 (239) | 0.82 |
+| 5 | 0.47 (208) | 0.45 (294) | 0.77 |
+
+- On the GPU (cg27a_kcr3), the trunk alone answered 0 of 81 pure-family held-back composites.
+- The model's own memory composes facts never stated together, at about 470x chance by visit 5.
+- Accuracy falls as the memory fills (pointer slots 910 -> 1,553 at visit 4). Both hops lose accuracy: the first falls 0.89 -> 0.77, and the product is below first hop squared by visit 4-5 (0.47 vs 0.59). This is likely interference in the small local memory; the GPU memory has 65,536 slots.
+- Headline (readout only, no model change): forgetting -0.041, final BPC 2.623.
+- Claims: this is composition at prediction time through the memory, NOT consolidation into the trunk. The rules are oracle here. The learned-rule test is the GPU build cg27a_kra.
+
+### cg27a_kra GPU (18 Nov 2026, A100, seed 4; log to visit 4): route A with LEARNED rules
+
+The relational module learned 2 rules from reading at every sleep, with 0 false: 'is a child of' o 'is a child of' -> 'is a grandchild of' (z +9 to +16) and 'is supervised by' o 'is supervised by' -> 'is overseen by' (z +8 to +41).
+
+| Visit | Route A, pure families | Route A, all never planted | First hop right | Trunk alone, pure-family held back |
+|---|---|---|---|---|
+| 2 | **0.85** (20) | 0.76 (34) | 0.94 | 0.00 (8) |
+| 3 | **0.88** (40) | 0.77 (69) | 0.90 | 0.00 (12) |
+| 4 | 0.65 (52) | 0.65 (92) | 0.82 | 0.00 (20) |
+| 5 | 0.40 (60) | 0.42 (106) | 0.75 | 0.07 (28) |
+| 6 | 0.57 (88) | 0.53 (148) | 0.85 | 0.00 (33) |
+
+(Run stopped at visit 7 by the user. Visit 6: taught facts from the trunk 0.74; gated never-read given a stored name 0.04.)
+
+- End to end and label-free: the model learns the rules from text it read, then its own memory composes facts never stated, where its trunk answers 0. Chance is 0.001.
+- The same visit-4 decline as locally. Claims: prediction time through the memory, NOT consolidation into the trunk.
+
+Local diagnostics (kra3, visit 2): second hop from the true B 0.91; composite 0.70 when the first hop is right, 0.40 when wrong. CARRYING ONLY THE TOP B: 0.80 vs 0.66 carrying the top 5. Mixing in the lower-ranked candidates costs 0.14.
+Local diagnostics (kra3) at visits 3-4: top B only 0.77 / 0.73 vs top 5 0.71 / 0.57; second hop from the true B 0.88 / 0.87; first hop 0.85 / 0.83. With the top B only, the composite reaches about first hop x second hop (0.83 x 0.87 = 0.72). The remaining decline is the first hop. No domain-age effect: 0.53-0.63 across domains at visit 4. On the GPU, the first hop falls further (0.94 -> 0.75 by visit 5), so top-1 alone will not remove the whole GPU decline.
+kra3 visit 5: top B only 0.63 vs top 5 0.45; first hop 0.79, second hop from the true B 0.79 (both falling now). BY DOMAIN at visit 5: the newest domain (d4) 0.75 composite / 0.89 second hop vs the older four 0.31-0.41 / 0.74-0.78. So by visit 5 older domains ARE hit after a new domain is written: interference from later writes, in both hops. Headline (readout only): forgetting -0.041, final BPC 2.622.
+
