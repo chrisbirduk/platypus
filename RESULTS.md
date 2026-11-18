@@ -3881,3 +3881,4 @@ Base 0.113 / 0.000; chance 0.10.
 - Margin and later-reading confirmation STACK: 0.40, 6x base. That beats rules + confirmation (0.31-0.34) at a smaller n.
 - **Below the about 0.5 target, so not yet a GPU build.**
 - Next, cheap: the same with the JOINT LEARNED KEYS (+25-28% on Re-DocRED), and two independent confirmations.
+- 00:12 second container restart: the kcr local run was lost in visit 3. It ran alone at normal speed: phase 3 at 23.7 min. Its partial log (scratchpad lr_kcr_part1.log) shows no errors through visit 2: the conclusion boost ran, the memory two-hop readout ran, and the probe readout covered both facts of 9% of probe chains (C first on those, 2 of 2). Relational writes were 'none yet' at visit 2 locally. Restarted at 00:13.
