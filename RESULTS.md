@@ -4303,6 +4303,8 @@ The training people's citizenship is written as its chain, 'A is a citizen of B 
 | 6,000 | 0.82 / 0.83 | 0.66 / 0.68 |
 | 7,000 | 0.99 / 0.99 | 0.81 / 0.81 |
 | 8,000 | 0.96 / 0.96 | **0.92 / 0.92** |
+| 10,000 | 1.00 / 1.00 | 0.99 / 0.99 |
+| 12,000 | 1.00 / 1.00 | **1.00 / 1.00** |
 
 - The same world with the implication taught DIRECTLY ('A is a citizen of C') never composed for held-out people: 0.12-0.14 at every depth (3, 6, looped 3x2; chance 0.10).
 - **Trained to write the bridge, the model composes for people it was never told about: 0.92 (n 200).** It learned the decomposition itself. No rule table and no lookup; every step is its own decoding.
@@ -4342,4 +4344,14 @@ One linear operator per relation on the trunk's name codes, fitted on the 364 fa
 - **Route J writes:** 17, precision **1.00** (17). Refused: margin 10, same name 3, B has no recorded r2 fact 16.
 - **The best composition so far that is the model's own.** The facts are in learned operators fitted on reading (null 0.00), the composition is latent, and the rules are learned.
 - The second step loses the most: first hop 0.76, composite 0.47. The predicted B code is applied directly, not snapped to the nearest name. Snapping is the obvious next test.
+
+**BELIEF REVISION (CS_REV, same run).** 100 held-out people move to an old city in ANOTHER country. Only the new 'lives in' fact is taught briefly, with replay; the country is never mentioned.
+
+| Steps | Chain gives the NEW city / NEW country | Still the OLD city / OLD country |
+|---|---|---|
+| 100 | 0.77 / 0.78 | 0.13 / 0.13 |
+| 300 | **0.96 / 0.95** | 0.04 / 0.04 |
+
+- Learned decomposition updates its conclusions for free: the composite is recomputed from the current premise, not stored.
+- Composites consolidated as facts go stale when a premise changes (RippleEdits). Writing the chain is how the model can avoid that.
 
