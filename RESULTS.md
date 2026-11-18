@@ -3960,3 +3960,28 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 | Both | 0.50 |
 
 - **A label-free write path at about 0.5 precision is feasible, at about 0.5% of composed candidates (3,951 of 767,950).**
+
+## CORRECTION and RELIABILITY LEARNED FROM CONFIRMATION (18 Nov 2026, 07:00; tools/latent_confirm.py, distant_50k, strict time order)
+
+**Correction.** The overnight 0.50 (map's choice + confident + confirmed twice) is the precision of conclusions that later reading STATES TWICE. Such a pair has been read, so a write path that waits for two confirmations teaches nothing new. Before confirmation, the map's confident quarter alone is 0.116 (base 0.070).
+
+**Confirmation as a TEACHER (label-free).**
+- Maps are trained on docs 0-25k.
+- Each (k1, k2) key pair's confirmation rate is learned on predictions in docs 25k-37.5k, confirmed only by docs before 37.5k (12,664 key pairs with 5+ predictions).
+- Predictions in docs 37.5k-50k are kept by their key pair's past rate, with NO confirmation of their own, and judged by distant labels.
+
+| Test predictions (382,539) | Precision | n |
+|---|---|---|
+| Map's choice, all | 0.080 | 382,539 |
+| Confident quarter | 0.116 | 95,635 |
+| Key pair confirmed >= 0.10 | 0.095 | 15,616 |
+| Key pair confirmed >= 0.10, confident quarter | 0.183 | 3,640 |
+| Key pair confirmed >= 0.20 | 0.120 | 4,711 |
+| Key pair confirmed >= 0.20, confident quarter | 0.258 | 1,215 |
+| Key pair confirmed >= 0.30 | 0.168 | 1,297 |
+| **Key pair confirmed >= 0.30, confident quarter** | **0.356** | **427** |
+
+**Conclusions.**
+- Learned reliability + margin reach 0.26-0.36 BEFORE confirmation (4-5x base): genuine anticipation, label-free.
+- But that is below what the package's fact-table code already writes (right 0.6-0.7 on its own candidates). As a separate write path, kcl would add lower-precision conclusions.
+- Better use: as a SECOND, independent vote (typed by a relation map) on the code writer's candidates, or to type them. Test offline before any build.
