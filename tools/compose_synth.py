@@ -165,14 +165,17 @@ lie = lambda cities: [(f"{b} lies in ", CN[c], CN) for b, c in cities]
 P(f"synthetic world: {NC} countries, {len(OLD)} old cities (code = country's 80%), {len(TRAINP)} training people{' with implications' if IMPL else ' (NO implications)'}, "
   f"{len(HELDP)} held-out people | pretraining sentences {len(PRE)}, stream {len(PRES)} bytes | LM {NL} layers x {DW} x {LOOP} pass(es), {STEPS} steps, seed {SEED}")
 m = LM(); op = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.1); sch = torch.optim.lr_scheduler.OneCycleLR(op, 1e-3, total_steps=STEPS, pct_start=0.05)
-rr = np.random.RandomState(SEED + 1); ls = []
-for st in range(1, STEPS + 1):
+rr = np.random.RandomState(SEED + 1); ls = []; CK_ = os.environ.get('CS_CKPT', '')   # CS_CKPT: load the pretrained model if the file exists, else pretrain and save it
+if CK_ and os.path.exists(CK_): m.load_state_dict(torch.load(CK_)); P(f"   loaded {CK_}"); STEPS_RUN = 0
+else: STEPS_RUN = STEPS
+for st in range(1, STEPS_RUN + 1):
     ls.append(step(m, op, win(PRES, B_, rr), sch))
     if st % 1000 == 0 or st == STEPS:
         re_ = np.random.RandomState(7)
         P(f"   pretraining step {st}: {np.mean(ls[-200:]) / math.log(2):.3f} bits/byte | city's country {rank1(m, lie(OLD[:100]), re_):.2f} | person's city {rank1(m, liv(HELDP, OLD), re_):.2f} | "
           f"citizenship TAUGHT (training people) {rank1(m, cit(TRAINP[:100], OLD), re_):.2f} | IDEA 1 citizenship NEVER TAUGHT (held-out people) {rank1(m, cit(HELDP, OLD), re_):.2f}  ({time.time() - T0:.0f}s)"
           + (" || LEARNED DECOMPOSITION (greedy chain 'B > C'): taught B {:.2f} C {:.2f} | NEVER TAUGHT B {:.2f} C {:.2f}".format(*chain(m, TRAINP[:100], OLD), *chain(m, HELDP, OLD)) if COT else ""))
+if CK_ and not os.path.exists(CK_): torch.save(m.state_dict(), CK_)
 st0 = {k: v.clone() for k, v in m.state_dict().items()}
 if OPJ:                                                                        # 18 Nov ROUTE J IN THE SYNTHETIC WORLD: one linear operator per relation on the model's
     @torch.no_grad()                                                           #   name codes (mean final state over the name's bytes in 'About X.'), fitted on facts
@@ -199,6 +202,26 @@ if OPJ:                                                                        #
     P(f"ROUTE J (synthetic, {Z.shape[1]}-d codes, {len(ALL)} names): HELD-OUT people's citizenship never taught (n {len(HELDP)}) || first hop: city {np.mean(h1):.2f} (among {len(CIT)}) | "
       f"COMPOSITE country {np.mean(cc):.2f} (among {NC}; chance {1 / NC:.2f}), among ALL names {np.mean(call):.2f} | with B SNAPPED to the nearest city {np.mean(cs):.2f} | "
       f"NULL (lives-in operator fitted on shuffled facts) {np.mean(nul):.2f} | the model asked directly (rank among 10) {rank1(m, cit(HELDP, OLD), np.random.RandomState(9)):.2f}  ({time.time() - T0:.0f}s)")
+    if int(os.environ.get('CS_OPJ_MLP', 0)):                                   # HIGHER-CAPACITY ROUTE J: a JEPA-style PREDICTOR per relation (MLP, InfoNCE over the names'
+        Zt = Z.detach()                                                         #   codes, temperature 0.05) instead of one linear operator; the same composition and null
+        def mlp_fit(pairs, shuf=False, hid=int(os.environ.get('CS_OPJ_H', 1024)), steps=int(os.environ.get('CS_OPJ_STEPS', 3000))):
+            g_ = torch.Generator().manual_seed(11); net = nn.Sequential(nn.Linear(Zt.shape[1], hid), nn.GELU(), nn.Linear(hid, hid), nn.GELU(), nn.Linear(hid, Zt.shape[1]))
+            A_ = torch.tensor([ix[a] for a, b in pairs]); B9 = torch.tensor([ix[b] for a, b in pairs])
+            if shuf: B9 = B9[torch.randperm(len(B9), generator=g_)]
+            tgt = torch.unique(B9); pos = {int(t): k for k, t in enumerate(tgt)}; yb = torch.tensor([pos[int(b)] for b in B9]); o9 = torch.optim.Adam(net.parameters(), lr=1e-3)
+            for _ in range(steps):
+                k9 = torch.randint(0, len(A_), (256,), generator=g_); v = F.normalize(net(Zt[A_[k9]]) + Zt[A_[k9]] * 0, dim=-1)
+                l9 = F.cross_entropy(v @ Zt[tgt].t() / 0.05, yb[k9]); o9.zero_grad(); l9.backward(); o9.step()
+            return net
+        Ml = mlp_fit([(a, OLD[bi][0]) for a, bi in ppl]); Mc = mlp_fit([(b, CN[c]) for b, c in OLD]); Mls = mlp_fit([(a, OLD[bi][0]) for a, bi in ppl], True)
+        with torch.no_grad():
+            h1, cc, cs, nul = [], [], [], []
+            for a, bi in HELDP:
+                v1 = F.normalize(Ml(Zt[ix[a]]), dim=-1); b1 = CIT[int((v1 @ Zt[ci].t()).argmax())]; h1.append(b1 == OLD[bi][0])
+                cc.append(CN[int((F.normalize(Mc(v1), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
+                cs.append(CN[int((F.normalize(Mc(Zt[ix[b1]]), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
+                nul.append(CN[int((F.normalize(Mc(F.normalize(Mls(Zt[ix[a]]), dim=-1)), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
+        P(f"ROUTE J, MLP PREDICTOR (InfoNCE): first hop city {np.mean(h1):.2f} | COMPOSITE country {np.mean(cc):.2f} | with B SNAPPED {np.mean(cs):.2f} | NULL {np.mean(nul):.2f}  ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
     NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     for tag, fmt in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}.")):
