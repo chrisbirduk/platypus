@@ -17,6 +17,9 @@ fact rows + 24 replayed pretraining rows per batch), four arms from the same che
   F4 TYPED ONLY     the new city's code is its country's; 'B lies in C' is never taught        (inheritance from the type alone)
 Recall: the right answer first among it and 9 others of its kind (chance 0.10): citizenship ('A is a citizen of '), the city ('A lives
 in '), the city's country ('B lies in ').
+CS_COT 1 (18 Nov, LEARNED DECOMPOSITION): the training people's implication is written as its chain - 'A is a citizen of B > C.' - so the
+model can learn to produce the bridge itself; held-out people are asked 'A is a citizen of ' and their greedy continuation is parsed (B, then C).
+CS_REV 1 (with CS_COT): belief revision - held-out people move to another old city (taught briefly); is the chain's answer the NEW country?
 CS_LOOP (18 Nov): passes through the same blocks - a weight-shared LOOPED trunk (the two-hop literature: a second pass lets the bridge entity
 resolved in pass 1 be used in pass 2).
 Usage: CS_D=192 CS_NL=3 CS_STEPS=6000 CS_IMPL=1 CS_SEED=0 [CS_NTRAIN=400 CS_NHELD=100 CS_LOOP=1] python3 tools/compose_synth.py"""
@@ -30,8 +33,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 P = lambda *a: print(*a, flush=True); T0 = time.time()
 DW = int(os.environ.get('CS_D', 192)); NL = int(os.environ.get('CS_NL', 3)); STEPS = int(os.environ.get('CS_STEPS', 6000)); IMPL = int(os.environ.get('CS_IMPL', 1))
-SEED = int(os.environ.get('CS_SEED', 0)); LOOP = int(os.environ.get('CS_LOOP', 1)); torch.set_num_threads(int(os.environ.get('CS_THREADS', 1))); torch.manual_seed(SEED); rs = np.random.RandomState(SEED)
-L = 64; PAD = 256; V = 257; B_ = 32
+COT = int(os.environ.get('CS_COT', 0)); REV = int(os.environ.get('CS_REV', 0)); SEED = int(os.environ.get('CS_SEED', 0)); LOOP = int(os.environ.get('CS_LOOP', 1)); torch.set_num_threads(int(os.environ.get('CS_THREADS', 1))); torch.manual_seed(SEED); rs = np.random.RandomState(SEED)
+L = int(os.environ.get('CS_L', 64)); PAD = 256; V = 257; B_ = 32
 SY = ['ka', 'lo', 'mi', 'ra', 'ven', 'tor', 'sa', 'bel', 'dun', 'fi', 'gar', 'hu', 'jo', 'ke', 'lin', 'mor', 'na', 'pe', 'qui', 'ro', 'sel', 'ta', 'ul', 'vo', 'wen', 'yo', 'zen']
 used = set()
 def name(nsy):
@@ -93,7 +96,9 @@ def pre_sentences():
     out = []
     for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT] * 3
     for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT] * 2
-    if IMPL:
+    if IMPL and COT:
+        for a, bi in TRAINP: out += [f"{a} is a citizen of {OLD[bi][0]} > {COUNTRY[OLD[bi][1]]}."] * 4
+    elif IMPL:
         for a, bi in TRAINP: out += [t.format(A=a, C=COUNTRY[OLD[bi][1]]) for t in IT] * 2
     return out
 PRE = pre_sentences()
@@ -138,6 +143,21 @@ def rank1(m, items, rr):
         sc = [float(nl[k, len(p):min(L, len(q)) - 1].mean()) for k, q in enumerate(seqs)]; hit.append(int(np.argmin(sc) == 0))
     m.train(); return float(np.mean(hit))
 CN = COUNTRY
+@torch.no_grad()
+def gen(m, pre, n=48):
+    m.eval(); b = bytearray(pre.encode('latin-1'))
+    for _ in range(n):
+        if len(b) >= L: break
+        X = torch.tensor([[PAD] + list(b)])[:, -L:]; c = int(m(X)[0, -1].argmax())
+        if c in (46, 10, PAD): break
+        b.append(c)
+    m.train(); return bytes(b[len(pre.encode('latin-1')):]).decode('latin-1', 'replace').strip()
+def chain(m, people, cities):
+    rb, rc = [], []
+    for a, bi in people:
+        g = gen(m, f"{a} is a citizen of "); parts = [x.strip() for x in g.split('>')]
+        rb.append(len(parts) == 2 and parts[0] == cities[bi][0]); rc.append(len(parts) == 2 and parts[1] == CN[cities[bi][1]])
+    return float(np.mean(rb)), float(np.mean(rc))
 cit = lambda people, cities: [(f"{a} is a citizen of ", CN[cities[bi][1]], CN) for a, bi in people]
 liv = lambda people, cities: [(f"{a} lives in ", cities[bi][0], [c[0] for c in cities]) for a, bi in people]
 lie = lambda cities: [(f"{b} lies in ", CN[c], CN) for b, c in cities]
@@ -150,8 +170,25 @@ for st in range(1, STEPS + 1):
     if st % 1000 == 0 or st == STEPS:
         re_ = np.random.RandomState(7)
         P(f"   pretraining step {st}: {np.mean(ls[-200:]) / math.log(2):.3f} bits/byte | city's country {rank1(m, lie(OLD[:100]), re_):.2f} | person's city {rank1(m, liv(HELDP, OLD), re_):.2f} | "
-          f"citizenship TAUGHT (training people) {rank1(m, cit(TRAINP[:100], OLD), re_):.2f} | IDEA 1 citizenship NEVER TAUGHT (held-out people) {rank1(m, cit(HELDP, OLD), re_):.2f}  ({time.time() - T0:.0f}s)")
+          f"citizenship TAUGHT (training people) {rank1(m, cit(TRAINP[:100], OLD), re_):.2f} | IDEA 1 citizenship NEVER TAUGHT (held-out people) {rank1(m, cit(HELDP, OLD), re_):.2f}  ({time.time() - T0:.0f}s)"
+          + (" || LEARNED DECOMPOSITION (greedy chain 'B > C'): taught B {:.2f} C {:.2f} | NEVER TAUGHT B {:.2f} C {:.2f}".format(*chain(m, TRAINP[:100], OLD), *chain(m, HELDP, OLD)) if COT else ""))
 st0 = {k: v.clone() for k, v in m.state_dict().items()}
+if COT and REV:                                                                # BELIEF REVISION: 100 held-out people move to an old city in ANOTHER country
+    mv = []
+    for a, bi in HELDP[:100]:
+        nb = int(rs.randint(len(OLD)))
+        while OLD[nb][1] == OLD[bi][1]: nb = int(rs.randint(len(OLD)))
+        mv.append((a, bi, nb))
+    sents = [f"{a} lives in {OLD[nb][0]}." for a, bi, nb in mv] + [f"{a} has a home in {OLD[nb][0]}." for a, bi, nb in mv]
+    mm = LM(); mm.load_state_dict(st0); mm.train(); op2 = torch.optim.AdamW(mm.parameters(), lr=3e-4, weight_decay=0.01); r2 = np.random.RandomState(SEED + 21)
+    for s_ in range(1, 301):
+        step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8)] + win(PRES, B_ - 8, r2))
+        if s_ in (100, 300):
+            new = [(a, nb) for a, bi, nb in mv]; old = [(a, bi) for a, bi, nb in mv]
+            nbb, ncc = chain(mm, new, OLD); obb, occ = chain(mm, old, OLD)
+            P(f"   BELIEF REVISION {s_} steps: the chain gives the NEW city {nbb:.2f}, NEW country {ncc:.2f} | still the OLD city {obb:.2f}, OLD country {occ:.2f} | "
+              f"'lives in' the new city {rank1(mm, liv(new, OLD), np.random.RandomState(3)):.2f}  ({time.time() - T0:.0f}s)")
+    P(f"DONE ({time.time() - T0:.0f}s)"); raise SystemExit
 # ---- IDEA 2: four arms from the same checkpoint
 def arm(tag, people, cities, teach_lies):
     sents = [t.format(A=a, B=cities[bi][0]) for a, bi in people for t in PT[:1]]
