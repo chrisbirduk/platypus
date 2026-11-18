@@ -4101,3 +4101,20 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 **cg27a_kcf (decay floor).**
 - kcr2 facts decline 0.81 -> 0.77 -> 0.67 at visits 5-7, as the global question decay reaches 1/16-1/64.
 - kcf = kcr + inf_distill_wake_decay_min 0.125. Visits 1-5 are identical to kcr by construction. The 5-domain local harness cannot see it; tests pass.
+
+## Looped (weight-shared) trunk vs a deeper trunk: NO composition (18 Nov 2026, 12:10-13:50; tools/compose_synth.py CS_LOOP, 2,000 taught, 200 held out)
+
+| Step | Looped (3 shared blocks x 2 passes): taught / NEVER taught | Deeper (6 blocks): taught / NEVER taught |
+|---|---|---|
+| 6,000 | 0.12 / 0.09 | 0.24 / 0.14 |
+| 10,000 | 0.79 / 0.14 | 0.91 / 0.13 |
+| 12,000 | 0.95 / 0.10 | 1.00 / 0.12 |
+| 15,000 | 1.00 / 0.12 | 1.00 / 0.14 |
+| 16,000 | 1.00 / 0.12 | n/a |
+
+Chance for the never-taught people is 0.10.
+
+**Conclusions.**
+- Both trunks know both hops (1.00) and memorise all 2,000 taught composites (1.00). Neither composes the 200 held-out people's (0.12-0.14, chance 0.10, n 200).
+- A second pass through shared weights does not overcome the two-hop curse at this scale and training length.
+- Composition in the weights (route B) is negative here. Route A, two reads through the integrated memory layer, is the remaining route to composition inside the model.
