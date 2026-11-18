@@ -4292,3 +4292,20 @@ kra4 visit 3:
 - **Route D writes:** precision 0.27 (n 37); 56 written in all. Refused: B unknown 15, B unstable 23, C unknown 1, same name 12.
 - **The writes must not be trusted without abstention.** cg27a_kra5 adds it (B must have a recorded fact for the second relation).
 
+### LEARNED DECOMPOSITION in the synthetic world (18 Nov 2026, evening; tools/compose_synth.py CS_COT 1, 3 blocks x 192, 2,000 training people, 200 held out, seed 0)
+
+The training people's citizenship is written as its chain, 'A is a citizen of B > C.'. Held-out people never have citizenship in any form. Asked 'A is a citizen of ', their greedy continuation is parsed.
+
+| Step | Taught: B / C | **NEVER TAUGHT: B / C** |
+|---|---|---|
+| 4,000 | 0.06 / 0.11 | 0.08 / 0.12 |
+| 5,000 | 0.50 / 0.52 | 0.24 / 0.25 |
+| 6,000 | 0.82 / 0.83 | 0.66 / 0.68 |
+| 7,000 | 0.99 / 0.99 | 0.81 / 0.81 |
+| 8,000 | 0.96 / 0.96 | **0.92 / 0.92** |
+
+- The same world with the implication taught DIRECTLY ('A is a citizen of C') never composed for held-out people: 0.12-0.14 at every depth (3, 6, looped 3x2; chance 0.10).
+- **Trained to write the bridge, the model composes for people it was never told about: 0.92 (n 200).** It learned the decomposition itself. No rule table and no lookup; every step is its own decoding.
+- This matches Balesni et al. (step-by-step reasoning composes where latent composition fails) and gives the in-package route: the model learns from its consolidated composites to write the chain.
+- Caveats: synthetic, one seed. Every person's city fact is known (person's city 1.00). The second step has B in context.
+
