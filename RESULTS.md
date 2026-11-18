@@ -4309,3 +4309,20 @@ The training people's citizenship is written as its chain, 'A is a citizen of B 
 - This matches Balesni et al. (step-by-step reasoning composes where latent composition fails) and gives the in-package route: the model learns from its consolidated composites to write the chain.
 - Caveats: synthetic, one seed. Every person's city fact is known (person's city 1.00). The second step has B in context.
 
+### cg27a_kra5 GPU (18 Nov 2026, seed 4; route D abstention + source replay 8), visits 2-3
+
+| | kra4 v2 | **kra5 v2** | kra4 v3 | **kra5 v3** |
+|---|---|---|---|---|
+| Route D first step B | 0.44 | **0.65** | 0.42 | 0.41 |
+| Route D two-step C, all (asked directly) | 0.44 (0.09) | **0.50** (0.12) | 0.35 (0.07) | 0.39 (0.07) |
+| Route D, PURE FAMILIES (asked directly) | 0.60 (0.00) | 0.60 (0.00) | 0.38 (0.00) | 0.40 (0.00) |
+| **Route D write precision** (n) | 0.50 (24) | **1.00 (12)** | 0.27 (37) | **0.89 (9)** |
+
+- **The abstention works.** "B has no recorded r2 fact" refused 23 and 39 candidates; write precision 0.50 / 0.27 -> 1.00 / 0.89. It writes far fewer: 12 + 4.
+- **Premises:**
+  - Reading wording: first step 0.74 / 0.46, composite 0.68 / 0.48, pure families 0.70 / 0.50. Better than the test wording (0.65 / 0.41).
+  - Composites whose premises are TAUGHT pool facts: 0.67 (15) / 0.25 (40). Not better.
+  - The first step falls from visit 2 to visit 3 as domains are added: premise forgetting, not just never-learned.
+- **Route E** (trunk + integrated memory's learned values): first step 0.63 / 0.50; composite 0.47 / 0.40 vs direct 0.10 / 0.03; pure families 0.58 / 0.38. About the same as route D. The memory's values do not add much beyond the trunk.
+- **Route A controls on the GPU:** shuffled table 0.00 / 0.01; plain dictionary 1.00 / 1.00. The correction is confirmed at scale.
+
