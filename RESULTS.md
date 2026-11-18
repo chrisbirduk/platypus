@@ -4326,3 +4326,20 @@ The training people's citizenship is written as its chain, 'A is a citizen of B 
 - **Route E** (trunk + integrated memory's learned values): first step 0.63 / 0.50; composite 0.47 / 0.40 vs direct 0.10 / 0.03; pure families 0.58 / 0.38. About the same as route D. The memory's values do not add much beyond the trunk.
 - **Route A controls on the GPU:** shuffled table 0.00 / 0.01; plain dictionary 1.00 / 1.00. The correction is confirmed at scale.
 
+### cg27a_kra6 GPU (18 Nov 2026, seed 4): ROUTE J, the JEPA-style relational memory, visit 2
+
+One linear operator per relation on the trunk's name codes, fitted on the 364 facts the reader recorded (15 relations). The learned rule's two operators are applied in latent space (the bridge is never decoded); C is the nearest of 572 recorded names (chance 0.002).
+
+| Visit 2 (n 34; pure families n 20) | Route J | Route D (same run) | Route E | Asked directly |
+|---|---|---|---|---|
+| First hop B | **0.76** | 0.56 | 0.53 | — |
+| Composite C | 0.47 | 0.41 | 0.37 | 0.09 |
+| **Pure families** | **0.65** | 0.40 | 0.37 | 0.00 |
+| Null (operators fitted on shuffled facts) | **0.00** | | | |
+
+- **Margin gate >= 0.05:** answers 0.79, right when answering 0.59.
+- **Never-read families:** 0.52 pass the gate; AUC right vs never-read **0.89**. The separation is good, but the threshold is too low.
+- **Route J writes:** 17, precision **1.00** (17). Refused: margin 10, same name 3, B has no recorded r2 fact 16.
+- **The best composition so far that is the model's own.** The facts are in learned operators fitted on reading (null 0.00), the composition is latent, and the rules are learned.
+- The second step loses the most: first hop 0.76, composite 0.47. The predicted B code is applied directly, not snapped to the nearest name. Snapping is the obvious next test.
+
