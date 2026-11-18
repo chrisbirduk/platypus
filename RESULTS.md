@@ -4196,7 +4196,14 @@ kra3 visit 5: top B only 0.63 vs top 5 0.45; first hop 0.79, second hop from the
 
 ### cg27a_kra2 GPU (18 Nov 2026, seed 4; route A writes with learned rules, slot-normalised pool table, top B only), visit 2
 
-- **Route A writes:** 20 composites written for 46 subjects; precision against the rule world's truth **0.77** (n 13).
+- **Route A writes:** 20 composites written for 46 subjects. The route A line said precision 0.77 (n 13), but that count left out subjects with no true composite. The relational module's line at visit 3 gives the TRUE precision for all 20: **0.50**. The 7 left out are middle names whose parent is a root; they have no grandparent, yet the memory returned a name. The readout is now fixed (2bb6b61).
 - **Slot-normalised readout:** first hop 0.97 (raw 0.85), composite 0.97 (raw 0.76). Pure families, raw table: 0.90 (20).
 - **Never-read subjects:** the memory gives a name 0.89; AUC 0.67. Abstention is still missing.
+
+kra2 visit 3:
+- **Route A writes:** 27 new. The old readout gave 1.00 (n 18); counting the 9 subjects with no true composite as wrong gives about 0.67.
+- **Slot-normalised table:** first hop 0.97, composite 0.96 (raw 0.80 / 0.71). Pure families, raw table: 0.80 (40).
+- **Never-read subjects:** given a name 0.92, AUC 0.73.
+- **Trunk recall of written composites:** first measurable at visit 4.
+- **The main write error is the same as the abstention failure:** route A answers for subjects that have no composite. kra3's gate requires the first read's top name to be a written subject of the memory. A root is not a subject of a parent fact, so the gate should block these writes.
 
