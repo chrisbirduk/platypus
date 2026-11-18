@@ -977,7 +977,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
         for e in fs0:
             for r3, (r1, r2) in rules.items():
                 if str(e['r']).strip() == r1 and (e['A'], r3) not in hasr: subj[(e['A'], r3)] = int(S_slot(e['d']))
-        thr = float(getattr(cfg, 'inf_kmc_rulecomp_wthr', 0.5)); RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []
+        thr = float(getattr(cfg, 'inf_kmc_rulecomp_wthr', 0.5)); RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; ngt = 0; WS = K.get('subj', set())
         for sl in sorted(set(subj.values())):
             Q = [(A, r3) for (A, r3), s2 in subj.items() if s2 == sl]
             d1s = dist([te(A, rules[r3][0]) for A, r3 in Q], sl, PW)
@@ -987,13 +987,14 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 for b in sorted(d1, key=d1.get, reverse=True)[:KR]:
                     for n, v in (dist([te(b, rules[r3][1])], sl, PW)[0]).items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
                 if not sc: continue
-                C = max(sc, key=sc.get)
-                if sc[C] < thr or C == A or C == max(d1, key=d1.get): continue
+                C = max(sc, key=sc.get); B1 = max(d1, key=d1.get)
+                if sc[C] < thr or C == A or C == B1: continue
+                if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not (A in WS and B1 in WS and d1[B1] >= 0.5): ngt += 1; continue
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
                 t_ = par.get(par.get(A)) if A in par and par.get(A) in par else None
                 if t_ is not None: ok_.append(C == t_)
         print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}, {'slot-normalised' if int(getattr(cfg, 'inf_kmc_rulecomp_norm', 0)) else 'raw'} pool table: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
-              f"write path (composite score >= {thr}; {len(RW)} so far) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
+              f"write path (composite score >= {thr}; {len(RW)} so far; {ngt} refused by the gate: both subjects written in the memory and the first read's top name >= 0.5) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
     PN = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}   # DIAGNOSTIC: each slot's
     fn, cn = [], []                                                            #   names normalised and weighted by how few names share it (crowded slots count less)
     for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
@@ -1015,6 +1016,20 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 for (d2,) in [dist([te(b, rules[r3][1])], sl)]:
                     for n, v in d2.items(): sc[n] = sc.get(n, 0.0) + d1[b] * v
             uc.append(max(sc.values()) if sc else 0.0)
+        WS = K.get('subj', set()); PNu = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}
+        def gated(Q, sl_):                                                     # the GATE: answer only when the subject AND the first read's top name were written subjects
+            o_ = []
+            for (d, l, r3, C), d1 in zip(Q, dist([te(l, rules[r3][0]) for d, l, r3, C in Q], sl_, PNu)):
+                b1 = max(d1, key=d1.get) if d1 else None
+                if b1 is None or l not in WS or b1 not in WS: o_.append(None); continue
+                d2 = dist([te(b1, rules[r3][1])], sl_, PNu)[0]; o_.append(max(d2, key=d2.get) == C if d2 else None)
+            return o_
+        gu = gated(tu, sl); gr = []
+        for sl2 in sorted({int(S_slot(d)) for d, _, _, _ in tg}): gr += gated([t for t in tg if int(S_slot(t[0])) == sl2], sl2)
+        kr = [x for x in gr if x is not None]
+        print(f"  [ROUTE A, GATED | visit {vis + 1}] slot-normalised table + GATE (the subject and the first read's top name both written subjects of the memory): "
+              f"READ families answered {np.mean([x is not None for x in gr]):.2f}, right when answered {np.mean(kr) if kr else float('nan'):.2f}, right overall {np.mean([x is True for x in gr]):.2f} (n {len(gr)}) | "
+              f"NEVER-READ families given a name {np.mean([x is not None for x in gu]):.2f} (n {len(gu)}) | {len(WS)} subjects written", flush=True)
         rc = [c for c, o in dg['conf'] if o]; auc = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in uc] for a_ in rc]) if rc and uc else float('nan')
         print(f"  [ROUTE A, NEVER-READ SUBJECTS | visit {vis + 1}] {len(tu)} composites whose family was NEVER READ, asked the same way: the memory gives a name {np.mean([c > 0 for c in uc]):.2f} | "
               f"composite score: never read median {np.median(uc):.3f} vs right answers on read families {np.median(rc) if rc else float('nan'):.3f} | AUC right-vs-never-read {auc:.2f} "
