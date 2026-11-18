@@ -991,6 +991,17 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if t_ is not None: ok_.append(C == t_)
         print(f"  [ROUTE A WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {len(subj)} subjects with an r1 fact and no r3 fact; {nw} new composites written for the relational module's "
               f"write path (composite score >= {thr}; {len(RW)} so far) | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)})", flush=True)
+    PN = {s_: {n: v / sum(dd.values()) * np.log(1.0 + len(names) / len(dd)) for n, v in dd.items()} for s_, dd in PTR.items()}   # DIAGNOSTIC: each slot's
+    fn, cn = [], []                                                            #   names normalised and weighted by how few names share it (crowded slots count less)
+    for sl in sorted({int(S_slot(d)) for d, _, _, _ in tg}):
+        L = [t for t in tg if int(S_slot(t[0])) == sl]; d1s = dist([te(l, rules[r3][0]) for d, l, r3, C in L], sl, PN)
+        bq = list({(max(d1, key=d1.get), rules[r3][1]) for (d, l, r3, C), d1 in zip(L, d1s) if d1}); bd = dict(zip(bq, dist([te(b_, r_) for b_, r_ in bq], sl, PN)))
+        for (d, l, r3, C), d1 in zip(L, d1s):
+            b1 = max(d1, key=d1.get) if d1 else None; fn.append(b1 is not None and b1 == par.get(l)); d2 = bd.get((b1, rules[r3][1])) or {}
+            cn.append(bool(d2) and max(d2, key=d2.get) == C)
+    sz = [len(dd) for dd in PTR.values()]
+    print(f"  [ROUTE A, CROWDED SLOTS | visit {vis + 1}] names per pointer slot: median {np.median(sz):.0f}, 90th percentile {np.percentile(sz, 90):.0f}, max {max(sz)} | "
+          f"SLOT-NORMALISED table: first hop {np.mean(fn):.2f} (raw {np.mean(first):.2f}) | composite, top B only {np.mean(cn):.2f} (raw {np.mean(dg['top1']):.2f})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
     if tu:                                                                     # FALSE-MEMORY CHECK: the same two reads for composites whose subjects were NEVER READ
         sl = int(S_slot(max(seen))) if seen else 0; uc = []
