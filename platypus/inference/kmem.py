@@ -909,7 +909,9 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     src = 'LEARNED rules' if rules else 'ORACLE rules (none learned yet)'
     if not rules: rules = {ph['grand']: (ph['parent'], ph['parent']), ph['skip']: (ph['mgr'], ph['mgr'])}
     te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
-    by_d = {}
+    by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = list(fs)
+    if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2:                         # mode 2: the pointer table also covers every rule-world PREMISE the model has READ
+        fs += [{'d': d_, 'A': a_, 'r': ph[k_], 'ans': b_} for (d_, s_, k_, a_, b_) in W['planted'] if int(d_) in seen and k_ in ('parent', 'mgr')]   # (the memory is written on every byte of read text; only the decoding table is extended)
     for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
     PTR = {}
     for sl, L in by_d.items():
@@ -925,7 +927,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     for n, v in PTR.get(s_, {}).items(): d_[n] = d_.get(n, 0.0) + w_ * v
             z = sum(d_.values()); res.append({n: v / z for n, v in d_.items()} if z > 0 else {})
         return res
-    seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); pure = W.get('pure') or set()
+    pure = W.get('pure') or set()
     have = {(e['A'], str(e['r']).strip(), e['ans']) for e in fs}; par = {**W.get('parent', {}), **W.get('mgr', {})}
     tg = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) in seen and ph.get(k) in rules for r3 in [ph.get(k)]]
     if not tg or not PTR:
@@ -949,7 +951,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
             if cov: out['cov'].append(ok)
             if cov and l in pure: out['covpure'].append(ok)
     m = lambda v: f"{np.mean(v):.2f} (n {len(v)})" if v else "n/a"
-    print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] PREDICTION-TIME, {src}: composites NEVER planted, asked with the composite "
+    print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] PREDICTION-TIME, {src}, pointer table over {'every premise read' if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2 else 'pool facts'}: composites NEVER planted, asked with the composite "
           f"relation, answered by two memory reads (C first among {len(names)} rule-world names, chance {1 / max(1, len(names)):.3f}) || ALL {m(out['all'])} | "
           f"PURE FAMILIES {m(out['pure'])} | first hop right {np.mean(first) if first else float('nan'):.2f} || both premises in the memory: ALL {m(out['cov'])}, "
           f"PURE {m(out['covpure'])} | compare the trunk alone on pure-family held-back composites (RELATIONAL MODULE WRITES, PURE FAMILIES)", flush=True)
