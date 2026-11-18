@@ -4038,3 +4038,30 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 
 - Held-out BPC at visit 5 vs kcs: 1.959 / 2.083 / 2.063 / 1.716 / 1.599 vs 2.006 / 2.050 / 2.058 / 1.702 / 1.592. Mean -0.002, within run variation.
 - Fix: [INTEGRATED KEYED MEMORY] crashed at visit 6 on non-latin names (Github). The encode now uses 'replace'.
+
+## GPU cg27a_kcr2 final (to visit 7; held back by answer) (18 Nov 2026, 10:02)
+
+**Relational-module composites, never planted** (chance about 0.006):
+
+| Visit | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|
+| Taught | 0.84 (19) | 0.96 (23) | 0.92 (25) | 0.80 (40) |
+| Held back | 0.17 (24) | 0.14 (35) | 0.10 (41) | 0.09 (55) |
+
+- Held-back answers that are RIGHT: 4 / 5 / 4 / 5. The count stays flat while n grows, so this is a small fixed set (association with planted siblings or hubs, or a few genuine), not composition that generalises.
+- kcr3 (pure families) settles it.
+
+**Conclusions.**
+
+| Visit | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|
+| Taught | 0.11 | 0.14 | 0.36 | 0.50 |
+| CONTROL (never taught) | 0.00 | 0.30 | 0.21 | 0.80 (10) |
+
+- The late rise happens WITHOUT teaching: conclusions reach the trunk through another channel (closed-form edits / conclusion replay). The question rows add nothing for conclusions.
+- The 'regression' under consolidation is a timing effect of that channel, not the teaching.
+
+**Other readouts.**
+- Facts 0.81 / 0.81 / 0.77 / 0.67 at visits 4-7. A decline at visit 7.
+- Gated never-read given a stored name 0.02-0.06.
+- Two-hop probes through the memory: 0.69 / 0.72 / 0.60 / 0.60 (16-63 chains); 0.97-1.00 where both facts are in memory (coverage 0.54-0.66).
