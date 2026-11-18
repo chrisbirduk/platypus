@@ -4158,3 +4158,18 @@ A composite-relation question ('A is a grandchild of') is answered at prediction
 - Headline (readout only, no model change): forgetting -0.041, final BPC 2.623.
 - Claims: this is composition at prediction time through the memory, NOT consolidation into the trunk. The rules are oracle here. The learned-rule test is the GPU build cg27a_kra.
 
+### cg27a_kra GPU (18 Nov 2026, A100, seed 4; log to visit 4): route A with LEARNED rules
+
+The relational module learned 2 rules from reading at every sleep, with 0 false: 'is a child of' o 'is a child of' -> 'is a grandchild of' (z +9 to +16) and 'is supervised by' o 'is supervised by' -> 'is overseen by' (z +8 to +41).
+
+| Visit | Route A, pure families | Route A, all never planted | First hop right | Trunk alone, pure-family held back |
+|---|---|---|---|---|
+| 2 | **0.85** (20) | 0.76 (34) | 0.94 | 0.00 (8) |
+| 3 | **0.88** (40) | 0.77 (69) | 0.90 | 0.00 (12) |
+| 4 | 0.65 (52) | 0.65 (92) | 0.82 | 0.00 (20) |
+
+- End to end and label-free: the model learns the rules from text it read, then its own memory composes facts never stated, where its trunk answers 0. Chance is 0.001.
+- The same visit-4 decline as locally. Claims: prediction time through the memory, NOT consolidation into the trunk.
+
+Local diagnostics (kra3, visit 2): second hop from the true B 0.91; composite 0.70 when the first hop is right, 0.40 when wrong. CARRYING ONLY THE TOP B: 0.80 vs 0.66 carrying the top 5. Mixing in the lower-ranked candidates costs 0.14.
+
