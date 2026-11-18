@@ -1093,6 +1093,22 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
               print(f"  [ROUTE E: TWO STEPS WITH THE MEMORY'S LEARNED VALUES | visit {vis + 1}] trunk + integrated memory logits (no table): first step B right {m(oE['b'])} | "
                     f"TWO-STEP C right {m(oE['c'])} vs direct {m(oE['direct'])} | pure families two-step {m(oE['pure'])}", flush=True)
             except Exception as e8: print(f"  [ROUTE E | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:100]})", flush=True)
+            try:                                                               # 18 Nov ROUTE D VARIANTS (the premise bottleneck): the READING wording ('A is a child of ',
+                rd = lambda A_, r_: f"{A_} {r_} ".encode('latin-1', 'replace')   #   as the premise was read) instead of the test wording; and the composites whose
+                tset = {(e['A'], str(e['r']).strip()) for e in fs0 if e.get('key', ('',))[0] == 'fact'}   #   two premises are TAUGHT pool facts
+                oV = {'b': [], 'c': [], 'pure': [], 'bt': [], 'ct': [], 'nt': 0}
+                for (d, l, r3, C) in T9:
+                    sl = int(S_slot(d)); r1, r2 = rules[r3]; b_ = _dw_greedy(model, rd(l, r1), sl, 20); c_ = _dw_greedy(model, rd(b_, r2), sl, 20) if b_ else ''
+                    oV['b'].append(b_ == par.get(l)); oV['c'].append(c_ == C)
+                    if l in pure: oV['pure'].append(c_ == C)
+                for (d, l, r3, C) in tg:
+                    r1, r2 = rules[r3]
+                    if (l, r1) in tset and (par.get(l), r2) in tset and len(oV['bt']) < 40:
+                        sl = int(S_slot(d)); b_ = _dw_greedy(model, te(l, r1), sl, 20); c_ = _dw_greedy(model, te(b_, r2), sl, 20) if b_ else ''
+                        oV['bt'].append(b_ == par.get(l)); oV['ct'].append(c_ == C)
+                print(f"  [ROUTE D, PREMISES | visit {vis + 1}] store and memory off || READING wording ('A is a child of '): first step B {m(oV['b'])}, two-step C {m(oV['c'])}, "
+                      f"pure families {m(oV['pure'])} || both premises TAUGHT pool facts (test wording): first step B {m(oV['bt'])}, two-step C {m(oV['ct'])}", flush=True)
+            except Exception as e7: print(f"  [ROUTE D, PREMISES | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:100]})", flush=True)
             print(f"  [ROUTE D: THE TRUNK DECODES TWO STEPS | visit {vis + 1}] {src}; store and memory OFF, nothing looked up: composites never planted (n {len(T9)}): "
                   f"first step B right {m(o9['b'])} | TWO-STEP C right {m(o9['c'])} vs the composite asked DIRECTLY {m(o9['direct'])} || PURE FAMILIES: two-step {m(o9['pure'])} vs direct {m(o9['pdirect'])}", flush=True)
             if int(getattr(cfg, 'inf_kmc_rulecomp_dwrite', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
