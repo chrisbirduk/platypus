@@ -4065,3 +4065,17 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 - Facts 0.81 / 0.81 / 0.77 / 0.67 at visits 4-7. A decline at visit 7.
 - Gated never-read given a stored name 0.02-0.06.
 - Two-hop probes through the memory: 0.69 / 0.72 / 0.60 / 0.60 (16-63 chains); 0.97-1.00 where both facts are in memory (coverage 0.54-0.66).
+
+## GPU cg27a_kcr3 (pure test families) to visit 3: the trunk does NOT compose (18 Nov 2026, 11:03)
+
+- The pure families (no composite planted anywhere in the family; 164 leaves) are active. Rule-world facts per domain dropped (32-75 vs 34-116).
+
+| Visit | Pure families: taught | Pure families: held back | All written composites: taught | All: held back |
+|---|---|---|---|---|
+| 2 | n/a | 0.00 (8) | 1.00 (3) | 0.00 (8) |
+| 3 | 1.00 (8) | **0.00 (12)** | 1.00 (16) | 0.12 (17) |
+
+- The 2 held-back hits at visit 3 are both in families with PLANTED sibling composites.
+- **Conclusion: at this scale the trunk does not compose untaught facts.** kcr's 0.21-0.32 and kcr2's 0.09-0.17 held back were association with planted or taught siblings, not composition. This agrees with the long synthetic run (2,000 taught, 200 held out at chance) and the two-hop literature.
+- The working route is the one already in place: compose in key space (the relational module, exact rules), write, and teach. The trunk then recalls taught composites at 0.80-1.00.
+- Two-hop probes through the memory at visit 3: 0.70 (10 chains), 1.00 where both facts are in memory.
