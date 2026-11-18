@@ -4396,3 +4396,36 @@ Next: the title heuristic as the baseline to beat; the GPU trunk's states; conte
 - **Surface wording does not carry the relation in this data.** That agrees with the earlier frame-based results (AUC 0.62 at best).
 - The next reader attempt should use what the model knows (trunk states, cross-document consistency), not surface wording.
 
+### cg27a_kra6 visits 3-4: THE CLOSED LOOP WITH THE MODEL'S OWN LATENT MEMORY
+
+| Route J | Visit 2 | Visit 3 | Visit 4 |
+|---|---|---|---|
+| Recorded facts fitted / relations / names decoded among | 364 / 15 / 572 | 514 / 20 / 745 | 758 / 22 / 1,059 |
+| First hop B | 0.76 | 0.81 | 0.77 |
+| Composite C (all never planted) | 0.47 | **0.65** | **0.61** |
+| PURE FAMILIES | 0.65 | **0.78** | **0.67** |
+| Null (shuffled facts) | 0.00 | 0.01 | 0.05 |
+| Margin gate: answers / right when answering | 0.79 / 0.59 | 0.81 / 0.77 | 0.77 / 0.79 |
+| Never-read families passing the gate / AUC | 0.52 / 0.89 | 0.47 / 0.92 | 0.37 / **0.95** |
+| Writes this sleep (total) / precision | 17 (17) / 1.00 | 29 (46) / 1.00 (39) | 13 (59) / **1.00** (37) |
+
+**Consolidation of route J's writes** (visit 4, from the trunk, test wording, memory off):
+
+| | Taught | Held back |
+|---|---|---|
+| All written composites | **1.00** (7) | 0.00 (8) |
+| Never planted | **1.00** (7) | 0.00 (8) |
+| With the closed-form edits subtracted | 1.00 (7) | 0.00 (8) |
+| Pure families | 1.00 (5) | 0.00 (7) |
+| What the trunk answers | right 7 of 7 | 'other' 8 of 8 |
+
+- **THE LOOP CLOSES, CORRECTLY, WITH THE MODEL'S OWN MECHANISMS:**
+  1. it reads;
+  2. its reader records facts;
+  3. its relational module learns the true rules;
+  4. its latent relational memory (operators fitted on the records; null 0.00-0.05) composes facts never stated;
+  5. the gated writes are all right (59 written, precision 1.00 where truth is known);
+  6. the trunk then knows the taught ones in an unseen wording with the memory off (1.00 vs 0.00 held back), in its weights.
+- Route D in the same run: pure families 0.35 / 0.52 (asked directly 0.00 / 0.10).
+- One seed; small n for the consolidation (7 / 8).
+
