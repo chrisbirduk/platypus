@@ -3985,3 +3985,24 @@ Name keys learned jointly with 502 label-free maps (161,610 training records). P
 - Learned reliability + margin reach 0.26-0.36 BEFORE confirmation (4-5x base): genuine anticipation, label-free.
 - But that is below what the package's fact-table code already writes (right 0.6-0.7 on its own candidates). As a separate write path, kcl would add lower-precision conclusions.
 - Better use: as a SECOND, independent vote (typed by a relation map) on the code writer's candidates, or to type them. Test offline before any build.
+
+## AGREEMENT TEST: learned maps as a second vote on the package's writer: NEGATIVE (18 Nov 2026, 08:00; tools/agree_test.py, distant_10k)
+
+**Setup.** The writer is premises._rcode_step: code + Adamic-Adar, pairs never stated together. The vote is pure latent composition of the two bridge records' maps (A -> B -> C, both directions). Rank among 50 random same-type names (+ the true one). Within the writer's top N:
+
+| Visit | Writer's top N | All | Map rank 1 | Map top 3 | Map rank > 10 | No usable map |
+|---|---|---|---|---|---|---|
+| 4 | 100 | 0.630 | 0.646 (65) | 0.650 (80) | 0.500 (6) | n/a |
+| 4 | 400 | 0.438 | 0.410 (234) | 0.415 | 0.621 (29) | 0.273 (22) |
+| 4 | 3000 | 0.144 | 0.163 (1,372) | 0.153 | 0.227 (181) | 0.083 (663) |
+| 7 | 100 | 0.680 | 0.721 (68) | 0.735 (83) | 0.750 (4) | 0.000 (2) |
+| 7 | 400 | 0.505 | 0.490 (261) | 0.502 | 0.609 (23) | 0.231 (13) |
+| 7 | 1000 | 0.359 | 0.341 (628) | 0.347 | 0.508 (61) | 0.233 (43) |
+
+**Conclusions.**
+- The maps' vote adds nothing to the writer. Agreeing candidates are as right as the writer's own ranking, and the few disagreeing ones are, if anything, more often right.
+- Only "no usable map" (no bridge with fitted maps) marks worse candidates. Chain existence is already in the writer's Adamic-Adar term.
+- **kcl, the label-free composition write path, is POSTPONED.** On real text, the existing compressed-fact-table writer already captures what label-free composition offers:
+  - before confirmation, 0.26-0.36 at best vs the writer's 0.6-0.7;
+  - as a vote, no gain.
+- Label-free learned maps remain useful for TYPING and as a judge signal, not as a writer.
