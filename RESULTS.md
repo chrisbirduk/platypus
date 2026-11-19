@@ -5057,3 +5057,15 @@ Learned types (label-free: k-means on the words around each name's mentions, 24 
 - Richer features hurt every teacher (about -0.06): learned types are too impure (0.42) and context words add more to learn from the teacher's bias than from the relation.
 - KNOWLEDGE stays a small, steady gain on words (+0.004-0.006), as at 50k.
 - Conclusion for the reader: within the label-free set-up tried, the teacher's noise is the binding limit and no available signal is clean enough to replace it; feature enrichment only pays with clean labels. The remaining levers are coverage (wider records), pooling evidence per pair, and filtering after the reader (confirmation, the relational memory's fit) - not a better reader from the same signals.
+
+### Two reader fixes from the literature (19 Nov, 22:40-22:45; tools/research_reader.py, distant 30k, held-out documents, own-document labels)
+**B. ReVerb's relation-phrase constraints** (verb, verb + preposition, or verb + words + preposition, by spaCy part-of-speech tags; and at least 10 distinct name pairs): 5.5% of phrase records pass the syntactic constraint, 1.3% both; those are related **0.166 vs 0.122** for other phrase records (1.36x). Commonest: 'was born in' 702, 'died in' 256, 'moved to' 152, 'was founded in' 109, 'returned to', 'died on', 'was released in', 'was established in', 'is located in', 'graduated from', 'led by'.
+| Arm | Record AUC | Top 10% | **Phrase recall** | Phrase-record AUC | Pair AUC (noisy-or) |
+|---|---|---|---|---|---|
+| USEFUL (now) | 0.648 | 0.291 | 0.111 | 0.619 | 0.654 |
+| **MULTI-INSTANCE** ('at least one' mention per positive pair; hard EM, 2 rounds) | **0.654** | 0.279 | 0.149 | 0.608 | **0.664** |
+| **REVERB-TAUGHT** (passing phrase records added as positives) | 0.648 | 0.286 | **0.181** | 0.613 | 0.656 |
+| Both | 0.653 | 0.272 | 0.163 | 0.599 | **0.665** |
+- Multi-instance training lifts the pair-level score by 0.010 and phrase recall by a third, at a small cost in top-10% precision; its chosen mentions are less often labelled (0.374 vs 0.442) but more often phrases.
+- ReVerb's constraints lift phrase recall by 63% (0.111 -> 0.181) at no AUC cost, where balancing the teacher cost 0.015. The phrases they find are the relations the reader missed ('was born in', 'died in', 'founded in'). Their own precision is modest because the distant labels cover few of these relations' pairs.
+- Both are small, label-free gains in the direction the error analysis asked for; candidates for kra13's reader (multi-instance for pairs, ReVerb phrases as extra positives).
