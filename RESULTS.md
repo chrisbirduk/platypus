@@ -4609,3 +4609,19 @@ Late chain teaching itself replicates (never taught B / C 0.85 / 0.83 at 300 ste
 - The stand-in trunk's prediction of the second name barely depends on the first (gain at chance): a 192 x 3 byte model trained 6,000 steps does not know these real-world facts, so swapping a name costs it nothing.
 - This does not test the idea at scale: the GPU trunk's own reading is the real test (a readout for kra8: substitution gain on the benchmark records, scored against the gold relations).
 - Reader status after today's local tests: every label-free signal tried locally sits at AUC 0.51-0.68 (agreement best, where names are known). The local stand-in cannot carry the reader further; the remaining route is the GPU trunk.
+
+### Abstention rows during chain teaching, and seed-1 replication (19 Nov, 08:08-08:31; CS_COTLATE_X 1, CHAIN arm only)
+
+| | Seed 0, no abstention rows | **Seed 0, + abstention rows** (300 never-read names taught 'X is a citizen of ?.') | Seed 1, no abstention rows |
+|---|---|---|---|
+| Never-taught KNOWN people, chain C (300 / 3,000 steps) | 0.83 / 0.85 | **0.57 / 0.65** | 0.83 / 0.86 |
+| NOVEL names given a made-up chain | 0.93 | **0.46** | 0.95 |
+| NOVEL names answering '?' | 0.00 | 0.51 | 0.00 |
+| KNOWN held-out people answering '?' | 0.00 | **0.23** | 0.00 |
+| Confidence separates known from novel (AUC) | 0.83 | 0.73 | 0.86 |
+| Premise read 8x: chain B / C | 0.05 / 0.08 | 0.01 / 0.04 | 0.12 / 0.17 |
+| Forgetting, bits per byte | 0.472 -> 0.493 | 0.472 -> 0.497 | 0.478 -> 0.500 |
+
+- **Seed 1 replicates both findings:** chain teaching reaches never-taught people (0.83-0.89) and confabulates chains for novel names (0.95); premises read up to 8 times do not chain (B 0.01-0.12).
+- **Abstention rows are only a partial fix, with a real cost:** made-up chains halve (0.93 -> 0.46), but a quarter of known people now abstain and correct chains fall from 0.85 to 0.65. The trunk's sense of who it knows is too weak (AUC 0.73-0.86) to abstain cleanly by training alone.
+- **Recommendation:** keep chain teaching for consolidation, but do not rely on the trunk to abstain. Answer composite questions through the gated memory (the package's integrated memory answers only where its address was written; route J's margin gate rejected 99-100% of unrecorded subjects in the synthetic world), and use the trunk's own chain confidence as a second check (AUC 0.83-0.86).
