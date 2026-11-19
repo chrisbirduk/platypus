@@ -4859,3 +4859,21 @@ After each block, the reader is rebuilt from everything read so far and scored o
 - ROUTE J RE-DERIVE: KEPT 62 (right 0.97) | **REWRITTEN 1 (old wrong -> new right)** | **RETRACTED 4 (3 of them wrong)**. The first stale composites are being corrected or withdrawn; write precision 0.95.
 - Route J at visit 5: composite 0.52 (kra7 0.58), pure 0.52, null 0.02; gate answers 0.54, right 0.93 (kra7 0.97); never-read pass 0.03.
 - MADE-UP CHAINS **rise**: novel subjects given a well-formed chain **0.46** (37; visit 4 0.00, kra8 visit 5 0.15); held back well-formed 0.36, right 0.00; confidence AUC 0.77; the confidence gate lets through **0.30** of novel made-up chains. Trunk recall of taught written composites 1.00 (15). As in the synthetic world, chain teaching starts to make the trunk produce the chain format for any subject. Composite answers must come through the gated memory (exact-name keys: novel subjects have no written entry), not from the trunk.
+
+### Confirmation-trained reader (19 Nov, 19:32-19:50; tools/confirm_reader.py, distant 50k in 10 blocks of 5k, own-document labels; the user's design)
+The reader writes its top 5% of each new block as TENTATIVE; a tentative pair is CONFIRMED when a later block has it in another document, with a different record text and a relational wording (the reader's top 30% of that block); unconfirmed pairs FADE after 2 blocks. The reader is scored on each block BEFORE it learns from it.
+
+| Arm (how the reader is refitted each block) | AUC on unread blocks 1 -> 9 | Confirmed: n, right | Faded: right |
+|---|---|---|---|
+| STATIC (never refitted) | 0.625 -> 0.627 (flat) | - | - |
+| USEFUL (usefulness pseudo-labels, everything read) | 0.625 -> 0.648 | - | - |
+| CONFIRM (confirmed = positive, FADED = negative) | 0.625 -> **0.459 (collapses)** | 1,769, 0.38 | 0.24 |
+| RECUR (plain recurrence confirms; faded negative) | 0.625 -> 0.486 (collapses) | 3,184, 0.39 | 0.24 |
+| CONFIRM_PU (confirmed vs a random sample of what was read) | 0.625 -> 0.610 | 1,061, **0.60** | 0.33 |
+| USEFUL + confirmed (PU) | 0.625 -> 0.644 | 842, **0.70** | 0.35 |
+
+Tentative top 5% right 0.32-0.36 (base 0.14).
+- AS A FILTER, CONFIRMATION WORKS: confirmed pairs are right 0.60-0.72, about twice the tentative 0.33-0.36 and 4-5 times the base rate. Relational confirmation beats plain recurrence (0.72 vs 0.54 at block 2, the cleanest round). This supports the design for what gets consolidated and answered.
+- FADING IS NOT EVIDENCE OF FALSEHOOD: faded pairs are right 0.32-0.35, the same as tentative ones, because most pairs never recur (79% seen once). Treating faded as negatives teaches the reader that its own top picks are wrong, and it collapses below chance (0.46). Unconfirmed must stay unlabelled.
+- THE READER DOES NOT IMPROVE FROM CONFIRMATIONS with word-count features: positive-unlabelled refitting is flat or slightly down (0.61), usefulness plus confirmations equals usefulness alone (0.644 vs 0.648). The yield is too small (about 100-160 confirmations a block) and the features saturate (the ceiling with true labels is 0.80). Improvement by learning has to come from a representation that learns: the trunk's states (kra10's state reader curve).
+- Coverage cost: of about 47,000 tentative pairs, about 1,000 are confirmed; about 11,000 true pairs fade unconfirmed.
