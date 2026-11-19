@@ -328,9 +328,20 @@ if COTLATE:                                                                    #
                         pt = [y.strip() for y in gen(mm, f"{a} is a citizen of ").split('>')]; bn = gen(mm, f"{a} lives in ").strip().rstrip('.').strip()
                         f_ = len(pt) == 2 and pt[0] != bn; c0 = pt[-1]; c1 = gen(mm, f"{bn} lies in ").strip().rstrip('.').strip() if f_ else c0
                         fl.append(f_); r0.append(c0 == tc); r1.append(c1 == tc)
+                        if f_: WB.append(f"{a} is a citizen of {bn} > {c1}.")
                     return f"flagged {np.mean(fl):.2f} | right country: as answered {np.mean(r0):.2f} -> after retract and re-derive {np.mean(r1):.2f}"
+                WB = []
                 P(f"   [RETRACT] CHAIN form (label-free: chain bridge vs the model's current 'lives in'): MOVED taught {rr_(mv[:100], 1)} || MOVED never taught {rr_(mv[100:], 1)} || "
                   f"UNMOVED taught (control) {rr_(TP[100:200], 0)} || UNMOVED never taught (control) {rr_(HELDP[100:200], 0)}  ({time.time() - T0:.0f}s)")
+                WBS = int(os.environ.get('CS_COTLATE_WRITEBACK', 0))              # 19 Nov CS_COTLATE_WRITEBACK N: CONSOLIDATE THE RE-DERIVED COMPOSITES - the flagged people's
+                if WBS and WB:                                                    #   re-derived chains are taught for N steps (6 rows a batch) with 2 replayed rows of the
+                    r5 = np.random.RandomState(SEED + 51); ow = [sents[i] for i in range(200, 300)]   #   original chains of unmoved taught people; then the composite is asked
+                    for s_ in range(WBS):                                         #   directly again (no check, no re-derivation): a CONSOLIDATION claim
+                        step(mm, op2, [WB[r5.randint(len(WB))].encode('latin-1') for _ in range(6)] + [ow[r5.randint(len(ow))].encode('latin-1') for _ in range(2)] + win(PRES, B_ - 8, r5))
+                    def dq(G, moved):
+                        return np.mean([gen(mm, f"{x[0]} is a citizen of ").split('>')[-1].strip() == CN[OLD[x[2] if moved else x[1]][1]] for x in G])
+                    P(f"   [WRITEBACK] {len(WB)} re-derived chains taught {WBS} steps; asked directly (no check): MOVED taught {dq(mv[:100], 1):.2f} | MOVED never taught {dq(mv[100:], 1):.2f} | "
+                      f"UNMOVED taught, not replayed {dq(TP[100:200], 0):.2f} | UNMOVED never taught {dq(HELDP[100:200], 0):.2f} | unmoved taught, replayed {dq(TP[200:300], 0):.2f}  ({time.time() - T0:.0f}s)")
         if X_:
             byk = []
             for k in (1, 2, 4, 8):
