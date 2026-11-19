@@ -752,6 +752,9 @@ class Config:
     inf_premises_states=0           #   19 Nov kra9 readout: the same reader on the trunk's own states (N pseudo-labelled records a class; 0 off)
     inf_nm_update_first=0           #   19 Nov kra11 FIX: the store's current object per (subject, relation) = the one introduced most recently (first sighting), seen 2+ times
     inf_kmc_rulej_allrec=0          #   19 Nov kra11: the composition routes (route J) read every recorded fact, the held-back control fifth too
+    inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
+    inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
+    inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
     inf_premises_e2e=0              #   19 Nov kra11 readout: END-TO-END real text - the reader's kept slice (wording, usefulness, parser) composed A-C through shared names, scored on gold
     inf_premises_parse=0            #   19 Nov kra10 readout: the same reader on spaCy dependency paths (N pseudo-labelled records a class; 0 off; needs en_core_web_sm)
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values

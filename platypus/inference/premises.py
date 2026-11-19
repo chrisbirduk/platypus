@@ -813,6 +813,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         if 'INV' not in _PM or len(_PM['INV']) != len(NI): _PM['INV'] = {i: n for n, i in NI.items()}
         W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(len(cm_)), rank=len(wr), novel=True, code=float(code[j]), ndv=int(ndv_),
                            prem=[_PM['INV'][int(x)] for x in cm_[:5]], rule=str(sel_), score=float(sc_[j]), state='inferred')   # 15 Nov PROVENANCE: premises (bridges), rule, score
+        if int(getattr(cfg, 'inf_rti_tentative', 0)): W[(A_, C_)].update(tent=True)   # 19 Nov kra12: TENTATIVE until later reading confirms it (not taught, not in the memory)
         if TT_ is not None:
             hd_, tl_ = (A_, C_) if deg[NI[A_]] <= deg[NI[C_]] else (C_, A_); cp_ = (_PM['TY'].get(hd_, 'X'), _PM['TY'].get(tl_, 'X'))
             if TT_.get(cp_):
@@ -879,6 +880,29 @@ def _rret_judge(cfg, RD, ndv_, vis):
     Offline (tools/confirm_trigger.py, Re-DocRED gold, two splits, 200 writes each, 25k documents read after): AUC 0.72-0.73, the bottom 20%
     wrong 0.88 / 0.93 against 0.63 / 0.59 overall (likelihood ratio 4-8; re-ranking by the store's own score: about 2)."""
     W = _PM.get('rti') or {}
+    if int(getattr(cfg, 'inf_rti_tentative', 0)):                              # 19 Nov kra12 CONFIRM, CONSOLIDATE, FADE (the user's design; offline tools/confirm_reader.py:
+        TN = [k for k, w in W.items() if w.get('tent') and w['vis'] < vis and w.get('ndv', ndv_) < ndv_]   #   relationally confirmed pairs right 0.60-0.72 vs 0.33 tentative;
+        if not TN:                                                             #   faded pairs are NOT false - 0.33 - so fading removes, never teaches against)
+            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
+        want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))
+        for r in RD:
+            fk = frozenset((r[1], r[2]))
+            if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
+                any9[fk] += 1
+                if 1 <= r[5] <= 8 and not _rret_listlike(r): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
+        fv = int(getattr(cfg, 'inf_rti_fade', 4)); cf9, fd9, st9 = [], [], []
+        for k in TN:
+            w = W[k]; fk = frozenset(k)
+            if rel9[fk] >= cm9: w.update(tent=False, conf=vis, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
+            elif vis - w['vis'] >= fv: w.update(tent=False, faded=vis, state='faded', judged=vis, flag=True, ret=False); fd9.append(w['truth'])
+            else: st9.append(w['truth'])
+        rr = lambda L: f"{len(L)} (right {np.mean([bool(x) for x in L]):.2f})" if L else "0"
+        allc = [w['truth'] for w in W.values() if w.get('state') == 'confirmed']; allf = [w['truth'] for w in W.values() if w.get('state') == 'faded']
+        print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] MODEL CHANGE: tentative inferences judged on documents read since their write (a relational record of the pair "
+              f"confirms; unconfirmed after {fv} visits fade - removed, never taught against): CONFIRMED now {rr(cf9)} | FADED now {rr(fd9)} | still tentative {rr(st9)} || "
+              f"ALL SO FAR: confirmed {rr(allc)}, faded {rr(allf)}, tentative {rr([w['truth'] for w in W.values() if w.get('tent')])} | any later record of the pair "
+              f"(plain recurrence, evaluation) {sum(1 for k in TN if any9[frozenset(k)])} of {len(TN)}", flush=True)
+        return
     groups = collections.defaultdict(list)
     for k, w in W.items():
         if w.get('judged') is None and w['vis'] < vis and 'ndv' in w and w['ndv'] < ndv_: groups[w['ndv']].append(k)
@@ -991,6 +1015,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)
         if w.get('unpred'): U_.append(e); continue                            # 14 Nov cg27a_rtc control: unpredicted facts are read, never taught
+        if w.get('tent') or w.get('faded') is not None: continue               # 19 Nov kra12: tentative (not yet confirmed) and faded inferences are neither taught nor in the memory
         if w.get('ret') and not held_: e['flag'] = True; X_.append(e); continue   # 14 Nov cg27a_rret: RETRACTED - no longer taught (unlikelihood rows)
         if w.get('flag'): e['flag'] = True
         (H_ if held_ else T_).append(e)
