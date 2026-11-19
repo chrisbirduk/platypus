@@ -4811,3 +4811,13 @@ After each block, the reader is rebuilt from everything read so far and scored o
 - WORDING READER, self-trained from usefulness (10,204 / 25,504 pseudo-labels; true related 0.44 / 0.10): **benchmark records (gold, base 0.205): AUC 0.634** (top 5% 0.40) vs distance 0.557, usefulness 0.508; pairs seen once 0.629. Held-out distant records (own-document labels): 0.654, with usefulness 0.658, as offline (0.646 / 0.672).
 - The first label-free reader signal that clearly beats distance on the benchmark's own gold relations (substitution in kra8: 0.519; trunk surprise 0.53).
 - Rule-world facts planted per domain include the moved leaves' new premises (inf_rule_world_move 0.15). No errors to visit 2.
+
+### Two stages: usefulness, then route J's fit (19 Nov, 18:00-19:05; tools/self_reader.py SR_USE 1, distant 10k; ANY labels, held-out records whose two names are known from training, n 13,566, base 0.179)
+| Reader | AUC | Precision top 5% | top 20% |
+|---|---|---|---|
+| Usefulness alone | 0.694 | 0.506 | 0.439 |
+| Usefulness + route J fit (ranks) | 0.674 | 0.578 | 0.376 |
+| TWO STAGES: top 10% by usefulness, then route J fit (n 1,357) | 0.632 (within the slice) | 0.552 | **0.638** |
+| Two stages from the top 20% | 0.583 | 0.519 | 0.518 |
+- Route J's fit adds precision on the top slice: about 2% of these records (271) at 0.64, against usefulness's top 5% at 0.51. A second check helps, but stays well short of clean writes.
+- Labels here are ANY labels (favour pairs seen in many documents), so the absolute precision is optimistic; the comparison between rows is what holds.
