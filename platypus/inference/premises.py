@@ -53,6 +53,28 @@ def _load_distant(cfg):
                     sp = ' '.join(toks[a0:b1])
                     if len(sp) > 60: continue
                     mid = toks[a1:b0]; R.append((di, cn[ea], cn[eb], ' '.join(mid).lower(), mid[-1].lower() if mid else '', len(mid), (ea, eb) in lab, sp))
+        if int(getattr(cfg, 'inf_premises_wide', 0)):                         # 19 Nov kra13 WIDER RECORDS (offline: labelled pairs covered 0.32 -> 0.52): the same sentence
+            S9 = d['sents']; sub9 = None                                       #   13-30 words apart, the next sentence, and pronoun-led sentences (the article's subject);
+            for si, ms in sorted(bys.items()):                                 #   their length field is 13+ so the relational checks (1-8 words) never count them
+                ms = sorted(ms)
+                if si == min(bys) and ms: sub9 = ms[0][2]
+                for x in range(len(ms)):
+                    for y in range(x + 1, len(ms)):
+                        (a0, a1, ea), (b0, b1, eb) = ms[x], ms[y]
+                        if ea == eb or a1 > b0 or cn[ea] == cn[eb] or not (12 < b0 - a1 <= 30): continue
+                        mw = [w.lower() for w in S9[si][a1:a1 + 6]] + ['...'] + [w.lower() for w in S9[si][b0 - 6:b0]]
+                        R.append((di, cn[ea], cn[eb], ' '.join(mw), mw[-1], b0 - a1, (ea, eb) in lab, f"{cn[ea]} ... {cn[eb]}"))
+                if si + 1 in bys:
+                    for (a0, a1, ea) in ms[-3:]:
+                        for (b0, b1, eb) in sorted(bys[si + 1])[:3]:
+                            if ea == eb or cn[ea] == cn[eb] or b0 > 15: continue
+                            mw = [w.lower() for w in S9[si][a1:a1 + 8]] + ['<s>'] + [w.lower() for w in S9[si + 1][:b0]]
+                            R.append((di, cn[ea], cn[eb], ' '.join(mw), mw[-1], 13 + len(mw), (ea, eb) in lab, f"{cn[ea]} <s> {cn[eb]}"))
+                if sub9 is not None and si != min(bys) and S9[si] and S9[si][0].lower() in ('he', 'she', 'it', 'they', 'his', 'her', 'its', 'their'):
+                    for (b0, b1, eb) in ms[:4]:
+                        if eb == sub9 or cn[eb] == cn[sub9] or b0 > 15: continue
+                        mw = ['<pron>'] + [w.lower() for w in S9[si][1:b0]]
+                        R.append((di, cn[sub9], cn[eb], ' '.join(mw), mw[-1], 13 + len(mw), (sub9, eb) in lab, f"{cn[sub9]} <pron> {cn[eb]}"))
     _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1, PRD=PRD)
     print(f"  [PREMISES AT SCALE] distant set read: {_PM['ND']} documents, {len(R)} records ({time.time() - t0:.0f} s)", flush=True)
 
@@ -267,7 +289,35 @@ def premises_readout(model, cfg, S_slot, vis):
             uT = np.array([usew(RD[i], ('d', RD[i][0])) for i in trI]); okT = ~np.isnan(uT)
             if okT.sum() >= 200:
                 hi_, lo_ = np.quantile(uT[okT], 0.8), np.quantile(uT[okT], 0.5); ps9 = [i for i, u in zip(trI, uT) if u >= hi_]; ng9 = [i for i, u in zip(trI, uT) if u <= lo_]
+                kn9 = rv9 = 0
+                if int(getattr(cfg, 'inf_premises_knowledge', 0)):            # 19 Nov kra13: every training record of a CONFIRMED real-text inference is a positive
+                    cfk = {frozenset(k) for k, w in (_PM.get('rti') or {}).items() if w.get('state') == 'confirmed'}   #   (offline: +0.004-0.006 AUC, steady)
+                    kp9 = [i for i in trI if frozenset((RD[i][1], RD[i][2])) in cfk]; kn9 = len(kp9); ngs = set(ng9)
+                    ps9 = sorted(set(ps9) | set(kp9)); ng9 = [i for i in ng9 if i not in set(kp9)]
+                if int(getattr(cfg, 'inf_premises_reverb', 0)):               # 19 Nov kra13: ReVerb relation phrases (verb / verb + preposition / verb + words +
+                    try:                                                       #   preposition, used with 10+ distinct name pairs) as extra positives (offline: phrase
+                        import spacy                                           #   recall 0.111 -> 0.181 at no AUC cost)
+                        nlp8 = _PM.get('nlp_pos') or spacy.load('en_core_web_sm', disable=['parser', 'ner', 'lemmatizer']); _PM['nlp_pos'] = nlp8
+                        phr = [i for i in trI if RD[i][5] >= 2 and not _rret_listlike(RD[i]) and '(' not in RD[i][3]]
+                        pbm = collections.defaultdict(set)
+                        for i in phr: pbm[RD[i][3]].add(frozenset((RD[i][1], RD[i][2])))
+                        cm8 = [m for m, v in pbm.items() if len(v) >= int(getattr(cfg, 'inf_premises_reverb', 10))]; ok8 = set()
+                        for m, dd in zip(cm8, nlp8.pipe(cm8, batch_size=1024)):
+                            tg = [t.pos_ for t in dd]
+                            if tg and tg[0] in ('VERB', 'AUX') and (len(tg) == 1 or (len(tg) == 2 and tg[1] in ('ADP', 'PART')) or (tg[-1] == 'ADP' and all(t in ('NOUN', 'ADJ', 'ADV', 'PRON', 'DET', 'VERB', 'AUX', 'PROPN', 'PART') for t in tg[1:-1]))): ok8.add(m)
+                        ngs = set(ng9); rvp = [i for i in phr if RD[i][3] in ok8 and i not in ngs]; rv9 = len(rvp); ps9 = sorted(set(ps9) | set(rvp))
+                    except Exception as e8: _fail('inference.premises:reverb'); msg.append(f"REVERB unavailable ({type(e8).__name__}: {e8})"[:120])
                 clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
+                for _ in range(int(getattr(cfg, 'inf_premises_mi', 0))):      # 19 Nov kra13: MULTI-INSTANCE ('at least one'): a positive pair keeps only its mention the reader
+                    sc8 = clf.decision_function(hv.transform([txw(RD[i]) for i in ps9])); bag = {}   #   scores highest (offline: pair AUC 0.654 -> 0.664, phrase recall +1/3)
+                    for i, v8 in zip(ps9, sc8):
+                        k8 = frozenset((RD[i][1], RD[i][2]))
+                        if k8 not in bag or v8 > bag[k8][1]: bag[k8] = (i, v8)
+                    ps9 = sorted(v[0] for v in bag.values()); clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced')
+                    clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
+                if float(getattr(cfg, 'inf_rcode_reader', 0.0)) > 0:          # the reader's score for every store record (the compressed fact table's graph, kra13)
+                    _PM['rdscore'] = np.concatenate([clf.decision_function(hv.transform([txw(RD[i]) for i in range(j, min(nD, j + 200000))])) for j in range(0, nD, 200000)])
+                if kn9 or rv9: msg.append(f"READER TEACHING: + {kn9} records of confirmed inferences, + {rv9} ReVerb phrase records, multi-instance rounds {int(getattr(cfg, 'inf_premises_mi', 0))}")
                 def ev(L, own_of, yy):
                     sw = clf.decision_function(hv.transform([txw(r) for r in L])); dv_ = -np.array([r[5] for r in L], float)
                     uu = np.array([usew(r, own_of(r)) for r in L]); sn = ~np.isnan(uu); rk3 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
@@ -742,9 +792,11 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         ns = sorted(ns)
         if len(ns) > 60: ns = ns[:60]
         CAND.update(frozenset((ns[x], ns[y])) for x in range(len(ns)) for y in range(x + 1, len(ns)))
-    NI = {}; ia, ib = [], []
+    NI = {}; ia, ib = [], []; rq9 = float(getattr(cfg, 'inf_rcode_reader', 0.0)); rds9 = _PM.get('rdscore')   # 19 Nov kra13: the graph from the READER's top share
+    rthr9 = float(np.quantile(rds9, 1 - rq9)) if rq9 > 0 and rds9 is not None and len(rds9) == nD else None       #   (offline: top half sharpens the top 1% 0.17 -> 0.24)
     for i in range(nD):
         if HD[i] or RD[i][1] == RD[i][2] or frozenset((RD[i][1], RD[i][2])) in CAND: continue
+        if rthr9 is not None and rds9[i] < rthr9: continue
         ia.append(NI.setdefault(RD[i][1], len(NI))); ib.append(NI.setdefault(RD[i][2], len(NI)))
     NN = len(NI); G = csr_matrix((np.ones(len(ia), np.float32), (np.array(ia), np.array(ib))), shape=(NN, NN)); G = G + G.T; G.sum_duplicates(); G.data[:] = 1.0
     deg = np.asarray(G.sum(1)).ravel(); Gc = G.tocoo(); tot = float(G.sum())

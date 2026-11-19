@@ -755,6 +755,12 @@ class Config:
     inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
     inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
+    inf_premises_wide=0             #   19 Nov kra13: wider distant records - same sentence 13-30 words apart, next sentence, pronoun-led sentences (length field 13+)
+    inf_rcode_reader=0.0            #   19 Nov kra13 MODEL CHANGE: the compressed fact table's graph from the wording reader's top share of records (0 = all records)
+    inf_premises_knowledge=0        #   19 Nov kra13: the wording reader also taught by every record of a confirmed real-text inference
+    inf_premises_reverb=0           #   19 Nov kra13: ReVerb relation phrases (used with N+ distinct pairs) as extra reader positives (0 off; needs spaCy)
+    inf_premises_mi=0               #   19 Nov kra13: multi-instance rounds for the wording reader (a positive pair keeps its best-scored mention)
+    inf_distill_gated_conf=0        #   19 Nov kra13 readout: made-up composite answers AFTER the memory's exact-name gate
     inf_premises_e2e=0              #   19 Nov kra11 readout: END-TO-END real text - the reader's kept slice (wording, usefulness, parser) composed A-C through shared names, scored on gold
     inf_premises_parse=0            #   19 Nov kra10 readout: the same reader on spaCy dependency paths (N pseudo-labelled records a class; 0 off; needs en_core_web_sm)
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values

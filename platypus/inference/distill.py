@@ -1617,9 +1617,18 @@ def _dw_chain_conf(model, S_slot, T9, H9, vis):
         th = float(np.quantile([x[2] for x in rt], 0.95)); ps = lambda L: [x for x in L if x[2] <= th]
         gt = (f" || CONFIDENCE GATE (bits/byte <= {th:.2f}, keeps 95% of taught): held back answered {len(ps(rh))}/{len(rh)} right {m_(ps(rh), 1)} | "
               f"novel made-up chains passing {np.mean([x[0] and x[2] <= th for x in rn]):.2f}")
+    gq = ''
+    try:                                                                       # 19 Nov kra13 READOUT: composite answers THROUGH THE MEMORY'S EXACT-NAME GATE - the answer is
+        WRg = model.__dict__.get('_rm_written') or {}; ws9 = {(A, r) for (r, A, C) in WRg}   #   given only when (subject, relation) has a written composite; a novel subject
+        gate = lambda e, novel=False: ((e['A'][::-1].title() if novel else e['A']), e['r']) in ws9   #   never has one, so the trunk's made-up chain is never shown
+        nvg = [gate(e, True) for e in (T9 + H9)[:60]]; tg_ = [gate(e) for e in T9[:60]]; hg_ = [gate(e) for e in H9[:60]]
+        gq = (f" || THROUGH THE MEMORY'S EXACT-NAME GATE: novel subjects answered {np.mean(nvg) if nvg else float('nan'):.2f} (made up after the gate: "
+              f"{np.mean([g and x[0] for g, x in zip(nvg, rn)]) if nvg and rn else float('nan'):.2f}) | taught answered {np.mean(tg_) if tg_ else float('nan'):.2f} | held back answered "
+              f"from the memory {np.mean(hg_) if hg_ else float('nan'):.2f} (the written composite; its precision is the writes' precision)")
+    except Exception as e9: gq = f" || GATE readout unavailable ({type(e9).__name__})"
     print(f"  [CHAIN FORM, MADE-UP CHAINS | visit {vis + 1}] the trunk's own answer (store and memory off): TAUGHT {len(rt)} well-formed chain {m_(rt, 0)}, right {m_(rt, 1)} | "
           f"HELD BACK {len(rh)} well-formed {m_(rh, 0)}, right {m_(rh, 1)} | NOVEL subjects (never read) {len(rn)} given a well-formed chain {m_(rn, 0)} (made up) | "
-          f"its confidence separates known from novel AUC {auc:.2f} (synthetic world: 0.93-0.95 made up after chain teaching; AUC 0.83-0.86)" + gt, flush=True)
+          f"its confidence separates known from novel AUC {auc:.2f} (synthetic world: 0.93-0.95 made up after chain teaching; AUC 0.83-0.86)" + gt + gq, flush=True)
 
 
 @torch.no_grad()
