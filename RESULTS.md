@@ -4998,3 +4998,8 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - Reading real text: the best label-free reader (taught by usefulness over time) is AUC 0.63-0.67 on gold relations; it learns comma and bracket forms more than phrases, and two thirds of labelled pairs never fall within its 12-word window. Substitution by the trunk, readers on the trunk's own states, a dependency parser, co-training, confirmation as a teacher, and several teachers combined (weak or strong) all failed to improve it.
 - End-to-end real-text inference: about 0.30-0.35 right from the reader's top 2% (random 0.13); 0.39 when composed from confirmed premises only (offline, small yield).
 - No final summary (forgetting, final BPC) from the 18-19 November GPU builds yet; one seed throughout.
+
+### cg27a_kra12 GPU visit 4, remaining readouts (19 Nov, log at 21:46)
+- Route J at visit 4: first hop 0.95, composite **0.92**, pure 0.90, null 0.00; gate answers 0.88, right **1.00**; never-read families passing 0.05. Re-derive kept 85 (right 0.99), retracted 4 (2 right).
+- MADE-UP CHAINS: novel subjects given a chain **0.50** (28), the confidence gate passes 0.29 (kra11 visit 4: 0.16 / 0.10; kra9: 0.00-0.46 by visit). The trunk's chain answers for never-read names come and go between visits and builds; composite answers must come from the gated memory, not the trunk.
+- State reader 0.607 -> 0.601 (visits 2 -> 4): flat, as in kra11. Premise change as kra11 (same seed): new premise recorded 0.67 of 3 moves read, no composite updated yet.
