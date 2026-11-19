@@ -1379,7 +1379,7 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
                 try: kma_probe_twohop(model, cfg, K, S_slot, fs, vis)
                 except Exception as e8: print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_rulecomp', 0)):
-                try: kma_rule_compose(model, cfg, K, S_slot, fs, vis)
+                try: kma_rule_compose(model, cfg, K, S_slot, fs + (hf if int(getattr(cfg, 'inf_kmc_rulej_allrec', 0)) else []), vis)   # 19 Nov kra11: every RECORDED fact, held-back control too
                 except Exception as e8: print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
                 try: kma_compose_write(model, cfg, K, S_slot, fs, vis)

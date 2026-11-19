@@ -247,6 +247,7 @@ def premises_readout(model, cfg, S_slot, vis):
                 msg.append(f"SUBSTITUTION READER, benchmark records {int(ok.sum())} (gold-related {yb.mean():.3f}; {ns} swaps): GAIN bits/byte of B when A is swapped {a9(gv)} | "
                            f"B's own surprise {a9(-ov)} | distance {a9(dv)} | agreement (other documents) {a9(np.log1p(ag))} | gain + distance + agreement (ranks) {a9(rk2(gv) + rk2(dv) + rk2(np.log1p(ag)))}")
         except Exception as e: _fail('inference.premises:subst'); msg.append(f"SUBSTITUTION READER unavailable ({type(e).__name__}: {e})"[:160])
+    scE = {}
     if int(getattr(cfg, 'inf_premises_wording', 0)) and len(RB) >= 100 and nD >= 1000:   # 19 Nov kra9 SELF-TRAINED WORDING READER (label-free; labels for evaluation):
         try:                                                                   #   usefulness over time (would the stored pair predict the other name when one turns up
             from sklearn.feature_extraction.text import HashingVectorizer       #   again? hits minus misses, weighted by surprise) gives pseudo-labels on the store's
@@ -278,6 +279,10 @@ def premises_readout(model, cfg, S_slot, vis):
                     return (f"distance {a9(dv_)} | usefulness {a9(np.nan_to_num(uu, nan=-9.0))} | WORDING READER {a9(sw)} | wording + usefulness {a9(cb)} | "
                             f"pairs seen once: wording {a9(sw, ~sn)} (n {int((~sn).sum())})")
                 yB = np.array([bool(r[6]) for r in RB]); yD = np.array([bool(RD[i][6]) for i in teI])
+                if int(getattr(cfg, 'inf_premises_e2e', 0)) and scd is not None:   # 19 Nov kra11: the reader's scores for every scored distant record (end-to-end readout below)
+                    swE = clf.decision_function(hv.transform([txw(RD[i]) for i in ixd])); uE = np.array([usew(RD[i], ('d', RD[i][0])) for i in ixd])
+                    rkE = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                    scE = {'WORDING READER': swE, 'WORDING + USEFULNESS': np.where(np.isnan(uE), rkE(swE) * 0.5, rkE(swE) + rkE(np.nan_to_num(uE, nan=-9.0)))}
                 msg.append(f"WORDING READER, self-trained from usefulness ({len(ps9)} / {len(ng9)} pseudo-labels; true related among them {np.mean([RD[i][6] for i in ps9]):.2f} / "
                            f"{np.mean([RD[i][6] for i in ng9]):.2f}, evaluation only) || benchmark records {len(RB)} (gold-related {yB.mean():.3f}): {ev(RB, lambda r: ('b', r[0]), yB)} || "
                            f"held-out distant records {len(teI)} (own-document labels {yD.mean():.3f}): {ev([RD[i] for i in teI], lambda r: ('d', r[0]), yD)}")
@@ -369,9 +374,10 @@ def premises_readout(model, cfg, S_slot, vis):
             for i in range(nD): dn[RD[i][1]].add(RD[i][0]); dn[RD[i][2]].add(RD[i][0])
             LAB = _PM['LAB']; res = []; amax = int(getattr(cfg, 'inf_premises_ac_max', 600000))
             sub = np.sort(np.random.RandomState(int(cfg.seed) + 4242).permutation(len(ixd))[:amax])   # a fixed sample of the scored store (time)
-            for k in ('random', 'trunk surprise', 'block association'):
-                for frac in (0.25, 0.10):
-                    keep = ixd[sub][np.argsort(-scd[k][sub])[:int(len(sub) * frac)]]; nb = collections.defaultdict(list); PR = collections.defaultdict(set); np_ = 0
+            sc3 = dict(scd); sc3.update(scE); E2 = bool(scE)
+            for k in (('random', 'trunk surprise', 'block association') + (tuple(scE) if E2 else ())):
+                for frac in ((0.25, 0.10, 0.02) if E2 else (0.25, 0.10)):
+                    keep = ixd[sub][np.argsort(-sc3[k][sub])[:int(len(sub) * frac)]]; nb = collections.defaultdict(list); PR = collections.defaultdict(set); np_ = 0
                     for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0])); nb[RD[i][2]].append((RD[i][1], RD[i][0]))
                     for i in keep:
                         if np_ > 3000000: break
