@@ -1585,7 +1585,41 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     try: _dw_relmod_answers(model, S_slot, old(T_), old(H_), par, mgr, truth, rw, vis)
     except Exception as e9:
         _fail('inference.distill:relmod_answers'); print(f"  [RELATIONAL MODULE WRITES, WHAT THE TRUNK ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+    if int(getattr(cfg, 'inf_distill_chainform', 0)) and int(getattr(cfg, 'inf_distill_chain_conf', 0)):
+        try: _dw_chain_conf(model, S_slot, [e for e in old(T_) if 'chain' in e], [e for e in old(H_) if 'chain' in e], vis)
+        except Exception as e9:
+            _fail('inference.distill:chain_conf'); print(f"  [CHAIN FORM, MADE-UP CHAINS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     return ents + T_, held + H_
+
+
+def _dw_chain_conf(model, S_slot, T9, H9, vis):
+    """19 Nov kra8 readout: does chain-form teaching make the TRUNK give made-up chains? (synthetic world: novel names given a well-formed chain
+    0.93-0.95 after chain teaching; its own confidence separated known from novel at AUC 0.83-0.86). The trunk's greedy answer (store and memory
+    off) for taught and held-back chain-form composites, and for NOVEL subjects (the subject's letters reversed: a name never read) asked the same
+    relation: share giving a well-formed chain 'B > C', share right (known), and the trunk's own confidence (bits per byte of its answer)"""
+    from platypus.inference.compress import _cg_auc, _cg_bits
+    def run(L, novel=False):
+        out = []
+        for e in L[:60]:
+            A = e['A'][::-1].title() if novel else e['A']; sl = int(S_slot(e['d'])); pr = f"{A} {e['r']} ".replace('  ', ' ').encode('latin-1', 'replace')
+            g = _dw_greedy(model, pr, sl, 40); pt = [x.strip() for x in g.split('>')]
+            q = pr + g.encode('latin-1', 'replace'); bits = _cg_bits(model, sl, [(q, len(pr), len(q))])[0] / max(1, len(q) - len(pr)) if len(q) > len(pr) else 9.0
+            out.append((len(pt) == 2 and all(pt), g.strip() == e['ans'].strip(), float(bits)))
+        return out
+    was = model.training; model.eval()
+    try: rt, rh, rn = run(T9), run(H9), run(T9 + H9, True)
+    finally: model.train(was)
+    m_ = lambda L, j: f"{np.mean([x[j] for x in L]):.2f}" if L else 'n/a'
+    kn = [x[2] for x in rt + rh]; nv = [x[2] for x in rn]
+    auc = _cg_auc(-np.array(kn), -np.array(nv)) if kn and nv else float('nan')
+    gt = ''
+    if len(rt) >= 5 and rn:                                                    # a confidence GATE on the trunk's chain, set label-free from the TAUGHT chains (keeps 95%)
+        th = float(np.quantile([x[2] for x in rt], 0.95)); ps = lambda L: [x for x in L if x[2] <= th]
+        gt = (f" || CONFIDENCE GATE (bits/byte <= {th:.2f}, keeps 95% of taught): held back answered {len(ps(rh))}/{len(rh)} right {m_(ps(rh), 1)} | "
+              f"novel made-up chains passing {np.mean([x[0] and x[2] <= th for x in rn]):.2f}")
+    print(f"  [CHAIN FORM, MADE-UP CHAINS | visit {vis + 1}] the trunk's own answer (store and memory off): TAUGHT {len(rt)} well-formed chain {m_(rt, 0)}, right {m_(rt, 1)} | "
+          f"HELD BACK {len(rh)} well-formed {m_(rh, 0)}, right {m_(rh, 1)} | NOVEL subjects (never read) {len(rn)} given a well-formed chain {m_(rn, 0)} (made up) | "
+          f"its confidence separates known from novel AUC {auc:.2f} (synthetic world: 0.93-0.95 made up after chain teaching; AUC 0.83-0.86)" + gt, flush=True)
 
 
 @torch.no_grad()

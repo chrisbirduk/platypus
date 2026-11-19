@@ -212,6 +212,41 @@ def premises_readout(model, cfg, S_slot, vis):
     ixb = np.arange(nD, nD + len(RB)); sbv = np.array([SB.get((r[0], r[1], r[2], r[7]), np.nan) for r in RB])
     if len(RB) >= 100 and np.isfinite(sbv).all():
         _, txt = pol(ixb, y[ixb], sbv); msg.append(f"PREMISES, benchmark records {len(RB)} (gold-related {y[ixb].mean():.3f}): {txt}")
+    if int(getattr(cfg, 'inf_premises_subst', 0)) and len(RB) >= 100:          # 19 Nov kra8 SUBSTITUTION READER (label-free; gold for evaluation): how much the TRUNK's
+        try:                                                                     #   prediction of B depends on A - bits on B's bytes with A as written vs A swapped for a
+            SS = _PM.setdefault('ss', {}); ns = int(getattr(cfg, 'inf_premises_subst', 0)); rr = np.random.RandomState(int(cfg.seed) + 99)   #   same-type name of another
+            pool = collections.defaultdict(list)                                 #   record (offline with a 192 x 3 stand-in: chance, AUC 0.51 - the stand-in knows no facts)
+            for r in RB: pool[r[10][0]].append(r[1])
+            todo = [i for i, r in enumerate(RB) if (r[0], r[1], r[2], r[7]) not in SS and r[7].startswith(r[1]) and r[7].endswith(r[2]) and len(r[7]) > len(r[1]) + len(r[2])]
+            bysl = collections.defaultdict(list)
+            for i in todo: bysl[int(S_slot(RB[i][8]))].append(i)
+            was = model.training; model.eval()
+            try:
+                for sl, ix in bysl.items():
+                    seqs = []
+                    for i in ix:
+                        r = RB[i]; tb = r[7].encode('latin-1', 'replace'); seqs.append((tb, len(tb) - len(r[2]), len(tb)))
+                        for _ in range(ns):
+                            pl = pool.get(r[10][0]) or pool[next(iter(pool))]; z = pl[rr.randint(len(pl))]
+                            if z == r[1]: z = pl[rr.randint(len(pl))]
+                            sb2 = (z + r[7][len(r[1]):]).encode('latin-1', 'replace'); seqs.append((sb2, len(sb2) - len(r[2]), len(sb2)))
+                    bits = _cg_bits(model, sl, seqs, bs=256)
+                    for k, i in enumerate(ix):
+                        v = bits[k * (ns + 1):(k + 1) * (ns + 1)]; SS[(RB[i][0], RB[i][1], RB[i][2], RB[i][7])] = (float(np.mean(v[1:]) - v[0]) / max(1, len(RB[i][2])), float(v[0]) / max(1, len(RB[i][2])))
+            finally: model.train(was)
+            ok = np.array([(r[0], r[1], r[2], r[7]) in SS for r in RB]); yb = np.array([bool(r[6]) for r in RB])[ok]
+            if ok.sum() >= 100 and 0 < yb.sum() < len(yb):
+                gv = np.array([SS[(r[0], r[1], r[2], r[7])][0] for r, k in zip(RB, ok) if k]); ov = np.array([SS[(r[0], r[1], r[2], r[7])][1] for r, k in zip(RB, ok) if k])
+                dv = -np.array([r[5] for r, k in zip(RB, ok) if k], float)
+                pdocs = collections.defaultdict(set)
+                for r in RD: pdocs[frozenset((r[1], r[2]))].add(('d', r[0]))
+                for r in RB: pdocs[frozenset((r[1], r[2]))].add(('b', r[0]))
+                ag = np.array([len(pdocs[frozenset((r[1], r[2]))] - {('b', r[0])}) for r, k in zip(RB, ok) if k], float)
+                rk2 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                def a9(v): o = np.argsort(-v); return f"AUC {_cg_auc(v[yb], v[~yb]):.3f} (top 10% {yb[o[:max(1, len(v) // 10)]].mean():.2f})"
+                msg.append(f"SUBSTITUTION READER, benchmark records {int(ok.sum())} (gold-related {yb.mean():.3f}; {ns} swaps): GAIN bits/byte of B when A is swapped {a9(gv)} | "
+                           f"B's own surprise {a9(-ov)} | distance {a9(dv)} | agreement (other documents) {a9(np.log1p(ag))} | gain + distance + agreement (ranks) {a9(rk2(gv) + rk2(dv) + rk2(np.log1p(ag)))}")
+        except Exception as e: _fail('inference.premises:subst'); msg.append(f"SUBSTITUTION READER unavailable ({type(e).__name__}: {e})"[:160])
     # ---- INFERENCE: A-C through a shared name, store kept by each policy (distant scored records; distant labels)
     if scd is not None:
         try:
