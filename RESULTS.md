@@ -4932,3 +4932,16 @@ The wording reader's top 10% (104,080 records, related 0.298); 32,352 of them ha
 | **Words between (backed off to the last word)** | 1,028 | **0.561** | **0.509** | **0.285** |
 - Grouping kept pairs by the words between already names the relation for about 29% of them (groups at least 60% one relation); purity 0.56 against 0.22 for one group. A usable start for typed real-text facts ('A was born in C'), better than expected.
 - The k-means rows ran out of memory (dense centres on 2^20 features) and were killed; the kra11 safety run was not affected. To rerun with smaller features (RN_BITS 16) once the safety runs are done.
+
+### Several teachers combined without labels (19 Nov, 21:05-21:20; tools/teachers_reader.py, distant 10k in blocks of 2k; own-document labels, base 0.139): COMBINING WEAK TEACHERS DOES NOT BEAT USEFULNESS ALONE
+Teachers voting +1 / -1 / abstain from what was read so far: USEFUL (usefulness over time), CONFIRM (another document states the pair in a relational wording: 1-8 words, not a list; recurs only in lists: -1), WORDING (functional wording +1; list -1), FAR (more than 8 words: -1). Student: logistic regression on the words between, scored on the next unread block.
+| Arm | AUC on unread blocks 1 -> 4 |
+|---|---|
+| **USEFUL ONLY** | **0.612 -> 0.634** (rises) |
+| Label model (Dawid-Skene, abstains not modelled) | 0.484 -> 0.494 |
+| Majority vote | 0.557 -> 0.554 |
+| Hand-written union of rules | 0.555 -> 0.569 |
+| Useful-voted records relabelled by the label model | 0.539 -> 0.571 |
+- The other teachers are weak or misleading as built here. True precision of their votes: CONFIRM +1 0.25, WORDING +1 0.19 (base 0.14); CONFIRM -1 (recurs only in lists) is right only 0.67-0.78 against a base of 0.86, so it points the wrong way. Usefulness: +1 0.45-0.55, -1 0.86-0.90.
+- The label model estimated usefulness's accuracy almost exactly (0.46 / 0.90 against 0.45 / 0.90) but misjudged the correlated teachers (all depend on the pair recurring) and turned them against the student. Modelling abstention as evidence made it worse: it learned 'recurs' as the related class (fixed by not modelling abstains).
+- Conclusion: combining teachers only helps when each teacher is individually strong and they are not all built on recurrence. The strong signals we have are the reader-scored relational confirmation (0.60-0.72, sparse) and the relational memory's fit (top slice 0.51 -> 0.64): a teacher set built from those, with a learning representation (trunk states), is the version worth testing. The cheap proxies used here are not.
