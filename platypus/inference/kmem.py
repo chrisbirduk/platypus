@@ -1150,13 +1150,31 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     X = Z[[NI[a] for a, b in pairs]]; Y = Z[[NI[b] for a, b in pairs]]
                     if shuffle: Y = Y[torch.randperm(len(Y), generator=torch.Generator().manual_seed(5)).to(Y.device)]
                     return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
+                HJ = int(getattr(cfg, 'inf_kmc_rulej_mlp', 0)); SNAP = int(getattr(cfg, 'inf_kmc_rulej_snap', 0)); DP = {n: k for k, n in enumerate(DN)}
+                if HJ:                                                         # 19 Nov kra7: a JEPA-style PREDICTOR per relation (MLP, InfoNCE over the recorded names' codes,
+                    Zd = Z.detach()                                            #   temperature 0.05) - the linear operator holds about D facts; the synthetic world showed the
+                    def fit(pairs, shuffle=False):                             #   MLP holds 2,200 (first hop 1.00) and its top-1 minus top-2 margin rejects unrecorded subjects
+                        g9 = torch.Generator().manual_seed(11); torch.manual_seed(11)
+                        net = torch.nn.Sequential(torch.nn.Linear(D9, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, D9)).to(Z.device)
+                        A_ = torch.tensor([NI[a] for a, b in pairs], device=Z.device); yb = torch.tensor([DP[b] for a, b in pairs], device=Z.device)
+                        if shuffle: yb = yb[torch.randperm(len(yb), generator=g9).to(yb.device)]
+                        o9 = torch.optim.Adam(net.parameters(), lr=1e-3)
+                        with torch.enable_grad():
+                            for _ in range(int(getattr(cfg, 'inf_kmc_rulej_mlp_steps', 1500))):
+                                k9 = torch.randint(0, len(A_), (min(256, len(A_)),), generator=g9).to(Z.device)
+                                l9 = F.cross_entropy(F.normalize(net(Zd[A_[k9]]), dim=-1) @ Zd[DI].t() / 0.05, yb[k9]); o9.zero_grad(); l9.backward(); o9.step()
+                        net.eval(); return net
+                    app = lambda O_, v: O_(v)
+                else: app = lambda O_, v: v @ O_
                 OP = {r: fit(p) for r, p in rel9.items() if len(p) >= 5}; ON = {r: fit(p, True) for r, p in rel9.items() if len(p) >= 5}
                 def comp(A, r3, O):
                     r1, r2 = rules[r3]
                     if r1 not in O or r2 not in O: return None
-                    v1 = Z[NI[A]] @ O[r1]; s1 = F.normalize(v1, dim=-1) @ Z[DI].t(); b1 = DN[int(s1.argmax())]
-                    v2 = v1 @ O[r2]; s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
-                    return b1, DN[int(s2.indices[0])], float(s2.values[0] - s2.values[1])
+                    with torch.no_grad():
+                        v1 = app(O[r1], Z[NI[A]]); s1 = (F.normalize(v1, dim=-1) @ Z[DI].t()).sort(descending=True); b1 = DN[int(s1.indices[0])]
+                        v2 = app(O[r2], Z[NI[b1]] if SNAP else v1); s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
+                    m2 = float(s2.values[0] - s2.values[1]); m1 = float(s1.values[0] - s1.values[1])
+                    return b1, DN[int(s2.indices[0])], (min(m1, m2) if HJ else m2)
                 oJ = {'b': [], 'c': [], 'pure': [], 'null': [], 'mr': [], 'mw': []}
                 for (d, l, r3, C) in tg:
                     x = comp(l, r3, OP)
@@ -1169,13 +1187,21 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     x = comp(l, r3, OP); mu.append(x[2] if x else 0.0)
                 auc = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in mu] for a_ in oJ['mr']]) if oJ['mr'] and mu else float('nan')
                 thr9 = float(getattr(cfg, 'inf_kmc_rulej_thr', 0.05))
+                if thr9 < 0:                                                   # 19 Nov: AUTO threshold, label-free - the 5th percentile of the single-hop margins of the
+                    sm = []                                                    #   RECORDED facts themselves (keeps 95% of what was recorded, as in the synthetic test)
+                    with torch.no_grad():
+                        for r, p in rel9.items():
+                            if r not in OP: continue
+                            for a, b in p[:200]:
+                                sv = (F.normalize(app(OP[r], Z[NI[a]]), dim=-1) @ Z[DI].t()).topk(2).values; sm.append(float(sv[0] - sv[1]))
+                    thr9 = float(np.quantile(sm, 0.05)) if sm else 0.05
                 cov = np.mean([m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']]) if oJ['mr'] or oJ['mw'] else float('nan')
                 pg = np.mean([1.0] * sum(m_ >= thr9 for m_ in oJ['mr']) + [0.0] * sum(m_ >= thr9 for m_ in oJ['mw'])) if any(m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']) else float('nan')
                 print(f"  [ROUTE J: JEPA-STYLE RELATIONAL MEMORY | visit {vis + 1}] {src}; one operator per relation on the trunk's name codes, fitted on {len(fs0)} RECORDED facts "
                       f"({len(OP)} relations); composites never planted, the bridge kept LATENT, C the nearest of {len(DN)} recorded names (chance {1 / max(1, len(DN)):.3f}) || "
                       f"first hop B {m(oJ['b'])} | COMPOSITE C {m(oJ['c'])} | PURE FAMILIES {m(oJ['pure'])} | NULL (operators fitted on shuffled facts) {m(oJ['null'])} || "
                       f"margin gate >= {thr9}: answers {cov:.2f}, right when answering {pg:.2f} | NEVER-READ families: margin >= gate {np.mean([x >= thr9 for x in mu]) if mu else float('nan'):.2f} (n {len(mu)}), "
-                      f"AUC right-vs-never-read {auc:.2f}", flush=True)
+                      f"AUC right-vs-never-read {auc:.2f} | predictor {'MLP ' + str(HJ) if HJ else 'linear'}{', B snapped' if SNAP else ''}, gate {thr9:.3f}", flush=True)
                 if int(getattr(cfg, 'inf_kmc_rulej_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
                     hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; why = {'margin': 0, 'same name': 0, 'B has no recorded r2 fact': 0}
                     for e in fs0:
