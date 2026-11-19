@@ -742,6 +742,7 @@ class Config:
     inf_kmc_rulej_mlp=0             #   19 Nov route J: hidden size of a per-relation MLP predictor (InfoNCE over recorded names); 0 = the linear operator
     inf_kmc_rulej_mlp_steps=1500    #   route J MLP: training steps per relation
     inf_kmc_rulej_snap=0            #   route J: snap the bridge B to the nearest recorded name before the second hop
+    inf_distill_chainform=0         #   19 Nov MODEL CHANGE: written composites taught and recalled in chain form 'A <relation> B > C.' (the bridge kept)
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values
     inf_kmc_rulecomp_clarify=0      #   readout: what route A uses (shuffled-table and plain-dictionary controls)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class

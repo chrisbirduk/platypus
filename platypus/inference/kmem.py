@@ -909,7 +909,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     src = 'LEARNED rules' if rules else 'ORACLE rules (none learned yet)'
     if not rules: rules = {ph['grand']: (ph['parent'], ph['parent']), ph['skip']: (ph['mgr'], ph['mgr'])}
     te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
-    by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = list(fs); fs0 = list(fs)
+    by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = [e for e in fs if 'chain' not in e]; fs0 = list(fs)   # 19 Nov: chain-form written composites are not recorded facts
     if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2:                         # mode 2: the pointer table also covers every rule-world PREMISE the model has READ
         fs += [{'d': d_, 'A': a_, 'r': ph[k_], 'ans': b_} for (d_, s_, k_, a_, b_) in W['planted'] if int(d_) in seen and k_ in ('parent', 'mgr')]   # (the memory is written on every byte of read text; only the decoding table is extended)
     for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
@@ -998,6 +998,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if sc[C] < thr or C == A or C == B1: continue
                 if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not gate9(A, B1, d1[B1]): ngt += 1; continue
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
+                model.__dict__.setdefault('_ra_bridge', {})[(r3, A, C)] = B1   # 19 Nov: the bridge, for chain-form teaching
                 m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)   # FIX (18 Nov, labelled): a subject with NO true composite (a middle
                 if m_ is not None and A in m_: ok_.append(C == m_.get(m_.get(A)))               #   name whose parent is a root) counts as WRONG, as in the relational module's line
         if int(getattr(cfg, 'inf_kmc_rulecomp_reverify', 0)) and RW:           # 18 Nov MODEL CHANGE (combined with the gate, by the user's decision): RE-VERIFY every
@@ -1129,6 +1130,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     if c_ not in known: why['C unknown'] += 1; continue
                     if len({A, b_, c_}) < 3: why['same name'] += 1; continue
                     if (r3, A, c_) not in RW: RW[(r3, A, c_)] = vis; nw += 1
+                    model.__dict__.setdefault('_ra_bridge', {})[(r3, A, c_)] = b_
                     m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
                     if m_ is not None and A in m_: ok_.append(c_ == m_.get(m_.get(A)))
                 print(f"  [ROUTE D WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {len(sj)} subjects with an r1 fact and no r3 fact (up to {int(getattr(cfg, 'inf_kmc_rulecomp_dwrite_n', 150))} asked); "
@@ -1235,6 +1237,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if len({e['A'], x[0], x[1]}) < 3: why['same name'] += 1; continue
                             if (x[0], r2) not in hasr: why['B has no recorded r2 fact'] += 1; continue
                             if (r3, e['A'], x[1]) not in RW: RW[(r3, e['A'], x[1])] = vis; nw += 1
+                            model.__dict__.setdefault('_ra_bridge', {})[(r3, e['A'], x[1])] = x[0]
                             m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
                             if m_ is not None and e['A'] in m_: ok_.append(x[1] == m_.get(m_.get(e['A'])))
                     print(f"  [ROUTE J WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {nw} new composites written ({len(RW)} so far) | refused: " + ", ".join(f"{k} {v}" for k, v in why.items())
