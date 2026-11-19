@@ -79,6 +79,22 @@ rep('ROUTE J: fit with everything else read (best frame)', sJ, ok)
 okf = ok & (sJf > -1e8)
 rep('ROUTE J: fit under the record\'s own link frame', sJf, okf)
 rep('ROUTE J (best frame) + agreement + distance (ranks summed)', np.nan_to_num(np.argsort(np.argsort(np.nan_to_num(sJ, nan=-1e9))) + np.argsort(np.argsort(np.log1p(agr))) + np.argsort(np.argsort(-dist)), nan=0.0), ok)
+if int(os.environ.get('SR_USE', 0)):                                       # 19 Nov: ROUTE 2 (usefulness over time) + ROUTE J fit, TWO STAGES, on the same records
+    nd_ = collections.defaultdict(set)
+    for r in R: nd_[r[1]].add(r[0]); nd_[r[2]].add(r[0])
+    def use_(r):
+        k = frozenset((r[1], r[2])); a_ = len(pd[k]) - 1; nA, nB = len(nd_[r[1]]) - 1, len(nd_[r[2]]) - 1
+        if not a_: return -1.0 - 0.01 * (nA + nB)
+        hA, hB = a_ / (nA + 2), a_ / (nB + 2); sA, sB = np.log(ND / (nA + 2)), np.log(ND / (nB + 2))
+        return max(hA * sB - (1 - hA) * 0.5, hB * sA - (1 - hB) * 0.5)
+    U = np.array([use_(r) if o else np.nan for r, o in zip(R, ok)])
+    P("2b. ROUTE 2 (usefulness over time) AND ROUTE J ON THE SAME RECORDS:")
+    rep('usefulness', U, ok)
+    rk_ = lambda v: np.argsort(np.argsort(np.nan_to_num(v, nan=-1e9))).astype(float)
+    rep('usefulness + ROUTE J fit (ranks summed)', rk_(U) + rk_(sJ), ok)
+    for q in (10, 20, 30):
+        th = np.nanquantile(U[ok], 1 - q / 100); st1 = ok & (U >= th)
+        rep(f'TWO STAGES: top {q}% by usefulness, then ROUTE J fit', sJ, st1)
 # ---- 3. inference and abstention
 rec = collections.defaultdict(set)
 for r in R: rec[r[1]].add(r[2]); rec[r[2]].add(r[1])
