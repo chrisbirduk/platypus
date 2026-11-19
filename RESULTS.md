@@ -4703,3 +4703,18 @@ After chain teaching, 100 taught and 100 never-taught people move to a city in a
 - False flags on unmoved people are 0.19-0.38. Re-deriving costs taught unmoved people 0.05-0.09 and gains never-taught unmoved people 0.13-0.15 (their single-hop premises are better than their chains after the move training).
 - Note: the move training itself degrades unmoved taught chains (1.00 before, 0.79-0.92 after): interference from teaching new premises.
 - Recall claim, not consolidation: the re-derived answer is produced at question time by two single-hop queries; it is not written back.
+
+### Writing back the re-derived composites (19 Nov, 17:00-17:30; CS_COTLATE_WRITEBACK 600, seeds 0 and 1): CONSOLIDATION WORKS ON ONE SEED ONLY
+The flagged people's re-derived chains ('A is a citizen of B2 > C2.') are taught for 600 steps (6 rows a batch, plus 2 replayed rows of the original chains of taught people 200-300), then the composite is asked directly with no check.
+
+| Group (seed 0 / seed 1) | As answered before | Re-derived at question time | Asked directly after write-back |
+|---|---|---|---|
+| Moved, taught | 0.19 / 0.53 | 0.93 / 0.85 | 0.78 / 0.43 |
+| Moved, never taught | 0.14 / 0.50 | 0.93 / 0.82 | 0.84 / 0.49 |
+| Unmoved taught, not replayed | 0.92 / 0.79 | - | 0.73 / 0.77 |
+| Unmoved never taught | 0.66 / 0.60 | - | 0.67 / 0.73 |
+| Unmoved taught, replayed | - | - | 1.00 / 0.99 |
+
+- Seed 0 consolidates (moved 0.14-0.19 to 0.78-0.84 when asked directly). Seed 1 does not (0.50-0.53 to 0.43-0.49): only 37-39% were flagged there, and the write-back did not hold the movers it did not flag.
+- Unreplayed composites lose 0.02-0.19, while replayed ones are kept at 0.99-1.00. Write-back needs replay of the other composites.
+- Verdict: the question-time check (retract and re-derive) is the reliable mechanism (0.82-0.93 on both seeds); consolidating it is not yet reliable. Next: write back every checked composite (flagged re-derived, unflagged as currently given), so unflagged movers and unmoved people are replayed too.

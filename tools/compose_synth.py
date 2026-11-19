@@ -329,6 +329,7 @@ if COTLATE:                                                                    #
                         f_ = len(pt) == 2 and pt[0] != bn; c0 = pt[-1]; c1 = gen(mm, f"{bn} lies in ").strip().rstrip('.').strip() if f_ else c0
                         fl.append(f_); r0.append(c0 == tc); r1.append(c1 == tc)
                         if f_: WB.append(f"{a} is a citizen of {bn} > {c1}.")
+                        elif int(os.environ.get('CS_COTLATE_WB_ALL', 0)) and len(pt) == 2: WB.append(f"{a} is a citizen of {pt[0]} > {c0}.")   # WB_ALL: unflagged chains too
                     return f"flagged {np.mean(fl):.2f} | right country: as answered {np.mean(r0):.2f} -> after retract and re-derive {np.mean(r1):.2f}"
                 WB = []
                 P(f"   [RETRACT] CHAIN form (label-free: chain bridge vs the model's current 'lives in'): MOVED taught {rr_(mv[:100], 1)} || MOVED never taught {rr_(mv[100:], 1)} || "
