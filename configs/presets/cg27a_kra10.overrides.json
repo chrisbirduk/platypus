@@ -245,5 +245,7 @@
  "inf_premises_wording": 1,
  "_inf_premises_wording": "kra9 readout: self-trained wording reader on the benchmark records",
  "inf_premises_states": 6000,
- "_inf_premises_states": "kra10 readout: the self-trained reader on the trunk's own states, at every premises readout (does it improve as the trunk learns?)"
+ "_inf_premises_states": "kra10 readout: the self-trained reader on the trunk's own states, at every premises readout (does it improve as the trunk learns?)",
+ "inf_premises_parse": 4000,
+ "_inf_premises_parse": "kra10 readout: the usefulness-taught reader on spaCy dependency paths (local 10k: words 0.630, words + path 0.644, top 1% 0.26 -> 0.45)"
 }

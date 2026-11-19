@@ -4821,3 +4821,17 @@ After each block, the reader is rebuilt from everything read so far and scored o
 | Two stages from the top 20% | 0.583 | 0.519 | 0.518 |
 - Route J's fit adds precision on the top slice: about 2% of these records (271) at 0.64, against usefulness's top 5% at 0.51. A second check helps, but stays well short of clean writes.
 - Labels here are ANY labels (favour pairs seen in many documents), so the absolute precision is optimistic; the comparison between rows is what holds.
+
+### Parser test (19 Nov, 19:05-19:15; tools/parse_reader.py, spaCy en_core_web_sm, distant 10k, own-document labels, base 0.133): PATHS ADD A LITTLE TO WORDS
+| Reader (self-trained from usefulness unless stated) | All held-out: AUC / top 1% / top 5% | Pairs seen once: AUC / top 1% |
+|---|---|---|
+| Distance | 0.559 / 0.07 / 0.16 | 0.546 / 0.08 |
+| Rule: not a coordination path | 0.510 | 0.521 |
+| Rule: shorter dependency path | 0.569 / 0.21 / 0.19 | 0.567 / 0.17 |
+| Words between the names | 0.630 / 0.26 / 0.30 | 0.618 / 0.26 |
+| Dependency path only | 0.619 / **0.49** / 0.29 | 0.618 / 0.28 |
+| **Words + path** | **0.644** / 0.45 / 0.30 | **0.637** / 0.30 |
+| Reference: words + path on TRUE labels | 0.768 / 0.77 / 0.61 | 0.761 / 0.72 |
+- The parser adds +0.014-0.019 AUC to words, and the very top slice gains most (top 1% 0.26 to 0.45). Coordination paths are not less related (0.147 vs 0.126): lists are not the main confusion.
+- The 30k run ran out of memory after parsing (174k sentences held as parsed documents); the 10k result stands.
+- By the user's decision, the parser reader goes into kra10 as a readout (inf_premises_parse 4000; the notebook installs spaCy and en_core_web_sm).
