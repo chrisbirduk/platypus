@@ -4877,3 +4877,10 @@ Tentative top 5% right 0.32-0.36 (base 0.14).
 - FADING IS NOT EVIDENCE OF FALSEHOOD: faded pairs are right 0.32-0.35, the same as tentative ones, because most pairs never recur (79% seen once). Treating faded as negatives teaches the reader that its own top picks are wrong, and it collapses below chance (0.46). Unconfirmed must stay unlabelled.
 - THE READER DOES NOT IMPROVE FROM CONFIRMATIONS with word-count features: positive-unlabelled refitting is flat or slightly down (0.61), usefulness plus confirmations equals usefulness alone (0.644 vs 0.648). The yield is too small (about 100-160 confirmations a block) and the features saturate (the ceiling with true labels is 0.80). Improvement by learning has to come from a representation that learns: the trunk's states (kra10's state reader curve).
 - Coverage cost: of about 47,000 tentative pairs, about 1,000 are confirmed; about 11,000 true pairs fade unconfirmed.
+
+### cg27a_kra9 GPU visit 6 (19 Nov, log at 19:57)
+- WORDING READER on the benchmark's gold (7775 records, base 0.203): **AUC 0.659, top 5% 0.51** (visits 2 / 4 / 6: 0.634 / 0.653 / 0.659); pairs seen once 0.659 / 0.50. Held-out distant 0.656. It keeps rising as it reads.
+- MADE-UP CHAINS back down: novel subjects given a chain **0.08** (50; visit 5: 0.46, visit 4: 0.00); confidence AUC **0.87**; the confidence gate passes **0.00**. Visit 5 was a spike, not a trend so far.
+- PREMISE CHANGE, MOVE READ (n 18): reader recorded NEW 0.50, OLD 0.39; route J composite NEW 0.11, OLD 0.33; written NEW 0.11, stale 0.28. The old premise still wins in the reader for about 40% of read moves (the kra11 fix targets this). Control (n 13): old 1.00, old composite 0.85.
+- RE-DERIVE: KEPT 87 (right 0.94), RETRACTED 2 (1 right). Writes 89, precision 0.94.
+- Route J at visit 6: composite 0.53, pure 0.53, null 0.00; gate answers 0.53, right when answering **0.92** (kra7 visit 6: 0.60 / 0.96). Slightly below kra7; the moved leaves (scored against their new truth) and recency fitting are the likely causes.
