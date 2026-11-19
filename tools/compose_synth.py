@@ -222,6 +222,30 @@ if OPJ:                                                                        #
                 cs.append(CN[int((F.normalize(Mc(Zt[ix[b1]]), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
                 nul.append(CN[int((F.normalize(Mc(F.normalize(Mls(Zt[ix[a]]), dim=-1)), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
         P(f"ROUTE J, MLP PREDICTOR (InfoNCE): first hop city {np.mean(h1):.2f} | COMPOSITE country {np.mean(cc):.2f} | with B SNAPPED {np.mean(cs):.2f} | NULL {np.mean(nul):.2f}  ({time.time() - T0:.0f}s)")
+        if int(os.environ.get('CS_OPJ_ABST', 0)):                              # 19 Nov ABSTENTION AT CAPACITY (CS_OPJ_ABST 1): the lives-in predictor refitted WITHOUT the
+            from sklearn.metrics import roc_auc_score                           #   facts of the last 100 held-out people (KNOWN to the trunk from pretraining, never RECORDED),
+            r9 = np.random.RandomState(99); NOV = []                            #   plus 200 NOVEL names never read anywhere; gate scores on the first hop (max cosine to a city,
+            while len(NOV) < 200:                                               #   top-1 minus top-2 margin, and the margin over the shuffled-fact predictor's max cosine)
+                n_ = ''.join(r9.choice(SY) for _ in range(2)).capitalize() + ' ' + ''.join(r9.choice(SY) for _ in range(3)).capitalize()
+                if n_ not in used and n_ not in NOV: NOV.append(n_)
+            ALL2 = ALL + NOV; Z2 = codes(ALL2).detach(); ix2 = {n_: k for k, n_ in enumerate(ALL2)}; Zt, ix = Z2, ix2
+            REC, UNR = HELDP[:100], HELDP[100:]; fitp = [(a, OLD[bi][0]) for a, bi in TRAINP + REC]
+            Ml2 = mlp_fit(fitp); Mls2 = mlp_fit(fitp, True); ci2 = torch.tensor([ix2[c] for c in CIT])
+            def gate(a):
+                with torch.no_grad():
+                    s_ = F.normalize(Ml2(Z2[ix2[a]]), dim=-1) @ Z2[ci2].t(); t2 = torch.topk(s_, 2).values
+                    n0 = (F.normalize(Mls2(Z2[ix2[a]]), dim=-1) @ Z2[ci2].t()).max()
+                return float(t2[0]), float(t2[0] - t2[1]), float(t2[0] - n0), CIT[int(s_.argmax())]
+            G = {k: [gate(a) for a in ([p for p, _ in v] if k != 'nov' else v)] for k, v in (('rec', REC), ('unr', UNR), ('nov', NOV))}
+            acc = lambda k, v: np.mean([g[3] == OLD[bi][0] for g, (_, bi) in zip(G[k], v)])
+            P(f"ROUTE J ABSTENTION AT CAPACITY: first hop right | RECORDED held-out people {acc('rec', REC):.2f} | KNOWN to the trunk, NOT recorded {acc('unr', UNR):.2f} (chance {1 / len(CIT):.3f})")
+            for j, nm in enumerate(('max cosine', 'top-1 minus top-2 margin', 'margin over the shuffled-fact null')):
+                rec_ = np.array([g[j] for g in G['rec']]); th = np.quantile(rec_, 0.05)
+                for k, lab in (('unr', 'known, not recorded'), ('nov', 'NOVEL names (never read)')):
+                    o_ = np.array([g[j] for g in G[k]])
+                    P(f"   gate {nm:36s} recorded vs {lab:26s} AUC {roc_auc_score(np.r_[np.ones(len(rec_)), np.zeros(len(o_))], np.r_[rec_, o_]):.3f} | "
+                      f"pass at the threshold keeping 95% of recorded: {np.mean(o_ >= th):.2f}")
+            P(f"   ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
     NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     for tag, fmt in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}.")):
