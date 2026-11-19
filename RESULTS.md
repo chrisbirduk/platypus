@@ -4957,3 +4957,22 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - As teachers over ALL records, RCONF and FIT are weak: +1 precision 0.22-0.23 and 0.22-0.34 (base 0.14). Their strength measured earlier (0.60-0.72 for confirmation, 0.64 for the fit check) was CONDITIONAL on the reader's own top picks: they are good second-stage FILTERS of what the reader already chose, not teachers of the reader. FIT's 'no shared neighbour' -1 covers about 80% of records at the base rate (0.87) and swamps the negatives.
 - The feedback loop (a better reader scoring the next confirmations) did not lift the reader: USEFUL + RCONF stays below usefulness alone at every round.
 - With today's tests together: usefulness is the one teacher that improves the reader with reading (0.612 -> 0.637 offline, 0.634 -> 0.659 on the GPU). Confirmation and fit belong in the pipeline as filters for what is kept and consolidated (kra12). Further gains in the reader have to come from its representation (trunk states: kra11's curve; a pretrained base: the Colab test).
+
+### What the reader misses (19 Nov, 21:25; tools/miss_reader.py; wording reader self-trained from usefulness, its top 10%; labels to analyse errors only)
+1. STRUCTURAL: of 294,904 labelled pairs in 20,000 documents, only **0.337 ever become a record** (two names within 12 words of one sentence); 0.577 are stated only ACROSS sentences, 0.086 in one sentence but further apart. By relation: country P17 0.28, citizenship P27 0.18, country of origin P495 0.14, birthplace P19 0.27 become records; date of birth P569 0.85, publication date P577 0.63. The reader never sees two thirds of the relations at all.
+2. RECALL of the top 10% (precision 0.256, recall 0.331 of related records):
+   - by words between: **1 word 0.70**, 2-3 words 0.19, 4-8 words 0.11, 9-12 words 0.04. It finds relations stated by adjacency or a comma and misses those stated by a phrase.
+   - by form: list-like 0.63 (commas: 'Paris, France'), verb or preposition 0.19, parenthesis 0.12.
+   - by relation: located in P131 0.58, publication date P577 0.67, date of birth P569 0.54, but **date of death P570 0.01**, citizenship P27 0.07, birthplace P19 0.11, country P17 0.28.
+   - by type pair: LOC-LOC 0.40, PER-TIME 0.36, but **PER-LOC 0.09**, ORG-LOC 0.14.
+   - recurrence: pairs seen once 0.30, seen in another document 0.40.
+3. Its errors: the top slice is dominated by ',' and '(' records (unrelated 70,655 + 18,640, related 18,026 + 12,087), mostly LOC-LOC and PER-PER lists. The MISSED related records are stated by short relational phrases: 'in' 5,719, '( born' 4,182, 'and' 2,453, 'of' 1,221, 'in the', 'state of', 'by', 'president', 'from'.
+- PATTERN: the reader has learned FORM (adjacent names joined by a comma or parenthesis: 'Paris, France', 'Smith (1950') and not MEANING. It misses relations stated with a preposition or verb ('born in', 'president of', 'died'), especially person-place relations, and it cannot see cross-sentence relations at all. The teacher explains it: usefulness rewards pairs that recur, and comma-adjacent geography and dates recur most.
+
+### cg27a_kra11 GPU to visit 4 (19 Nov, log at 21:25): ROUTE J READING EVERY RECORDED FACT JUMPS TO 0.93; THE STATE READER DOES NOT RISE
+- **ROUTE J at visit 4 with inf_kmc_rulej_allrec (the held-back control fifth of recorded facts included): first hop B 0.95, COMPOSITE C 0.93, pure families 0.90, null 0.04; gate answers 0.95, right when answering 0.97** (kra9 at visit 4: 0.78 / 0.61 / 0.67; answers 0.62). The missing first hops were facts the reader had recorded but the control held out of route J. Never-read families passing the gate 0.08 (kra9 0.04). Writes 90, precision 0.97; re-derive kept 88 (0.99), retracted 2 (both wrong).
+- STATE READER (benchmark gold): **0.592 at visit 2, 0.585 at visit 4** - not rising (word counts 0.634 -> 0.653). kra10's 0.646 at visit 2 was not repeated. The last-block states learn the text, not relations.
+- END-TO-END (combined reader, top 2%): premises 0.54 / 0.52, composed A-C right **0.349 / 0.316** (2,291 / 2,456 checkable; random about 0.13), as offline (0.30).
+- PREMISE CHANGE at visit 4 (n 3): reader recorded the NEW premise 0.67 (kra9 at visit 4: 0.33); no composite updated yet. Small n.
+- MADE-UP CHAINS: novel 0.16, the confidence gate passes 0.10.
+- The kra11 LOCAL safety run was killed by the memory limit at visit 5 (an analysis I ran alongside it; my mistake) after running every new part through visit 5 without errors; the GPU run is the check of its final figures.
