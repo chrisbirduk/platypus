@@ -4537,3 +4537,32 @@ kra6 visit 5:
 - **Automatic gate now works:** 0.058-0.062 (was 0.000). Never-read families passing fell from 1.00 to **0.22** (visit 4; AUC 0.77). Answers 0.13-0.24 of targets locally (few first hops are recorded here).
 - Chain form exercised: 2 written composites entered the pool in chain form ('A <relation> B > C'), both held back by the control hash; held-back chain recall 0.00 (n 1-2). Too few locally to judge chain teaching; the GPU decides.
 - Bug found and fixed: the route J diagnostics dict was named like route A's (dg), so route A's readout failed with KeyError in krj7b and kra7l (readout only; training unaffected). Renamed.
+
+### Self-consistency reader on real text (19 Nov, 06:20-07:30; tools/self_reader.py, distant 10k, held-out last 20% of documents, label-free; distant labels for evaluation only)
+
+**1. Cross-document agreement** (all 40,563 held-out records; base rate 0.151):
+
+| Score | AUC | Precision top 5% / 20% |
+|---|---|---|
+| Distance only | 0.560 | 0.161 / 0.184 |
+| Other documents recording the pair | 0.578 | **0.370** / 0.240 |
+| Agreement + distance | **0.611** | 0.379 / 0.242 |
+
+- Only 11.5% of held-out records appear in any other document, so agreement sharpens the top records but cannot lift the reader as a whole.
+
+**2. Route J on real records** (free name codes + an MLP predictor per link frame, InfoNCE, trained on 55,827 unlabelled training records; reproduces 0.79 of them). Scored on the 13,566 held-out records whose two names both occur in training (base rate 0.179):
+
+| Score (same records) | AUC | Precision top 5% / 20% |
+|---|---|---|
+| Distance only | 0.590 | 0.180 / 0.224 |
+| Cross-document agreement | **0.678** | **0.487** / 0.355 |
+| Route J: fit with everything else read | 0.606 | 0.426 / 0.304 |
+| Route J under the record's own link frame | 0.611 | 0.413 / 0.286 (n 4,956) |
+| Route J + agreement + distance (ranks summed) | 0.646 | 0.370 / 0.304 |
+
+- Route J's fit is a real but weak signal (top 5% at 2.4x the base rate); agreement is stronger where both apply. Neither is near 0.85.
+
+**3. Inference and abstention on real text: NEGATIVE.** Route J's top never-recorded object per subject and frame (111,700 proposals) is almost never a labelled pair: precision 0.0003-0.003 in every margin bin. The automatic gate (0.126) passes 12.5% of proposals at precision 0.0014.
+- On real text, route J does not infer new facts, and its margin gate would NOT stop false writes there. Route J writes must stay restricted to rule-based composition with recorded premises (as in kra6/kra7: a learned rule, both hops recorded), never free link prediction on real records.
+
+**Conclusion for the reader:** label-free signals from what else was read (agreement, route J fit) add a little at the top (precision 0.4-0.5 in the top 5%) but leave AUC at 0.61-0.68. Reaching about 0.85 needs a stronger signal: the trunk's own reading of the sentence (substitution reader, queued) or a GPU-scale trunk.
