@@ -5017,3 +5017,13 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - Knowledge-taught: a small, steady gain over usefulness alone (+0.004-0.006 AUC at every block from 5 on, top 10% 0.309 vs 0.301), from 952 confirmed pairs (right 0.67). The first loop in which what the system confirmed teaches its reader and the reader gets better; small so far.
 - Balanced teacher: phrase recall up (0.214 vs 0.165-0.183) at an AUC cost (-0.015). A trade, not a gain.
 - Combining the two drifts (its confirmations fall to 0.35 right) and is worse than either.
+
+### Does the reader feed inference? (19 Nov, 22:05; tools/rcode_reader.py, distant 20k; the package's compressed-fact-table method at 128 dimensions; distant labels, candidates base 0.133)
+Codes from the name x name graph of ALL records (as the package) or of the reader's top slice; candidates = pairs named together in held-out documents and never in the training graph.
+| Graph built from | Records | Candidates coded | AUC | Precision top 1% / 5% / 10% |
+|---|---|---|---|---|
+| All records (now) | 374,587 | 0.29 | 0.551 | 0.168 / 0.157 / 0.140 |
+| Reader top 50% | 187,294 | 0.27 | 0.557 | **0.243** / 0.168 / 0.131 |
+| Reader top 25% | 94,055 | 0.22 | 0.546 | 0.222 / 0.144 / 0.120 |
+| Reader top 10% | 57,346 | 0.18 | 0.550 | 0.231 / 0.135 / 0.115 |
+- A graph from the reader's top half sharpens the very top of the inferences (top 1% 0.24 vs 0.17) and keeps 93% of the coverage; narrower slices lose coverage without further gain. A small, cheap model change for kra13 (`inf_rcode_reader 0.5`).
