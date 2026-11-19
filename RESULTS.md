@@ -5027,3 +5027,10 @@ Codes from the name x name graph of ALL records (as the package) or of the reade
 | Reader top 25% | 94,055 | 0.22 | 0.546 | 0.222 / 0.144 / 0.120 |
 | Reader top 10% | 57,346 | 0.18 | 0.550 | 0.231 / 0.135 / 0.115 |
 - A graph from the reader's top half sharpens the very top of the inferences (top 1% 0.24 vs 0.17) and keeps 93% of the coverage; narrower slices lose coverage without further gain. A small, cheap model change for kra13 (`inf_rcode_reader 0.5`).
+
+### Where the reader fails: teacher or features? (19 Nov, 22:00-22:05; tools/reader_ceiling.py, distant 30k, held-out documents; labels used only to diagnose)
+1. Same features (words between), self-trained vs TRUE labels: comma / bracket / list 0.641 vs 0.768 (gap 0.126); short phrase 0.595 vs 0.726 (0.131); longer phrase 0.603 vs 0.700 (0.097); all 0.638 vs 0.741. **The teacher costs about 0.10-0.13 AUC in every form**, not only on phrases; the features themselves are weaker on phrases (0.70-0.73 even with true labels).
+2. The teacher (usefulness) by form: +1 precision 0.450 on comma-type records (base 0.174: 2.6x), **0.385 on phrases (base 0.104-0.136: 2.8-3.7x)**; -1 precision 0.86-0.93; it votes on only 9-13% of records. It is informative for phrases, but sparse and noisy.
+3. Learning curve on phrase records with true labels: 1k 0.599, 5k 0.638, 20k 0.671, 100k 0.703. The words-between features need many, clean labels.
+4. Features with true labels: words 0.741; **+ the names' types 0.796; + 3 words of context each side 0.772; + both 0.816** (phrases 0.778-0.803); + the names themselves 0.790. Types are the largest single gain. But SELF-TRAINED with types + context drops to 0.616 (from 0.638): richer features let the reader learn the teacher's bias (type pairs that recur, such as place-place) faster.
+- Summary: the reader loses about 0.10 to its teacher's noise everywhere and is capped near 0.74 by its features; types and context would lift the cap to about 0.82, but only with a teacher whose errors they cannot learn.
