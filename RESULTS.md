@@ -4806,3 +4806,8 @@ After each block, the reader is rebuilt from everything read so far and scored o
 - The wording reader is flat (0.646-0.654): bag-of-words features saturate early. Its ceiling with TRUE labels is 0.80, so the limit is the feature set, not the amount of pseudo-labelled data.
 - Co-training does NOT help: its added positives are only 0.19-0.30 related, and top-slice precision drifts down (0.35-0.37 to 0.28-0.31). The same failure as the agreement-seeded bootstrap (0.47).
 - For the reader to keep improving with reading, the wording representation itself must improve with reading: the trunk's own states (which do learn) rather than fixed word counts. That is a GPU readout: the wording reader on the trunk's hidden states between the names.
+
+### kra9 GPU, visit 2 (19 Nov, started 17:52 by the user before its local safety run; seed 4): THE WORDING READER BEATS DISTANCE ON THE BENCHMARK'S GOLD LABELS
+- WORDING READER, self-trained from usefulness (10,204 / 25,504 pseudo-labels; true related 0.44 / 0.10): **benchmark records (gold, base 0.205): AUC 0.634** (top 5% 0.40) vs distance 0.557, usefulness 0.508; pairs seen once 0.629. Held-out distant records (own-document labels): 0.654, with usefulness 0.658, as offline (0.646 / 0.672).
+- The first label-free reader signal that clearly beats distance on the benchmark's own gold relations (substitution in kra8: 0.519; trunk surprise 0.53).
+- Rule-world facts planted per domain include the moved leaves' new premises (inf_rule_world_move 0.15). No errors to visit 2.

@@ -281,6 +281,44 @@ def premises_readout(model, cfg, S_slot, vis):
                 msg.append(f"WORDING READER, self-trained from usefulness ({len(ps9)} / {len(ng9)} pseudo-labels; true related among them {np.mean([RD[i][6] for i in ps9]):.2f} / "
                            f"{np.mean([RD[i][6] for i in ng9]):.2f}, evaluation only) || benchmark records {len(RB)} (gold-related {yB.mean():.3f}): {ev(RB, lambda r: ('b', r[0]), yB)} || "
                            f"held-out distant records {len(teI)} (own-document labels {yD.mean():.3f}): {ev([RD[i] for i in teI], lambda r: ('d', r[0]), yD)}")
+                if int(getattr(cfg, 'inf_premises_states', 0)):                # 19 Nov kra9 STATE READER: the same pseudo-labels, but the reader reads the TRUNK'S OWN STATES
+                    import torch; from platypus.inference.closed_form import _ws_batch, _ws_run   #   (after A, mean over the words between, just before B; last block) instead of word counts.
+                    rr9 = np.random.RandomState(int(cfg.seed) + 31 + vis); nS = int(getattr(cfg, 'inf_premises_states', 0))   # Repeated at every premises readout: does the
+                    def txt9(r):                                                #   reader improve as the trunk learns? (offline 192 x 3 stand-ins at 6000 / 18000 steps)
+                        if len(r) > 7 and isinstance(r[7], str) and r[7].startswith(r[1]) and r[7].endswith(r[2]) and len(r[7]) > len(r[1]) + len(r[2]): return r[7]
+                        return f"{r[1]} {r[3]} {r[2]}".replace(' ,', ',').replace(' .', '.').replace(" 's", "'s")
+                    def feats(L, slot_of):
+                        out = np.zeros((len(L), 0), np.float32); cap = {}; h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach()))
+                        was = model.training; model.eval(); rows = {}
+                        try:
+                            by9 = collections.defaultdict(list)
+                            for i, r in enumerate(L): by9[slot_of(r)].append(i)
+                            for sl, ix in by9.items():
+                                for i0 in range(0, len(ix), 128):
+                                    ch = ix[i0:i0 + 128]; tb = [txt9(L[i]).encode('latin-1', 'replace')[-120:] for i in ch]; X, _ = _ws_batch(model, tb)
+                                    with torch.no_grad(): _ws_run(model, X, sl)
+                                    for j, i in enumerate(ch):
+                                        r = L[i]; b = tb[j]; la = min(len(b) - 1, max(0, len(r[1].encode('latin-1', 'replace')) - 1 - max(0, len(txt9(r).encode('latin-1', 'replace')) - 120)))
+                                        lb = max(la + 1, len(b) - len(r[2].encode('latin-1', 'replace'))) - 1; H = cap['h'][j].float()
+                                        rows[i] = torch.cat([H[la], H[la:lb + 1].mean(0), H[lb]]).cpu().numpy()
+                        finally: h9.remove(); model.train(was)
+                        return np.stack([rows[i] for i in range(len(L))])
+                    k9 = min(nS, len(ps9), len(ng9)); pS = [ps9[i] for i in rr9.choice(len(ps9), k9, replace=False)]; nN = [ng9[i] for i in rr9.choice(len(ng9), k9, replace=False)]
+                    tS = [teI[i] for i in rr9.choice(len(teI), min(len(teI), 2 * nS), replace=False)]
+                    sld = int(S_slot(seen[-1])) if seen else 0
+                    Ftr = feats([RD[i] for i in pS + nN], lambda r: sld); mu9, sd9 = Ftr.mean(0), Ftr.std(0) + 1e-6
+                    cS = LogisticRegression(C=0.1, max_iter=500, class_weight='balanced'); cS.fit((Ftr - mu9) / sd9, np.r_[np.ones(k9), np.zeros(k9)])
+                    FB = (feats(RB, lambda r: int(S_slot(r[8])) if len(r) > 8 else sld) - mu9) / sd9; FD = (feats([RD[i] for i in tS], lambda r: sld) - mu9) / sd9
+                    sB9, sD9 = cS.decision_function(FB), cS.decision_function(FD); yD9 = np.array([bool(RD[i][6]) for i in tS])
+                    swB = clf.decision_function(hv.transform([txw(r) for r in RB])); swD = clf.decision_function(hv.transform([txw(RD[i]) for i in tS]))
+                    def a8(v, yy):
+                        if yy.sum() == 0 or yy.sum() == len(yy): return 'n/a'
+                        o = np.argsort(-v); return f"AUC {_cg_auc(v[yy], v[~yy]):.3f} (top 5% {yy[o[:max(1, len(v) // 20)]].mean():.2f})"
+                    rk8 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                    _PM.setdefault('states_curve', []).append((vis + 1, _cg_auc(sB9[yB], sB9[~yB]) if 0 < yB.sum() < len(yB) else float('nan')))
+                    msg.append(f"STATE READER (the trunk's own states, last block; {k9} + {k9} pseudo-labelled training records) || benchmark records: STATES {a8(sB9, yB)} | word counts {a8(swB, yB)} | "
+                               f"states + words (ranks) {a8(rk8(sB9) + rk8(swB), yB)} || held-out distant {len(tS)}: STATES {a8(sD9, yD9)} | word counts {a8(swD, yD9)} | "
+                               f"states + words {a8(rk8(sD9) + rk8(swD), yD9)} || CURVE over readouts (visit: benchmark AUC): " + ", ".join(f"{v_}: {a_:.3f}" for v_, a_ in _PM['states_curve']))
         except Exception as e: _fail('inference.premises:wording'); msg.append(f"WORDING READER unavailable ({type(e).__name__}: {e})"[:160])
     # ---- INFERENCE: A-C through a shared name, store kept by each policy (distant scored records; distant labels)
     if scd is not None:
