@@ -295,11 +295,13 @@ def premises_readout(model, cfg, S_slot, vis):
                             for i, r in enumerate(L): by9[slot_of(r)].append(i)
                             for sl, ix in by9.items():
                                 for i0 in range(0, len(ix), 128):
-                                    ch = ix[i0:i0 + 128]; tb = [txt9(L[i]).encode('latin-1', 'replace')[-120:] for i in ch]; X, _ = _ws_batch(model, tb)
+                                    Lm = max(8, min(120, int(getattr(model.cfg, 'seq_len', 64)) - 1))   # _ws_batch keeps the FIRST seq_len bytes: cut from the left here
+                                    ch = ix[i0:i0 + 128]; fb = [txt9(L[i]).encode('latin-1', 'replace') for i in ch]; tb = [x[-Lm:] for x in fb]; X, _ = _ws_batch(model, tb)
                                     with torch.no_grad(): _ws_run(model, X, sl)
                                     for j, i in enumerate(ch):
-                                        r = L[i]; b = tb[j]; la = min(len(b) - 1, max(0, len(r[1].encode('latin-1', 'replace')) - 1 - max(0, len(txt9(r).encode('latin-1', 'replace')) - 120)))
-                                        lb = max(la + 1, len(b) - len(r[2].encode('latin-1', 'replace'))) - 1; H = cap['h'][j].float()
+                                        r = L[i]; b = tb[j]; ct = len(fb[j]) - len(b); H = cap['h'][j].float(); nH = H.shape[0]
+                                        lb = min(nH - 1, max(0, len(b) - len(r[2].encode('latin-1', 'replace')) - 1))
+                                        la = min(lb, max(0, len(r[1].encode('latin-1', 'replace')) - 1 - ct))
                                         rows[i] = torch.cat([H[la], H[la:lb + 1].mean(0), H[lb]]).cpu().numpy()
                         finally: h9.remove(); model.train(was)
                         return np.stack([rows[i] for i in range(len(L))])
