@@ -328,6 +328,44 @@ if COTLATE:                                                                    #
             P(f"   [X] PREMISES ONLY READ (new people, never taught or asked; n 75 each): " + " || ".join(byk))
             P(f"   [X] FALSE MEMORY: {f0} || {fm(mm, 'AFTER')}")
             P(f"   [X] FORGETTING: bits/byte on 64 fixed pretraining windows {b0:.3f} before -> {bpb(mm):.3f} after  ({time.time() - T0:.0f}s)")
+            if int(os.environ.get('CS_COTLATE_GATE', 0)):                     # 19 Nov CS_COTLATE_GATE: ANSWER COMPOSITES THROUGH THE GATED MEMORY - the trunk's chain answer
+                HR, HU = HELDP[:100], HELDP[100:200]                           #   is given only when the memory's gate opens for the subject. The store holds the TAUGHT
+                STORE = {a for a, _ in TP} | {a for a, _ in HR}                #   people (written chains) and RECORDED held-out people ('lives in' premise); the other
+                def miss(a):                                                   #   held-out people are known to the trunk but never recorded. NEAR-MISS names: a recorded
+                    f_, l_ = a.split(' '); r6 = np.random.RandomState(sum(map(ord, a)))   #   name with the last syllable of the family name changed (never read)
+                    for s in sorted(SY, key=len, reverse=True):
+                        if l_.endswith(s):
+                            while True:
+                                z = SY[r6.randint(len(SY))]
+                                if z != s and f"{f_} {l_[:-len(s)]}{z}" not in used: return f"{f_} {l_[:-len(s)]}{z}"
+                    return a + 'x'
+                NM = [miss(a) for a, _ in HR]; NM = [x for x in NM if x not in STORE]
+                @torch.no_grad()
+                def code(a, q):                                                # the trunk's code of the name: in the question (q) or as stored ('About A.')
+                    mm.eval(); s_ = (f"{a} is a citizen of " if q else f"About {a}.").encode('latin-1'); o_ = 1 if q else 7
+                    h = mm.hid(torch.tensor([[PAD] + list(s_)])[:, :L])[0]; mm.train(); return F.normalize(h[o_:o_ + len(a)].mean(0), dim=-1)
+                SK = sorted(STORE); KZ = torch.stack([code(a, 0) for a in SK])
+                cosq = lambda a: float((KZ @ code(a, 1)).max())
+                gr = {'TAUGHT': [(a, bi) for a, bi in TP[:100]], 'HELD-OUT RECORDED': HR, 'HELD-OUT NOT RECORDED (known to the trunk)': HU,
+                      'NOVEL (never read)': [(a, None) for a in NOV[:100]], 'NEAR-MISS of a recorded name (never read)': [(a, None) for a in NM]}
+                R_ = {}
+                for k, G in gr.items():
+                    rw = []
+                    for a, bi in G:
+                        g = gen(mm, f"{a} is a citizen of "); pt = [x.strip() for x in g.split('>')]; wf = len(pt) == 2 and pt[0] in CITN and pt[1] in CN
+                        rw.append((wf, bi is not None and wf and pt[1] == CN[OLD[bi][1]], a in STORE, cosq(a)))
+                    R_[k] = rw
+                thr = float(np.quantile([r[3] for r in R_['TAUGHT'] + R_['HELD-OUT RECORDED']], 0.05))
+                P(f"   [G] GATED ANSWERING (store: {len(TP)} taught + {len(HR)} recorded held-out; soft gate = cosine of the question's name code to the nearest stored name code, "
+                  f"threshold {thr:.3f} = 5th percentile of stored people):")
+                for k, rw in R_.items():
+                    wf, ok, hs, cs = (np.array([r[j] for r in rw]) for j in range(4)); so = cs >= thr
+                    if k in ('NOVEL (never read)', 'NEAR-MISS of a recorded name (never read)'):
+                        P(f"      {k:44s} n {len(rw):3d} | made-up chain: TRUNK {wf.mean():.2f} | EXACT-NAME GATE {(wf & hs).mean():.2f} | SOFT GATE {(wf & so).mean():.2f}")
+                    else:
+                        P(f"      {k:44s} n {len(rw):3d} | right country: TRUNK {ok.mean():.2f} | EXACT-NAME GATE {(ok & hs).mean():.2f} (answers {hs.mean():.2f}) | "
+                          f"SOFT GATE {(ok & so).mean():.2f} (answers {so.mean():.2f})")
+                P(f"      ({time.time() - T0:.0f}s)")
 if OPJ or COTLATE: P(f"DONE ({time.time() - T0:.0f}s)"); raise SystemExit
 if COT and REV:                                                                # BELIEF REVISION: 100 held-out people move to an old city in ANOTHER country
     mv = []
