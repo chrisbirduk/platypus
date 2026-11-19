@@ -4566,3 +4566,31 @@ kra6 visit 5:
 - On real text, route J does not infer new facts, and its margin gate would NOT stop false writes there. Route J writes must stay restricted to rule-based composition with recorded premises (as in kra6/kra7: a learned rule, both hops recorded), never free link prediction on real records.
 
 **Conclusion for the reader:** label-free signals from what else was read (agreement, route J fit) add a little at the top (precision 0.4-0.5 in the top 5%) but leave AUC at 0.61-0.68. Reaching about 0.85 needs a stronger signal: the trunk's own reading of the sentence (substitution reader, queued) or a GPU-scale trunk.
+
+### Chain teaching: premises only read, false memories, forgetting (19 Nov, 07:30-07:50; compose_synth CS_COTLATE_X 1, seed 0, pretrained checkpoint)
+
+Late chain teaching itself replicates (never taught B / C 0.85 / 0.83 at 300 steps, 0.87 / 0.85 at 3,000; direct teaching never taught 0.10 at every step).
+
+**1. PREMISES ONLY READ - the premise bottleneck is real.** 300 new people whose 'lives in' sentence is only read in the text stream during teaching (never taught, never asked), 75 per exposure level:
+
+| Read | Premise known (rank among 10) | Chain gives B / C |
+|---|---|---|
+| 1x | 0.25 | 0.00 / 0.08 |
+| 2x | 0.40 | 0.00 / 0.04 |
+| 4x | 0.45 | 0.01 / 0.11 |
+| 8x | 0.81 | 0.05 / 0.08 |
+
+- Chain decoding needs the premise RECALLED, not just recognised: at 8 reads the trunk picks the right city among 10 (0.81) but cannot produce it (chain B 0.05). The pretrained people (premise read 4x per pass over 12,000 steps) chain at 0.85.
+- On the GPU this is route D's first-step limit (premise recall 0.41-0.76). Chain teaching will pay off only for premises the trunk can generate: source replay / premise questions must come first.
+
+**2. FALSE MEMORY - A REAL RISK OF CHAIN TEACHING.** 200 NOVEL names never read anywhere, asked 'X is a citizen of':
+- Before chain teaching: 0.00 give a well-formed chain (the model rambles).
+- **After: 0.93 give a well-formed chain to a known city and country** (e.g. 'Beljo Selvenlin is a citizen of Morvenfi-qi > Petoryo') - a made-up premise and conclusion.
+- The model's own confidence (mean byte log-prob of its chain) separates known from novel people at AUC 0.83 after teaching (0.56 before): a usable but imperfect abstention signal.
+- For kra7: the dose is far smaller (route J writes, tens of composites, against 300 people x 3,000 steps here), and the GPU false-memory readouts will show any effect. A fix is queued: abstention rows for never-read names during chain teaching.
+
+**3. FORGETTING:** bits per byte on fixed pretraining windows 0.472 -> 0.493 (+0.021) after 3,000 steps of chain teaching with replay.
+
+### Bootstrapped reader seeded by cross-document agreement (BS_SEED agree, BS_NEG sametype, distant 10k): NEGATIVE
+- Seeds 2,302 records (0.39 labelled, 2.6x base). The classifier over the words between the names learns nothing that transfers: held-out AUC 0.47-0.47 over 4 rounds (distance 0.56).
+- Agreement is a property of the PAIR, not of the wording, so it does not teach a wording classifier. Agreement stays useful as a score, not as a teacher.
