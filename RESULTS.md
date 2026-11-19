@@ -4648,3 +4648,17 @@ After late teaching (3,000 steps), 100 taught and 100 never-taught people move t
 
 - Direct-taught composites never update (new country 0.02-0.03 on both seeds). Chain-taught composites update for 19% (seed 0) to 53% (seed 1) of taught people: better than direct, but seed-dependent and never complete.
 - Design conclusion unchanged: consolidated composites must be retracted and re-derived when a premise changes; chain teaching makes the trunk's own update partial, not reliable.
+
+### THREE HOPS (19 Nov, 12:00-12:18; CS_COTLATE_ARMS CHAIN3,DIRECT3, seed 0): CHAIN TEACHING EXTENDS TO THREE HOPS
+
+Continents are NEW facts ('C is part of K.', 20 countries -> 5 continents) taught as rows during late teaching; 300 people taught 'A is a resident of B > C > K.' (chain) or 'A is a resident of K.' (direct). Never-taught people (n 200) asked 'A is a resident of' (chance 0.20):
+
+| Steps | Chain: never taught B / C / K | Direct: never taught K | Taught (chain / direct) |
+|---|---|---|---|
+| 300 | 0.77 / 0.75 / **0.78** | 0.26 | 0.96 / 0.31 |
+| 750 | 0.78 / 0.72 / **0.76** | 0.18 | 1.00 / 0.32 |
+| 1,500 | 0.86 / 0.87 / **0.90** | 0.27 | 1.00 / 0.76 |
+| 3,000 | 0.85 / 0.84 / **0.90** | 0.24 | 0.98 / 0.96 |
+
+- Three-hop chain teaching transfers to never-taught people at 0.90, composing two pretrained premises with a fact learned only during teaching. Direct teaching learns the taught people (0.96) and transfers nothing (0.18-0.27, chance 0.20).
+- The same limits as two hops should apply (premises must be recallable; confabulation on novel names; revision partial) - not measured here.
