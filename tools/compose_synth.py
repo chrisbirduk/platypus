@@ -291,6 +291,21 @@ if COTLATE:                                                                    #
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
                 else: out.append(f"{s_}: taught {rank1(mm, cit(TP[:100], OLD), np.random.RandomState(9)):.2f} | NEVER TAUGHT {rank1(mm, cit(HELDP, OLD), np.random.RandomState(9)):.2f} (rank among 10)")
         P(f"   LATE TEACHING, {tag} form, {NT} people: " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
+        if int(os.environ.get('CS_COTLATE_REV', 0)):                           # 19 Nov CS_COTLATE_REV: BELIEF REVISION OF CONSOLIDATED COMPOSITES - 100 TAUGHT people and 100
+            r8 = np.random.RandomState(88); mv = []                             #   NEVER-TAUGHT people move to another city of a DIFFERENT country; only the new premise
+            for a, bi in TP[:100] + HELDP[:100]:                                 #   'A lives in B2.' is taught (8 rows a batch, 600 steps); the composite is never retaught.
+                bj = int(r8.randint(len(OLD)))                                  #   Does 'A is a citizen of' give the NEW country (chain) or the stale one (direct)?
+                while CN[OLD[bj][1]] == CN[OLD[bi][1]]: bj = int(r8.randint(len(OLD)))
+                mv.append((a, bi, bj))
+            mvs = [f"{a} lives in {OLD[bj][0]}." for a, bi, bj in mv]; r9_ = np.random.RandomState(SEED + 41)
+            for s_ in range(600): step(mm, op2, [mvs[r9_.randint(len(mvs))].encode('latin-1') for _ in range(8)] + win(PRES, B_ - 8, r9_))
+            def revq(G):
+                nw, st_ = [], []
+                for a, bi, bj in G:
+                    g = gen(mm, f"{a} is a citizen of "); c_ = g.split('>')[-1].strip(); nw.append(c_ == CN[OLD[bj][1]]); st_.append(c_ == CN[OLD[bi][1]])
+                return f"NEW country {np.mean(nw):.2f}, STALE {np.mean(st_):.2f}"
+            P(f"   [REV] {tag} form, after moving (new premise taught 600 steps): premise new city (rank among 10) {rank1(mm, liv([(a, bj) for a, bi, bj in mv], OLD), np.random.RandomState(9)):.2f} | "
+              f"TAUGHT people: {revq(mv[:100])} | NEVER-TAUGHT people: {revq(mv[100:])}  ({time.time() - T0:.0f}s)")
         if X_:
             byk = []
             for k in (1, 2, 4, 8):
