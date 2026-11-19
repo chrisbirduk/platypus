@@ -4770,3 +4770,24 @@ Held-out records = the last 20% of documents. Two label sets: ANY (the pair is l
 - Route 3 (conjunctions declared in advance) does not beat route 2 alone: best 0.39 (PMI >= 0.2 and agreement >= 1, 2% kept); the rest 0.23-0.27 at 11-14% kept. Rank sums with distance or repeats lower the top-slice precision.
 - AUC over all records stays 0.58-0.62: the reader is still weak. A 0.44-precise top slice is not clean enough to write facts from directly; it could be one stage, with route J's fit or the GPU substitution signal as a second.
 - Caveat: distant labels are incomplete, so true precision is likely higher than measured; the comparison between signals is what is reliable.
+
+### kra8 GPU, visit 2 (19 Nov, log at 17:40; 95 GB GPU, seed 4): SUBSTITUTION READER AT CHANCE SO FAR
+- SUBSTITUTION READER (benchmark records 2867, gold-related 0.191): gain AUC **0.519** (top 10% 0.22), B's own surprise 0.514, distance 0.566, agreement 0.505, combined 0.550. The GPU trunk at visit 2 knows little (one-hop recall about 0.16 at visit 2 in kra7); the readout repeats at visit 4.
+- Route J at visit 2 as in kra7: composite 0.44, pure families 0.60, null 0.06, gate answers 0.38 right 1.00, never-read pass 0.07.
+
+### Self-trained wording reader (19 Nov, 18:00-18:20; tools/wording_reader.py, label-free; own-document labels for evaluation)
+Route 2 (usefulness over time) TEACHES a wording model: on training documents, records of pairs seen in other documents get pseudo-labels (top 20% by usefulness = 1, bottom half = 0; true related share 0.42-0.46 vs 0.09-0.10). A logistic regression on the words between the names (unigrams, bigrams, last word, distance bucket, name shapes) is applied to held-out records, including pairs never seen elsewhere, where co-occurrence says nothing.
+
+| 50k documents (10k in brackets) | All held-out records (base 0.141) | Pairs NEVER seen elsewhere (79%; base 0.116) | Pairs seen elsewhere (base 0.234) |
+|---|---|---|---|
+| Distance | AUC 0.562 (0.563) | 0.548 | 0.566 |
+| Usefulness (route 2) | 0.596 (0.562) | - | 0.743 |
+| **Wording reader, self-trained (label-free)** | **0.646** (0.634) | **0.641**, top 1% 0.45 | 0.748 (0.759) |
+| **Wording + usefulness (ranks)** | **0.672** (0.650), top 1/2/5% 0.47/0.47/0.47 | - | - |
+| Reference: same features, TRUE labels (ceiling, not label-free) | 0.801 (0.791) | 0.795 | 0.822 |
+
+- The best label-free reader so far on ALL records: AUC 0.672 (previous best 0.61-0.65), and the first signal that works on pairs never seen in another document (0.641, top 1% 0.45 against a base of 0.12).
+- It learns sensible wordings: trusted 'capital', 'county', 'district', 'province', 'municipality', 'son', 'brother', 'his', "'s", 'dynasty'; distrusted 'during', 'countries', 'politician', 'ambassador', continent and country names in the gap (lists).
+- It improves with more reading (0.634 at 10k to 0.646 at 50k; combined 0.650 to 0.672).
+- The ceiling with true labels on the same features is 0.80: about half the gap to supervision is closed by self-training. This also sizes route 6 (a labelled seed).
+- Caveat: pairs seen elsewhere can share boilerplate wording between training and held-out documents; the never-seen subset has no such overlap.
