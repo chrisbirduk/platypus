@@ -4477,3 +4477,19 @@ kra6 visit 5:
 - **Route J must become a higher-capacity memory before it scales:** a keyed or nonlinear associative memory, the JEPA predictor as an MLP, or random-feature expansion.
 - Snapping does not help when the first hop is wrong.
 
+
+**3. ROUTE J WITH AN MLP PREDICTOR (InfoNCE, hidden 1024, 3,000 steps; CS_OPJ_MLP 1) FIXES THE CAPACITY LIMIT. Two seeds.**
+
+| Held-out people (n 200), citizenship never taught | Linear, seed 0 | Linear, seed 1 | **MLP, seed 0** | **MLP, seed 1** |
+|---|---|---|---|---|
+| First hop, city among 300 | 0.04 | 0.08 | **1.00** | **1.00** |
+| Composite, country among 20 (chance 0.05) | 0.17 | 0.18 | 0.42 | 0.46 |
+| With B snapped to the nearest city | 0.10 | 0.13 | **1.00** | **1.00** |
+| Null (lives-in predictor fitted on shuffled facts) | 0.07 | n/a | 0.10 | 0.06 |
+
+- The MLP predictor on the trunk's own name codes holds all 2,200 person-city facts, where the linear operator held almost none.
+- Composed latently without snapping, the second hop reaches 0.42-0.46. Snapping B to the nearest recorded city first makes it exact (1.00). The null stays near chance.
+- What this claims and what it does not: the predictor is fitted on recorded facts, and snapping is a cleanup to a recorded name, so the composite is two memorised hops chained. A plain dictionary would also score 1.00 here. The result is that the model's own latent memory can now hold facts at this scale and compose them without ever seeing a composite. It is not evidence that the trunk composes.
+- Next: kra7 uses the MLP predictor with snapping for route J. The abstention gate still has to be checked at this capacity.
+
+**4. LATE CHAIN TEACHING, SEED 1 (replication).** Never taught B / C: 0.88 / 0.86 at 300 steps, 0.86 / 0.85 at 750, 0.85 / 0.82 at 1,500, 0.89 / 0.88 at 3,000 (taught C 0.99-1.00). It replicates seed 0 (0.81-0.88).
