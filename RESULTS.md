@@ -4981,3 +4981,20 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - CONFIRM AND CONSOLIDATE at visit 4 (the 600 tentative inferences written at visit 2, judged on the documents read since): **CONFIRMED 351, right 0.73** | still tentative 249, right 0.49 | faded 0 (fading starts at visit 6). Plain recurrence of the pair (evaluation): 497 of 600.
 - Only the confirmed enter the question pool: 238 taught, 113 held back (kra9 wrote 200 a readout at once, right about 0.71; kra12 consolidates 351 at 0.73 from 600 candidates).
 - Route J with every recorded fact (as kra11): composite 0.97 / 0.94 at visits 2 / 3, gate answers 0.82 / 0.86, right when answering 1.00.
+
+### Overnight tests started (19 Nov, 21:40; small-sample checks; full runs pending)
+- WIDER RECORDS (tools/wide_reader.py, 3,000 documents): labelled pairs covered by some record: near (current) 0.310 -> + far in the sentence 0.387, + next sentence 0.426, + pronoun-led 0.333, all four **0.511**. The self-trained reader on the new kinds: far AUC 0.581, next sentence 0.572, pronoun 0.510 (near 0.569); the top 10% of all records is 0.69 near records. Coverage rises by two thirds; the reader does little with the new kinds yet.
+- TEACHING MEANING (tools/teach_reader.py, 10,000 documents, blocks of 2,000): balancing the pseudo-labels across wording forms raises phrase recall at the last block (0.118 vs 0.060) but lowers AUC (0.604 vs 0.634); the knowledge-taught reader (every record of a confirmed pair positive) stays at or below usefulness alone (0.629) with fewer than 120 confirmed pairs. Small samples; the 50,000-document runs are pending.
+
+## Summary, 18-19 November (for the merge to main)
+
+**What now works (GPU, seed 4, one run each, templated rule world unless stated):**
+- Composition by a learned relational memory beside the trunk (route J): held-out composites 0.93-0.97 when it reads every recorded fact, gate-answered 0.82-0.95 at 0.97-1.00 precision, never-read families let through 0.03-0.08, shuffled-fact null at most 0.09. The trunk itself still answers held-back composites at 0.00.
+- Abstention and made-up answers: the memory's gates refuse questions about names never read; after chain-form teaching the trunk gives made-up chains to never-read names 0.00-0.16 at most visits (one spike 0.46), where a small synthetic trunk did so 0.93-0.95.
+- Belief revision (synthetic world, two seeds): check the chain's middle name against the current premise, re-derive, write every checked chain back: people who moved 0.14-0.53 -> 0.76-0.93 right. On the GPU a store defect (replay made the old parent look newest) was found and fixed; composites updating after a move are not yet shown there.
+- Real-text inferences confirmed before they are taught (`kra12`): confirmed 351 of 600 at the next readout, right 0.73 against 0.49 for the unconfirmed.
+
+**What does not work yet:**
+- Reading real text: the best label-free reader (taught by usefulness over time) is AUC 0.63-0.67 on gold relations; it learns comma and bracket forms more than phrases, and two thirds of labelled pairs never fall within its 12-word window. Substitution by the trunk, readers on the trunk's own states, a dependency parser, co-training, confirmation as a teacher, and several teachers combined (weak or strong) all failed to improve it.
+- End-to-end real-text inference: about 0.30-0.35 right from the reader's top 2% (random 0.13); 0.39 when composed from confirmed premises only (offline, small yield).
+- No final summary (forgetting, final BPC) from the 18-19 November GPU builds yet; one seed throughout.
