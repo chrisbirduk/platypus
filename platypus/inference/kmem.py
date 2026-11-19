@@ -1273,17 +1273,19 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
                         hasp = collections.defaultdict(set)
                         for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])
-                        g9 = {'read': [], 'ctl': []}
+                        g9 = {'read': [], 'ctl': [], 'readok': []}; fd9 = {a_: int(d_) for (d_, s_, k_, a_, b_) in W['planted'] if k_ in ('parent', 'mgr')}
                         for l, mv9 in MV.items():
                             r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']; r1 = ph[mv9['r1']]
                             if int(mv9['d']) not in seen or l not in NI or r3 not in rules: continue
                             x = comp(l, r3, OP); rec = hasp.get((l, r1), set()); wr = [c for (q, a, c) in RW if q == r3 and a == l]
+                            if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: g9['readok'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'],
+                                x is not None and x[1] == mv9['C_old'], x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))   # 19 Nov: the new parent's own family read too
                             g9['read' if mv9['d2'] in seen else 'ctl'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'], x is not None and x[1] == mv9['C_old'],
                                                                                x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))
                         def mm9(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
                         print(f"  [ROUTE J, PREMISE CHANGE | visit {vis + 1}] MOVED leaves (a new parent planted in another domain; truth after the move = the new family's root) || "
                               + " || ".join(f"{nm} (n {len(L)}): reader recorded NEW premise {mm9(L, 0)}, OLD {mm9(L, 1)} | route J composite NEW {mm9(L, 2)}, OLD {mm9(L, 3)}, passes gate {mm9(L, 4)} | "
-                                            f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
+                                            f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE READ AND THE NEW PARENT\'S FAMILY READ', g9['readok']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
             finally: K['tcode'] = old9 if old9 is not None else {}
         except Exception as e7: print(f"  [ROUTE J | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:120]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
