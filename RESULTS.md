@@ -4753,3 +4753,20 @@ As the write-back above, but every checked person's chain is taught: flagged one
 - Rewriting every checked composite also lifts never-taught unmoved people (0.60-0.66 to 0.76-0.82). Taught unmoved people are kept within 0.00-0.10 of before.
 - The label "not replayed" in the log is wrong for this variant: those people were checked, so their chains were written back.
 - Design: after a premise changes, re-check and rewrite every composite that depends on the changed name (via the stored bridge), not only those flagged.
+
+### High-precision reader and route 2, usefulness over time (19 Nov, 17:50-18:10; tools/prec_reader.py, distant 10k and 50k, label-free, distant labels for evaluation)
+Held-out records = the last 20% of documents. Two label sets: ANY (the pair is labelled in some document, which favours pairs seen in many documents) and DOC (labelled in the record's own document: no such bias; PR_Y doc). Precision at the top 1 / 2 / 5 / 10%:
+
+| Signal | 10k, any labels (base 0.151) | 50k, any labels (base 0.159) | **50k, own-document labels (base 0.141)** |
+|---|---|---|---|
+| Distance | 0.09 / 0.13 / 0.17 / 0.19 | 0.11 / 0.14 / 0.17 / 0.18 | 0.06 / 0.10 / 0.15 / 0.16 |
+| Agreement (other documents) | 0.48 / 0.44 / 0.38 / 0.33 | 0.55 / 0.51 / 0.43 / 0.37 | 0.40 / 0.37 / 0.30 / 0.26 |
+| Pair specificity (PMI-like) | 0.48 / 0.50 / 0.43 / 0.35 | 0.36 / 0.43 / 0.45 / 0.42 | 0.35 / 0.40 / 0.38 / 0.34 |
+| **ROUTE 2: usefulness over time** | 0.47 / 0.53 / 0.48 / 0.36 | 0.42 / 0.42 / 0.49 / 0.47 | **0.38 / 0.39 / 0.44 / 0.38** |
+| Route 2, online (earlier documents only) | 0.47 / 0.52 / 0.48 / 0.35 | 0.41 / 0.42 / 0.49 / 0.46 | 0.38 / 0.39 / 0.44 / 0.38 |
+
+- Route 2 (if this pair were stored, how often would it predict the name when A or B turns up again, minus the misses, weighted by the name's surprise) is the best label-free top-slice signal: 0.44 at the top 5% with unbiased labels, 3.1x the base rate. AUC 0.74 among records whose pair is seen elsewhere (21% of records at 50k). The online version (earlier documents only) is as good, so it can run while reading.
+- Reading 5x more raises agreement coverage (11.5% to 20.7% of records) and agreement's AUC (0.58 to 0.62, any labels).
+- Route 3 (conjunctions declared in advance) does not beat route 2 alone: best 0.39 (PMI >= 0.2 and agreement >= 1, 2% kept); the rest 0.23-0.27 at 11-14% kept. Rank sums with distance or repeats lower the top-slice precision.
+- AUC over all records stays 0.58-0.62: the reader is still weak. A 0.44-precise top slice is not clean enough to write facts from directly; it could be one stage, with route J's fit or the GPU substitution signal as a second.
+- Caveat: distant labels are incomplete, so true precision is likely higher than measured; the comparison between signals is what is reliable.
