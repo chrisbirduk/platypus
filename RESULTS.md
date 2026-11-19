@@ -5034,3 +5034,13 @@ Codes from the name x name graph of ALL records (as the package) or of the reade
 3. Learning curve on phrase records with true labels: 1k 0.599, 5k 0.638, 20k 0.671, 100k 0.703. The words-between features need many, clean labels.
 4. Features with true labels: words 0.741; **+ the names' types 0.796; + 3 words of context each side 0.772; + both 0.816** (phrases 0.778-0.803); + the names themselves 0.790. Types are the largest single gain. But SELF-TRAINED with types + context drops to 0.616 (from 0.638): richer features let the reader learn the teacher's bias (type pairs that recur, such as place-place) faster.
 - Summary: the reader loses about 0.10 to its teacher's noise everywhere and is capped near 0.74 by its features; types and context would lift the cap to about 0.82, but only with a teacher whose errors they cannot learn.
+
+### Readers per horizon, combined (19 Nov, 22:10; tools/horizon_reader.py, distant 20k, 1.46 M records; the user's idea)
+Horizons: H0 adjacent / comma / list (base 0.175), H1 short phrase (0.135), H2 longer phrase (0.104), H3 far in the sentence (0.093), H4 next sentence (0.077), H5 pronoun-led (0.142). Held-out documents:
+| Arm | AUC all | Top 10% precision (related found) | Within-horizon AUC H0 / H1 / H2 / H3 / H4 / H5 |
+|---|---|---|---|
+| One reader (horizon as a feature) | **0.616** | **0.202** (5,946) | 0.592 / 0.600 / 0.609 / 0.596 / 0.580 / 0.573 |
+| Per-horizon readers, combined by probability | 0.588 | 0.161 (4,735) | **0.619** / 0.603 / 0.611 / 0.598 / 0.578 / 0.511 |
+| Per-horizon readers, equal shares | 0.595 | 0.180 (5,296) | as above |
+- A specialist reader per horizon is slightly better inside the adjacent / comma horizon (0.619 vs 0.592) and equal elsewhere; the pronoun specialist is worse (too few pseudo-labels).
+- Combining them without labels loses: the per-horizon probabilities (Platt scaling on each horizon's own pseudo-labels) are not comparable across horizons - every horizon's pseudo-labels are 20% positive by construction, whatever its true rate - so the next-sentence horizon (base 0.077) floods the top. Calibrating horizons against each other needs a label-free estimate of each horizon's true rate; the natural one is the pair: evidence for the SAME pair from several horizons and documents (which confirmation already uses).
