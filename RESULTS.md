@@ -4842,3 +4842,8 @@ After each block, the reader is rebuilt from everything read so far and scored o
 - SUBSTITUTION READER at visit 4 (benchmark, 5764 records): gain AUC **0.515**, distance 0.573. Still chance at visit 4 (0.519 at visit 2): this route is closed. The wording reader (kra9 visit 2: 0.634) replaces it.
 - Trunk recall of taught written composites: 0.60 (5) / 0.86 (21) at visits 4 / 5 (kra7: 1.00 (7) / 0.77 (22)). Too few to tell whether source replay 16 slows the decay; visits 7-9 will.
 - Route J at visit 5 as in kra7: composite 0.58, pure families 0.63, null 0.02; gate answers 0.54, right 1.00; never-read pass 0.07.
+
+### cg27a_kra9 GPU to visit 3 (19 Nov, log at 18:51): RE-DERIVE RUNS CLEAN; THE FIRST MOVE READ WAS NOT RECORDED BY THE READER
+- ROUTE J WRITES 16 / 39 by visits 2 / 3, precision 0.94 / 0.97 (kra7 1.00; moved leaves count against the old truth until their move is read). Route J at visit 3: composite 0.58, pure 0.65, null 0.01, gate right 1.00, never-read pass 0.03.
+- ROUTE J RE-DERIVE (model change): KEPT 16 (right 1.00) / 39 (right 0.97); none rewritten or retracted. The re-derivation does not churn stable writes.
+- PREMISE CHANGE: control (move not yet read; n 7 / 17): reader recorded the OLD premise 1.00, route J and the written composite give the old answer 0.71 / 0.76 (correct before the move). MOVE READ (n 1, visit 3): the reader recorded the OLD premise only (new 0.00), so route J and the written composite stay stale. One case; visits 4-6 will show whether the reader takes up new premises at all. The name memory's material does keep the latest object per (subject, relation), so a miss here would point at the store not holding the new sentences, or at the fact pool keeping entries from earlier sleeps.
