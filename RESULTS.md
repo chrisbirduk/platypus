@@ -5003,3 +5003,17 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - Route J at visit 4: first hop 0.95, composite **0.92**, pure 0.90, null 0.00; gate answers 0.88, right **1.00**; never-read families passing 0.05. Re-derive kept 85 (right 0.99), retracted 4 (2 right).
 - MADE-UP CHAINS: novel subjects given a chain **0.50** (28), the confidence gate passes 0.29 (kra11 visit 4: 0.16 / 0.10; kra9: 0.00-0.46 by visit). The trunk's chain answers for never-read names come and go between visits and builds; composite answers must come from the gated memory, not the trunk.
 - State reader 0.607 -> 0.601 (visits 2 -> 4): flat, as in kra11. Premise change as kra11 (same seed): new premise recorded 0.67 of 3 moves read, no composite updated yet.
+
+### Overnight reader tests, full runs (19 Nov, 21:45-22:00)
+**Wider records** (tools/wide_reader.py, 20,000 documents, 1.46 M records): labelled pairs covered by some record: near (current) 0.316 -> + far in the sentence 0.395, + next sentence 0.434, + pronoun-led 0.339, **all four 0.520**. The self-trained reader (usefulness pseudo-labels over all kinds) on held-out documents: near AUC 0.622 (top 10% 0.24, base 0.131), far 0.597 (0.17, base 0.092), next sentence 0.580 (0.13, base 0.078), pronoun 0.569 (0.19, base 0.145). The new kinds roughly double the related pairs within reach at lower precision: worth reading, with confirmation as the filter.
+
+**Teaching meaning** (tools/teach_reader.py, 50,000 documents, blocks of 5,000; AUC on each unread block, blocks 1 -> 9):
+| Arm | AUC | Top 10% at block 9 | Phrase recall (2-12 words, not a list) | Person-place recall |
+|---|---|---|---|---|
+| USEFUL (now) | 0.625 -> 0.648 (best 0.653) | 0.301 | 0.165-0.183 | 0.098-0.126 |
+| BALANCED across wording forms | 0.593 -> 0.634 | 0.296 | **0.214** | 0.103-0.114 |
+| **KNOWLEDGE** (every record of a confirmed pair positive) | 0.625 -> **0.654 (best 0.658)** | **0.309** | 0.166-0.174 | 0.105-0.127 |
+| KNOWLEDGE + BALANCED | 0.593 -> 0.616 | 0.221 | 0.04-0.05 | 0.04-0.06 |
+- Knowledge-taught: a small, steady gain over usefulness alone (+0.004-0.006 AUC at every block from 5 on, top 10% 0.309 vs 0.301), from 952 confirmed pairs (right 0.67). The first loop in which what the system confirmed teaches its reader and the reader gets better; small so far.
+- Balanced teacher: phrase recall up (0.214 vs 0.165-0.183) at an AUC cost (-0.015). A trade, not a gain.
+- Combining the two drifts (its confirmations fall to 0.35 right) and is worse than either.
