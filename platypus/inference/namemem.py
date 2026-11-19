@@ -148,7 +148,13 @@ def _nm_material(model, cfg, S_, nmax=None):
         a = bytes(a); r = bytes(r).decode('latin-1', 'replace').strip()
         if not _nm_isname(a) or not _NM_REL.match(r): continue
         best = None                                                            # the latest object for this subject and relation (an update replaces)
-        for o, ix in objs.items():
+        if int(getattr(cfg, 'inf_nm_update_first', 0)):                        # 19 Nov kra11 FIX (kra9 GPU: a read premise change kept the OLD parent): replay re-sights old
+            for o, ix in objs.items():                                         #   objects, so 'last sighting' favours the old fact; the current object is the one INTRODUCED
+                o = bytes(o); ix = [x for x in ix if x < len(it)]              #   most recently (first sighting latest) among those seen at least inf_nm_min_seen times
+                if _nm_isname(o) and ix and len(set(ix)) >= max(1, mins) and (best is None or min(ix) > best[3]): best = (o, max(ix), len(set(ix)), min(ix))
+            if best is not None: best = best[:3]
+        else:
+          for o, ix in objs.items():
             o = bytes(o)
             if _nm_isname(o) and ix and ix[-1] < len(it) and (best is None or ix[-1] > best[1]): best = (o, ix[-1], len(set(ix)))
         if best is not None and best[2] >= mins: fx.append((best[2], best[1], a.decode('latin-1'), r, best[0].decode('latin-1'), it[best[1]]['d']))

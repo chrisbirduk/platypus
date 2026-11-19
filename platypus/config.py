@@ -739,6 +739,24 @@ class Config:
     inf_kmc_rulej_lam=0.1           #   route J: ridge
     inf_kmc_rulej_thr=0.05          #   route J: margin gate (nearest minus second-nearest name similarity)
     inf_kmc_rulej_write=0           #   18 Nov MODEL CHANGE: route J's gated composites are the relational module's writes
+    inf_kmc_rulej_mlp=0             #   19 Nov route J: hidden size of a per-relation MLP predictor (InfoNCE over recorded names); 0 = the linear operator
+    inf_kmc_rulej_mlp_steps=1500    #   route J MLP: training steps per relation
+    inf_kmc_rulej_snap=0            #   route J: snap the bridge B to the nearest recorded name before the second hop
+    inf_distill_chainform=0         #   19 Nov MODEL CHANGE: written composites taught and recalled in chain form 'A <relation> B > C.' (the bridge kept)
+    inf_premises_subst=0            #   19 Nov readout: substitution reader on the benchmark records (N swaps of A per record; 0 off)
+    inf_distill_chain_conf=0        #   19 Nov readout: made-up chains for novel subjects after chain-form teaching, and the trunk's confidence
+    inf_rule_world_move=0.0         #   19 Nov kra9: share of held-back rule-world leaves that MOVE (a new 'X is a child of M2' planted in another domain)
+    inf_kmc_rulej_recent=0          #   19 Nov kra9: route J fits each (subject, relation) on its MOST RECENTLY read answer only (belief revision by recency)
+    inf_kmc_rulej_reverify=0        #   19 Nov kra9 MODEL CHANGE: every earlier route J write re-derived each sleep; kept, REWRITTEN (new answer and bridge) or retracted
+    inf_premises_wording=0          #   19 Nov kra9 readout: self-trained wording reader (usefulness pseudo-labels) on the benchmark records
+    inf_premises_states=0           #   19 Nov kra9 readout: the same reader on the trunk's own states (N pseudo-labelled records a class; 0 off)
+    inf_nm_update_first=0           #   19 Nov kra11 FIX: the store's current object per (subject, relation) = the one introduced most recently (first sighting), seen 2+ times
+    inf_kmc_rulej_allrec=0          #   19 Nov kra11: the composition routes (route J) read every recorded fact, the held-back control fifth too
+    inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
+    inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
+    inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
+    inf_premises_e2e=0              #   19 Nov kra11 readout: END-TO-END real text - the reader's kept slice (wording, usefulness, parser) composed A-C through shared names, scored on gold
+    inf_premises_parse=0            #   19 Nov kra10 readout: the same reader on spaCy dependency paths (N pseudo-labelled records a class; 0 off; needs en_core_web_sm)
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values
     inf_kmc_rulecomp_clarify=0      #   readout: what route A uses (shuffled-table and plain-dictionary controls)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class

@@ -165,14 +165,17 @@ lie = lambda cities: [(f"{b} lies in ", CN[c], CN) for b, c in cities]
 P(f"synthetic world: {NC} countries, {len(OLD)} old cities (code = country's 80%), {len(TRAINP)} training people{' with implications' if IMPL else ' (NO implications)'}, "
   f"{len(HELDP)} held-out people | pretraining sentences {len(PRE)}, stream {len(PRES)} bytes | LM {NL} layers x {DW} x {LOOP} pass(es), {STEPS} steps, seed {SEED}")
 m = LM(); op = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.1); sch = torch.optim.lr_scheduler.OneCycleLR(op, 1e-3, total_steps=STEPS, pct_start=0.05)
-rr = np.random.RandomState(SEED + 1); ls = []
-for st in range(1, STEPS + 1):
+rr = np.random.RandomState(SEED + 1); ls = []; CK_ = os.environ.get('CS_CKPT', '')   # CS_CKPT: load the pretrained model if the file exists, else pretrain and save it
+if CK_ and os.path.exists(CK_): m.load_state_dict(torch.load(CK_)); P(f"   loaded {CK_}"); STEPS_RUN = 0
+else: STEPS_RUN = STEPS
+for st in range(1, STEPS_RUN + 1):
     ls.append(step(m, op, win(PRES, B_, rr), sch))
     if st % 1000 == 0 or st == STEPS:
         re_ = np.random.RandomState(7)
         P(f"   pretraining step {st}: {np.mean(ls[-200:]) / math.log(2):.3f} bits/byte | city's country {rank1(m, lie(OLD[:100]), re_):.2f} | person's city {rank1(m, liv(HELDP, OLD), re_):.2f} | "
           f"citizenship TAUGHT (training people) {rank1(m, cit(TRAINP[:100], OLD), re_):.2f} | IDEA 1 citizenship NEVER TAUGHT (held-out people) {rank1(m, cit(HELDP, OLD), re_):.2f}  ({time.time() - T0:.0f}s)"
           + (" || LEARNED DECOMPOSITION (greedy chain 'B > C'): taught B {:.2f} C {:.2f} | NEVER TAUGHT B {:.2f} C {:.2f}".format(*chain(m, TRAINP[:100], OLD), *chain(m, HELDP, OLD)) if COT else ""))
+if CK_ and not os.path.exists(CK_): torch.save(m.state_dict(), CK_)
 st0 = {k: v.clone() for k, v in m.state_dict().items()}
 if OPJ:                                                                        # 18 Nov ROUTE J IN THE SYNTHETIC WORLD: one linear operator per relation on the model's
     @torch.no_grad()                                                           #   name codes (mean final state over the name's bytes in 'About X.'), fitted on facts
@@ -199,17 +202,193 @@ if OPJ:                                                                        #
     P(f"ROUTE J (synthetic, {Z.shape[1]}-d codes, {len(ALL)} names): HELD-OUT people's citizenship never taught (n {len(HELDP)}) || first hop: city {np.mean(h1):.2f} (among {len(CIT)}) | "
       f"COMPOSITE country {np.mean(cc):.2f} (among {NC}; chance {1 / NC:.2f}), among ALL names {np.mean(call):.2f} | with B SNAPPED to the nearest city {np.mean(cs):.2f} | "
       f"NULL (lives-in operator fitted on shuffled facts) {np.mean(nul):.2f} | the model asked directly (rank among 10) {rank1(m, cit(HELDP, OLD), np.random.RandomState(9)):.2f}  ({time.time() - T0:.0f}s)")
+    if int(os.environ.get('CS_OPJ_MLP', 0)):                                   # HIGHER-CAPACITY ROUTE J: a JEPA-style PREDICTOR per relation (MLP, InfoNCE over the names'
+        Zt = Z.detach()                                                         #   codes, temperature 0.05) instead of one linear operator; the same composition and null
+        def mlp_fit(pairs, shuf=False, hid=int(os.environ.get('CS_OPJ_H', 1024)), steps=int(os.environ.get('CS_OPJ_STEPS', 3000))):
+            g_ = torch.Generator().manual_seed(11); net = nn.Sequential(nn.Linear(Zt.shape[1], hid), nn.GELU(), nn.Linear(hid, hid), nn.GELU(), nn.Linear(hid, Zt.shape[1]))
+            A_ = torch.tensor([ix[a] for a, b in pairs]); B9 = torch.tensor([ix[b] for a, b in pairs])
+            if shuf: B9 = B9[torch.randperm(len(B9), generator=g_)]
+            tgt = torch.unique(B9); pos = {int(t): k for k, t in enumerate(tgt)}; yb = torch.tensor([pos[int(b)] for b in B9]); o9 = torch.optim.Adam(net.parameters(), lr=1e-3)
+            for _ in range(steps):
+                k9 = torch.randint(0, len(A_), (256,), generator=g_); v = F.normalize(net(Zt[A_[k9]]) + Zt[A_[k9]] * 0, dim=-1)
+                l9 = F.cross_entropy(v @ Zt[tgt].t() / 0.05, yb[k9]); o9.zero_grad(); l9.backward(); o9.step()
+            return net
+        Ml = mlp_fit([(a, OLD[bi][0]) for a, bi in ppl]); Mc = mlp_fit([(b, CN[c]) for b, c in OLD]); Mls = mlp_fit([(a, OLD[bi][0]) for a, bi in ppl], True)
+        with torch.no_grad():
+            h1, cc, cs, nul = [], [], [], []
+            for a, bi in HELDP:
+                v1 = F.normalize(Ml(Zt[ix[a]]), dim=-1); b1 = CIT[int((v1 @ Zt[ci].t()).argmax())]; h1.append(b1 == OLD[bi][0])
+                cc.append(CN[int((F.normalize(Mc(v1), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
+                cs.append(CN[int((F.normalize(Mc(Zt[ix[b1]]), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
+                nul.append(CN[int((F.normalize(Mc(F.normalize(Mls(Zt[ix[a]]), dim=-1)), dim=-1) @ Zt[ki].t()).argmax())] == CN[OLD[bi][1]])
+        P(f"ROUTE J, MLP PREDICTOR (InfoNCE): first hop city {np.mean(h1):.2f} | COMPOSITE country {np.mean(cc):.2f} | with B SNAPPED {np.mean(cs):.2f} | NULL {np.mean(nul):.2f}  ({time.time() - T0:.0f}s)")
+        if int(os.environ.get('CS_OPJ_ABST', 0)):                              # 19 Nov ABSTENTION AT CAPACITY (CS_OPJ_ABST 1): the lives-in predictor refitted WITHOUT the
+            from sklearn.metrics import roc_auc_score                           #   facts of the last 100 held-out people (KNOWN to the trunk from pretraining, never RECORDED),
+            r9 = np.random.RandomState(99); NOV = []                            #   plus 200 NOVEL names never read anywhere; gate scores on the first hop (max cosine to a city,
+            while len(NOV) < 200:                                               #   top-1 minus top-2 margin, and the margin over the shuffled-fact predictor's max cosine)
+                n_ = ''.join(r9.choice(SY) for _ in range(2)).capitalize() + ' ' + ''.join(r9.choice(SY) for _ in range(3)).capitalize()
+                if n_ not in used and n_ not in NOV: NOV.append(n_)
+            ALL2 = ALL + NOV; Z2 = codes(ALL2).detach(); ix2 = {n_: k for k, n_ in enumerate(ALL2)}; Zt, ix = Z2, ix2
+            REC, UNR = HELDP[:100], HELDP[100:]; fitp = [(a, OLD[bi][0]) for a, bi in TRAINP + REC]
+            Ml2 = mlp_fit(fitp); Mls2 = mlp_fit(fitp, True); ci2 = torch.tensor([ix2[c] for c in CIT])
+            def gate(a):
+                with torch.no_grad():
+                    s_ = F.normalize(Ml2(Z2[ix2[a]]), dim=-1) @ Z2[ci2].t(); t2 = torch.topk(s_, 2).values
+                    n0 = (F.normalize(Mls2(Z2[ix2[a]]), dim=-1) @ Z2[ci2].t()).max()
+                return float(t2[0]), float(t2[0] - t2[1]), float(t2[0] - n0), CIT[int(s_.argmax())]
+            G = {k: [gate(a) for a in ([p for p, _ in v] if k != 'nov' else v)] for k, v in (('rec', REC), ('unr', UNR), ('nov', NOV))}
+            acc = lambda k, v: np.mean([g[3] == OLD[bi][0] for g, (_, bi) in zip(G[k], v)])
+            P(f"ROUTE J ABSTENTION AT CAPACITY: first hop right | RECORDED held-out people {acc('rec', REC):.2f} | KNOWN to the trunk, NOT recorded {acc('unr', UNR):.2f} (chance {1 / len(CIT):.3f})")
+            for j, nm in enumerate(('max cosine', 'top-1 minus top-2 margin', 'margin over the shuffled-fact null')):
+                rec_ = np.array([g[j] for g in G['rec']]); th = np.quantile(rec_, 0.05)
+                for k, lab in (('unr', 'known, not recorded'), ('nov', 'NOVEL names (never read)')):
+                    o_ = np.array([g[j] for g in G[k]])
+                    P(f"   gate {nm:36s} recorded vs {lab:26s} AUC {roc_auc_score(np.r_[np.ones(len(rec_)), np.zeros(len(o_))], np.r_[rec_, o_]):.3f} | "
+                      f"pass at the threshold keeping 95% of recorded: {np.mean(o_ >= th):.2f}")
+            P(f"   ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
     NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
-    for tag, fmt in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}.")):
+    KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
+    KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
+    for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
+                                 ('CHAIN3', lambda a, bi: f"{a} is a resident of {OLD[bi][0]} > {CN[OLD[bi][1]]} > {KC[CN[OLD[bi][1]]]}."),
+                                 ('DIRECT3', lambda a, bi: f"{a} is a resident of {KC[CN[OLD[bi][1]]]}."))
+                     if x[0] in os.environ.get('CS_COTLATE_ARMS', 'CHAIN,DIRECT').split(',')]:
         sents = [fmt(a, bi) for a, bi in TP]                                   #   24 replayed rows a batch); held-out people never taught
+        X_ = int(os.environ.get('CS_COTLATE_X', 0)) and tag == 'CHAIN'         # 19 Nov CS_COTLATE_X: (1) PREMISES ONLY READ - 300 NEW people whose 'lives in' sentence is
+        if X_:                                                                 #   only READ in the text stream 1 / 2 / 4 / 8 times during teaching (never taught, never asked);
+            r7 = np.random.RandomState(77); NEWP, NOV = [], []                 #   (2) FALSE MEMORY - 200 NOVEL names never read: do they get a made-up chain?; (3) FORGETTING -
+            def nn_():                                                         #   bits per byte on fixed pretraining windows before and after
+                while True:
+                    n_ = ''.join(r7.choice(SY) for _ in range(2)).capitalize() + ' ' + ''.join(r7.choice(SY) for _ in range(3)).capitalize()
+                    if n_ not in used: used.add(n_); return n_
+            for k in (1, 2, 4, 8): NEWP += [(nn_(), int(r7.randint(len(OLD))), k) for _ in range(75)]
+            NOV = [nn_() for _ in range(200)]
+            ABS_ = int(os.environ.get('CS_COTLATE_ABST', 0))                   # 19 Nov CS_COTLATE_ABST N: ABSTENTION ROWS - N other never-read names taught 'X is a citizen of ?.'
+            ABN = [f"{nn_()} is a citizen of ?." for _ in range(ABS_)]        #   (2 of the 8 taught rows a batch); NOV stays disjoint (held out for the false-memory test)
+            rd = [f"{a} lives in {OLD[bi][0]}." for a, bi, k in NEWP for _ in range(k)]; rd = [rd[i] for i in r7.permutation(len(rd))]
+            FW = win(PRES, 64, np.random.RandomState(5))
+            @torch.no_grad()
+            def bpb(m_):
+                m_.eval(); X = tens(FW); Xi = torch.cat([torch.full((len(FW), 1), PAD), X[:, :-1]], 1); l = F.cross_entropy(m_(Xi).reshape(-1, V), X.reshape(-1)); m_.train(); return float(l) / math.log(2)
+            @torch.no_grad()
+            def glp(m_, a):
+                g = gen(m_, f"{a} is a citizen of "); pb = f"{a} is a citizen of ".encode('latin-1'); q = pb + g.encode('latin-1', 'replace') + b'.'
+                X = tens([q]); Xi = torch.cat([torch.full((1, 1), PAD), X[:, :-1]], 1); m_.eval()
+                nl = -F.log_softmax(m_(Xi), -1).gather(-1, X[..., None])[0, :, 0]; m_.train()
+                pr = [x.strip() for x in g.split('>')]; return g, float(nl[len(pb):min(L, len(q)) - 1].mean()) if len(q) > len(pb) + 1 else 9.0, len(pr) == 2 and pr[0] in CITN and pr[1] in CN
+            CITN = {c for c, _ in OLD}
+            def fm(m_, tagx):
+                from sklearn.metrics import roc_auc_score
+                nv = [glp(m_, a) for a in NOV]; kn = [glp(m_, a) for a, bi in HELDP[:200]]
+                auc = roc_auc_score([1] * len(kn) + [0] * len(nv), [-x[1] for x in kn] + [-x[1] for x in nv])
+                return (f"{tagx}: NOVEL names given a well-formed chain to a known city and country {np.mean([x[2] for x in nv]):.2f} (held-out known people {np.mean([x[2] for x in kn]):.2f}) | "
+                        f"answer '?' (abstains): novel {np.mean([x[0].startswith('?') for x in nv]):.2f}, known {np.mean([x[0].startswith('?') for x in kn]):.2f} | "
+                        f"confidence (mean byte log-prob of its own chain) separates known from novel AUC {auc:.2f} | e.g. '{NOV[0]} is a citizen of {nv[0][0]}'")
+            m0 = LM(); m0.load_state_dict(st0); b0 = bpb(m0); f0 = fm(m0, 'BEFORE'); del m0
         mm = LM(); mm.load_state_dict(st0); mm.train(); op2 = torch.optim.AdamW(mm.parameters(), lr=3e-4, weight_decay=0.01); r2 = np.random.RandomState(SEED + 31); out = []
         for s_ in range(1, int(os.environ.get('CS_COTLATE_STEPS', 1500)) + 1):
-            step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8)] + win(PRES, B_ - 8, r2))
+            rx_ = [rd[(s_ - 1) // 2].encode('latin-1')] if X_ and s_ % 2 == 0 and (s_ - 1) // 2 < len(rd) else []
+            ab_ = [ABN[r2.randint(len(ABN))].encode('latin-1') for _ in range(2)] if X_ and ABN else []
+            if tag.endswith('3'): ab_ = [KF[r2.randint(len(KF))].encode('latin-1') for _ in range(2)]
+            step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
+                elif tag.endswith('3'):
+                    def h3(G):
+                        r_ = [[], [], [], []]
+                        for a, bi in G:
+                            g = gen(mm, f"{a} is a resident of ", 64); pt = [x.strip() for x in g.split('>')]; tr = [OLD[bi][0], CN[OLD[bi][1]], KC[CN[OLD[bi][1]]]]
+                            if tag == 'CHAIN3': r_[0].append(len(pt) == 3 and pt[0] == tr[0]); r_[1].append(len(pt) == 3 and pt[1] == tr[1]); r_[2].append(len(pt) == 3 and pt[2] == tr[2])
+                            r_[3].append(pt[-1] == tr[2])
+                        return ' '.join(f"{nm} {np.mean(v):.2f}" for nm, v in zip(('B', 'C', 'K', 'final answer K'), r_) if v)
+                    out.append(f"{s_}: taught {h3(TP[:100])} | NEVER TAUGHT {h3(HELDP)} (chance K 0.20)")
                 else: out.append(f"{s_}: taught {rank1(mm, cit(TP[:100], OLD), np.random.RandomState(9)):.2f} | NEVER TAUGHT {rank1(mm, cit(HELDP, OLD), np.random.RandomState(9)):.2f} (rank among 10)")
         P(f"   LATE TEACHING, {tag} form, {NT} people: " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
+        if int(os.environ.get('CS_COTLATE_REV', 0)):                           # 19 Nov CS_COTLATE_REV: BELIEF REVISION OF CONSOLIDATED COMPOSITES - 100 TAUGHT people and 100
+            r8 = np.random.RandomState(88); mv = []                             #   NEVER-TAUGHT people move to another city of a DIFFERENT country; only the new premise
+            for a, bi in TP[:100] + HELDP[:100]:                                 #   'A lives in B2.' is taught (8 rows a batch, 600 steps); the composite is never retaught.
+                bj = int(r8.randint(len(OLD)))                                  #   Does 'A is a citizen of' give the NEW country (chain) or the stale one (direct)?
+                while CN[OLD[bj][1]] == CN[OLD[bi][1]]: bj = int(r8.randint(len(OLD)))
+                mv.append((a, bi, bj))
+            mvs = [f"{a} lives in {OLD[bj][0]}." for a, bi, bj in mv]; r9_ = np.random.RandomState(SEED + 41)
+            for s_ in range(600): step(mm, op2, [mvs[r9_.randint(len(mvs))].encode('latin-1') for _ in range(8)] + win(PRES, B_ - 8, r9_))
+            def revq(G):
+                nw, st_ = [], []
+                for a, bi, bj in G:
+                    g = gen(mm, f"{a} is a citizen of "); c_ = g.split('>')[-1].strip(); nw.append(c_ == CN[OLD[bj][1]]); st_.append(c_ == CN[OLD[bi][1]])
+                return f"NEW country {np.mean(nw):.2f}, STALE {np.mean(st_):.2f}"
+            P(f"   [REV] {tag} form, after moving (new premise taught 600 steps): premise new city (rank among 10) {rank1(mm, liv([(a, bj) for a, bi, bj in mv], OLD), np.random.RandomState(9)):.2f} | "
+              f"TAUGHT people: {revq(mv[:100])} | NEVER-TAUGHT people: {revq(mv[100:])}  ({time.time() - T0:.0f}s)")
+            if int(os.environ.get('CS_COTLATE_RETRACT', 0)) and tag == 'CHAIN':   # 19 Nov CS_COTLATE_RETRACT: RETRACT AND RE-DERIVE (label-free) - the chain names its bridge,
+                def rr_(G, moved):                                                #   so the model can check it: if the chain's city B differs from what the model now says
+                    fl, r0, r1 = [], [], []                                       #   'A lives in', the composite is flagged stale, retracted, and re-derived as the country
+                    for x in G:                                                   #   the model gives for the NEW city ('B2 lies in'). Unmoved people are the false-flag control.
+                        a, bi = x[0], x[1]; tc = CN[OLD[x[2] if moved else bi][1]]
+                        pt = [y.strip() for y in gen(mm, f"{a} is a citizen of ").split('>')]; bn = gen(mm, f"{a} lives in ").strip().rstrip('.').strip()
+                        f_ = len(pt) == 2 and pt[0] != bn; c0 = pt[-1]; c1 = gen(mm, f"{bn} lies in ").strip().rstrip('.').strip() if f_ else c0
+                        fl.append(f_); r0.append(c0 == tc); r1.append(c1 == tc)
+                        if f_: WB.append(f"{a} is a citizen of {bn} > {c1}.")
+                        elif int(os.environ.get('CS_COTLATE_WB_ALL', 0)) and len(pt) == 2: WB.append(f"{a} is a citizen of {pt[0]} > {c0}.")   # WB_ALL: unflagged chains too
+                    return f"flagged {np.mean(fl):.2f} | right country: as answered {np.mean(r0):.2f} -> after retract and re-derive {np.mean(r1):.2f}"
+                WB = []
+                P(f"   [RETRACT] CHAIN form (label-free: chain bridge vs the model's current 'lives in'): MOVED taught {rr_(mv[:100], 1)} || MOVED never taught {rr_(mv[100:], 1)} || "
+                  f"UNMOVED taught (control) {rr_(TP[100:200], 0)} || UNMOVED never taught (control) {rr_(HELDP[100:200], 0)}  ({time.time() - T0:.0f}s)")
+                WBS = int(os.environ.get('CS_COTLATE_WRITEBACK', 0))              # 19 Nov CS_COTLATE_WRITEBACK N: CONSOLIDATE THE RE-DERIVED COMPOSITES - the flagged people's
+                if WBS and WB:                                                    #   re-derived chains are taught for N steps (6 rows a batch) with 2 replayed rows of the
+                    r5 = np.random.RandomState(SEED + 51); ow = [sents[i] for i in range(200, 300)]   #   original chains of unmoved taught people; then the composite is asked
+                    for s_ in range(WBS):                                         #   directly again (no check, no re-derivation): a CONSOLIDATION claim
+                        step(mm, op2, [WB[r5.randint(len(WB))].encode('latin-1') for _ in range(6)] + [ow[r5.randint(len(ow))].encode('latin-1') for _ in range(2)] + win(PRES, B_ - 8, r5))
+                    def dq(G, moved):
+                        return np.mean([gen(mm, f"{x[0]} is a citizen of ").split('>')[-1].strip() == CN[OLD[x[2] if moved else x[1]][1]] for x in G])
+                    P(f"   [WRITEBACK] {len(WB)} re-derived chains taught {WBS} steps; asked directly (no check): MOVED taught {dq(mv[:100], 1):.2f} | MOVED never taught {dq(mv[100:], 1):.2f} | "
+                      f"UNMOVED taught, not replayed {dq(TP[100:200], 0):.2f} | UNMOVED never taught {dq(HELDP[100:200], 0):.2f} | unmoved taught, replayed {dq(TP[200:300], 0):.2f}  ({time.time() - T0:.0f}s)")
+        if X_:
+            byk = []
+            for k in (1, 2, 4, 8):
+                G_ = [(a, bi) for a, bi, kk in NEWP if kk == k]; cb_, cc_ = chain(mm, G_, OLD)
+                byk.append(f"read {k}x: premise ('lives in', rank among 10) {rank1(mm, liv(G_, OLD), np.random.RandomState(9)):.2f} | chain B {cb_:.2f} C {cc_:.2f}")
+            P(f"   [X] PREMISES ONLY READ (new people, never taught or asked; n 75 each): " + " || ".join(byk))
+            P(f"   [X] FALSE MEMORY: {f0} || {fm(mm, 'AFTER')}")
+            P(f"   [X] FORGETTING: bits/byte on 64 fixed pretraining windows {b0:.3f} before -> {bpb(mm):.3f} after  ({time.time() - T0:.0f}s)")
+            if int(os.environ.get('CS_COTLATE_GATE', 0)):                     # 19 Nov CS_COTLATE_GATE: ANSWER COMPOSITES THROUGH THE GATED MEMORY - the trunk's chain answer
+                HR, HU = HELDP[:100], HELDP[100:200]                           #   is given only when the memory's gate opens for the subject. The store holds the TAUGHT
+                STORE = {a for a, _ in TP} | {a for a, _ in HR}                #   people (written chains) and RECORDED held-out people ('lives in' premise); the other
+                def miss(a):                                                   #   held-out people are known to the trunk but never recorded. NEAR-MISS names: a recorded
+                    f_, l_ = a.split(' '); r6 = np.random.RandomState(sum(map(ord, a)))   #   name with the last syllable of the family name changed (never read)
+                    for s in sorted(SY, key=len, reverse=True):
+                        if l_.endswith(s):
+                            while True:
+                                z = SY[r6.randint(len(SY))]
+                                if z != s and f"{f_} {l_[:-len(s)]}{z}" not in used: return f"{f_} {l_[:-len(s)]}{z}"
+                    return a + 'x'
+                NM = [miss(a) for a, _ in HR]; NM = [x for x in NM if x not in STORE]
+                @torch.no_grad()
+                def code(a, q):                                                # the trunk's code of the name: in the question (q) or as stored ('About A.')
+                    mm.eval(); s_ = (f"{a} is a citizen of " if q else f"About {a}.").encode('latin-1'); o_ = 1 if q else 7
+                    h = mm.hid(torch.tensor([[PAD] + list(s_)])[:, :L])[0]; mm.train(); return F.normalize(h[o_:o_ + len(a)].mean(0), dim=-1)
+                SK = sorted(STORE); KZ = torch.stack([code(a, 0) for a in SK])
+                cosq = lambda a: float((KZ @ code(a, 1)).max())
+                gr = {'TAUGHT': [(a, bi) for a, bi in TP[:100]], 'HELD-OUT RECORDED': HR, 'HELD-OUT NOT RECORDED (known to the trunk)': HU,
+                      'NOVEL (never read)': [(a, None) for a in NOV[:100]], 'NEAR-MISS of a recorded name (never read)': [(a, None) for a in NM]}
+                R_ = {}
+                for k, G in gr.items():
+                    rw = []
+                    for a, bi in G:
+                        g = gen(mm, f"{a} is a citizen of "); pt = [x.strip() for x in g.split('>')]; wf = len(pt) == 2 and pt[0] in CITN and pt[1] in CN
+                        rw.append((wf, bi is not None and wf and pt[1] == CN[OLD[bi][1]], a in STORE, cosq(a)))
+                    R_[k] = rw
+                thr = float(np.quantile([r[3] for r in R_['TAUGHT'] + R_['HELD-OUT RECORDED']], 0.05))
+                P(f"   [G] GATED ANSWERING (store: {len(TP)} taught + {len(HR)} recorded held-out; soft gate = cosine of the question's name code to the nearest stored name code, "
+                  f"threshold {thr:.3f} = 5th percentile of stored people):")
+                for k, rw in R_.items():
+                    wf, ok, hs, cs = (np.array([r[j] for r in rw]) for j in range(4)); so = cs >= thr
+                    if k in ('NOVEL (never read)', 'NEAR-MISS of a recorded name (never read)'):
+                        P(f"      {k:44s} n {len(rw):3d} | made-up chain: TRUNK {wf.mean():.2f} | EXACT-NAME GATE {(wf & hs).mean():.2f} | SOFT GATE {(wf & so).mean():.2f}")
+                    else:
+                        P(f"      {k:44s} n {len(rw):3d} | right country: TRUNK {ok.mean():.2f} | EXACT-NAME GATE {(ok & hs).mean():.2f} (answers {hs.mean():.2f}) | "
+                          f"SOFT GATE {(ok & so).mean():.2f} (answers {so.mean():.2f})")
+                P(f"      ({time.time() - T0:.0f}s)")
 if OPJ or COTLATE: P(f"DONE ({time.time() - T0:.0f}s)"); raise SystemExit
 if COT and REV:                                                                # BELIEF REVISION: 100 held-out people move to an old city in ANOTHER country
     mv = []

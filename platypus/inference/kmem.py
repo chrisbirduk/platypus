@@ -909,7 +909,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     src = 'LEARNED rules' if rules else 'ORACLE rules (none learned yet)'
     if not rules: rules = {ph['grand']: (ph['parent'], ph['parent']), ph['skip']: (ph['mgr'], ph['mgr'])}
     te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
-    by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = list(fs); fs0 = list(fs)
+    by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = [e for e in fs if 'chain' not in e]; fs0 = list(fs)   # 19 Nov: chain-form written composites are not recorded facts
     if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2:                         # mode 2: the pointer table also covers every rule-world PREMISE the model has READ
         fs += [{'d': d_, 'A': a_, 'r': ph[k_], 'ans': b_} for (d_, s_, k_, a_, b_) in W['planted'] if int(d_) in seen and k_ in ('parent', 'mgr')]   # (the memory is written on every byte of read text; only the decoding table is extended)
     for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
@@ -998,6 +998,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if sc[C] < thr or C == A or C == B1: continue
                 if int(getattr(cfg, 'inf_kmc_rulecomp_wgate', 0)) and not gate9(A, B1, d1[B1]): ngt += 1; continue
                 if (r3, A, C) not in RW: RW[(r3, A, C)] = vis; nw += 1
+                model.__dict__.setdefault('_ra_bridge', {})[(r3, A, C)] = B1   # 19 Nov: the bridge, for chain-form teaching
                 m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)   # FIX (18 Nov, labelled): a subject with NO true composite (a middle
                 if m_ is not None and A in m_: ok_.append(C == m_.get(m_.get(A)))               #   name whose parent is a root) counts as WRONG, as in the relational module's line
         if int(getattr(cfg, 'inf_kmc_rulecomp_reverify', 0)) and RW:           # 18 Nov MODEL CHANGE (combined with the gate, by the user's decision): RE-VERIFY every
@@ -1129,6 +1130,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     if c_ not in known: why['C unknown'] += 1; continue
                     if len({A, b_, c_}) < 3: why['same name'] += 1; continue
                     if (r3, A, c_) not in RW: RW[(r3, A, c_)] = vis; nw += 1
+                    model.__dict__.setdefault('_ra_bridge', {})[(r3, A, c_)] = b_
                     m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
                     if m_ is not None and A in m_: ok_.append(c_ == m_.get(m_.get(A)))
                 print(f"  [ROUTE D WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {len(sj)} subjects with an r1 fact and no r3 fact (up to {int(getattr(cfg, 'inf_kmc_rulecomp_dwrite_n', 150))} asked); "
@@ -1140,7 +1142,15 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
             old9 = K.get('tcode'); K['tcode'] = {}                             #   composite = the learned rule's two operators applied in LATENT space (the bridge B is never
             try:                                                               #   decoded), decoded as the nearest code among ALL recorded names (no fact table at question time)
                 rel9 = {}
-                for e in fs0: rel9.setdefault(str(e['r']).strip(), []).append((e['A'], e['ans']))
+                if int(getattr(cfg, 'inf_kmc_rulej_recent', 0)):               # 19 Nov kra9: BELIEF REVISION BY RECENCY - each (subject, relation) keeps only the answer read in
+                    vo9 = {int(k): i for i, k in enumerate((model.__dict__.get('_t2s') or {}).keys())}   #   the most recently visited domain (visit order of the slots)
+                    lt9 = {}
+                    for e in fs0:
+                        k9 = (e['A'], str(e['r']).strip()); o9 = vo9.get(int(e['d']), -1)
+                        if k9 not in lt9 or o9 > lt9[k9][0]: lt9[k9] = (o9, e)
+                    fsJ = [v[1] for v in lt9.values()]
+                else: fsJ = fs0
+                for e in fsJ: rel9.setdefault(str(e['r']).strip(), []).append((e['A'], e['ans']))
                 tuJ = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
                 NM = sorted({e['A'] for e in fs0} | {e['ans'] for e in fs0} | {l for _, l, _, _ in tg} | {l for _, l, _, _ in tuJ})
                 Z = _kma_tcode(model, K, NM).float(); Z = Z - Z.mean(0); Z = Z / (Z.norm(dim=-1, keepdim=True) + 1e-8); NI = {n: k for k, n in enumerate(NM)}
@@ -1150,13 +1160,51 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     X = Z[[NI[a] for a, b in pairs]]; Y = Z[[NI[b] for a, b in pairs]]
                     if shuffle: Y = Y[torch.randperm(len(Y), generator=torch.Generator().manual_seed(5)).to(Y.device)]
                     return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
+                HJ = int(getattr(cfg, 'inf_kmc_rulej_mlp', 0)); SNAP = int(getattr(cfg, 'inf_kmc_rulej_snap', 0)); DP = {n: k for k, n in enumerate(DN)}
+                if HJ:                                                         # 19 Nov kra7: a JEPA-style PREDICTOR per relation (MLP, InfoNCE over the recorded names' codes,
+                    Zd = Z.detach()                                            #   temperature 0.05) - the linear operator holds about D facts; the synthetic world showed the
+                    def fit(pairs, shuffle=False):                             #   MLP holds 2,200 (first hop 1.00) and its top-1 minus top-2 margin rejects unrecorded subjects
+                        g9 = torch.Generator().manual_seed(11)
+                        with torch.random.fork_rng(devices=[]):                # a fixed init without touching the run's own random stream
+                            torch.manual_seed(11); net = torch.nn.Sequential(torch.nn.Linear(D9, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, D9)).to(Z.device)
+                        A_ = torch.tensor([NI[a] for a, b in pairs], device=Z.device); yb = torch.tensor([DP[b] for a, b in pairs], device=Z.device)
+                        if shuffle: yb = yb[torch.randperm(len(yb), generator=g9).to(yb.device)]
+                        o9 = torch.optim.Adam(net.parameters(), lr=1e-3)
+                        with torch.enable_grad():
+                            for _ in range(int(getattr(cfg, 'inf_kmc_rulej_mlp_steps', 1500))):
+                                k9 = torch.randint(0, len(A_), (min(256, len(A_)),), generator=g9).to(Z.device)
+                                l9 = F.cross_entropy(F.normalize(net(Zd[A_[k9]]), dim=-1) @ Zd[DI].t() / 0.05, yb[k9]); o9.zero_grad(); l9.backward(); o9.step()
+                        net.eval(); return net
+                    app = lambda O_, v: O_(v)
+                else: app = lambda O_, v: v @ O_
                 OP = {r: fit(p) for r, p in rel9.items() if len(p) >= 5}; ON = {r: fit(p, True) for r, p in rel9.items() if len(p) >= 5}
                 def comp(A, r3, O):
                     r1, r2 = rules[r3]
                     if r1 not in O or r2 not in O: return None
-                    v1 = Z[NI[A]] @ O[r1]; s1 = F.normalize(v1, dim=-1) @ Z[DI].t(); b1 = DN[int(s1.argmax())]
-                    v2 = v1 @ O[r2]; s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
-                    return b1, DN[int(s2.indices[0])], float(s2.values[0] - s2.values[1])
+                    with torch.no_grad():
+                        v1 = app(O[r1], Z[NI[A]]); s1 = (F.normalize(v1, dim=-1) @ Z[DI].t()).sort(descending=True); b1 = DN[int(s1.indices[0])]
+                        v2 = app(O[r2], Z[NI[b1]] if SNAP else v1); s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
+                    m2 = float(s2.values[0] - s2.values[1]); m1 = float(s1.values[0] - s1.values[1])
+                    return b1, DN[int(s2.indices[0])], (min(m1, m2) if HJ else m2)
+                if HJ:                                                         # 19 Nov DIAGNOSTICS for the MLP predictor: memorisation of the recorded facts it was fitted on,
+                    try:                                                       #   the targets' first hops split by whether that fact was RECORDED, and the linear operator
+                        with torch.no_grad():                                  #   on the same targets (kra6's route J) for a same-run comparison
+                            mem9 = [DN[int((F.normalize(OP[r](Z[NI[a]]), dim=-1) @ Z[DI].t()).argmax())] == b for r, p in rel9.items() if r in OP for a, b in p[:200]]
+                            hasr0 = {(e['A'], str(e['r']).strip()) for e in fs0}
+                            def lfit(pairs):
+                                X = Z[[NI[a] for a, b in pairs]]; Y = Z[[NI[b] for a, b in pairs]]; return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
+                            OL = {r: lfit(p) for r, p in rel9.items() if len(p) >= 5}; dgJ = {'rec': [], 'unrec': [], 'lin_b': [], 'lin_c': [], 'lin_rec': []}
+                            for (d, l, r3, C) in tg:
+                                r1, r2 = rules[r3]
+                                if r1 not in OP or r2 not in OP: continue
+                                b1 = DN[int((F.normalize(OP[r1](Z[NI[l]]), dim=-1) @ Z[DI].t()).argmax())]; rc_ = (l, r1) in hasr0
+                                dgJ['rec' if rc_ else 'unrec'].append(b1 == par.get(l))
+                                v1 = Z[NI[l]] @ OL[r1]; bl = DN[int((F.normalize(v1, dim=-1) @ Z[DI].t()).argmax())]; dgJ['lin_b'].append(bl == par.get(l))
+                                if rc_: dgJ['lin_rec'].append(bl == par.get(l))
+                                dgJ['lin_c'].append(DN[int((F.normalize(v1 @ OL[r2], dim=-1) @ Z[DI].t()).argmax())] == C)
+                        print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] recorded facts memorised {m(mem9)} || targets' first hop B: fact RECORDED {m(dgJ['rec'])}, "
+                              f"NOT recorded {m(dgJ['unrec'])} || LINEAR operator, same targets: first hop {m(dgJ['lin_b'])} (recorded {m(dgJ['lin_rec'])}), composite {m(dgJ['lin_c'])}", flush=True)
+                    except Exception as e8: print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:100]})", flush=True)
                 oJ = {'b': [], 'c': [], 'pure': [], 'null': [], 'mr': [], 'mw': []}
                 for (d, l, r3, C) in tg:
                     x = comp(l, r3, OP)
@@ -1169,13 +1217,23 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     x = comp(l, r3, OP); mu.append(x[2] if x else 0.0)
                 auc = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in mu] for a_ in oJ['mr']]) if oJ['mr'] and mu else float('nan')
                 thr9 = float(getattr(cfg, 'inf_kmc_rulej_thr', 0.05))
+                if thr9 < 0:                                                   # 19 Nov: AUTO threshold, label-free - the 5th percentile of the single-hop margins of the
+                    sm = []                                                    #   RECORDED facts themselves (keeps 95% of what was recorded, as in the synthetic test)
+                    with torch.no_grad():
+                        for r, p in rel9.items():
+                            if r not in OP: continue
+                            na = collections.Counter(a for a, b in p)              # subjects with ONE recorded answer only: one-to-many relations tie at the top
+                            for a, b in [x for x in p if na[x[0]] == 1][:200]:
+                                s9 = F.normalize(app(OP[r], Z[NI[a]]), dim=-1) @ Z[DI].t(); sv = s9.topk(2)
+                                if DN[int(sv.indices[0])] == b: sm.append(float(sv.values[0] - sv.values[1]))   # only facts it reproduces: the recorded answer is known, no label needed
+                    thr9 = float(np.quantile(sm, 0.05)) if sm else 0.05
                 cov = np.mean([m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']]) if oJ['mr'] or oJ['mw'] else float('nan')
                 pg = np.mean([1.0] * sum(m_ >= thr9 for m_ in oJ['mr']) + [0.0] * sum(m_ >= thr9 for m_ in oJ['mw'])) if any(m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']) else float('nan')
                 print(f"  [ROUTE J: JEPA-STYLE RELATIONAL MEMORY | visit {vis + 1}] {src}; one operator per relation on the trunk's name codes, fitted on {len(fs0)} RECORDED facts "
                       f"({len(OP)} relations); composites never planted, the bridge kept LATENT, C the nearest of {len(DN)} recorded names (chance {1 / max(1, len(DN)):.3f}) || "
                       f"first hop B {m(oJ['b'])} | COMPOSITE C {m(oJ['c'])} | PURE FAMILIES {m(oJ['pure'])} | NULL (operators fitted on shuffled facts) {m(oJ['null'])} || "
                       f"margin gate >= {thr9}: answers {cov:.2f}, right when answering {pg:.2f} | NEVER-READ families: margin >= gate {np.mean([x >= thr9 for x in mu]) if mu else float('nan'):.2f} (n {len(mu)}), "
-                      f"AUC right-vs-never-read {auc:.2f}", flush=True)
+                      f"AUC right-vs-never-read {auc:.2f} | predictor {'MLP ' + str(HJ) if HJ else 'linear'}{', B snapped' if SNAP else ''}, gate {thr9:.3f}", flush=True)
                 if int(getattr(cfg, 'inf_kmc_rulej_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
                     hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; why = {'margin': 0, 'same name': 0, 'B has no recorded r2 fact': 0}
                     for e in fs0:
@@ -1187,10 +1245,47 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if len({e['A'], x[0], x[1]}) < 3: why['same name'] += 1; continue
                             if (x[0], r2) not in hasr: why['B has no recorded r2 fact'] += 1; continue
                             if (r3, e['A'], x[1]) not in RW: RW[(r3, e['A'], x[1])] = vis; nw += 1
+                            model.__dict__.setdefault('_ra_bridge', {})[(r3, e['A'], x[1])] = x[0]
                             m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
                             if m_ is not None and e['A'] in m_: ok_.append(x[1] == m_.get(m_.get(e['A'])))
                     print(f"  [ROUTE J WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {nw} new composites written ({len(RW)} so far) | refused: " + ", ".join(f"{k} {v}" for k, v in why.items())
                           + f" | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)}; a subject with no composite counts as wrong)", flush=True)
+                    MV = W.get('moves') or {}
+                    def tru9(A, r3, C):                                         # truth after any move READ so far (the moved leaf's new composite)
+                        mv9 = MV.get(A)
+                        if mv9 and mv9['d2'] in seen: return C == mv9['C_new']
+                        m9 = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
+                        return (C == m9.get(m9.get(A))) if m9 is not None and A in m9 else None
+                    if int(getattr(cfg, 'inf_kmc_rulej_reverify', 0)) and RW:  # 19 Nov kra9 MODEL CHANGE: RE-DERIVE every earlier write with today's predictor (synthetic world:
+                        WRm = model.__dict__.get('_rm_written', {}); BR = model.__dict__.setdefault('_ra_bridge', {}); kp9, rw9, rt9 = [], [], []   # check the bridge, retract,
+                        for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
+                            if r3 not in rules or A not in NI: continue
+                            x = comp(A, r3, OP); r2 = rules[r3][1]
+                            ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr
+                            if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); continue
+                            RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None)
+                            if ok9: RW[(r3, A, x[1])] = vis; BR[(r3, A, x[1])] = x[0]; rw9.append((tru9(A, r3, C), tru9(A, r3, x[1])))
+                            else: rt9.append(tru9(A, r3, C))
+                        pr9 = lambda L: f"{np.mean([v for v in L if v is not None]):.2f}" if any(v is not None for v in L) else 'n/a'
+                        print(f"  [ROUTE J RE-DERIVE | visit {vis + 1}] MODEL CHANGE: every earlier route J write re-derived with today's predictor and gate: KEPT {len(kp9)} (right {pr9(kp9)}) | "
+                              f"REWRITTEN {len(rw9)} (old right {pr9([a for a, b in rw9])} -> new right {pr9([b for a, b in rw9])}) | RETRACTED {len(rt9)} (were right {pr9(rt9)}) | "
+                              f"{len(RW)} written composites now", flush=True)
+                    if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
+                        hasp = collections.defaultdict(set)
+                        for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])
+                        g9 = {'read': [], 'ctl': [], 'readok': []}; fd9 = {a_: int(d_) for (d_, s_, k_, a_, b_) in W['planted'] if k_ in ('parent', 'mgr')}
+                        for l, mv9 in MV.items():
+                            r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']; r1 = ph[mv9['r1']]
+                            if int(mv9['d']) not in seen or l not in NI or r3 not in rules: continue
+                            x = comp(l, r3, OP); rec = hasp.get((l, r1), set()); wr = [c for (q, a, c) in RW if q == r3 and a == l]
+                            if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: g9['readok'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'],
+                                x is not None and x[1] == mv9['C_old'], x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))   # 19 Nov: the new parent's own family read too
+                            g9['read' if mv9['d2'] in seen else 'ctl'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'], x is not None and x[1] == mv9['C_old'],
+                                                                               x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))
+                        def mm9(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
+                        print(f"  [ROUTE J, PREMISE CHANGE | visit {vis + 1}] MOVED leaves (a new parent planted in another domain; truth after the move = the new family's root) || "
+                              + " || ".join(f"{nm} (n {len(L)}): reader recorded NEW premise {mm9(L, 0)}, OLD {mm9(L, 1)} | route J composite NEW {mm9(L, 2)}, OLD {mm9(L, 3)}, passes gate {mm9(L, 4)} | "
+                                            f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE READ AND THE NEW PARENT\'S FAMILY READ', g9['readok']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
             finally: K['tcode'] = old9 if old9 is not None else {}
         except Exception as e7: print(f"  [ROUTE J | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:120]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
@@ -1286,7 +1381,7 @@ def kmi_readout(model, cfg, S_slot, ents, held, vis):
                 try: kma_probe_twohop(model, cfg, K, S_slot, fs, vis)
                 except Exception as e8: print(f"  [TWO-HOP PROBES THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_rulecomp', 0)):
-                try: kma_rule_compose(model, cfg, K, S_slot, fs, vis)
+                try: kma_rule_compose(model, cfg, K, S_slot, fs + (hf if int(getattr(cfg, 'inf_kmc_rulej_allrec', 0)) else []), vis)   # 19 Nov kra11: every RECORDED fact, held-back control too
                 except Exception as e8: print(f"  [ROUTE A: COMPOSITION THROUGH THE MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:120]})", flush=True)
             if int(getattr(cfg, 'inf_kmc_compose', 0)):                        # 17 Nov THE COMPOSING BUILD: composed two-hop conclusions written to the ledger
                 try: kma_compose_write(model, cfg, K, S_slot, fs, vis)

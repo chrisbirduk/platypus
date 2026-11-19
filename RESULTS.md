@@ -4429,3 +4429,496 @@ Next: the title heuristic as the baseline to beat; the GPU trunk's states; conte
 - Route D in the same run: pure families 0.35 / 0.52 (asked directly 0.00 / 0.10).
 - One seed; small n for the consolidation (7 / 8).
 
+kra6 visit 5:
+
+**Consolidation of route J's writes** (from the trunk, test wording, memory off):
+
+| | Taught | Held back |
+|---|---|---|
+| All | **1.00** (22) | 0.05 (22) |
+| Never planted | 1.00 (22) | 0.05 (21) |
+| With the closed-form edits subtracted | 1.00 (22) | 0.05 (22) |
+| Pure families | **1.00** (15) | 0.00 (14) |
+| What the trunk answers | right 22 of 22 | right 1, middle hop 4, other 17 of 22 |
+
+- **Route J:** fitted on 888 recorded facts, 25 relations, 1,236 names. First hop 0.78; composite 0.59; pure families 0.65; null 0.01. Gate: answers 0.73, right 0.81. Never-read families passing 0.42, AUC 0.93.
+- **Writes:** 68 in all, precision **1.00** (42).
+- **Route D:** pure families 0.64 vs asked directly 0.27. The direct answers now include composites route J wrote and the trunk was taught.
+- The consolidation result holds at a larger n: 22 taught, all right, vs 0.05 held back.
+
+### Synthetic world, overnight (CS_IMPL 0: pretrained with NO citizenship at all; 2,000 + 200 people, 3 x 192, 12,000 steps)
+
+**1. LATE CHAIN TEACHING WORKS (the package's situation).** After pretraining, 300 people are taught 'A is a citizen of B > C.' briefly (8 rows + 24 replayed per batch). The other people are never taught.
+
+| Steps | Taught C | **Never taught: B / C** |
+|---|---|---|
+| 300 | 0.97 | 0.81 / 0.81 |
+| 750 | 0.98 | 0.83 / 0.84 |
+| 1,500 | 1.00 | **0.88 / 0.86** |
+| 3,000 | 1.00 | 0.84 / 0.84 |
+
+- A trained trunk learns the decomposition from a few hundred chains in a few hundred steps, and generalises it to untaught people at 0.81-0.88. Direct teaching of the same 300 is in the log for comparison.
+- **DIRECT teaching of the same 300 people** ('A is a citizen of C.'): taught 0.37 / 0.65 / 0.95 / 0.99 at 300 / 750 / 1,500 / 3,000 steps, but NEVER TAUGHT **0.10 at every step** (rank among 10, chance 0.10).
+- The same teaching budget in chain form generalises (0.81-0.88); in direct form it does not generalise at all.
+- Chain-form teaching of consolidated composites (kra7) is supported.
+
+**2. ROUTE J AT SCALE FAILS HERE: capacity.**
+
+| Held-out people (n 200) | Right |
+|---|---|
+| First hop, city among 300 | **0.04** |
+| Composite, country among 20 (chance 0.05) | 0.17 |
+| Composite among all 2,520 names | 0.14 |
+| With B snapped to the nearest city | 0.10 |
+| Null | 0.07 |
+
+- One linear operator per relation on 192-d name codes cannot hold 2,200 arbitrary person-city facts. A linear map memorises at most about D facts.
+- On the GPU rule world it holds about 35 facts per relation (758 facts over 22 relations), within capacity.
+- **Route J must become a higher-capacity memory before it scales:** a keyed or nonlinear associative memory, the JEPA predictor as an MLP, or random-feature expansion.
+- Snapping does not help when the first hop is wrong.
+
+
+**3. ROUTE J WITH AN MLP PREDICTOR (InfoNCE, hidden 1024, 3,000 steps; CS_OPJ_MLP 1) FIXES THE CAPACITY LIMIT. Two seeds.**
+
+| Held-out people (n 200), citizenship never taught | Linear, seed 0 | Linear, seed 1 | **MLP, seed 0** | **MLP, seed 1** |
+|---|---|---|---|---|
+| First hop, city among 300 | 0.04 | 0.08 | **1.00** | **1.00** |
+| Composite, country among 20 (chance 0.05) | 0.17 | 0.18 | 0.42 | 0.46 |
+| With B snapped to the nearest city | 0.10 | 0.13 | **1.00** | **1.00** |
+| Null (lives-in predictor fitted on shuffled facts) | 0.07 | n/a | 0.10 | 0.06 |
+
+- The MLP predictor on the trunk's own name codes holds all 2,200 person-city facts, where the linear operator held almost none.
+- Composed latently without snapping, the second hop reaches 0.42-0.46. Snapping B to the nearest recorded city first makes it exact (1.00). The null stays near chance.
+- What this claims and what it does not: the predictor is fitted on recorded facts, and snapping is a cleanup to a recorded name, so the composite is two memorised hops chained. A plain dictionary would also score 1.00 here. The result is that the model's own latent memory can now hold facts at this scale and compose them without ever seeing a composite. It is not evidence that the trunk composes.
+- Next: kra7 uses the MLP predictor with snapping for route J. The abstention gate still has to be checked at this capacity.
+
+**4. LATE CHAIN TEACHING, SEED 1 (replication).** Never taught B / C: 0.88 / 0.86 at 300 steps, 0.86 / 0.85 at 750, 0.85 / 0.82 at 1,500, 0.89 / 0.88 at 3,000 (taught C 0.99-1.00). It replicates seed 0 (0.81-0.88).
+
+**5. DIRECT TEACHING, SEED 1 (replication).** Taught 0.32 / 0.88 / 0.99 / 1.00 at 300 / 750 / 1,500 / 3,000 steps; never taught 0.14 / 0.10 / 0.12 / 0.14 (chance 0.10). It replicates seed 0: direct teaching does not generalise, chain teaching does (0.82-0.89 on this seed).
+
+**6. ROUTE J ABSTENTION AT CAPACITY (CS_OPJ_ABST 1; MLP predictor refitted without the facts of 100 held-out people).** Three groups: RECORDED held-out people; people KNOWN to the trunk from pretraining but whose city fact was never recorded; 200 NOVEL names never read anywhere. The threshold keeps 95% of recorded subjects; the table gives the share of the other groups that would still pass (lower is better).
+
+| Gate on the first hop | Hidden 1024, seed 0 | Hidden 1024, seed 1 | Hidden 256, seed 0 |
+|---|---|---|---|
+| **Top-1 minus top-2 margin**, known-not-recorded / novel | **0.00 / 0.01** (AUC 1.000 / 0.999) | **0.00 / 0.00** (AUC 1.000 / 1.000) | 0.08 / 0.07 (AUC 0.978 / 0.980) |
+| Max cosine | 0.04 / 0.03 (AUC 0.994 / 0.993) | 0.00 / 0.01 (AUC 0.999 / 0.997) | 0.47 / 0.49 (AUC 0.887 / 0.864) |
+| Margin over the shuffled-fact null | 0.85 / 0.84 (AUC 0.49 / 0.50) | 0.83 / 0.79 (AUC 0.59 / 0.56) | 0.94 / 0.94 |
+| First hop right: recorded / known-not-recorded | 1.00 / 0.00 | 1.00 / 0.02 | 1.00 / 0.00 |
+| Composite, latent / snapped (section 3) | 0.42 / 1.00 | 0.46 / 1.00 | 0.23 / 0.99 |
+
+- **The top-1 minus top-2 margin is the abstention gate for kra7.** With hidden 1024 it rejects 99-100% of subjects whose fact was never recorded, including novel names, while keeping 95% of recorded ones. The linear route J let 37-52% of never-read families through on the GPU.
+- The gate costs nothing here: the predictor does not infer a city from the trunk's knowledge of a person (0.00-0.02 right for known-but-unrecorded people), so everything it rejects would have been wrong.
+- The null-margin gate does not work and should not be used.
+- Hidden 256 still memorises the facts (first hop 1.00) but separates worse (margin gate lets 7-8% through) and composes worse latently (0.23). Hidden 1024 is the setting for kra7.
+- Caveat: synthetic world, 2,200 facts, one relation pair. The GPU rule world has 22 relations and fewer facts per relation, so it is within this capacity.
+
+### kra7 draft, local smoke (19 Nov, 01:50-03:10; route J MLP 1024 + snapping + auto gate; oracle rules, 800 predictor steps)
+
+- **Inconclusive, not yet a pass.** First hop B 0.06-0.07, composite 0.01-0.04, null 0.00-0.01 over visits 2-5 (local trunk, 191-356 recorded facts). Writes: 2, both right. Forgetting -0.040, final BPC 2.623 (no harm; the readout trains nothing in the trunk).
+- The automatic gate came out at 0.000: one-to-many relations (several recorded answers per subject) tie at the top, so their margins are 0 and the 5th percentile is 0. Fixed: the gate is now calibrated on single-answer subjects only.
+- There is no local linear route J run to compare against (kra6 was only run on the GPU, first hop 0.76). An offline check shows the predictor memorises facts (0.95 on random codes, 800 steps), so the low first hop is either unrecorded first-hop facts (the MLP does not generalise to them, as in the synthetic world) or weak local trunk codes. The rerun (krj7b) adds a same-run linear comparison and splits the first hop by whether the fact was recorded.
+
+**Rerun with diagnostics (krj7b, 03:35-04:50): the MLP and the linear operator tie; the local reader is the limit.**
+
+| Visit | Recorded facts memorised (MLP) | First hop, fact RECORDED: MLP / linear | First hop, fact NOT recorded: MLP | All targets: MLP / linear |
+|---|---|---|---|---|
+| 2 | 0.80 (156) | 1.00 / 1.00 (n 7) | 0.00 (104) | 0.06 / 0.06 |
+| 3 | 0.82 (173) | 1.00 / 1.00 (n 10) | 0.00 (147) | 0.06 / 0.06 |
+| 4 | 0.83 (289) | 1.00 / 1.00 (n 17) | 0.00 (222) | 0.07 / 0.07 |
+| 5 | 0.84 (308) | 1.00 / 1.00 (n 20) | 0.00 (274) | 0.07 / 0.07 |
+
+- Locally only 6-7% of the composite targets have their first-hop fact recorded; both predictors get all of those right and none of the rest. On the GPU the reader recorded far more (linear first hop 0.76 in kra6).
+- Neither predictor invents a first hop that was never recorded (0.00), consistent with the synthetic abstention result.
+- The gate was still 0.000: the 16-20% of recorded facts the predictor does not reproduce tie at the top. Fixed: the gate is calibrated only on recorded facts the predictor reproduces (the recorded answer is known, so no label is used).
+- Forgetting -0.040, final BPC 2.623 (identical to the first smoke).
+
+**kra7 local safety run (kra7l, 05:00-06:20; chain form + route J MLP + snapping + automatic gate; oracle rules locally): PASS.**
+- Forgetting -0.040, final BPC 2.623 (krj7b 2.623): no harm.
+- **Automatic gate now works:** 0.058-0.062 (was 0.000). Never-read families passing fell from 1.00 to **0.22** (visit 4; AUC 0.77). Answers 0.13-0.24 of targets locally (few first hops are recorded here).
+- Chain form exercised: 2 written composites entered the pool in chain form ('A <relation> B > C'), both held back by the control hash; held-back chain recall 0.00 (n 1-2). Too few locally to judge chain teaching; the GPU decides.
+- Bug found and fixed: the route J diagnostics dict was named like route A's (dg), so route A's readout failed with KeyError in krj7b and kra7l (readout only; training unaffected). Renamed.
+
+### Self-consistency reader on real text (19 Nov, 06:20-07:30; tools/self_reader.py, distant 10k, held-out last 20% of documents, label-free; distant labels for evaluation only)
+
+**1. Cross-document agreement** (all 40,563 held-out records; base rate 0.151):
+
+| Score | AUC | Precision top 5% / 20% |
+|---|---|---|
+| Distance only | 0.560 | 0.161 / 0.184 |
+| Other documents recording the pair | 0.578 | **0.370** / 0.240 |
+| Agreement + distance | **0.611** | 0.379 / 0.242 |
+
+- Only 11.5% of held-out records appear in any other document, so agreement sharpens the top records but cannot lift the reader as a whole.
+
+**2. Route J on real records** (free name codes + an MLP predictor per link frame, InfoNCE, trained on 55,827 unlabelled training records; reproduces 0.79 of them). Scored on the 13,566 held-out records whose two names both occur in training (base rate 0.179):
+
+| Score (same records) | AUC | Precision top 5% / 20% |
+|---|---|---|
+| Distance only | 0.590 | 0.180 / 0.224 |
+| Cross-document agreement | **0.678** | **0.487** / 0.355 |
+| Route J: fit with everything else read | 0.606 | 0.426 / 0.304 |
+| Route J under the record's own link frame | 0.611 | 0.413 / 0.286 (n 4,956) |
+| Route J + agreement + distance (ranks summed) | 0.646 | 0.370 / 0.304 |
+
+- Route J's fit is a real but weak signal (top 5% at 2.4x the base rate); agreement is stronger where both apply. Neither is near 0.85.
+
+**3. Inference and abstention on real text: NEGATIVE.** Route J's top never-recorded object per subject and frame (111,700 proposals) is almost never a labelled pair: precision 0.0003-0.003 in every margin bin. The automatic gate (0.126) passes 12.5% of proposals at precision 0.0014.
+- On real text, route J does not infer new facts, and its margin gate would NOT stop false writes there. Route J writes must stay restricted to rule-based composition with recorded premises (as in kra6/kra7: a learned rule, both hops recorded), never free link prediction on real records.
+
+**Conclusion for the reader:** label-free signals from what else was read (agreement, route J fit) add a little at the top (precision 0.4-0.5 in the top 5%) but leave AUC at 0.61-0.68. Reaching about 0.85 needs a stronger signal: the trunk's own reading of the sentence (substitution reader, queued) or a GPU-scale trunk.
+
+### Chain teaching: premises only read, false memories, forgetting (19 Nov, 07:30-07:50; compose_synth CS_COTLATE_X 1, seed 0, pretrained checkpoint)
+
+Late chain teaching itself replicates (never taught B / C 0.85 / 0.83 at 300 steps, 0.87 / 0.85 at 3,000; direct teaching never taught 0.10 at every step).
+
+**1. PREMISES ONLY READ - the premise bottleneck is real.** 300 new people whose 'lives in' sentence is only read in the text stream during teaching (never taught, never asked), 75 per exposure level:
+
+| Read | Premise known (rank among 10) | Chain gives B / C |
+|---|---|---|
+| 1x | 0.25 | 0.00 / 0.08 |
+| 2x | 0.40 | 0.00 / 0.04 |
+| 4x | 0.45 | 0.01 / 0.11 |
+| 8x | 0.81 | 0.05 / 0.08 |
+
+- Chain decoding needs the premise RECALLED, not just recognised: at 8 reads the trunk picks the right city among 10 (0.81) but cannot produce it (chain B 0.05). The pretrained people (premise read 4x per pass over 12,000 steps) chain at 0.85.
+- On the GPU this is route D's first-step limit (premise recall 0.41-0.76). Chain teaching will pay off only for premises the trunk can generate: source replay / premise questions must come first.
+
+**2. FALSE MEMORY - A REAL RISK OF CHAIN TEACHING.** 200 NOVEL names never read anywhere, asked 'X is a citizen of':
+- Before chain teaching: 0.00 give a well-formed chain (the model rambles).
+- **After: 0.93 give a well-formed chain to a known city and country** (e.g. 'Beljo Selvenlin is a citizen of Morvenfi-qi > Petoryo') - a made-up premise and conclusion.
+- The model's own confidence (mean byte log-prob of its chain) separates known from novel people at AUC 0.83 after teaching (0.56 before): a usable but imperfect abstention signal.
+- For kra7: the dose is far smaller (route J writes, tens of composites, against 300 people x 3,000 steps here), and the GPU false-memory readouts will show any effect. A fix is queued: abstention rows for never-read names during chain teaching.
+
+**3. FORGETTING:** bits per byte on fixed pretraining windows 0.472 -> 0.493 (+0.021) after 3,000 steps of chain teaching with replay.
+
+### Bootstrapped reader seeded by cross-document agreement (BS_SEED agree, BS_NEG sametype, distant 10k): NEGATIVE
+- Seeds 2,302 records (0.39 labelled, 2.6x base). The classifier over the words between the names learns nothing that transfers: held-out AUC 0.47-0.47 over 4 rounds (distance 0.56).
+- Agreement is a property of the PAIR, not of the wording, so it does not teach a wording classifier. Agreement stays useful as a score, not as a teacher.
+
+### Substitution reader (19 Nov, 07:50-08:08; tools/sub_reader.py, stand-in trunk 192 x 3 (tg_lm192_6000), 90,629 records from 3,000 real documents, 2 swaps): NEGATIVE locally
+
+| Score (base rate 0.138) | AUC | Precision top 5% / 20% |
+|---|---|---|
+| Distance only | 0.555 | 0.162 / 0.174 |
+| Cross-document agreement | 0.572 | 0.352 / 0.207 |
+| **Substitution gain** (trunk surprise on Y when X is swapped for a same-type name), per byte / summed | 0.510 / 0.511 | 0.171 / 0.180 |
+| Original surprise of Y (control) | 0.567 | 0.235 / 0.177 |
+| Gain + distance + agreement (ranks) | 0.577 | 0.226 / 0.192 |
+| Distance + agreement (no trunk) | 0.586 | 0.294 / 0.203 |
+
+- The stand-in trunk's prediction of the second name barely depends on the first (gain at chance): a 192 x 3 byte model trained 6,000 steps does not know these real-world facts, so swapping a name costs it nothing.
+- This does not test the idea at scale: the GPU trunk's own reading is the real test (a readout for kra8: substitution gain on the benchmark records, scored against the gold relations).
+- Reader status after today's local tests: every label-free signal tried locally sits at AUC 0.51-0.68 (agreement best, where names are known). The local stand-in cannot carry the reader further; the remaining route is the GPU trunk.
+
+### Abstention rows during chain teaching, and seed-1 replication (19 Nov, 08:08-08:31; CS_COTLATE_X 1, CHAIN arm only)
+
+| | Seed 0, no abstention rows | **Seed 0, + abstention rows** (300 never-read names taught 'X is a citizen of ?.') | Seed 1, no abstention rows |
+|---|---|---|---|
+| Never-taught KNOWN people, chain C (300 / 3,000 steps) | 0.83 / 0.85 | **0.57 / 0.65** | 0.83 / 0.86 |
+| NOVEL names given a made-up chain | 0.93 | **0.46** | 0.95 |
+| NOVEL names answering '?' | 0.00 | 0.51 | 0.00 |
+| KNOWN held-out people answering '?' | 0.00 | **0.23** | 0.00 |
+| Confidence separates known from novel (AUC) | 0.83 | 0.73 | 0.86 |
+| Premise read 8x: chain B / C | 0.05 / 0.08 | 0.01 / 0.04 | 0.12 / 0.17 |
+| Forgetting, bits per byte | 0.472 -> 0.493 | 0.472 -> 0.497 | 0.478 -> 0.500 |
+
+- **Seed 1 replicates both findings:** chain teaching reaches never-taught people (0.83-0.89) and confabulates chains for novel names (0.95); premises read up to 8 times do not chain (B 0.01-0.12).
+- **Abstention rows are only a partial fix, with a real cost:** made-up chains halve (0.93 -> 0.46), but a quarter of known people now abstain and correct chains fall from 0.85 to 0.65. The trunk's sense of who it knows is too weak (AUC 0.73-0.86) to abstain cleanly by training alone.
+- **Recommendation:** keep chain teaching for consolidation, but do not rely on the trunk to abstain. Answer composite questions through the gated memory (the package's integrated memory answers only where its address was written; route J's margin gate rejected 99-100% of unrecorded subjects in the synthetic world), and use the trunk's own chain confidence as a second check (AUC 0.83-0.86).
+
+### Belief revision of consolidated composites (19 Nov, 11:16-11:37; CS_COTLATE_REV 1, seed 0): chain teaching does NOT update by itself
+
+After late teaching (3,000 steps), 100 taught and 100 never-taught people move to a city in a different country; only 'A lives in B2.' is taught (600 steps; the new city is then known, rank 1.00). Asked 'A is a citizen of':
+
+| | Chain form: NEW / STALE country | Direct form: NEW / STALE country |
+|---|---|---|
+| Taught people | 0.19 / **0.65** | 0.03 / **0.61** |
+| Never-taught people | 0.14 / **0.52** | 0.08 / 0.00 (never knew it) |
+
+- Chain-taught composites go stale like direct ones (stale 0.65 vs 0.61): the trunk's chain still runs through the OLD city, even though the new city is known (rank 1.00). It updates a little (new 0.14-0.19 vs 0.03-0.08). The pretraining-time chain result (CS_REV, 17 Nov) does not carry over to late teaching.
+- So consolidated composites need explicit retraction and re-derivation when a premise changes (the package's written-composite retraction pops route J / A / D writes when a premise is retracted); the trunk will not revise them on its own. This needs a GPU readout: a premise change after consolidation, then the composite's answer.
+
+**Seed 1 (11:38-11:59) changes the reading: chain teaching updates PARTLY and unreliably; direct teaching never does.**
+
+| Taught people: NEW / STALE country | Chain form | Direct form |
+|---|---|---|
+| Seed 0 | 0.19 / 0.65 | 0.03 / 0.61 |
+| Seed 1 | **0.53 / 0.28** | 0.02 / 0.54 |
+| Never-taught people, seed 0 / seed 1 (chain) | 0.14 / 0.52 -> 0.50 / 0.19 | direct 0.08 / 0.00, 0.10 / 0.04 |
+
+- Direct-taught composites never update (new country 0.02-0.03 on both seeds). Chain-taught composites update for 19% (seed 0) to 53% (seed 1) of taught people: better than direct, but seed-dependent and never complete.
+- Design conclusion unchanged: consolidated composites must be retracted and re-derived when a premise changes; chain teaching makes the trunk's own update partial, not reliable.
+
+### THREE HOPS (19 Nov, 12:00-12:18; CS_COTLATE_ARMS CHAIN3,DIRECT3, seed 0): CHAIN TEACHING EXTENDS TO THREE HOPS
+
+Continents are NEW facts ('C is part of K.', 20 countries -> 5 continents) taught as rows during late teaching; 300 people taught 'A is a resident of B > C > K.' (chain) or 'A is a resident of K.' (direct). Never-taught people (n 200) asked 'A is a resident of' (chance 0.20):
+
+| Steps | Chain: never taught B / C / K | Direct: never taught K | Taught (chain / direct) |
+|---|---|---|---|
+| 300 | 0.77 / 0.75 / **0.78** | 0.26 | 0.96 / 0.31 |
+| 750 | 0.78 / 0.72 / **0.76** | 0.18 | 1.00 / 0.32 |
+| 1,500 | 0.86 / 0.87 / **0.90** | 0.27 | 1.00 / 0.76 |
+| 3,000 | 0.85 / 0.84 / **0.90** | 0.24 | 0.98 / 0.96 |
+
+- Three-hop chain teaching transfers to never-taught people at 0.90, composing two pretrained premises with a fact learned only during teaching. Direct teaching learns the taught people (0.96) and transfers nothing (0.18-0.27, chance 0.20).
+- The same limits as two hops should apply (premises must be recallable; confabulation on novel names; revision partial) - not measured here.
+- **Seed 1 replicates (12:19-12:28):** chain three hops, never taught K 0.81 / 0.86 / 0.84 / **0.92** at 300 / 750 / 1,500 / 3,000 steps (B 0.85-0.89, C 0.76-0.90); taught 0.94-1.00.
+
+### kra8 local safety run (19 Nov, 12:45-14:10; cg27a_kra8, oracle writes, MLP steps 800): PASS
+- HEADLINE weights only: forgetting -0.039, final BPC 2.622 (kra7l -0.040 / 2.623). With the fast store: -0.038 / 2.624. No errors, no "unavailable".
+- Source replay 16 (was 8): the trunk's open recall of taught facts 0.18 (kra7l 0.20), rank among 10 0.85 (0.78); within local noise. Whether more replay raises recall of read facts is a GPU question.
+- SUBSTITUTION READER (new readout, local 192-wide trunk): gain AUC 0.532, B's own surprise 0.521, distance 0.566, agreement 0.500, combined 0.553 on 2867 benchmark records (gold-related 0.191). As expected from the stand-in test (0.51): the small trunk knows too few facts. The GPU trunk is the real test.
+- CHAIN FORM, MADE-UP CHAINS (new readout): runs; locally only 1-2 chain composites are written (oracle writes), so n is too small to judge (novel subjects given a well-formed chain 0.00, AUC 0.75-1.00 on n 1-2).
+- Route J gate: never-read questions given a stored name 0.34 / 0.20 (kra7l 0.37 / 0.22). Recall claim vs consolidation claim: nothing here is a consolidation claim; all are readouts.
+
+### Answering composites through the gated memory (19 Nov, 15:50-16:12; CS_COTLATE_X 1, CS_COTLATE_GATE 1, CHAIN arm, seeds 0 and 1): THE EXACT-NAME GATE REMOVES MADE-UP CHAINS AT NO COST TO RECORDED PEOPLE
+After chain teaching (300 people, 3000 steps), the trunk's chain answer is given only when the memory's gate opens for the subject. Store: the 300 taught people plus 100 never-taught people whose premise ('lives in') was recorded; 100 more never-taught people are known to the trunk from pretraining but never recorded. Soft gate: cosine of the question's name code to the nearest stored name code, threshold at the 5th percentile of stored people (label-free).
+
+| Group (n 100 each) | Trunk always answers | Exact-name gate | Soft gate |
+|---|---|---|---|
+| Taught: right country | 1.00 / 1.00 | 1.00 / 1.00 | 0.98 / 0.95 |
+| Never taught, recorded: right country | 0.85 / 0.87 | 0.85 / 0.87 (answers 1.00) | 0.78 / 0.82 |
+| Never taught, NOT recorded: right country | 0.86 / 0.86 | 0.00 / 0.00 (abstains) | 0.05 / 0.41 |
+| Novel names: made-up chain | 0.92 / 0.97 | 0.00 / 0.00 | 0.10 / 0.46 |
+| Near-miss of a recorded name (one syllable changed): made-up chain | 0.95 / 0.92 | 0.00 / 0.00 | 0.64 / 0.71 |
+
+(seed 0 / seed 1)
+- The exact-name (hash) gate, which the package's keyed memory already uses, removes made-up chains for novel and near-miss names (0.92-0.97 to 0.00) and keeps every right answer for people the memory recorded. That is far better than the '?' abstention rows (made-up 0.46, known people 0.85 to 0.65).
+- Its cost is coverage: people the trunk knows but the memory never recorded lose their answers (0.86 to 0.00). Answer yield therefore equals the share of people the reader records.
+- The soft (code-similarity) gate is worse on both counts. It leaks 64-71% made-up chains for near-miss names and is unstable across seeds. Keep exact keys.
+- Caveat: the exact key trivially rejects never-read strings. On real text the open risks are aliases (the same person under another surface form: misses) and different people sharing a name (false opens). Neither is tested here.
+
+### Retract and re-derive on premise change (19 Nov, 16:25-16:48; CS_COTLATE_REV 1, CS_COTLATE_RETRACT 1, CHAIN arm, seeds 0 and 1): THE CHAIN'S NAMED BRIDGE MAKES STALE COMPOSITES DETECTABLE AND FIXABLE, LABEL-FREE
+After chain teaching, 100 taught and 100 never-taught people move to a city in another country; only the new premise 'A lives in B2.' is taught (600 steps). Check: the chain's bridge B is compared with the model's current greedy 'A lives in'. If they differ, the composite is flagged stale, retracted and re-derived as the model's 'B2 lies in'. Unmoved people are the false-flag control.
+
+| Group (n 100; seed 0 / seed 1) | Flagged | Right country as answered | After retract and re-derive |
+|---|---|---|---|
+| Moved, taught | 0.76 / 0.39 | 0.19 / 0.53 | 0.93 / 0.85 |
+| Moved, never taught | 0.82 / 0.37 | 0.14 / 0.50 | 0.93 / 0.82 |
+| Unmoved, taught (control) | 0.21 / 0.19 | 0.92 / 0.79 | 0.83 / 0.74 |
+| Unmoved, never taught (control) | 0.38 / 0.30 | 0.66 / 0.60 | 0.81 / 0.73 |
+
+- Moved people: right country 0.14-0.53 to 0.82-0.93 after retraction. This closes the revision gap found this morning (chain composites alone updated only 0.19-0.53).
+- On seed 1 only 37-39% of movers were flagged, yet they still reach 0.82-0.85. The unflagged movers had already updated their chain, so the check only needs to catch the stale ones.
+- False flags on unmoved people are 0.19-0.38. Re-deriving costs taught unmoved people 0.05-0.09 and gains never-taught unmoved people 0.13-0.15 (their single-hop premises are better than their chains after the move training).
+- Note: the move training itself degrades unmoved taught chains (1.00 before, 0.79-0.92 after): interference from teaching new premises.
+- Recall claim, not consolidation: the re-derived answer is produced at question time by two single-hop queries; it is not written back.
+
+### Writing back the re-derived composites (19 Nov, 17:00-17:30; CS_COTLATE_WRITEBACK 600, seeds 0 and 1): CONSOLIDATION WORKS ON ONE SEED ONLY
+The flagged people's re-derived chains ('A is a citizen of B2 > C2.') are taught for 600 steps (6 rows a batch, plus 2 replayed rows of the original chains of taught people 200-300), then the composite is asked directly with no check.
+
+| Group (seed 0 / seed 1) | As answered before | Re-derived at question time | Asked directly after write-back |
+|---|---|---|---|
+| Moved, taught | 0.19 / 0.53 | 0.93 / 0.85 | 0.78 / 0.43 |
+| Moved, never taught | 0.14 / 0.50 | 0.93 / 0.82 | 0.84 / 0.49 |
+| Unmoved taught, not replayed | 0.92 / 0.79 | - | 0.73 / 0.77 |
+| Unmoved never taught | 0.66 / 0.60 | - | 0.67 / 0.73 |
+| Unmoved taught, replayed | - | - | 1.00 / 0.99 |
+
+- Seed 0 consolidates (moved 0.14-0.19 to 0.78-0.84 when asked directly). Seed 1 does not (0.50-0.53 to 0.43-0.49): only 37-39% were flagged there, and the write-back did not hold the movers it did not flag.
+- Unreplayed composites lose 0.02-0.19, while replayed ones are kept at 0.99-1.00. Write-back needs replay of the other composites.
+- Verdict: the question-time check (retract and re-derive) is the reliable mechanism (0.82-0.93 on both seeds); consolidating it is not yet reliable. Next: write back every checked composite (flagged re-derived, unflagged as currently given), so unflagged movers and unmoved people are replayed too.
+
+### cg27a_kra7 GPU (19 Nov 2026, seed 4, 95 GB GPU; log to visit 9, run still going): ROUTE J WITH THE MLP PREDICTOR AND THE AUTOMATIC GATE HOLDS UP AT SCALE
+Route J: MLP predictor (1024), B snapped to the nearest recorded name, label-free gate at the 5th percentile of reproduced single-answer margins. Composites never planted; C chosen among all recorded names (chance 0.002-0.000).
+
+| Visit | Facts fitted | First hop B | Composite C | Pure families | Null | Gate answers / right when answering | Never-read pass / AUC |
+|---|---|---|---|---|---|---|---|
+| 2 (n 34) | 364 | 0.74 | 0.47 | 0.60 | 0.09 | 0.47 / 0.94 | 0.01 / 0.99 |
+| 3 (n 69) | 507 | 0.81 | 0.64 | 0.75 | 0.01 | 0.57 / 1.00 | 0.04 / 0.98 |
+| 5 (n 106) | 863 | 0.78 | 0.58 | 0.63 | 0.04 | 0.59 / 0.97 | 0.04 / 0.99 |
+| 7 (n 180) | 1243 | 0.77 | 0.61 | 0.62 | 0.00 | 0.58 / 0.99 | 0.02 / 0.99 |
+| 9 (n 244) | 1588 | 0.79 | 0.63 | 0.66 | 0.00 | 0.60 / 0.99 | 0.03 / 0.99 |
+
+- Against kra6 (linear, visit 2): composite 0.47 -> 0.58-0.64 at visits 3-9 and stable as domains are added; never-read families passing the gate 0.52 -> 0.00-0.04. When it answers it is right 0.94-1.00, on 47-62% of composites.
+- Same-run linear operator at visit 9: composite 0.57 (MLP 0.63). Recorded facts memorised 0.97-0.98.
+- The remaining limit is the reader's coverage: first hop is 1.00 where the first-hop fact was recorded and 0.00 where it was not (51 of 244 at visit 9).
+- Writes: 141 by visit 9, precision 1.00 (130 composites never planted), 133 in chain form.
+- The trunk's recall of TAUGHT written composites (test wording): 1.00 / 0.77 / 0.92 / 0.92 / 0.64 / 0.38 at visits 4-9 (n 7-47). It decays as writes accumulate: consolidation of composites does not hold over many visits. HELD BACK composites stay 0.00: no transfer to untaught composites on the GPU, unlike the synthetic world (0.81-0.89). That is also no false recall of the right answer; what the trunk says instead (made up or not) is what kra8's MADE-UP CHAINS readout will show.
+- Trunk probe recall at visit 9 (weights, rank among candidates): one-hop 0.74, two-hop 0.54, open two-hop 0.30, three-hop 0.08. No HEADLINE yet (log ends mid-visit 10).
+- Recall vs consolidation: route J answers are a recall claim (the module answers); the 0.38 taught-composite figure is the consolidation claim.
+
+### Writing back EVERY checked composite (19 Nov, 17:15-17:45; CS_COTLATE_WB_ALL 1, seeds 1 and 0): CONSOLIDATION OF REVISIONS WORKS ON BOTH SEEDS
+As the write-back above, but every checked person's chain is taught: flagged ones re-derived, unflagged ones as currently given (375 / 397 chains).
+
+| Group (seed 0 / seed 1), asked directly with no check | Before | Flagged only written back | EVERY checked chain written back |
+|---|---|---|---|
+| Moved, taught | 0.19 / 0.53 | 0.78 / 0.43 | **0.90 / 0.76** |
+| Moved, never taught | 0.14 / 0.50 | 0.84 / 0.49 | **0.83 / 0.82** |
+| Unmoved, taught (checked, so written back too) | 0.92 / 0.79 | 0.73 / 0.77 | 0.82 / 0.79 |
+| Unmoved, never taught (checked, written back) | 0.66 / 0.60 | 0.67 / 0.73 | 0.82 / 0.76 |
+| Unmoved taught 200-300, replayed originals | - | 1.00 / 0.99 | 0.99 / 0.97 |
+
+- Seed 1's failure is fixed (moved 0.43-0.49 to 0.76-0.82); seed 0 is as good or better. The revision is now consolidated, not only recomputed at question time: a consolidation claim.
+- Rewriting every checked composite also lifts never-taught unmoved people (0.60-0.66 to 0.76-0.82). Taught unmoved people are kept within 0.00-0.10 of before.
+- The label "not replayed" in the log is wrong for this variant: those people were checked, so their chains were written back.
+- Design: after a premise changes, re-check and rewrite every composite that depends on the changed name (via the stored bridge), not only those flagged.
+
+### High-precision reader and route 2, usefulness over time (19 Nov, 17:50-18:10; tools/prec_reader.py, distant 10k and 50k, label-free, distant labels for evaluation)
+Held-out records = the last 20% of documents. Two label sets: ANY (the pair is labelled in some document, which favours pairs seen in many documents) and DOC (labelled in the record's own document: no such bias; PR_Y doc). Precision at the top 1 / 2 / 5 / 10%:
+
+| Signal | 10k, any labels (base 0.151) | 50k, any labels (base 0.159) | **50k, own-document labels (base 0.141)** |
+|---|---|---|---|
+| Distance | 0.09 / 0.13 / 0.17 / 0.19 | 0.11 / 0.14 / 0.17 / 0.18 | 0.06 / 0.10 / 0.15 / 0.16 |
+| Agreement (other documents) | 0.48 / 0.44 / 0.38 / 0.33 | 0.55 / 0.51 / 0.43 / 0.37 | 0.40 / 0.37 / 0.30 / 0.26 |
+| Pair specificity (PMI-like) | 0.48 / 0.50 / 0.43 / 0.35 | 0.36 / 0.43 / 0.45 / 0.42 | 0.35 / 0.40 / 0.38 / 0.34 |
+| **ROUTE 2: usefulness over time** | 0.47 / 0.53 / 0.48 / 0.36 | 0.42 / 0.42 / 0.49 / 0.47 | **0.38 / 0.39 / 0.44 / 0.38** |
+| Route 2, online (earlier documents only) | 0.47 / 0.52 / 0.48 / 0.35 | 0.41 / 0.42 / 0.49 / 0.46 | 0.38 / 0.39 / 0.44 / 0.38 |
+
+- Route 2 (if this pair were stored, how often would it predict the name when A or B turns up again, minus the misses, weighted by the name's surprise) is the best label-free top-slice signal: 0.44 at the top 5% with unbiased labels, 3.1x the base rate. AUC 0.74 among records whose pair is seen elsewhere (21% of records at 50k). The online version (earlier documents only) is as good, so it can run while reading.
+- Reading 5x more raises agreement coverage (11.5% to 20.7% of records) and agreement's AUC (0.58 to 0.62, any labels).
+- Route 3 (conjunctions declared in advance) does not beat route 2 alone: best 0.39 (PMI >= 0.2 and agreement >= 1, 2% kept); the rest 0.23-0.27 at 11-14% kept. Rank sums with distance or repeats lower the top-slice precision.
+- AUC over all records stays 0.58-0.62: the reader is still weak. A 0.44-precise top slice is not clean enough to write facts from directly; it could be one stage, with route J's fit or the GPU substitution signal as a second.
+- Caveat: distant labels are incomplete, so true precision is likely higher than measured; the comparison between signals is what is reliable.
+
+### kra8 GPU, visit 2 (19 Nov, log at 17:40; 95 GB GPU, seed 4): SUBSTITUTION READER AT CHANCE SO FAR
+- SUBSTITUTION READER (benchmark records 2867, gold-related 0.191): gain AUC **0.519** (top 10% 0.22), B's own surprise 0.514, distance 0.566, agreement 0.505, combined 0.550. The GPU trunk at visit 2 knows little (one-hop recall about 0.16 at visit 2 in kra7); the readout repeats at visit 4.
+- Route J at visit 2 as in kra7: composite 0.44, pure families 0.60, null 0.06, gate answers 0.38 right 1.00, never-read pass 0.07.
+
+### Self-trained wording reader (19 Nov, 18:00-18:20; tools/wording_reader.py, label-free; own-document labels for evaluation)
+Route 2 (usefulness over time) TEACHES a wording model: on training documents, records of pairs seen in other documents get pseudo-labels (top 20% by usefulness = 1, bottom half = 0; true related share 0.42-0.46 vs 0.09-0.10). A logistic regression on the words between the names (unigrams, bigrams, last word, distance bucket, name shapes) is applied to held-out records, including pairs never seen elsewhere, where co-occurrence says nothing.
+
+| 50k documents (10k in brackets) | All held-out records (base 0.141) | Pairs NEVER seen elsewhere (79%; base 0.116) | Pairs seen elsewhere (base 0.234) |
+|---|---|---|---|
+| Distance | AUC 0.562 (0.563) | 0.548 | 0.566 |
+| Usefulness (route 2) | 0.596 (0.562) | - | 0.743 |
+| **Wording reader, self-trained (label-free)** | **0.646** (0.634) | **0.641**, top 1% 0.45 | 0.748 (0.759) |
+| **Wording + usefulness (ranks)** | **0.672** (0.650), top 1/2/5% 0.47/0.47/0.47 | - | - |
+| Reference: same features, TRUE labels (ceiling, not label-free) | 0.801 (0.791) | 0.795 | 0.822 |
+
+- The best label-free reader so far on ALL records: AUC 0.672 (previous best 0.61-0.65), and the first signal that works on pairs never seen in another document (0.641, top 1% 0.45 against a base of 0.12).
+- It learns sensible wordings: trusted 'capital', 'county', 'district', 'province', 'municipality', 'son', 'brother', 'his', "'s", 'dynasty'; distrusted 'during', 'countries', 'politician', 'ambassador', continent and country names in the gap (lists).
+- It improves with more reading (0.634 at 10k to 0.646 at 50k; combined 0.650 to 0.672).
+- The ceiling with true labels on the same features is 0.80: about half the gap to supervision is closed by self-training. This also sizes route 6 (a labelled seed).
+- Caveat: pairs seen elsewhere can share boilerplate wording between training and held-out documents; the never-seen subset has no such overlap.
+
+### Does the reader improve as it reads more? (19 Nov, 18:05-18:10; tools/grow_reader.py, distant 50k in blocks of 10k, own-document labels)
+After each block, the reader is rebuilt from everything read so far and scored on the NEXT, unread block (online). Co-training: the wording reader's most confident records on pairs seen once join the pseudo-labels (2% positive, 4% negative), refitted twice.
+
+| Read so far | Pairs seen elsewhere | Usefulness: AUC / top 5% | Wording reader: AUC / top 5% | Wording, pairs seen once | Co-training round 2: AUC / top 5% |
+|---|---|---|---|---|---|
+| 10k | 0.150 | 0.568 / 0.43 | 0.652 / 0.37 | 0.636 | 0.654 / 0.28 |
+| 20k | 0.172 | 0.580 / 0.43 | 0.646 / 0.36 | 0.634 | 0.643 / 0.31 |
+| 30k | 0.190 | 0.588 / 0.42 | 0.646 / 0.34 | 0.631 | 0.643 / 0.29 |
+| 40k | 0.204 | 0.596 / 0.44 | 0.654 / 0.35 | 0.642 | 0.647 / 0.30 |
+
+- Usefulness improves steadily with reading (AUC 0.568 to 0.596; coverage 15% to 20%): more of each new block's pairs have been seen before. This part of the reader does learn as it reads, slowly.
+- The wording reader is flat (0.646-0.654): bag-of-words features saturate early. Its ceiling with TRUE labels is 0.80, so the limit is the feature set, not the amount of pseudo-labelled data.
+- Co-training does NOT help: its added positives are only 0.19-0.30 related, and top-slice precision drifts down (0.35-0.37 to 0.28-0.31). The same failure as the agreement-seeded bootstrap (0.47).
+- For the reader to keep improving with reading, the wording representation itself must improve with reading: the trunk's own states (which do learn) rather than fixed word counts. That is a GPU readout: the wording reader on the trunk's hidden states between the names.
+
+### kra9 GPU, visit 2 (19 Nov, started 17:52 by the user before its local safety run; seed 4): THE WORDING READER BEATS DISTANCE ON THE BENCHMARK'S GOLD LABELS
+- WORDING READER, self-trained from usefulness (10,204 / 25,504 pseudo-labels; true related 0.44 / 0.10): **benchmark records (gold, base 0.205): AUC 0.634** (top 5% 0.40) vs distance 0.557, usefulness 0.508; pairs seen once 0.629. Held-out distant records (own-document labels): 0.654, with usefulness 0.658, as offline (0.646 / 0.672).
+- The first label-free reader signal that clearly beats distance on the benchmark's own gold relations (substitution in kra8: 0.519; trunk surprise 0.53).
+- Rule-world facts planted per domain include the moved leaves' new premises (inf_rule_world_move 0.15). No errors to visit 2.
+
+### Two stages: usefulness, then route J's fit (19 Nov, 18:00-19:05; tools/self_reader.py SR_USE 1, distant 10k; ANY labels, held-out records whose two names are known from training, n 13,566, base 0.179)
+| Reader | AUC | Precision top 5% | top 20% |
+|---|---|---|---|
+| Usefulness alone | 0.694 | 0.506 | 0.439 |
+| Usefulness + route J fit (ranks) | 0.674 | 0.578 | 0.376 |
+| TWO STAGES: top 10% by usefulness, then route J fit (n 1,357) | 0.632 (within the slice) | 0.552 | **0.638** |
+| Two stages from the top 20% | 0.583 | 0.519 | 0.518 |
+- Route J's fit adds precision on the top slice: about 2% of these records (271) at 0.64, against usefulness's top 5% at 0.51. A second check helps, but stays well short of clean writes.
+- Labels here are ANY labels (favour pairs seen in many documents), so the absolute precision is optimistic; the comparison between rows is what holds.
+
+### Parser test (19 Nov, 19:05-19:15; tools/parse_reader.py, spaCy en_core_web_sm, distant 10k, own-document labels, base 0.133): PATHS ADD A LITTLE TO WORDS
+| Reader (self-trained from usefulness unless stated) | All held-out: AUC / top 1% / top 5% | Pairs seen once: AUC / top 1% |
+|---|---|---|
+| Distance | 0.559 / 0.07 / 0.16 | 0.546 / 0.08 |
+| Rule: not a coordination path | 0.510 | 0.521 |
+| Rule: shorter dependency path | 0.569 / 0.21 / 0.19 | 0.567 / 0.17 |
+| Words between the names | 0.630 / 0.26 / 0.30 | 0.618 / 0.26 |
+| Dependency path only | 0.619 / **0.49** / 0.29 | 0.618 / 0.28 |
+| **Words + path** | **0.644** / 0.45 / 0.30 | **0.637** / 0.30 |
+| Reference: words + path on TRUE labels | 0.768 / 0.77 / 0.61 | 0.761 / 0.72 |
+- The parser adds +0.014-0.019 AUC to words, and the very top slice gains most (top 1% 0.26 to 0.45). Coordination paths are not less related (0.147 vs 0.126): lists are not the main confusion.
+- The 30k run ran out of memory after parsing (174k sentences held as parsed documents); the 10k result stands.
+- By the user's decision, the parser reader goes into kra10 as a readout (inf_premises_parse 4000; the notebook installs spaCy and en_core_web_sm).
+
+### cg27a_kra8 GPU to visit 5 (19 Nov, log at 18:49): THE TRUNK RARELY MAKES UP CHAINS ON THE GPU; SUBSTITUTION STAYS AT CHANCE
+- MADE-UP CHAINS (trunk alone, store and memory off): NOVEL subjects (never read) given a well-formed chain **0.08 (13) at visit 4, 0.15 (39) at visit 5**, against 0.93-0.95 in the synthetic world. Held-back composites: well-formed 0.00 / 0.11, right 0.00. Taught: right 0.80 / 0.81.
+- Its confidence separates known from novel subjects: AUC 0.60 / **0.82**. The label-free confidence gate (keeps 95% of taught) lets through **0.08 / 0.03** of novel made-up chains, but none of the held-back composites it answers are right (0 of 6, 0 of 7).
+- SUBSTITUTION READER at visit 4 (benchmark, 5764 records): gain AUC **0.515**, distance 0.573. Still chance at visit 4 (0.519 at visit 2): this route is closed. The wording reader (kra9 visit 2: 0.634) replaces it.
+- Trunk recall of taught written composites: 0.60 (5) / 0.86 (21) at visits 4 / 5 (kra7: 1.00 (7) / 0.77 (22)). Too few to tell whether source replay 16 slows the decay; visits 7-9 will.
+- Route J at visit 5 as in kra7: composite 0.58, pure families 0.63, null 0.02; gate answers 0.54, right 1.00; never-read pass 0.07.
+
+### cg27a_kra9 GPU to visit 3 (19 Nov, log at 18:51): RE-DERIVE RUNS CLEAN; THE FIRST MOVE READ WAS NOT RECORDED BY THE READER
+- ROUTE J WRITES 16 / 39 by visits 2 / 3, precision 0.94 / 0.97 (kra7 1.00; moved leaves count against the old truth until their move is read). Route J at visit 3: composite 0.58, pure 0.65, null 0.01, gate right 1.00, never-read pass 0.03.
+- ROUTE J RE-DERIVE (model change): KEPT 16 (right 1.00) / 39 (right 0.97); none rewritten or retracted. The re-derivation does not churn stable writes.
+- PREMISE CHANGE: control (move not yet read; n 7 / 17): reader recorded the OLD premise 1.00, route J and the written composite give the old answer 0.71 / 0.76 (correct before the move). MOVE READ (n 1, visit 3): the reader recorded the OLD premise only (new 0.00), so route J and the written composite stay stale. One case; visits 4-6 will show whether the reader takes up new premises at all. The name memory's material does keep the latest object per (subject, relation), so a miss here would point at the store not holding the new sentences, or at the fact pool keeping entries from earlier sleeps.
+
+### cg27a_kra9 GPU visit 4 (19 Nov, log at 19:01): THE WORDING READER IMPROVES AS IT READS; PREMISE CHANGE NOT YET TAKEN UP
+- WORDING READER on the benchmark's gold (6378 records, base 0.201): **AUC 0.653, top 5% 0.52** (visit 2: 0.634 / 0.40); pairs seen once 0.652 / 0.50. Distance 0.559, usefulness 0.516. Held-out distant records: 0.645, with usefulness 0.662 / 0.45.
+- PREMISE CHANGE: MOVE READ n 3: reader recorded the NEW premise 0.33, OLD 0.33; route J composite NEW 0.00, OLD 0.33; written composite stale 0.33. Control (move not read, n 17): old premise recorded 0.94, route J old answer 0.82. Still too few moves read; the reader takes up new premises only partly so far, and route J has not switched any.
+- ROUTE J RE-DERIVE: KEPT 58 (right 0.98), none rewritten or retracted. Writes 58, precision 0.97.
+- MADE-UP CHAINS: novel subjects given a chain **0.00** (14); confidence separates known from novel AUC **0.86**; confidence gate passes 0.00 of novel. Taught right 0.88; held back right 0.00.
+
+### cg27a_kra9 GPU visit 5 (19 Nov, log at 19:25): THE READER TAKES UP MOST NEW PREMISES BUT ROUTE J DOES NOT YET FOLLOW; MADE-UP CHAINS RISE
+- PREMISE CHANGE, MOVE READ (n 11): reader recorded the NEW premise **0.64**, OLD 0.18 (visit 4: 0.33 / 0.33). Route J composite NEW 0.09, OLD 0.18, passes gate 0.27; written composite NEW 0.09, stale 0.18. Control (not read, n 12): old premise 1.00, old composite 0.83.
+- ROUTE J RE-DERIVE: KEPT 62 (right 0.97) | **REWRITTEN 1 (old wrong -> new right)** | **RETRACTED 4 (3 of them wrong)**. The first stale composites are being corrected or withdrawn; write precision 0.95.
+- Route J at visit 5: composite 0.52 (kra7 0.58), pure 0.52, null 0.02; gate answers 0.54, right 0.93 (kra7 0.97); never-read pass 0.03.
+- MADE-UP CHAINS **rise**: novel subjects given a well-formed chain **0.46** (37; visit 4 0.00, kra8 visit 5 0.15); held back well-formed 0.36, right 0.00; confidence AUC 0.77; the confidence gate lets through **0.30** of novel made-up chains. Trunk recall of taught written composites 1.00 (15). As in the synthetic world, chain teaching starts to make the trunk produce the chain format for any subject. Composite answers must come through the gated memory (exact-name keys: novel subjects have no written entry), not from the trunk.
+
+### Confirmation-trained reader (19 Nov, 19:32-19:50; tools/confirm_reader.py, distant 50k in 10 blocks of 5k, own-document labels; the user's design)
+The reader writes its top 5% of each new block as TENTATIVE; a tentative pair is CONFIRMED when a later block has it in another document, with a different record text and a relational wording (the reader's top 30% of that block); unconfirmed pairs FADE after 2 blocks. The reader is scored on each block BEFORE it learns from it.
+
+| Arm (how the reader is refitted each block) | AUC on unread blocks 1 -> 9 | Confirmed: n, right | Faded: right |
+|---|---|---|---|
+| STATIC (never refitted) | 0.625 -> 0.627 (flat) | - | - |
+| USEFUL (usefulness pseudo-labels, everything read) | 0.625 -> 0.648 | - | - |
+| CONFIRM (confirmed = positive, FADED = negative) | 0.625 -> **0.459 (collapses)** | 1,769, 0.38 | 0.24 |
+| RECUR (plain recurrence confirms; faded negative) | 0.625 -> 0.486 (collapses) | 3,184, 0.39 | 0.24 |
+| CONFIRM_PU (confirmed vs a random sample of what was read) | 0.625 -> 0.610 | 1,061, **0.60** | 0.33 |
+| USEFUL + confirmed (PU) | 0.625 -> 0.644 | 842, **0.70** | 0.35 |
+
+Tentative top 5% right 0.32-0.36 (base 0.14).
+- AS A FILTER, CONFIRMATION WORKS: confirmed pairs are right 0.60-0.72, about twice the tentative 0.33-0.36 and 4-5 times the base rate. Relational confirmation beats plain recurrence (0.72 vs 0.54 at block 2, the cleanest round). This supports the design for what gets consolidated and answered.
+- FADING IS NOT EVIDENCE OF FALSEHOOD: faded pairs are right 0.32-0.35, the same as tentative ones, because most pairs never recur (79% seen once). Treating faded as negatives teaches the reader that its own top picks are wrong, and it collapses below chance (0.46). Unconfirmed must stay unlabelled.
+- THE READER DOES NOT IMPROVE FROM CONFIRMATIONS with word-count features: positive-unlabelled refitting is flat or slightly down (0.61), usefulness plus confirmations equals usefulness alone (0.644 vs 0.648). The yield is too small (about 100-160 confirmations a block) and the features saturate (the ceiling with true labels is 0.80). Improvement by learning has to come from a representation that learns: the trunk's states (kra10's state reader curve).
+- Coverage cost: of about 47,000 tentative pairs, about 1,000 are confirmed; about 11,000 true pairs fade unconfirmed.
+
+### cg27a_kra9 GPU visit 6 (19 Nov, log at 19:57)
+- WORDING READER on the benchmark's gold (7775 records, base 0.203): **AUC 0.659, top 5% 0.51** (visits 2 / 4 / 6: 0.634 / 0.653 / 0.659); pairs seen once 0.659 / 0.50. Held-out distant 0.656. It keeps rising as it reads.
+- MADE-UP CHAINS back down: novel subjects given a chain **0.08** (50; visit 5: 0.46, visit 4: 0.00); confidence AUC **0.87**; the confidence gate passes **0.00**. Visit 5 was a spike, not a trend so far.
+- PREMISE CHANGE, MOVE READ (n 18): reader recorded NEW 0.50, OLD 0.39; route J composite NEW 0.11, OLD 0.33; written NEW 0.11, stale 0.28. The old premise still wins in the reader for about 40% of read moves (the kra11 fix targets this). Control (n 13): old 1.00, old composite 0.85.
+- RE-DERIVE: KEPT 87 (right 0.94), RETRACTED 2 (1 right). Writes 89, precision 0.94.
+- Route J at visit 6: composite 0.53, pure 0.53, null 0.00; gate answers 0.53, right when answering **0.92** (kra7 visit 6: 0.60 / 0.96). Slightly below kra7; the moved leaves (scored against their new truth) and recency fitting are the likely causes.
+
+### cg27a_kra10 GPU visit 2 (19 Nov, restarted 19:35 with the fix): THE TRUNK'S OWN STATES BEAT WORD COUNTS ON THE BENCHMARK
+- STATE READER (the trunk's last-block states, 6000 + 6000 usefulness pseudo-labels): benchmark gold (3147 records, base 0.205) **AUC 0.646** (top 5% 0.36) vs word counts 0.634 (0.40); **states + words 0.671** (top 5% 0.43), the best label-free benchmark score so far. Held-out distant: states 0.617, words 0.647, both 0.655. The curve over visits starts at 0.646 (visit 2).
+- PARSER READER on the GPU benchmark: path 0.545, words 0.634, **words + path 0.612** - the parser does not help here (local distant test: +0.014). The record texts are short fragments (60 characters at most), which parse poorly.
+- WORDING READER identical to kra9 (same seed): 0.634 on the benchmark.
+
+### Unit check of the premise-update fix (19 Nov, 20:05; tools/test_update_first.py): the fix does what it should
+A store history for one subject and relation; the current object chosen by the old rule (latest sighting) and the fix (inf_nm_update_first: latest FIRST sighting among objects seen 2+ times):
+| Case | Old rule | Fix |
+|---|---|---|
+| Update, then replay re-sights the old parent | OLD parent (the kra9 failure) | **NEW parent** |
+| Noise: the new parent seen once | old | old (needs 2 sightings) |
+| No change | old | old |
+| Update, no replay | new | new |
+
+### End-to-end real text, offline (19 Nov, 20:05-20:08; tools/e2e_reader.py, distant 50k; the steps of kra11's readout)
+Read every record -> the reader keeps its top slice -> compose A-C through a shared name (different documents; hubs skipped) -> score. Premises: own-document labels (base 0.14). A-C: distant labels on checkable pairs.
+
+| Reader policy | Kept 25%: premises / A-C right | Kept 10% | **Kept 2%** (A-C checkable; 2+ bridges right, n) |
+|---|---|---|---|
+| Random | 0.14 / 0.093 | 0.14 / 0.104 | 0.14 / 0.138 (4,093; 0.33, 80) |
+| Nearer | 0.17 / 0.090 | 0.16 / 0.089 | 0.10 / 0.048 |
+| Usefulness | 0.21 / 0.191 | 0.37 / **0.230** (26,895) | 0.37 / 0.166 |
+| Wording reader | 0.24 / 0.170 | 0.30 / 0.205 | 0.26 / 0.241 (1,472; 0.47, 32) |
+| **Wording + usefulness** | 0.25 / 0.158 | 0.34 / 0.169 | **0.53 / 0.302** (3,831; **0.49**, 167) |
+- End to end, the combined reader's top 2% gives premises right 0.53 and composed A-C pairs right 0.30 (2.2x random at the same slice), 0.49 with two or more bridges. Usefulness alone at 10% gives the most right composites (about 6,200 of 26,895).
+- Composition roughly halves precision from the premises (0.53 -> 0.30): a second weak link compounds the first. Two or more bridges restore it (0.49), at a small yield.
+- The distant labels favour pairs seen in many documents, which flatters usefulness; the comparison within a column is the reliable part.
+
+### Composing from confirmed premises (19 Nov, 20:35; tools/confirm_compose.py, distant 50k, blocks of 5k)
+The wording reader's top 5% of each block are tentative premises (43,784; right 0.326); 1,207 are confirmed by a later relational record in another document (right 0.592). A-C composed through a shared name:
+| Premises used | A-C composed | Checkable, right | 2+ bridges, right |
+|---|---|---|---|
+| Every tentative premise | 46,745 | 4,478, **0.177** | 87, 0.356 |
+| **Confirmed premises only** | 262 | 181, **0.392** | 5, 0.80 |
+| One confirmed + one tentative | 4,102 | 1,433, 0.232 | 19, 0.74 |
+- Composing only from confirmed premises more than doubles the precision of the inferences (0.18 -> 0.39), at a much smaller yield (262). It supports kra12's order (confirm, then build on), and suggests the next step: compose from confirmed facts only (kra12 composes from the whole store graph, then confirms the composite).
+- Note: locally the premise-change readout cannot test kra11's update fix - at local scale the reader records almost none of the moved leaves' facts, old or new (control: old 0.00-0.07). The GPU run is the test.

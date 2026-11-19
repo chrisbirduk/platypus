@@ -1415,7 +1415,7 @@ def _dw_relmod(model, cfg, ents, held, vis):
         t0 = time.time(); steps = int(getattr(cfg, 'inf_distill_relmod', 0)); W = inf_rule_world(cfg)
         pairs = {}
         for e in ents + held:
-            if e['key'][0] == 'fact': pairs.setdefault(str(e['r']).strip(), set()).add((e['A'], e['ans']))
+            if e['key'][0] == 'fact' and 'chain' not in e: pairs.setdefault(str(e['r']).strip(), set()).add((e['A'], e['ans']))
         WR = model.__dict__.setdefault('_rm_written', {})                     # STEP 4 (inf_distill_relmod_write): facts written at earlier sleeps -
         for (r9, a9, c9) in WR: pairs.setdefault(r9, set()).add((a9, c9))      #   hops for later chains, never evidence (provenance)
         R = _rm_mine(pairs, steps, int(cfg.seed) * 100 + 917, hist=model.__dict__.setdefault('_rm_hist', {}), derived=set(WR))
@@ -1544,6 +1544,9 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     T_, H_ = [], []; rep = 0
     for (r, A, C), w in WR.items():
         e = dict(key=('fact', A, r, C), A=A, r=r, ans=C, d=w['d'], pfs=[f"{A} {r} "], seen=2, src=w['src'], rm=w['vis'])
+        if int(getattr(cfg, 'inf_distill_chainform', 0)):                     # 19 Nov MODEL CHANGE (kra7): CHAIN-FORM TEACHING - a written composite is taught (and recalled)
+            B9 = (model.__dict__.get('_ra_bridge') or {}).get((r, A, C))       #   as 'A <relation> B > C.' with its bridge, not 'A <relation> C.' (synthetic world, two seeds:
+            if B9 and B9 not in (A, C): e['ans'] = f"{B9} > {C}"; e['chain'] = (B9, C)   #   chain teaching reaches never-taught people 0.81-0.89, direct 0.10-0.14)
         if repr(e['key']) in have or (A, r) in haveAr: rep += 1; continue    # recorded by the reader meanwhile: the observation wins
         wc9 = float(getattr(cfg, 'inf_distill_relmod_write_ctl', 0.0))        # 12 Nov POWERED STEP 4: a separate, larger held-back share for written facts
         gk9 = (repr((r, C)) if int(getattr(cfg, 'inf_distill_relmod_ctl_tail', 0)) else repr(e['key'])) + '|w'   # 18 Nov: held back BY ANSWER (all of a
@@ -1574,7 +1577,7 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
             with torch.no_grad(): mo.weight.copy_(W0)
     print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] {len(WR)} facts written so far ({sum(1 for w in WR.values() if w['vis'] == vis)} this sleep; rule-world truth known for {len(kn)}, "
           f"precision {prec:.2f}; {sum(1 for k in WR if (k[1], k[0]) in never)} of them composites NEVER PLANTED; {rep} since recorded by the reader) -> question pool: "
-          f"{len(T_)} taught, {len(H_)} held back (control); {len(gen(old(T_)))} / {len(gen(old(H_)))} of the earlier ones also concluded by the sleep layer as 'A is connected to C' || "
+          f"{len(T_)} taught, {len(H_)} held back (control){f'; CHAIN FORM (A r B > C, recalled as the whole chain) {sum(1 for e in T_ + H_ if chr(99) + chr(104) + chr(97) + chr(105) + chr(110) in e)}' if int(getattr(cfg, 'inf_distill_chainform', 0)) else ''}; {len(gen(old(T_)))} / {len(gen(old(H_)))} of the earlier ones also concluded by the sleep layer as 'A is connected to C' || "
           f"FROM THE TRUNK, test wording, written at an earlier sleep, closed-form edits IN PLACE: TAUGHT {f(rT)} vs HELD BACK {f(rH)} | NEVER PLANTED: TAUGHT {f(rTn)} vs HELD BACK {f(rHn)} | "
           f"NOT ALSO A SLEEP CONCLUSION: TAUGHT {f(rTg)} vs HELD BACK {f(rHg)}"
           + (f" || edits SUBTRACTED: TAUGHT {f(sub[0])} vs HELD BACK {f(sub[1])} | NEVER PLANTED: TAUGHT {f(sub[2])} vs HELD BACK {f(sub[3])} | NOT ALSO A SLEEP CONCLUSION: "
@@ -1582,7 +1585,41 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     try: _dw_relmod_answers(model, S_slot, old(T_), old(H_), par, mgr, truth, rw, vis)
     except Exception as e9:
         _fail('inference.distill:relmod_answers'); print(f"  [RELATIONAL MODULE WRITES, WHAT THE TRUNK ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+    if int(getattr(cfg, 'inf_distill_chainform', 0)) and int(getattr(cfg, 'inf_distill_chain_conf', 0)):
+        try: _dw_chain_conf(model, S_slot, [e for e in old(T_) if 'chain' in e], [e for e in old(H_) if 'chain' in e], vis)
+        except Exception as e9:
+            _fail('inference.distill:chain_conf'); print(f"  [CHAIN FORM, MADE-UP CHAINS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     return ents + T_, held + H_
+
+
+def _dw_chain_conf(model, S_slot, T9, H9, vis):
+    """19 Nov kra8 readout: does chain-form teaching make the TRUNK give made-up chains? (synthetic world: novel names given a well-formed chain
+    0.93-0.95 after chain teaching; its own confidence separated known from novel at AUC 0.83-0.86). The trunk's greedy answer (store and memory
+    off) for taught and held-back chain-form composites, and for NOVEL subjects (the subject's letters reversed: a name never read) asked the same
+    relation: share giving a well-formed chain 'B > C', share right (known), and the trunk's own confidence (bits per byte of its answer)"""
+    from platypus.inference.compress import _cg_auc, _cg_bits
+    def run(L, novel=False):
+        out = []
+        for e in L[:60]:
+            A = e['A'][::-1].title() if novel else e['A']; sl = int(S_slot(e['d'])); pr = f"{A} {e['r']} ".replace('  ', ' ').encode('latin-1', 'replace')
+            g = _dw_greedy(model, pr, sl, 40); pt = [x.strip() for x in g.split('>')]
+            q = pr + g.encode('latin-1', 'replace'); bits = _cg_bits(model, sl, [(q, len(pr), len(q))])[0] / max(1, len(q) - len(pr)) if len(q) > len(pr) else 9.0
+            out.append((len(pt) == 2 and all(pt), g.strip() == e['ans'].strip(), float(bits)))
+        return out
+    was = model.training; model.eval()
+    try: rt, rh, rn = run(T9), run(H9), run(T9 + H9, True)
+    finally: model.train(was)
+    m_ = lambda L, j: f"{np.mean([x[j] for x in L]):.2f}" if L else 'n/a'
+    kn = [x[2] for x in rt + rh]; nv = [x[2] for x in rn]
+    auc = _cg_auc(-np.array(kn), -np.array(nv)) if kn and nv else float('nan')
+    gt = ''
+    if len(rt) >= 5 and rn:                                                    # a confidence GATE on the trunk's chain, set label-free from the TAUGHT chains (keeps 95%)
+        th = float(np.quantile([x[2] for x in rt], 0.95)); ps = lambda L: [x for x in L if x[2] <= th]
+        gt = (f" || CONFIDENCE GATE (bits/byte <= {th:.2f}, keeps 95% of taught): held back answered {len(ps(rh))}/{len(rh)} right {m_(ps(rh), 1)} | "
+              f"novel made-up chains passing {np.mean([x[0] and x[2] <= th for x in rn]):.2f}")
+    print(f"  [CHAIN FORM, MADE-UP CHAINS | visit {vis + 1}] the trunk's own answer (store and memory off): TAUGHT {len(rt)} well-formed chain {m_(rt, 0)}, right {m_(rt, 1)} | "
+          f"HELD BACK {len(rh)} well-formed {m_(rh, 0)}, right {m_(rh, 1)} | NOVEL subjects (never read) {len(rn)} given a well-formed chain {m_(rn, 0)} (made up) | "
+          f"its confidence separates known from novel AUC {auc:.2f} (synthetic world: 0.93-0.95 made up after chain teaching; AUC 0.83-0.86)" + gt, flush=True)
 
 
 @torch.no_grad()

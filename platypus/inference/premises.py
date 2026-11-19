@@ -212,6 +212,161 @@ def premises_readout(model, cfg, S_slot, vis):
     ixb = np.arange(nD, nD + len(RB)); sbv = np.array([SB.get((r[0], r[1], r[2], r[7]), np.nan) for r in RB])
     if len(RB) >= 100 and np.isfinite(sbv).all():
         _, txt = pol(ixb, y[ixb], sbv); msg.append(f"PREMISES, benchmark records {len(RB)} (gold-related {y[ixb].mean():.3f}): {txt}")
+    if int(getattr(cfg, 'inf_premises_subst', 0)) and len(RB) >= 100:          # 19 Nov kra8 SUBSTITUTION READER (label-free; gold for evaluation): how much the TRUNK's
+        try:                                                                     #   prediction of B depends on A - bits on B's bytes with A as written vs A swapped for a
+            SS = _PM.setdefault('ss', {}); ns = int(getattr(cfg, 'inf_premises_subst', 0)); rr = np.random.RandomState(int(cfg.seed) + 99)   #   same-type name of another
+            pool = collections.defaultdict(list)                                 #   record (offline with a 192 x 3 stand-in: chance, AUC 0.51 - the stand-in knows no facts)
+            for r in RB: pool[r[10][0]].append(r[1])
+            todo = [i for i, r in enumerate(RB) if (r[0], r[1], r[2], r[7]) not in SS and r[7].startswith(r[1]) and r[7].endswith(r[2]) and len(r[7]) > len(r[1]) + len(r[2])]
+            bysl = collections.defaultdict(list)
+            for i in todo: bysl[int(S_slot(RB[i][8]))].append(i)
+            was = model.training; model.eval()
+            try:
+                for sl, ix in bysl.items():
+                    seqs = []
+                    for i in ix:
+                        r = RB[i]; tb = r[7].encode('latin-1', 'replace'); seqs.append((tb, len(tb) - len(r[2]), len(tb)))
+                        for _ in range(ns):
+                            pl = pool.get(r[10][0]) or pool[next(iter(pool))]; z = pl[rr.randint(len(pl))]
+                            if z == r[1]: z = pl[rr.randint(len(pl))]
+                            sb2 = (z + r[7][len(r[1]):]).encode('latin-1', 'replace'); seqs.append((sb2, len(sb2) - len(r[2]), len(sb2)))
+                    bits = _cg_bits(model, sl, seqs, bs=256)
+                    for k, i in enumerate(ix):
+                        v = bits[k * (ns + 1):(k + 1) * (ns + 1)]; SS[(RB[i][0], RB[i][1], RB[i][2], RB[i][7])] = (float(np.mean(v[1:]) - v[0]) / max(1, len(RB[i][2])), float(v[0]) / max(1, len(RB[i][2])))
+            finally: model.train(was)
+            ok = np.array([(r[0], r[1], r[2], r[7]) in SS for r in RB]); yb = np.array([bool(r[6]) for r in RB])[ok]
+            if ok.sum() >= 100 and 0 < yb.sum() < len(yb):
+                gv = np.array([SS[(r[0], r[1], r[2], r[7])][0] for r, k in zip(RB, ok) if k]); ov = np.array([SS[(r[0], r[1], r[2], r[7])][1] for r, k in zip(RB, ok) if k])
+                dv = -np.array([r[5] for r, k in zip(RB, ok) if k], float)
+                pdocs = collections.defaultdict(set)
+                for r in RD: pdocs[frozenset((r[1], r[2]))].add(('d', r[0]))
+                for r in RB: pdocs[frozenset((r[1], r[2]))].add(('b', r[0]))
+                ag = np.array([len(pdocs[frozenset((r[1], r[2]))] - {('b', r[0])}) for r, k in zip(RB, ok) if k], float)
+                rk2 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                def a9(v): o = np.argsort(-v); return f"AUC {_cg_auc(v[yb], v[~yb]):.3f} (top 10% {yb[o[:max(1, len(v) // 10)]].mean():.2f})"
+                msg.append(f"SUBSTITUTION READER, benchmark records {int(ok.sum())} (gold-related {yb.mean():.3f}; {ns} swaps): GAIN bits/byte of B when A is swapped {a9(gv)} | "
+                           f"B's own surprise {a9(-ov)} | distance {a9(dv)} | agreement (other documents) {a9(np.log1p(ag))} | gain + distance + agreement (ranks) {a9(rk2(gv) + rk2(dv) + rk2(np.log1p(ag)))}")
+        except Exception as e: _fail('inference.premises:subst'); msg.append(f"SUBSTITUTION READER unavailable ({type(e).__name__}: {e})"[:160])
+    scE = {}
+    if int(getattr(cfg, 'inf_premises_wording', 0)) and len(RB) >= 100 and nD >= 1000:   # 19 Nov kra9 SELF-TRAINED WORDING READER (label-free; labels for evaluation):
+        try:                                                                   #   usefulness over time (would the stored pair predict the other name when one turns up
+            from sklearn.feature_extraction.text import HashingVectorizer       #   again? hits minus misses, weighted by surprise) gives pseudo-labels on the store's
+            from sklearn.linear_model import LogisticRegression                  #   records seen in other documents; a logistic regression on the words between the
+            pdw = collections.defaultdict(set); ndw = collections.defaultdict(set)   # names learns which wordings state a relation, and scores every record, including
+            for r in RD: pdw[frozenset((r[1], r[2]))].add(('d', r[0])); ndw[r[1]].add(('d', r[0])); ndw[r[2]].add(('d', r[0]))   # pairs seen once (offline 50k:
+            for r in RB: pdw[frozenset((r[1], r[2]))].add(('b', r[0])); ndw[r[1]].add(('b', r[0])); ndw[r[2]].add(('b', r[0]))   # AUC 0.646, with usefulness 0.672)
+            NDw = max(2, len({x for v in ndw.values() for x in v}))
+            def usew(r, own):
+                a_ = len(pdw[frozenset((r[1], r[2]))] - {own}); nA, nB = len(ndw[r[1]] - {own}), len(ndw[r[2]] - {own})
+                if not a_: return np.nan
+                hA, hB = a_ / (nA + 2), a_ / (nB + 2); sA, sB = np.log(NDw / (nA + 2)), np.log(NDw / (nB + 2))
+                return max(hA * sB - (1 - hA) * 0.5, hB * sA - (1 - hB) * 0.5)
+            txw = lambda r: f"{r[3]} LAST_{r[4] or 'none'} DIST_{min(int(r[5]), 12) // 3}"
+            hv = HashingVectorizer(n_features=2 ** 20, ngram_range=(1, 2), alternate_sign=False, norm='l2', token_pattern=r"[^\s]+")
+            cut = int(ndv * 0.8); trI = [i for i in range(nD) if RD[i][0] < cut]; teI = [i for i in range(nD) if RD[i][0] >= cut]
+            uT = np.array([usew(RD[i], ('d', RD[i][0])) for i in trI]); okT = ~np.isnan(uT)
+            if okT.sum() >= 200:
+                hi_, lo_ = np.quantile(uT[okT], 0.8), np.quantile(uT[okT], 0.5); ps9 = [i for i, u in zip(trI, uT) if u >= hi_]; ng9 = [i for i, u in zip(trI, uT) if u <= lo_]
+                clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
+                def ev(L, own_of, yy):
+                    sw = clf.decision_function(hv.transform([txw(r) for r in L])); dv_ = -np.array([r[5] for r in L], float)
+                    uu = np.array([usew(r, own_of(r)) for r in L]); sn = ~np.isnan(uu); rk3 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                    cb = np.where(sn, rk3(sw) + rk3(np.nan_to_num(uu, nan=-9.0)), rk3(sw) * 0.5)
+                    def a9(v, m=None):
+                        v_, y_ = (v, yy) if m is None else (v[m], yy[m])
+                        if y_.sum() == 0 or y_.sum() == len(y_): return 'n/a'
+                        o = np.argsort(-v_); return f"AUC {_cg_auc(v_[y_], v_[~y_]):.3f} (top 5% {y_[o[:max(1, len(v_) // 20)]].mean():.2f})"
+                    return (f"distance {a9(dv_)} | usefulness {a9(np.nan_to_num(uu, nan=-9.0))} | WORDING READER {a9(sw)} | wording + usefulness {a9(cb)} | "
+                            f"pairs seen once: wording {a9(sw, ~sn)} (n {int((~sn).sum())})")
+                yB = np.array([bool(r[6]) for r in RB]); yD = np.array([bool(RD[i][6]) for i in teI])
+                if int(getattr(cfg, 'inf_premises_e2e', 0)) and scd is not None:   # 19 Nov kra11: the reader's scores for every scored distant record (end-to-end readout below)
+                    swE = clf.decision_function(hv.transform([txw(RD[i]) for i in ixd])); uE = np.array([usew(RD[i], ('d', RD[i][0])) for i in ixd])
+                    rkE = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                    scE = {'WORDING READER': swE, 'WORDING + USEFULNESS': np.where(np.isnan(uE), rkE(swE) * 0.5, rkE(swE) + rkE(np.nan_to_num(uE, nan=-9.0)))}
+                msg.append(f"WORDING READER, self-trained from usefulness ({len(ps9)} / {len(ng9)} pseudo-labels; true related among them {np.mean([RD[i][6] for i in ps9]):.2f} / "
+                           f"{np.mean([RD[i][6] for i in ng9]):.2f}, evaluation only) || benchmark records {len(RB)} (gold-related {yB.mean():.3f}): {ev(RB, lambda r: ('b', r[0]), yB)} || "
+                           f"held-out distant records {len(teI)} (own-document labels {yD.mean():.3f}): {ev([RD[i] for i in teI], lambda r: ('d', r[0]), yD)}")
+                if int(getattr(cfg, 'inf_premises_states', 0)):                # 19 Nov kra9 STATE READER: the same pseudo-labels, but the reader reads the TRUNK'S OWN STATES
+                    import torch; from platypus.inference.closed_form import _ws_batch, _ws_run   #   (after A, mean over the words between, just before B; last block) instead of word counts.
+                    rr9 = np.random.RandomState(int(cfg.seed) + 31 + vis); nS = int(getattr(cfg, 'inf_premises_states', 0))   # Repeated at every premises readout: does the
+                    def txt9(r):                                                #   reader improve as the trunk learns? (offline 192 x 3 stand-ins at 6000 / 18000 steps)
+                        if len(r) > 7 and isinstance(r[7], str) and r[7].startswith(r[1]) and r[7].endswith(r[2]) and len(r[7]) > len(r[1]) + len(r[2]): return r[7]
+                        return f"{r[1]} {r[3]} {r[2]}".replace(' ,', ',').replace(' .', '.').replace(" 's", "'s")
+                    def feats(L, slot_of):
+                        out = np.zeros((len(L), 0), np.float32); cap = {}; h9 = model.blocks[-1].register_forward_hook(lambda m_, i_, o_: cap.__setitem__('h', o_.detach()))
+                        was = model.training; model.eval(); rows = {}
+                        try:
+                            by9 = collections.defaultdict(list)
+                            for i, r in enumerate(L): by9[slot_of(r)].append(i)
+                            for sl, ix in by9.items():
+                                for i0 in range(0, len(ix), 128):
+                                    Lm = max(8, min(120, int(getattr(model.cfg, 'seq_len', 64)) - 1))   # _ws_batch keeps the FIRST seq_len bytes: cut from the left here
+                                    ch = ix[i0:i0 + 128]; fb = [txt9(L[i]).encode('latin-1', 'replace') for i in ch]; tb = [x[-Lm:] for x in fb]; X, _ = _ws_batch(model, tb)
+                                    with torch.no_grad(): _ws_run(model, X, sl)
+                                    for j, i in enumerate(ch):
+                                        r = L[i]; b = tb[j]; ct = len(fb[j]) - len(b); H = cap['h'][j].float(); nH = H.shape[0]
+                                        lb = min(nH - 1, max(0, len(b) - len(r[2].encode('latin-1', 'replace')) - 1))
+                                        la = min(lb, max(0, len(r[1].encode('latin-1', 'replace')) - 1 - ct))
+                                        rows[i] = torch.cat([H[la], H[la:lb + 1].mean(0), H[lb]]).cpu().numpy()
+                        finally: h9.remove(); model.train(was)
+                        return np.stack([rows[i] for i in range(len(L))])
+                    k9 = min(nS, len(ps9), len(ng9)); pS = [ps9[i] for i in rr9.choice(len(ps9), k9, replace=False)]; nN = [ng9[i] for i in rr9.choice(len(ng9), k9, replace=False)]
+                    tS = [teI[i] for i in rr9.choice(len(teI), min(len(teI), 2 * nS), replace=False)]
+                    sld = int(S_slot(seen[-1])) if seen else 0
+                    Ftr = feats([RD[i] for i in pS + nN], lambda r: sld); mu9, sd9 = Ftr.mean(0), Ftr.std(0) + 1e-6
+                    cS = LogisticRegression(C=0.1, max_iter=500, class_weight='balanced'); cS.fit((Ftr - mu9) / sd9, np.r_[np.ones(k9), np.zeros(k9)])
+                    FB = (feats(RB, lambda r: int(S_slot(r[8])) if len(r) > 8 else sld) - mu9) / sd9; FD = (feats([RD[i] for i in tS], lambda r: sld) - mu9) / sd9
+                    sB9, sD9 = cS.decision_function(FB), cS.decision_function(FD); yD9 = np.array([bool(RD[i][6]) for i in tS])
+                    swB = clf.decision_function(hv.transform([txw(r) for r in RB])); swD = clf.decision_function(hv.transform([txw(RD[i]) for i in tS]))
+                    def a8(v, yy):
+                        if yy.sum() == 0 or yy.sum() == len(yy): return 'n/a'
+                        o = np.argsort(-v); return f"AUC {_cg_auc(v[yy], v[~yy]):.3f} (top 5% {yy[o[:max(1, len(v) // 20)]].mean():.2f})"
+                    rk8 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                    _PM.setdefault('states_curve', []).append((vis + 1, _cg_auc(sB9[yB], sB9[~yB]) if 0 < yB.sum() < len(yB) else float('nan')))
+                    msg.append(f"STATE READER (the trunk's own states, last block; {k9} + {k9} pseudo-labelled training records) || benchmark records: STATES {a8(sB9, yB)} | word counts {a8(swB, yB)} | "
+                               f"states + words (ranks) {a8(rk8(sB9) + rk8(swB), yB)} || held-out distant {len(tS)}: STATES {a8(sD9, yD9)} | word counts {a8(swD, yD9)} | "
+                               f"states + words {a8(rk8(sD9) + rk8(swD), yD9)} || CURVE over readouts (visit: benchmark AUC): " + ", ".join(f"{v_}: {a_:.3f}" for v_, a_ in _PM['states_curve']))
+        except Exception as e: _fail('inference.premises:wording'); msg.append(f"WORDING READER unavailable ({type(e).__name__}: {e})"[:160])
+        if int(getattr(cfg, 'inf_premises_parse', 0)) and locals().get('clf') is not None:     # 19 Nov kra10 PARSER READER (readout; spaCy en_core_web_sm, an outside parser, by the user's
+            try:                                                               #   decision): the dependency path between the two names in the record's text (labels, the
+                import spacy                                                   #   word where the branches meet, length, pure coordination), self-trained from the same
+                nlp9 = _PM.get('nlp') or spacy.load('en_core_web_sm', disable=['ner']); _PM['nlp'] = nlp9   # usefulness pseudo-labels, alone and with the word counts
+                CO9 = {'conj', 'cc', 'punct', 'appos', 'compound', 'npadvmod'}; nP = int(getattr(cfg, 'inf_premises_parse', 0)); rp9 = np.random.RandomState(int(cfg.seed) + 53 + vis)
+                def pth(r, dd):
+                    t9 = r[7] if len(r) > 7 and isinstance(r[7], str) else ''
+                    sa, sb = dd.char_span(0, len(r[1]), alignment_mode='expand'), dd.char_span(len(t9) - len(r[2]), len(t9), alignment_mode='expand')
+                    if sa is None or sb is None or not t9.startswith(r[1]) or not t9.endswith(r[2]): return 'PATH_none'
+                    i, j = sa.root, sb.root; anc = {}; t, n = i, 0
+                    while True:
+                        anc[t.i] = n
+                        if t.head.i == t.i or n > 30: break
+                        t = t.head; n += 1
+                    dn = []; t = j
+                    while t.i not in anc and t.head.i != t.i and len(dn) < 30: dn.append(t.dep_); t = t.head
+                    if t.i not in anc: return 'PATH_none'
+                    lca = t; up = []; t = i
+                    while t.i != lca.i: up.append(t.dep_); t = t.head
+                    dp = up + dn[::-1]
+                    return (f"PATH_{'^'.join(up)}|{lca.lemma_.lower()}|{'v'.join(dn[::-1])} LCA_{lca.lemma_.lower()} PLEN_{min(len(dp), 8)} "
+                            f"COORD_{int(bool(dp) and all(x in CO9 for x in dp))}")
+                def pfe(L): return [pth(r, dd) for r, dd in zip(L, nlp9.pipe([r[7] if len(r) > 7 and isinstance(r[7], str) else '' for r in L], batch_size=256))]
+                k8 = min(nP, len(ps9), len(ng9)); pP = [ps9[i] for i in rp9.choice(len(ps9), k8, replace=False)]; nP_ = [ng9[i] for i in rp9.choice(len(ng9), k8, replace=False)]
+                tP = [teI[i] for i in rp9.choice(len(teI), min(len(teI), 2 * nP), replace=False)]
+                trL = [RD[i] for i in pP + nP_]; ytr = np.r_[np.ones(k8), np.zeros(k8)]; teL = [RD[i] for i in tP]; yP = np.array([bool(r[6]) for r in teL]); yB = np.array([bool(r[6]) for r in RB])
+                ptr, pB_, pD_ = pfe(trL), pfe(RB), pfe(teL)
+                cP = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); cP.fit(hv.transform(ptr), ytr)
+                cWP = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); cWP.fit(hv.transform([txw(r) + ' ' + p for r, p in zip(trL, ptr)]), ytr)
+                def a7(v, yy):
+                    if yy.sum() == 0 or yy.sum() == len(yy): return 'n/a'
+                    o = np.argsort(-v); return f"AUC {_cg_auc(v[yy], v[~yy]):.3f} (top 5% {yy[o[:max(1, len(v) // 20)]].mean():.2f})"
+                co8 = lambda P_: np.array([' COORD_1' in x for x in P_])
+                msg.append(f"PARSER READER (spaCy dependency path, self-trained from usefulness; {k8} + {k8} records; coordination paths {co8(pB_).mean():.2f} of benchmark records, "
+                           f"related among them {yB[co8(pB_)].mean() if co8(pB_).any() else float('nan'):.2f} vs {yB[~co8(pB_)].mean() if (~co8(pB_)).any() else float('nan'):.2f}) || "
+                           f"benchmark: PATH {a7(cP.decision_function(hv.transform(pB_)), yB)} | WORDS {a7(clf.decision_function(hv.transform([txw(r) for r in RB])), yB)} | "
+                           f"WORDS + PATH {a7(cWP.decision_function(hv.transform([txw(r) + ' ' + p for r, p in zip(RB, pB_)])), yB)} || held-out distant {len(teL)}: "
+                           f"PATH {a7(cP.decision_function(hv.transform(pD_)), yP)} | WORDS {a7(clf.decision_function(hv.transform([txw(r) for r in teL])), yP)} | "
+                           f"WORDS + PATH {a7(cWP.decision_function(hv.transform([txw(r) + ' ' + p for r, p in zip(teL, pD_)])), yP)}")
+            except Exception as e: _fail('inference.premises:parse'); msg.append(f"PARSER READER unavailable ({type(e).__name__}: {e})"[:160])
     # ---- INFERENCE: A-C through a shared name, store kept by each policy (distant scored records; distant labels)
     if scd is not None:
         try:
@@ -219,9 +374,10 @@ def premises_readout(model, cfg, S_slot, vis):
             for i in range(nD): dn[RD[i][1]].add(RD[i][0]); dn[RD[i][2]].add(RD[i][0])
             LAB = _PM['LAB']; res = []; amax = int(getattr(cfg, 'inf_premises_ac_max', 600000))
             sub = np.sort(np.random.RandomState(int(cfg.seed) + 4242).permutation(len(ixd))[:amax])   # a fixed sample of the scored store (time)
-            for k in ('random', 'trunk surprise', 'block association'):
-                for frac in (0.25, 0.10):
-                    keep = ixd[sub][np.argsort(-scd[k][sub])[:int(len(sub) * frac)]]; nb = collections.defaultdict(list); PR = collections.defaultdict(set); np_ = 0
+            sc3 = dict(scd); sc3.update(scE); E2 = bool(scE)
+            for k in (('random', 'trunk surprise', 'block association') + (tuple(scE) if E2 else ())):
+                for frac in ((0.25, 0.10, 0.02) if E2 else (0.25, 0.10)):
+                    keep = ixd[sub][np.argsort(-sc3[k][sub])[:int(len(sub) * frac)]]; nb = collections.defaultdict(list); PR = collections.defaultdict(set); np_ = 0
                     for i in keep: nb[RD[i][1]].append((RD[i][2], RD[i][0])); nb[RD[i][2]].append((RD[i][1], RD[i][0]))
                     for i in keep:
                         if np_ > 3000000: break
@@ -657,6 +813,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         if 'INV' not in _PM or len(_PM['INV']) != len(NI): _PM['INV'] = {i: n for n, i in NI.items()}
         W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(len(cm_)), rank=len(wr), novel=True, code=float(code[j]), ndv=int(ndv_),
                            prem=[_PM['INV'][int(x)] for x in cm_[:5]], rule=str(sel_), score=float(sc_[j]), state='inferred')   # 15 Nov PROVENANCE: premises (bridges), rule, score
+        if int(getattr(cfg, 'inf_rti_tentative', 0)): W[(A_, C_)].update(tent=True)   # 19 Nov kra12: TENTATIVE until later reading confirms it (not taught, not in the memory)
         if TT_ is not None:
             hd_, tl_ = (A_, C_) if deg[NI[A_]] <= deg[NI[C_]] else (C_, A_); cp_ = (_PM['TY'].get(hd_, 'X'), _PM['TY'].get(tl_, 'X'))
             if TT_.get(cp_):
@@ -723,6 +880,29 @@ def _rret_judge(cfg, RD, ndv_, vis):
     Offline (tools/confirm_trigger.py, Re-DocRED gold, two splits, 200 writes each, 25k documents read after): AUC 0.72-0.73, the bottom 20%
     wrong 0.88 / 0.93 against 0.63 / 0.59 overall (likelihood ratio 4-8; re-ranking by the store's own score: about 2)."""
     W = _PM.get('rti') or {}
+    if int(getattr(cfg, 'inf_rti_tentative', 0)):                              # 19 Nov kra12 CONFIRM, CONSOLIDATE, FADE (the user's design; offline tools/confirm_reader.py:
+        TN = [k for k, w in W.items() if w.get('tent') and w['vis'] < vis and w.get('ndv', ndv_) < ndv_]   #   relationally confirmed pairs right 0.60-0.72 vs 0.33 tentative;
+        if not TN:                                                             #   faded pairs are NOT false - 0.33 - so fading removes, never teaches against)
+            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
+        want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))
+        for r in RD:
+            fk = frozenset((r[1], r[2]))
+            if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
+                any9[fk] += 1
+                if 1 <= r[5] <= 8 and not _rret_listlike(r): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
+        fv = int(getattr(cfg, 'inf_rti_fade', 4)); cf9, fd9, st9 = [], [], []
+        for k in TN:
+            w = W[k]; fk = frozenset(k)
+            if rel9[fk] >= cm9: w.update(tent=False, conf=vis, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
+            elif vis - w['vis'] >= fv: w.update(tent=False, faded=vis, state='faded', judged=vis, flag=True, ret=False); fd9.append(w['truth'])
+            else: st9.append(w['truth'])
+        rr = lambda L: f"{len(L)} (right {np.mean([bool(x) for x in L]):.2f})" if L else "0"
+        allc = [w['truth'] for w in W.values() if w.get('state') == 'confirmed']; allf = [w['truth'] for w in W.values() if w.get('state') == 'faded']
+        print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] MODEL CHANGE: tentative inferences judged on documents read since their write (a relational record of the pair "
+              f"confirms; unconfirmed after {fv} visits fade - removed, never taught against): CONFIRMED now {rr(cf9)} | FADED now {rr(fd9)} | still tentative {rr(st9)} || "
+              f"ALL SO FAR: confirmed {rr(allc)}, faded {rr(allf)}, tentative {rr([w['truth'] for w in W.values() if w.get('tent')])} | any later record of the pair "
+              f"(plain recurrence, evaluation) {sum(1 for k in TN if any9[frozenset(k)])} of {len(TN)}", flush=True)
+        return
     groups = collections.defaultdict(list)
     for k, w in W.items():
         if w.get('judged') is None and w['vis'] < vis and 'ndv' in w and w['ndv'] < ndv_: groups[w['ndv']].append(k)
@@ -835,6 +1015,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         hc = float(getattr(cfg, 'inf_rti_ctl', 0.0))                          # 13 Nov: its own held-back share (a third in cg27a_rti2), else the pool's fifth
         held_ = (zlib.crc32((repr(e['key']) + '|rti').encode()) % 1000 < hc * 1000) if hc > 0 else ctl(e)
         if w.get('unpred'): U_.append(e); continue                            # 14 Nov cg27a_rtc control: unpredicted facts are read, never taught
+        if w.get('tent') or w.get('faded') is not None: continue               # 19 Nov kra12: tentative (not yet confirmed) and faded inferences are neither taught nor in the memory
         if w.get('ret') and not held_: e['flag'] = True; X_.append(e); continue   # 14 Nov cg27a_rret: RETRACTED - no longer taught (unlikelihood rows)
         if w.get('flag'): e['flag'] = True
         (H_ if held_ else T_).append(e)
