@@ -4889,3 +4889,26 @@ Tentative top 5% right 0.32-0.36 (base 0.14).
 - STATE READER (the trunk's last-block states, 6000 + 6000 usefulness pseudo-labels): benchmark gold (3147 records, base 0.205) **AUC 0.646** (top 5% 0.36) vs word counts 0.634 (0.40); **states + words 0.671** (top 5% 0.43), the best label-free benchmark score so far. Held-out distant: states 0.617, words 0.647, both 0.655. The curve over visits starts at 0.646 (visit 2).
 - PARSER READER on the GPU benchmark: path 0.545, words 0.634, **words + path 0.612** - the parser does not help here (local distant test: +0.014). The record texts are short fragments (60 characters at most), which parse poorly.
 - WORDING READER identical to kra9 (same seed): 0.634 on the benchmark.
+
+### Unit check of the premise-update fix (19 Nov, 20:05; tools/test_update_first.py): the fix does what it should
+A store history for one subject and relation; the current object chosen by the old rule (latest sighting) and the fix (inf_nm_update_first: latest FIRST sighting among objects seen 2+ times):
+| Case | Old rule | Fix |
+|---|---|---|
+| Update, then replay re-sights the old parent | OLD parent (the kra9 failure) | **NEW parent** |
+| Noise: the new parent seen once | old | old (needs 2 sightings) |
+| No change | old | old |
+| Update, no replay | new | new |
+
+### End-to-end real text, offline (19 Nov, 20:05-20:08; tools/e2e_reader.py, distant 50k; the steps of kra11's readout)
+Read every record -> the reader keeps its top slice -> compose A-C through a shared name (different documents; hubs skipped) -> score. Premises: own-document labels (base 0.14). A-C: distant labels on checkable pairs.
+
+| Reader policy | Kept 25%: premises / A-C right | Kept 10% | **Kept 2%** (A-C checkable; 2+ bridges right, n) |
+|---|---|---|---|
+| Random | 0.14 / 0.093 | 0.14 / 0.104 | 0.14 / 0.138 (4,093; 0.33, 80) |
+| Nearer | 0.17 / 0.090 | 0.16 / 0.089 | 0.10 / 0.048 |
+| Usefulness | 0.21 / 0.191 | 0.37 / **0.230** (26,895) | 0.37 / 0.166 |
+| Wording reader | 0.24 / 0.170 | 0.30 / 0.205 | 0.26 / 0.241 (1,472; 0.47, 32) |
+| **Wording + usefulness** | 0.25 / 0.158 | 0.34 / 0.169 | **0.53 / 0.302** (3,831; **0.49**, 167) |
+- End to end, the combined reader's top 2% gives premises right 0.53 and composed A-C pairs right 0.30 (2.2x random at the same slice), 0.49 with two or more bridges. Usefulness alone at 10% gives the most right composites (about 6,200 of 26,895).
+- Composition roughly halves precision from the premises (0.53 -> 0.30): a second weak link compounds the first. Two or more bridges restore it (0.49), at a small yield.
+- The distant labels favour pairs seen in many documents, which flatters usefulness; the comparison within a column is the reliable part.
