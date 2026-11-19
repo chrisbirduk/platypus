@@ -4670,3 +4670,20 @@ Continents are NEW facts ('C is part of K.', 20 countries -> 5 continents) taugh
 - SUBSTITUTION READER (new readout, local 192-wide trunk): gain AUC 0.532, B's own surprise 0.521, distance 0.566, agreement 0.500, combined 0.553 on 2867 benchmark records (gold-related 0.191). As expected from the stand-in test (0.51): the small trunk knows too few facts. The GPU trunk is the real test.
 - CHAIN FORM, MADE-UP CHAINS (new readout): runs; locally only 1-2 chain composites are written (oracle writes), so n is too small to judge (novel subjects given a well-formed chain 0.00, AUC 0.75-1.00 on n 1-2).
 - Route J gate: never-read questions given a stored name 0.34 / 0.20 (kra7l 0.37 / 0.22). Recall claim vs consolidation claim: nothing here is a consolidation claim; all are readouts.
+
+### Answering composites through the gated memory (19 Nov, 15:50-16:12; CS_COTLATE_X 1, CS_COTLATE_GATE 1, CHAIN arm, seeds 0 and 1): THE EXACT-NAME GATE REMOVES MADE-UP CHAINS AT NO COST TO RECORDED PEOPLE
+After chain teaching (300 people, 3000 steps), the trunk's chain answer is given only when the memory's gate opens for the subject. Store: the 300 taught people plus 100 never-taught people whose premise ('lives in') was recorded; 100 more never-taught people are known to the trunk from pretraining but never recorded. Soft gate: cosine of the question's name code to the nearest stored name code, threshold at the 5th percentile of stored people (label-free).
+
+| Group (n 100 each) | Trunk always answers | Exact-name gate | Soft gate |
+|---|---|---|---|
+| Taught: right country | 1.00 / 1.00 | 1.00 / 1.00 | 0.98 / 0.95 |
+| Never taught, recorded: right country | 0.85 / 0.87 | 0.85 / 0.87 (answers 1.00) | 0.78 / 0.82 |
+| Never taught, NOT recorded: right country | 0.86 / 0.86 | 0.00 / 0.00 (abstains) | 0.05 / 0.41 |
+| Novel names: made-up chain | 0.92 / 0.97 | 0.00 / 0.00 | 0.10 / 0.46 |
+| Near-miss of a recorded name (one syllable changed): made-up chain | 0.95 / 0.92 | 0.00 / 0.00 | 0.64 / 0.71 |
+
+(seed 0 / seed 1)
+- The exact-name (hash) gate, which the package's keyed memory already uses, removes made-up chains for novel and near-miss names (0.92-0.97 to 0.00) and keeps every right answer for people the memory recorded. That is far better than the '?' abstention rows (made-up 0.46, known people 0.85 to 0.65).
+- Its cost is coverage: people the trunk knows but the memory never recorded lose their answers (0.86 to 0.00). Answer yield therefore equals the share of people the reader records.
+- The soft (code-similarity) gate is worse on both counts. It leaks 64-71% made-up chains for near-miss names and is unstable across seeds. Keep exact keys.
+- Caveat: the exact key trivially rejects never-read strings. On real text the open risks are aliases (the same person under another surface form: misses) and different people sharing a name (false opens). Neither is tested here.
