@@ -4922,3 +4922,13 @@ The wording reader's top 5% of each block are tentative premises (43,784; right 
 | One confirmed + one tentative | 4,102 | 1,433, 0.232 | 19, 0.74 |
 - Composing only from confirmed premises more than doubles the precision of the inferences (0.18 -> 0.39), at a much smaller yield (262). It supports kra12's order (confirm, then build on), and suggests the next step: compose from confirmed facts only (kra12 composes from the whole store graph, then confirms the composite).
 - Note: locally the premise-change readout cannot test kra11's update fix - at local scale the reader records almost none of the moved leaves' facts, old or new (control: old 0.00-0.07). The GPU run is the test.
+
+### Naming relations on real text (19 Nov, 20:52; tools/relname_reader.py, distant 50k; gold Wikidata relations for evaluation only)
+The wording reader's top 10% (104,080 records, related 0.298); 32,352 of them have a gold relation (187 types; commonest P569 date of birth 22%, P577 publication date, P131 located in, P17 country).
+| Grouping (label-free) | Groups | Purity | NMI | Records in usable groups (5+, majority 60%+) |
+|---|---|---|---|---|
+| One group (baseline) | 1 | 0.224 | 0.000 | 0.000 |
+| Last word between the names | 399 | 0.466 | 0.473 | 0.131 |
+| **Words between (backed off to the last word)** | 1,028 | **0.561** | **0.509** | **0.285** |
+- Grouping kept pairs by the words between already names the relation for about 29% of them (groups at least 60% one relation); purity 0.56 against 0.22 for one group. A usable start for typed real-text facts ('A was born in C'), better than expected.
+- The k-means rows ran out of memory (dense centres on 2^20 features) and were killed; the kra11 safety run was not affected. To rerun with smaller features (RN_BITS 16) once the safety runs are done.
