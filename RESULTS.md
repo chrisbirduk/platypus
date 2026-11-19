@@ -5069,3 +5069,15 @@ Learned types (label-free: k-means on the words around each name's mentions, 24 
 - Multi-instance training lifts the pair-level score by 0.010 and phrase recall by a third, at a small cost in top-10% precision; its chosen mentions are less often labelled (0.374 vs 0.442) but more often phrases.
 - ReVerb's constraints lift phrase recall by 63% (0.111 -> 0.181) at no AUC cost, where balancing the teacher cost 0.015. The phrases they find are the relations the reader missed ('was born in', 'died in', 'founded in'). Their own precision is modest because the distant labels cover few of these relations' pairs.
 - Both are small, label-free gains in the direction the error analysis asked for; candidates for kra13's reader (multi-instance for pairs, ReVerb phrases as extra positives).
+
+### How many labels does the reader need? (19 Nov, 22:50-23:00; tools/seed_reader.py, distant 30k; the seed's labels are the distant set's own-document labels, themselves noisy and incomplete)
+| Seed size | Seed only | Seed + label-free (weight 3 / 15) | + context (weight 15) | + context + dataset types (reference, weight 3) |
+|---|---|---|---|---|
+| 0 | - | 0.632 | 0.627 | 0.602 |
+| 500 | 0.630 | 0.634 | 0.633 | 0.612 |
+| 2,000 | **0.662** | 0.649 / 0.657 | 0.663 | 0.640 |
+| 5,000 | **0.680** | 0.657 / 0.666 | **0.683** (phrase recall 0.141) | 0.670 |
+| 20,000 | **0.708** | 0.685 / 0.693 | **0.717** (top 10% 0.412, phrase recall 0.190) | 0.735 |
+- 2,000 labelled records already beat every label-free reader tried (0.662 vs 0.632-0.665); 5,000 give 0.68; 20,000 give 0.71-0.72 (0.735 with types).
+- Mixing in the label-free teaching does not help once the seed is 2,000 or more (it dilutes clean labels with noise), except through context features, which the seed can now use (5,000: 0.683; 20,000: 0.717 with phrase recall 0.190).
+- These seeds use the distant set's own labels, which are noisy and incomplete; a clean, human-checked seed (the benchmark's gold) should do better per label. The gain per label is steady, not dramatic: about +0.03 per 4x labels.
