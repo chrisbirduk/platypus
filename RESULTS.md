@@ -4663,3 +4663,10 @@ Continents are NEW facts ('C is part of K.', 20 countries -> 5 continents) taugh
 - Three-hop chain teaching transfers to never-taught people at 0.90, composing two pretrained premises with a fact learned only during teaching. Direct teaching learns the taught people (0.96) and transfers nothing (0.18-0.27, chance 0.20).
 - The same limits as two hops should apply (premises must be recallable; confabulation on novel names; revision partial) - not measured here.
 - **Seed 1 replicates (12:19-12:28):** chain three hops, never taught K 0.81 / 0.86 / 0.84 / **0.92** at 300 / 750 / 1,500 / 3,000 steps (B 0.85-0.89, C 0.76-0.90); taught 0.94-1.00.
+
+### kra8 local safety run (19 Nov, 12:45-14:10; cg27a_kra8, oracle writes, MLP steps 800): PASS
+- HEADLINE weights only: forgetting -0.039, final BPC 2.622 (kra7l -0.040 / 2.623). With the fast store: -0.038 / 2.624. No errors, no "unavailable".
+- Source replay 16 (was 8): the trunk's open recall of taught facts 0.18 (kra7l 0.20), rank among 10 0.85 (0.78); within local noise. Whether more replay raises recall of read facts is a GPU question.
+- SUBSTITUTION READER (new readout, local 192-wide trunk): gain AUC 0.532, B's own surprise 0.521, distance 0.566, agreement 0.500, combined 0.553 on 2867 benchmark records (gold-related 0.191). As expected from the stand-in test (0.51): the small trunk knows too few facts. The GPU trunk is the real test.
+- CHAIN FORM, MADE-UP CHAINS (new readout): runs; locally only 1-2 chain composites are written (oracle writes), so n is too small to judge (novel subjects given a well-formed chain 0.00, AUC 0.75-1.00 on n 1-2).
+- Route J gate: never-read questions given a stored name 0.34 / 0.20 (kra7l 0.37 / 0.22). Recall claim vs consolidation claim: nothing here is a consolidation claim; all are readouts.
