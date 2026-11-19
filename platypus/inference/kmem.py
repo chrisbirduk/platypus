@@ -1154,8 +1154,9 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 if HJ:                                                         # 19 Nov kra7: a JEPA-style PREDICTOR per relation (MLP, InfoNCE over the recorded names' codes,
                     Zd = Z.detach()                                            #   temperature 0.05) - the linear operator holds about D facts; the synthetic world showed the
                     def fit(pairs, shuffle=False):                             #   MLP holds 2,200 (first hop 1.00) and its top-1 minus top-2 margin rejects unrecorded subjects
-                        g9 = torch.Generator().manual_seed(11); torch.manual_seed(11)
-                        net = torch.nn.Sequential(torch.nn.Linear(D9, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, D9)).to(Z.device)
+                        g9 = torch.Generator().manual_seed(11)
+                        with torch.random.fork_rng(devices=[]):                # a fixed init without touching the run's own random stream
+                            torch.manual_seed(11); net = torch.nn.Sequential(torch.nn.Linear(D9, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, D9)).to(Z.device)
                         A_ = torch.tensor([NI[a] for a, b in pairs], device=Z.device); yb = torch.tensor([DP[b] for a, b in pairs], device=Z.device)
                         if shuffle: yb = yb[torch.randperm(len(yb), generator=g9).to(yb.device)]
                         o9 = torch.optim.Adam(net.parameters(), lr=1e-3)
@@ -1175,6 +1176,25 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         v2 = app(O[r2], Z[NI[b1]] if SNAP else v1); s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
                     m2 = float(s2.values[0] - s2.values[1]); m1 = float(s1.values[0] - s1.values[1])
                     return b1, DN[int(s2.indices[0])], (min(m1, m2) if HJ else m2)
+                if HJ:                                                         # 19 Nov DIAGNOSTICS for the MLP predictor: memorisation of the recorded facts it was fitted on,
+                    try:                                                       #   the targets' first hops split by whether that fact was RECORDED, and the linear operator
+                        with torch.no_grad():                                  #   on the same targets (kra6's route J) for a same-run comparison
+                            mem9 = [DN[int((F.normalize(OP[r](Z[NI[a]]), dim=-1) @ Z[DI].t()).argmax())] == b for r, p in rel9.items() if r in OP for a, b in p[:200]]
+                            hasr0 = {(e['A'], str(e['r']).strip()) for e in fs0}
+                            def lfit(pairs):
+                                X = Z[[NI[a] for a, b in pairs]]; Y = Z[[NI[b] for a, b in pairs]]; return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
+                            OL = {r: lfit(p) for r, p in rel9.items() if len(p) >= 5}; dg = {'rec': [], 'unrec': [], 'lin_b': [], 'lin_c': [], 'lin_rec': []}
+                            for (d, l, r3, C) in tg:
+                                r1, r2 = rules[r3]
+                                if r1 not in OP or r2 not in OP: continue
+                                b1 = DN[int((F.normalize(OP[r1](Z[NI[l]]), dim=-1) @ Z[DI].t()).argmax())]; rc_ = (l, r1) in hasr0
+                                dg['rec' if rc_ else 'unrec'].append(b1 == par.get(l))
+                                v1 = Z[NI[l]] @ OL[r1]; bl = DN[int((F.normalize(v1, dim=-1) @ Z[DI].t()).argmax())]; dg['lin_b'].append(bl == par.get(l))
+                                if rc_: dg['lin_rec'].append(bl == par.get(l))
+                                dg['lin_c'].append(DN[int((F.normalize(v1 @ OL[r2], dim=-1) @ Z[DI].t()).argmax())] == C)
+                        print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] recorded facts memorised {m(mem9)} || targets' first hop B: fact RECORDED {m(dg['rec'])}, "
+                              f"NOT recorded {m(dg['unrec'])} || LINEAR operator, same targets: first hop {m(dg['lin_b'])} (recorded {m(dg['lin_rec'])}), composite {m(dg['lin_c'])}", flush=True)
+                    except Exception as e8: print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:100]})", flush=True)
                 oJ = {'b': [], 'c': [], 'pure': [], 'null': [], 'mr': [], 'mw': []}
                 for (d, l, r3, C) in tg:
                     x = comp(l, r3, OP)
@@ -1192,7 +1212,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     with torch.no_grad():
                         for r, p in rel9.items():
                             if r not in OP: continue
-                            for a, b in p[:200]:
+                            na = collections.Counter(a for a, b in p)              # subjects with ONE recorded answer only: one-to-many relations tie at the top
+                            for a, b in [x for x in p if na[x[0]] == 1][:200]:
                                 sv = (F.normalize(app(OP[r], Z[NI[a]]), dim=-1) @ Z[DI].t()).topk(2).values; sm.append(float(sv[0] - sv[1]))
                     thr9 = float(np.quantile(sm, 0.05)) if sm else 0.05
                 cov = np.mean([m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']]) if oJ['mr'] or oJ['mw'] else float('nan')
