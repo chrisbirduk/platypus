@@ -4637,3 +4637,14 @@ After late teaching (3,000 steps), 100 taught and 100 never-taught people move t
 
 - Chain-taught composites go stale like direct ones (stale 0.65 vs 0.61): the trunk's chain still runs through the OLD city, even though the new city is known (rank 1.00). It updates a little (new 0.14-0.19 vs 0.03-0.08). The pretraining-time chain result (CS_REV, 17 Nov) does not carry over to late teaching.
 - So consolidated composites need explicit retraction and re-derivation when a premise changes (the package's written-composite retraction pops route J / A / D writes when a premise is retracted); the trunk will not revise them on its own. This needs a GPU readout: a premise change after consolidation, then the composite's answer.
+
+**Seed 1 (11:38-11:59) changes the reading: chain teaching updates PARTLY and unreliably; direct teaching never does.**
+
+| Taught people: NEW / STALE country | Chain form | Direct form |
+|---|---|---|
+| Seed 0 | 0.19 / 0.65 | 0.03 / 0.61 |
+| Seed 1 | **0.53 / 0.28** | 0.02 / 0.54 |
+| Never-taught people, seed 0 / seed 1 (chain) | 0.14 / 0.52 -> 0.50 / 0.19 | direct 0.08 / 0.00, 0.10 / 0.04 |
+
+- Direct-taught composites never update (new country 0.02-0.03 on both seeds). Chain-taught composites update for 19% (seed 0) to 53% (seed 1) of taught people: better than direct, but seed-dependent and never complete.
+- Design conclusion unchanged: consolidated composites must be retracted and re-derived when a premise changes; chain teaching makes the trunk's own update partial, not reliable.
