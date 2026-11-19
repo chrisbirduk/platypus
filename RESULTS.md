@@ -4922,3 +4922,79 @@ The wording reader's top 5% of each block are tentative premises (43,784; right 
 | One confirmed + one tentative | 4,102 | 1,433, 0.232 | 19, 0.74 |
 - Composing only from confirmed premises more than doubles the precision of the inferences (0.18 -> 0.39), at a much smaller yield (262). It supports kra12's order (confirm, then build on), and suggests the next step: compose from confirmed facts only (kra12 composes from the whole store graph, then confirms the composite).
 - Note: locally the premise-change readout cannot test kra11's update fix - at local scale the reader records almost none of the moved leaves' facts, old or new (control: old 0.00-0.07). The GPU run is the test.
+
+### Naming relations on real text (19 Nov, 20:52; tools/relname_reader.py, distant 50k; gold Wikidata relations for evaluation only)
+The wording reader's top 10% (104,080 records, related 0.298); 32,352 of them have a gold relation (187 types; commonest P569 date of birth 22%, P577 publication date, P131 located in, P17 country).
+| Grouping (label-free) | Groups | Purity | NMI | Records in usable groups (5+, majority 60%+) |
+|---|---|---|---|---|
+| One group (baseline) | 1 | 0.224 | 0.000 | 0.000 |
+| Last word between the names | 399 | 0.466 | 0.473 | 0.131 |
+| **Words between (backed off to the last word)** | 1,028 | **0.561** | **0.509** | **0.285** |
+- Grouping kept pairs by the words between already names the relation for about 29% of them (groups at least 60% one relation); purity 0.56 against 0.22 for one group. A usable start for typed real-text facts ('A was born in C'), better than expected.
+- The k-means rows ran out of memory (dense centres on 2^20 features) and were killed; the kra11 safety run was not affected. To rerun with smaller features (RN_BITS 16) once the safety runs are done.
+
+### Several teachers combined without labels (19 Nov, 21:05-21:20; tools/teachers_reader.py, distant 10k in blocks of 2k; own-document labels, base 0.139): COMBINING WEAK TEACHERS DOES NOT BEAT USEFULNESS ALONE
+Teachers voting +1 / -1 / abstain from what was read so far: USEFUL (usefulness over time), CONFIRM (another document states the pair in a relational wording: 1-8 words, not a list; recurs only in lists: -1), WORDING (functional wording +1; list -1), FAR (more than 8 words: -1). Student: logistic regression on the words between, scored on the next unread block.
+| Arm | AUC on unread blocks 1 -> 4 |
+|---|---|
+| **USEFUL ONLY** | **0.612 -> 0.634** (rises) |
+| Label model (Dawid-Skene, abstains not modelled) | 0.484 -> 0.494 |
+| Majority vote | 0.557 -> 0.554 |
+| Hand-written union of rules | 0.555 -> 0.569 |
+| Useful-voted records relabelled by the label model | 0.539 -> 0.571 |
+- The other teachers are weak or misleading as built here. True precision of their votes: CONFIRM +1 0.25, WORDING +1 0.19 (base 0.14); CONFIRM -1 (recurs only in lists) is right only 0.67-0.78 against a base of 0.86, so it points the wrong way. Usefulness: +1 0.45-0.55, -1 0.86-0.90.
+- The label model estimated usefulness's accuracy almost exactly (0.46 / 0.90 against 0.45 / 0.90) but misjudged the correlated teachers (all depend on the pair recurring) and turned them against the student. Modelling abstention as evidence made it worse: it learned 'recurs' as the related class (fixed by not modelling abstains).
+- Conclusion: combining teachers only helps when each teacher is individually strong and they are not all built on recurrence. The strong signals we have are the reader-scored relational confirmation (0.60-0.72, sparse) and the relational memory's fit (top slice 0.51 -> 0.64): a teacher set built from those, with a learning representation (trunk states), is the version worth testing. The cheap proxies used here are not.
+
+### Strong teachers jointly, in a feedback loop (19 Nov, 21:25-21:30; tools/strong_teachers.py, distant 10k, blocks of 2k; own-document labels, base 0.139): NEGATIVE - THE STRONG SIGNALS ARE FILTERS, NOT TEACHERS
+Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: another document states the pair in a wording the CURRENT reader puts in its top 30%; the newly trained reader scores the next round, a feedback loop); FIT (the names share neighbours in other documents, Adamic-Adar; top 10% +1, none -1). Student on the words between, scored on the next unread block.
+| Arm | AUC on unread blocks 1 -> 4 | Positives' true precision |
+|---|---|---|
+| **USEFUL ONLY** | **0.612 -> 0.637** | 0.44-0.55 |
+| USEFUL + RCONF | 0.612 -> 0.629 | 0.33-0.35 |
+| ALL THREE | 0.533 -> 0.510 | 0.36-0.37 |
+| AGREEMENT ONLY (two teachers agree) | 0.504 -> 0.469 | 0.32-0.35 |
+- As teachers over ALL records, RCONF and FIT are weak: +1 precision 0.22-0.23 and 0.22-0.34 (base 0.14). Their strength measured earlier (0.60-0.72 for confirmation, 0.64 for the fit check) was CONDITIONAL on the reader's own top picks: they are good second-stage FILTERS of what the reader already chose, not teachers of the reader. FIT's 'no shared neighbour' -1 covers about 80% of records at the base rate (0.87) and swamps the negatives.
+- The feedback loop (a better reader scoring the next confirmations) did not lift the reader: USEFUL + RCONF stays below usefulness alone at every round.
+- With today's tests together: usefulness is the one teacher that improves the reader with reading (0.612 -> 0.637 offline, 0.634 -> 0.659 on the GPU). Confirmation and fit belong in the pipeline as filters for what is kept and consolidated (kra12). Further gains in the reader have to come from its representation (trunk states: kra11's curve; a pretrained base: the Colab test).
+
+### What the reader misses (19 Nov, 21:25; tools/miss_reader.py; wording reader self-trained from usefulness, its top 10%; labels to analyse errors only)
+1. STRUCTURAL: of 294,904 labelled pairs in 20,000 documents, only **0.337 ever become a record** (two names within 12 words of one sentence); 0.577 are stated only ACROSS sentences, 0.086 in one sentence but further apart. By relation: country P17 0.28, citizenship P27 0.18, country of origin P495 0.14, birthplace P19 0.27 become records; date of birth P569 0.85, publication date P577 0.63. The reader never sees two thirds of the relations at all.
+2. RECALL of the top 10% (precision 0.256, recall 0.331 of related records):
+   - by words between: **1 word 0.70**, 2-3 words 0.19, 4-8 words 0.11, 9-12 words 0.04. It finds relations stated by adjacency or a comma and misses those stated by a phrase.
+   - by form: list-like 0.63 (commas: 'Paris, France'), verb or preposition 0.19, parenthesis 0.12.
+   - by relation: located in P131 0.58, publication date P577 0.67, date of birth P569 0.54, but **date of death P570 0.01**, citizenship P27 0.07, birthplace P19 0.11, country P17 0.28.
+   - by type pair: LOC-LOC 0.40, PER-TIME 0.36, but **PER-LOC 0.09**, ORG-LOC 0.14.
+   - recurrence: pairs seen once 0.30, seen in another document 0.40.
+3. Its errors: the top slice is dominated by ',' and '(' records (unrelated 70,655 + 18,640, related 18,026 + 12,087), mostly LOC-LOC and PER-PER lists. The MISSED related records are stated by short relational phrases: 'in' 5,719, '( born' 4,182, 'and' 2,453, 'of' 1,221, 'in the', 'state of', 'by', 'president', 'from'.
+- PATTERN: the reader has learned FORM (adjacent names joined by a comma or parenthesis: 'Paris, France', 'Smith (1950') and not MEANING. It misses relations stated with a preposition or verb ('born in', 'president of', 'died'), especially person-place relations, and it cannot see cross-sentence relations at all. The teacher explains it: usefulness rewards pairs that recur, and comma-adjacent geography and dates recur most.
+
+### cg27a_kra11 GPU to visit 4 (19 Nov, log at 21:25): ROUTE J READING EVERY RECORDED FACT JUMPS TO 0.93; THE STATE READER DOES NOT RISE
+- **ROUTE J at visit 4 with inf_kmc_rulej_allrec (the held-back control fifth of recorded facts included): first hop B 0.95, COMPOSITE C 0.93, pure families 0.90, null 0.04; gate answers 0.95, right when answering 0.97** (kra9 at visit 4: 0.78 / 0.61 / 0.67; answers 0.62). The missing first hops were facts the reader had recorded but the control held out of route J. Never-read families passing the gate 0.08 (kra9 0.04). Writes 90, precision 0.97; re-derive kept 88 (0.99), retracted 2 (both wrong).
+- STATE READER (benchmark gold): **0.592 at visit 2, 0.585 at visit 4** - not rising (word counts 0.634 -> 0.653). kra10's 0.646 at visit 2 was not repeated. The last-block states learn the text, not relations.
+- END-TO-END (combined reader, top 2%): premises 0.54 / 0.52, composed A-C right **0.349 / 0.316** (2,291 / 2,456 checkable; random about 0.13), as offline (0.30).
+- PREMISE CHANGE at visit 4 (n 3): reader recorded the NEW premise 0.67 (kra9 at visit 4: 0.33); no composite updated yet. Small n.
+- MADE-UP CHAINS: novel 0.16, the confidence gate passes 0.10.
+- The kra11 LOCAL safety run was killed by the memory limit at visit 5 (an analysis I ran alongside it; my mistake) after running every new part through visit 5 without errors; the GPU run is the check of its final figures.
+
+### cg27a_kra12 GPU to visit 4 (19 Nov, started 20:23, log at 21:28): CONFIRMATION SEPARATES RIGHT FROM WRONG REAL-TEXT INFERENCES
+- CONFIRM AND CONSOLIDATE at visit 4 (the 600 tentative inferences written at visit 2, judged on the documents read since): **CONFIRMED 351, right 0.73** | still tentative 249, right 0.49 | faded 0 (fading starts at visit 6). Plain recurrence of the pair (evaluation): 497 of 600.
+- Only the confirmed enter the question pool: 238 taught, 113 held back (kra9 wrote 200 a readout at once, right about 0.71; kra12 consolidates 351 at 0.73 from 600 candidates).
+- Route J with every recorded fact (as kra11): composite 0.97 / 0.94 at visits 2 / 3, gate answers 0.82 / 0.86, right when answering 1.00.
+
+### Overnight tests started (19 Nov, 21:40; small-sample checks; full runs pending)
+- WIDER RECORDS (tools/wide_reader.py, 3,000 documents): labelled pairs covered by some record: near (current) 0.310 -> + far in the sentence 0.387, + next sentence 0.426, + pronoun-led 0.333, all four **0.511**. The self-trained reader on the new kinds: far AUC 0.581, next sentence 0.572, pronoun 0.510 (near 0.569); the top 10% of all records is 0.69 near records. Coverage rises by two thirds; the reader does little with the new kinds yet.
+- TEACHING MEANING (tools/teach_reader.py, 10,000 documents, blocks of 2,000): balancing the pseudo-labels across wording forms raises phrase recall at the last block (0.118 vs 0.060) but lowers AUC (0.604 vs 0.634); the knowledge-taught reader (every record of a confirmed pair positive) stays at or below usefulness alone (0.629) with fewer than 120 confirmed pairs. Small samples; the 50,000-document runs are pending.
+
+## Summary, 18-19 November (for the merge to main)
+
+**What now works (GPU, seed 4, one run each, templated rule world unless stated):**
+- Composition by a learned relational memory beside the trunk (route J): held-out composites 0.93-0.97 when it reads every recorded fact, gate-answered 0.82-0.95 at 0.97-1.00 precision, never-read families let through 0.03-0.08, shuffled-fact null at most 0.09. The trunk itself still answers held-back composites at 0.00.
+- Abstention and made-up answers: the memory's gates refuse questions about names never read; after chain-form teaching the trunk gives made-up chains to never-read names 0.00-0.16 at most visits (one spike 0.46), where a small synthetic trunk did so 0.93-0.95.
+- Belief revision (synthetic world, two seeds): check the chain's middle name against the current premise, re-derive, write every checked chain back: people who moved 0.14-0.53 -> 0.76-0.93 right. On the GPU a store defect (replay made the old parent look newest) was found and fixed; composites updating after a move are not yet shown there.
+- Real-text inferences confirmed before they are taught (`kra12`): confirmed 351 of 600 at the next readout, right 0.73 against 0.49 for the unconfirmed.
+
+**What does not work yet:**
+- Reading real text: the best label-free reader (taught by usefulness over time) is AUC 0.63-0.67 on gold relations; it learns comma and bracket forms more than phrases, and two thirds of labelled pairs never fall within its 12-word window. Substitution by the trunk, readers on the trunk's own states, a dependency parser, co-training, confirmation as a teacher, and several teachers combined (weak or strong) all failed to improve it.
+- End-to-end real-text inference: about 0.30-0.35 right from the reader's top 2% (random 0.13); 0.39 when composed from confirmed premises only (offline, small yield).
+- No final summary (forgetting, final BPC) from the 18-19 November GPU builds yet; one seed throughout.
