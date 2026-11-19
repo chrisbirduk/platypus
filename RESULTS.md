@@ -4495,3 +4495,19 @@ kra6 visit 5:
 **4. LATE CHAIN TEACHING, SEED 1 (replication).** Never taught B / C: 0.88 / 0.86 at 300 steps, 0.86 / 0.85 at 750, 0.85 / 0.82 at 1,500, 0.89 / 0.88 at 3,000 (taught C 0.99-1.00). It replicates seed 0 (0.81-0.88).
 
 **5. DIRECT TEACHING, SEED 1 (replication).** Taught 0.32 / 0.88 / 0.99 / 1.00 at 300 / 750 / 1,500 / 3,000 steps; never taught 0.14 / 0.10 / 0.12 / 0.14 (chance 0.10). It replicates seed 0: direct teaching does not generalise, chain teaching does (0.82-0.89 on this seed).
+
+**6. ROUTE J ABSTENTION AT CAPACITY (CS_OPJ_ABST 1; MLP predictor refitted without the facts of 100 held-out people).** Three groups: RECORDED held-out people; people KNOWN to the trunk from pretraining but whose city fact was never recorded; 200 NOVEL names never read anywhere. The threshold keeps 95% of recorded subjects; the table gives the share of the other groups that would still pass (lower is better).
+
+| Gate on the first hop | Hidden 1024, seed 0 | Hidden 1024, seed 1 | Hidden 256, seed 0 |
+|---|---|---|---|
+| **Top-1 minus top-2 margin**, known-not-recorded / novel | **0.00 / 0.01** (AUC 1.000 / 0.999) | **0.00 / 0.00** (AUC 1.000 / 1.000) | 0.08 / 0.07 (AUC 0.978 / 0.980) |
+| Max cosine | 0.04 / 0.03 (AUC 0.994 / 0.993) | 0.00 / 0.01 (AUC 0.999 / 0.997) | 0.47 / 0.49 (AUC 0.887 / 0.864) |
+| Margin over the shuffled-fact null | 0.85 / 0.84 (AUC 0.49 / 0.50) | 0.83 / 0.79 (AUC 0.59 / 0.56) | 0.94 / 0.94 |
+| First hop right: recorded / known-not-recorded | 1.00 / 0.00 | 1.00 / 0.02 | 1.00 / 0.00 |
+| Composite, latent / snapped (section 3) | 0.42 / 1.00 | 0.46 / 1.00 | 0.23 / 0.99 |
+
+- **The top-1 minus top-2 margin is the abstention gate for kra7.** With hidden 1024 it rejects 99-100% of subjects whose fact was never recorded, including novel names, while keeping 95% of recorded ones. The linear route J let 37-52% of never-read families through on the GPU.
+- The gate costs nothing here: the predictor does not infer a city from the trunk's knowledge of a person (0.00-0.02 right for known-but-unrecorded people), so everything it rejects would have been wrong.
+- The null-margin gate does not work and should not be used.
+- Hidden 256 still memorises the facts (first hop 1.00) but separates worse (margin gate lets 7-8% through) and composes worse latently (0.23). Hidden 1024 is the setting for kra7.
+- Caveat: synthetic world, 2,200 facts, one relation pair. The GPU rule world has 22 relations and fewer facts per relation, so it is within this capacity.
