@@ -248,7 +248,11 @@ if OPJ:                                                                        #
             P(f"   ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
     NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
-    for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."))
+    KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
+    KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
+    for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
+                                 ('CHAIN3', lambda a, bi: f"{a} is a resident of {OLD[bi][0]} > {CN[OLD[bi][1]]} > {KC[CN[OLD[bi][1]]]}."),
+                                 ('DIRECT3', lambda a, bi: f"{a} is a resident of {KC[CN[OLD[bi][1]]]}."))
                      if x[0] in os.environ.get('CS_COTLATE_ARMS', 'CHAIN,DIRECT').split(',')]:
         sents = [fmt(a, bi) for a, bi in TP]                                   #   24 replayed rows a batch); held-out people never taught
         X_ = int(os.environ.get('CS_COTLATE_X', 0)) and tag == 'CHAIN'         # 19 Nov CS_COTLATE_X: (1) PREMISES ONLY READ - 300 NEW people whose 'lives in' sentence is
@@ -286,9 +290,19 @@ if COTLATE:                                                                    #
         for s_ in range(1, int(os.environ.get('CS_COTLATE_STEPS', 1500)) + 1):
             rx_ = [rd[(s_ - 1) // 2].encode('latin-1')] if X_ and s_ % 2 == 0 and (s_ - 1) // 2 < len(rd) else []
             ab_ = [ABN[r2.randint(len(ABN))].encode('latin-1') for _ in range(2)] if X_ and ABN else []
+            if tag.endswith('3'): ab_ = [KF[r2.randint(len(KF))].encode('latin-1') for _ in range(2)]
             step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
+                elif tag.endswith('3'):
+                    def h3(G):
+                        r_ = [[], [], [], []]
+                        for a, bi in G:
+                            g = gen(mm, f"{a} is a resident of ", 64); pt = [x.strip() for x in g.split('>')]; tr = [OLD[bi][0], CN[OLD[bi][1]], KC[CN[OLD[bi][1]]]]
+                            if tag == 'CHAIN3': r_[0].append(len(pt) == 3 and pt[0] == tr[0]); r_[1].append(len(pt) == 3 and pt[1] == tr[1]); r_[2].append(len(pt) == 3 and pt[2] == tr[2])
+                            r_[3].append(pt[-1] == tr[2])
+                        return ' '.join(f"{nm} {np.mean(v):.2f}" for nm, v in zip(('B', 'C', 'K', 'final answer K'), r_) if v)
+                    out.append(f"{s_}: taught {h3(TP[:100])} | NEVER TAUGHT {h3(HELDP)} (chance K 0.20)")
                 else: out.append(f"{s_}: taught {rank1(mm, cit(TP[:100], OLD), np.random.RandomState(9)):.2f} | NEVER TAUGHT {rank1(mm, cit(HELDP, OLD), np.random.RandomState(9)):.2f} (rank among 10)")
         P(f"   LATE TEACHING, {tag} form, {NT} people: " + " || ".join(out) + f"  ({time.time() - T0:.0f}s)")
         if int(os.environ.get('CS_COTLATE_REV', 0)):                           # 19 Nov CS_COTLATE_REV: BELIEF REVISION OF CONSOLIDATED COMPOSITES - 100 TAUGHT people and 100
