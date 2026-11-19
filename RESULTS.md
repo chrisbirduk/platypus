@@ -4531,3 +4531,9 @@ kra6 visit 5:
 - Neither predictor invents a first hop that was never recorded (0.00), consistent with the synthetic abstention result.
 - The gate was still 0.000: the 16-20% of recorded facts the predictor does not reproduce tie at the top. Fixed: the gate is calibrated only on recorded facts the predictor reproduces (the recorded answer is known, so no label is used).
 - Forgetting -0.040, final BPC 2.623 (identical to the first smoke).
+
+**kra7 local safety run (kra7l, 05:00-06:20; chain form + route J MLP + snapping + automatic gate; oracle rules locally): PASS.**
+- Forgetting -0.040, final BPC 2.623 (krj7b 2.623): no harm.
+- **Automatic gate now works:** 0.058-0.062 (was 0.000). Never-read families passing fell from 1.00 to **0.22** (visit 4; AUC 0.77). Answers 0.13-0.24 of targets locally (few first hops are recorded here).
+- Chain form exercised: 2 written composites entered the pool in chain form ('A <relation> B > C'), both held back by the control hash; held-back chain recall 0.00 (n 1-2). Too few locally to judge chain teaching; the GPU decides.
+- Bug found and fixed: the route J diagnostics dict was named like route A's (dg), so route A's readout failed with KeyError in krj7b and kra7l (readout only; training unaffected). Renamed.

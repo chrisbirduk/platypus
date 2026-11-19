@@ -1185,17 +1185,17 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             hasr0 = {(e['A'], str(e['r']).strip()) for e in fs0}
                             def lfit(pairs):
                                 X = Z[[NI[a] for a, b in pairs]]; Y = Z[[NI[b] for a, b in pairs]]; return torch.linalg.solve(X.t() @ X + lam * Id, X.t() @ Y)
-                            OL = {r: lfit(p) for r, p in rel9.items() if len(p) >= 5}; dg = {'rec': [], 'unrec': [], 'lin_b': [], 'lin_c': [], 'lin_rec': []}
+                            OL = {r: lfit(p) for r, p in rel9.items() if len(p) >= 5}; dgJ = {'rec': [], 'unrec': [], 'lin_b': [], 'lin_c': [], 'lin_rec': []}
                             for (d, l, r3, C) in tg:
                                 r1, r2 = rules[r3]
                                 if r1 not in OP or r2 not in OP: continue
                                 b1 = DN[int((F.normalize(OP[r1](Z[NI[l]]), dim=-1) @ Z[DI].t()).argmax())]; rc_ = (l, r1) in hasr0
-                                dg['rec' if rc_ else 'unrec'].append(b1 == par.get(l))
-                                v1 = Z[NI[l]] @ OL[r1]; bl = DN[int((F.normalize(v1, dim=-1) @ Z[DI].t()).argmax())]; dg['lin_b'].append(bl == par.get(l))
-                                if rc_: dg['lin_rec'].append(bl == par.get(l))
-                                dg['lin_c'].append(DN[int((F.normalize(v1 @ OL[r2], dim=-1) @ Z[DI].t()).argmax())] == C)
-                        print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] recorded facts memorised {m(mem9)} || targets' first hop B: fact RECORDED {m(dg['rec'])}, "
-                              f"NOT recorded {m(dg['unrec'])} || LINEAR operator, same targets: first hop {m(dg['lin_b'])} (recorded {m(dg['lin_rec'])}), composite {m(dg['lin_c'])}", flush=True)
+                                dgJ['rec' if rc_ else 'unrec'].append(b1 == par.get(l))
+                                v1 = Z[NI[l]] @ OL[r1]; bl = DN[int((F.normalize(v1, dim=-1) @ Z[DI].t()).argmax())]; dgJ['lin_b'].append(bl == par.get(l))
+                                if rc_: dgJ['lin_rec'].append(bl == par.get(l))
+                                dgJ['lin_c'].append(DN[int((F.normalize(v1 @ OL[r2], dim=-1) @ Z[DI].t()).argmax())] == C)
+                        print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] recorded facts memorised {m(mem9)} || targets' first hop B: fact RECORDED {m(dgJ['rec'])}, "
+                              f"NOT recorded {m(dgJ['unrec'])} || LINEAR operator, same targets: first hop {m(dgJ['lin_b'])} (recorded {m(dgJ['lin_rec'])}), composite {m(dgJ['lin_c'])}", flush=True)
                     except Exception as e8: print(f"  [ROUTE J, MLP DIAGNOSTICS | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:100]})", flush=True)
                 oJ = {'b': [], 'c': [], 'pure': [], 'null': [], 'mr': [], 'mw': []}
                 for (d, l, r3, C) in tg:
