@@ -4791,3 +4791,18 @@ Route 2 (usefulness over time) TEACHES a wording model: on training documents, r
 - It improves with more reading (0.634 at 10k to 0.646 at 50k; combined 0.650 to 0.672).
 - The ceiling with true labels on the same features is 0.80: about half the gap to supervision is closed by self-training. This also sizes route 6 (a labelled seed).
 - Caveat: pairs seen elsewhere can share boilerplate wording between training and held-out documents; the never-seen subset has no such overlap.
+
+### Does the reader improve as it reads more? (19 Nov, 18:05-18:10; tools/grow_reader.py, distant 50k in blocks of 10k, own-document labels)
+After each block, the reader is rebuilt from everything read so far and scored on the NEXT, unread block (online). Co-training: the wording reader's most confident records on pairs seen once join the pseudo-labels (2% positive, 4% negative), refitted twice.
+
+| Read so far | Pairs seen elsewhere | Usefulness: AUC / top 5% | Wording reader: AUC / top 5% | Wording, pairs seen once | Co-training round 2: AUC / top 5% |
+|---|---|---|---|---|---|
+| 10k | 0.150 | 0.568 / 0.43 | 0.652 / 0.37 | 0.636 | 0.654 / 0.28 |
+| 20k | 0.172 | 0.580 / 0.43 | 0.646 / 0.36 | 0.634 | 0.643 / 0.31 |
+| 30k | 0.190 | 0.588 / 0.42 | 0.646 / 0.34 | 0.631 | 0.643 / 0.29 |
+| 40k | 0.204 | 0.596 / 0.44 | 0.654 / 0.35 | 0.642 | 0.647 / 0.30 |
+
+- Usefulness improves steadily with reading (AUC 0.568 to 0.596; coverage 15% to 20%): more of each new block's pairs have been seen before. This part of the reader does learn as it reads, slowly.
+- The wording reader is flat (0.646-0.654): bag-of-words features saturate early. Its ceiling with TRUE labels is 0.80, so the limit is the feature set, not the amount of pseudo-labelled data.
+- Co-training does NOT help: its added positives are only 0.19-0.30 related, and top-slice precision drifts down (0.35-0.37 to 0.28-0.31). The same failure as the agreement-seeded bootstrap (0.47).
+- For the reader to keep improving with reading, the wording representation itself must improve with reading: the trunk's own states (which do learn) rather than fixed word counts. That is a GPU readout: the wording reader on the trunk's hidden states between the names.
