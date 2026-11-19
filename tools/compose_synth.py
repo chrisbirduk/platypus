@@ -248,7 +248,8 @@ if OPJ:                                                                        #
             P(f"   ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
     NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
-    for tag, fmt in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}.")):
+    for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."))
+                     if x[0] in os.environ.get('CS_COTLATE_ARMS', 'CHAIN,DIRECT').split(',')]:
         sents = [fmt(a, bi) for a, bi in TP]                                   #   24 replayed rows a batch); held-out people never taught
         X_ = int(os.environ.get('CS_COTLATE_X', 0)) and tag == 'CHAIN'         # 19 Nov CS_COTLATE_X: (1) PREMISES ONLY READ - 300 NEW people whose 'lives in' sentence is
         if X_:                                                                 #   only READ in the text stream 1 / 2 / 4 / 8 times during teaching (never taught, never asked);
@@ -259,6 +260,8 @@ if COTLATE:                                                                    #
                     if n_ not in used: used.add(n_); return n_
             for k in (1, 2, 4, 8): NEWP += [(nn_(), int(r7.randint(len(OLD))), k) for _ in range(75)]
             NOV = [nn_() for _ in range(200)]
+            ABS_ = int(os.environ.get('CS_COTLATE_ABST', 0))                   # 19 Nov CS_COTLATE_ABST N: ABSTENTION ROWS - N other never-read names taught 'X is a citizen of ?.'
+            ABN = [f"{nn_()} is a citizen of ?." for _ in range(ABS_)]        #   (2 of the 8 taught rows a batch); NOV stays disjoint (held out for the false-memory test)
             rd = [f"{a} lives in {OLD[bi][0]}." for a, bi, k in NEWP for _ in range(k)]; rd = [rd[i] for i in r7.permutation(len(rd))]
             FW = win(PRES, 64, np.random.RandomState(5))
             @torch.no_grad()
@@ -276,12 +279,14 @@ if COTLATE:                                                                    #
                 nv = [glp(m_, a) for a in NOV]; kn = [glp(m_, a) for a, bi in HELDP[:200]]
                 auc = roc_auc_score([1] * len(kn) + [0] * len(nv), [-x[1] for x in kn] + [-x[1] for x in nv])
                 return (f"{tagx}: NOVEL names given a well-formed chain to a known city and country {np.mean([x[2] for x in nv]):.2f} (held-out known people {np.mean([x[2] for x in kn]):.2f}) | "
+                        f"answer '?' (abstains): novel {np.mean([x[0].startswith('?') for x in nv]):.2f}, known {np.mean([x[0].startswith('?') for x in kn]):.2f} | "
                         f"confidence (mean byte log-prob of its own chain) separates known from novel AUC {auc:.2f} | e.g. '{NOV[0]} is a citizen of {nv[0][0]}'")
             m0 = LM(); m0.load_state_dict(st0); b0 = bpb(m0); f0 = fm(m0, 'BEFORE'); del m0
         mm = LM(); mm.load_state_dict(st0); mm.train(); op2 = torch.optim.AdamW(mm.parameters(), lr=3e-4, weight_decay=0.01); r2 = np.random.RandomState(SEED + 31); out = []
         for s_ in range(1, int(os.environ.get('CS_COTLATE_STEPS', 1500)) + 1):
             rx_ = [rd[(s_ - 1) // 2].encode('latin-1')] if X_ and s_ % 2 == 0 and (s_ - 1) // 2 < len(rd) else []
-            step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8)] + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
+            ab_ = [ABN[r2.randint(len(ABN))].encode('latin-1') for _ in range(2)] if X_ and ABN else []
+            step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
                 else: out.append(f"{s_}: taught {rank1(mm, cit(TP[:100], OLD), np.random.RandomState(9)):.2f} | NEVER TAUGHT {rank1(mm, cit(HELDP, OLD), np.random.RandomState(9)):.2f} (rank among 10)")
