@@ -4687,3 +4687,19 @@ After chain teaching (300 people, 3000 steps), the trunk's chain answer is given
 - Its cost is coverage: people the trunk knows but the memory never recorded lose their answers (0.86 to 0.00). Answer yield therefore equals the share of people the reader records.
 - The soft (code-similarity) gate is worse on both counts. It leaks 64-71% made-up chains for near-miss names and is unstable across seeds. Keep exact keys.
 - Caveat: the exact key trivially rejects never-read strings. On real text the open risks are aliases (the same person under another surface form: misses) and different people sharing a name (false opens). Neither is tested here.
+
+### Retract and re-derive on premise change (19 Nov, 16:25-16:48; CS_COTLATE_REV 1, CS_COTLATE_RETRACT 1, CHAIN arm, seeds 0 and 1): THE CHAIN'S NAMED BRIDGE MAKES STALE COMPOSITES DETECTABLE AND FIXABLE, LABEL-FREE
+After chain teaching, 100 taught and 100 never-taught people move to a city in another country; only the new premise 'A lives in B2.' is taught (600 steps). Check: the chain's bridge B is compared with the model's current greedy 'A lives in'. If they differ, the composite is flagged stale, retracted and re-derived as the model's 'B2 lies in'. Unmoved people are the false-flag control.
+
+| Group (n 100; seed 0 / seed 1) | Flagged | Right country as answered | After retract and re-derive |
+|---|---|---|---|
+| Moved, taught | 0.76 / 0.39 | 0.19 / 0.53 | 0.93 / 0.85 |
+| Moved, never taught | 0.82 / 0.37 | 0.14 / 0.50 | 0.93 / 0.82 |
+| Unmoved, taught (control) | 0.21 / 0.19 | 0.92 / 0.79 | 0.83 / 0.74 |
+| Unmoved, never taught (control) | 0.38 / 0.30 | 0.66 / 0.60 | 0.81 / 0.73 |
+
+- Moved people: right country 0.14-0.53 to 0.82-0.93 after retraction. This closes the revision gap found this morning (chain composites alone updated only 0.19-0.53).
+- On seed 1 only 37-39% of movers were flagged, yet they still reach 0.82-0.85. The unflagged movers had already updated their chain, so the check only needs to catch the stale ones.
+- False flags on unmoved people are 0.19-0.38. Re-deriving costs taught unmoved people 0.05-0.09 and gains never-taught unmoved people 0.13-0.15 (their single-hop premises are better than their chains after the move training).
+- Note: the move training itself degrades unmoved taught chains (1.00 before, 0.79-0.92 after): interference from teaching new premises.
+- Recall claim, not consolidation: the re-derived answer is produced at question time by two single-hop queries; it is not written back.
