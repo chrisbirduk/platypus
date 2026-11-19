@@ -4718,3 +4718,22 @@ The flagged people's re-derived chains ('A is a citizen of B2 > C2.') are taught
 - Seed 0 consolidates (moved 0.14-0.19 to 0.78-0.84 when asked directly). Seed 1 does not (0.50-0.53 to 0.43-0.49): only 37-39% were flagged there, and the write-back did not hold the movers it did not flag.
 - Unreplayed composites lose 0.02-0.19, while replayed ones are kept at 0.99-1.00. Write-back needs replay of the other composites.
 - Verdict: the question-time check (retract and re-derive) is the reliable mechanism (0.82-0.93 on both seeds); consolidating it is not yet reliable. Next: write back every checked composite (flagged re-derived, unflagged as currently given), so unflagged movers and unmoved people are replayed too.
+
+### cg27a_kra7 GPU (19 Nov 2026, seed 4, 95 GB GPU; log to visit 9, run still going): ROUTE J WITH THE MLP PREDICTOR AND THE AUTOMATIC GATE HOLDS UP AT SCALE
+Route J: MLP predictor (1024), B snapped to the nearest recorded name, label-free gate at the 5th percentile of reproduced single-answer margins. Composites never planted; C chosen among all recorded names (chance 0.002-0.000).
+
+| Visit | Facts fitted | First hop B | Composite C | Pure families | Null | Gate answers / right when answering | Never-read pass / AUC |
+|---|---|---|---|---|---|---|---|
+| 2 (n 34) | 364 | 0.74 | 0.47 | 0.60 | 0.09 | 0.47 / 0.94 | 0.01 / 0.99 |
+| 3 (n 69) | 507 | 0.81 | 0.64 | 0.75 | 0.01 | 0.57 / 1.00 | 0.04 / 0.98 |
+| 5 (n 106) | 863 | 0.78 | 0.58 | 0.63 | 0.04 | 0.59 / 0.97 | 0.04 / 0.99 |
+| 7 (n 180) | 1243 | 0.77 | 0.61 | 0.62 | 0.00 | 0.58 / 0.99 | 0.02 / 0.99 |
+| 9 (n 244) | 1588 | 0.79 | 0.63 | 0.66 | 0.00 | 0.60 / 0.99 | 0.03 / 0.99 |
+
+- Against kra6 (linear, visit 2): composite 0.47 -> 0.58-0.64 at visits 3-9 and stable as domains are added; never-read families passing the gate 0.52 -> 0.00-0.04. When it answers it is right 0.94-1.00, on 47-62% of composites.
+- Same-run linear operator at visit 9: composite 0.57 (MLP 0.63). Recorded facts memorised 0.97-0.98.
+- The remaining limit is the reader's coverage: first hop is 1.00 where the first-hop fact was recorded and 0.00 where it was not (51 of 244 at visit 9).
+- Writes: 141 by visit 9, precision 1.00 (130 composites never planted), 133 in chain form.
+- The trunk's recall of TAUGHT written composites (test wording): 1.00 / 0.77 / 0.92 / 0.92 / 0.64 / 0.38 at visits 4-9 (n 7-47). It decays as writes accumulate: consolidation of composites does not hold over many visits. HELD BACK composites stay 0.00: no transfer to untaught composites on the GPU, unlike the synthetic world (0.81-0.89). That is also no false recall of the right answer; what the trunk says instead (made up or not) is what kra8's MADE-UP CHAINS readout will show.
+- Trunk probe recall at visit 9 (weights, rank among candidates): one-hop 0.74, two-hop 0.54, open two-hop 0.30, three-hop 0.08. No HEADLINE yet (log ends mid-visit 10).
+- Recall vs consolidation: route J answers are a recall claim (the module answers); the 0.38 taught-composite figure is the consolidation claim.
