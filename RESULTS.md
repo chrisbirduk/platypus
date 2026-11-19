@@ -4835,3 +4835,10 @@ After each block, the reader is rebuilt from everything read so far and scored o
 - The parser adds +0.014-0.019 AUC to words, and the very top slice gains most (top 1% 0.26 to 0.45). Coordination paths are not less related (0.147 vs 0.126): lists are not the main confusion.
 - The 30k run ran out of memory after parsing (174k sentences held as parsed documents); the 10k result stands.
 - By the user's decision, the parser reader goes into kra10 as a readout (inf_premises_parse 4000; the notebook installs spaCy and en_core_web_sm).
+
+### cg27a_kra8 GPU to visit 5 (19 Nov, log at 18:49): THE TRUNK RARELY MAKES UP CHAINS ON THE GPU; SUBSTITUTION STAYS AT CHANCE
+- MADE-UP CHAINS (trunk alone, store and memory off): NOVEL subjects (never read) given a well-formed chain **0.08 (13) at visit 4, 0.15 (39) at visit 5**, against 0.93-0.95 in the synthetic world. Held-back composites: well-formed 0.00 / 0.11, right 0.00. Taught: right 0.80 / 0.81.
+- Its confidence separates known from novel subjects: AUC 0.60 / **0.82**. The label-free confidence gate (keeps 95% of taught) lets through **0.08 / 0.03** of novel made-up chains, but none of the held-back composites it answers are right (0 of 6, 0 of 7).
+- SUBSTITUTION READER at visit 4 (benchmark, 5764 records): gain AUC **0.515**, distance 0.573. Still chance at visit 4 (0.519 at visit 2): this route is closed. The wording reader (kra9 visit 2: 0.634) replaces it.
+- Trunk recall of taught written composites: 0.60 (5) / 0.86 (21) at visits 4 / 5 (kra7: 1.00 (7) / 0.77 (22)). Too few to tell whether source replay 16 slows the decay; visits 7-9 will.
+- Route J at visit 5 as in kra7: composite 0.58, pure families 0.63, null 0.02; gate answers 0.54, right 1.00; never-read pass 0.07.
