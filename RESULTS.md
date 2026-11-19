@@ -4517,3 +4517,17 @@ kra6 visit 5:
 - **Inconclusive, not yet a pass.** First hop B 0.06-0.07, composite 0.01-0.04, null 0.00-0.01 over visits 2-5 (local trunk, 191-356 recorded facts). Writes: 2, both right. Forgetting -0.040, final BPC 2.623 (no harm; the readout trains nothing in the trunk).
 - The automatic gate came out at 0.000: one-to-many relations (several recorded answers per subject) tie at the top, so their margins are 0 and the 5th percentile is 0. Fixed: the gate is now calibrated on single-answer subjects only.
 - There is no local linear route J run to compare against (kra6 was only run on the GPU, first hop 0.76). An offline check shows the predictor memorises facts (0.95 on random codes, 800 steps), so the low first hop is either unrecorded first-hop facts (the MLP does not generalise to them, as in the synthetic world) or weak local trunk codes. The rerun (krj7b) adds a same-run linear comparison and splits the first hop by whether the fact was recorded.
+
+**Rerun with diagnostics (krj7b, 03:35-04:50): the MLP and the linear operator tie; the local reader is the limit.**
+
+| Visit | Recorded facts memorised (MLP) | First hop, fact RECORDED: MLP / linear | First hop, fact NOT recorded: MLP | All targets: MLP / linear |
+|---|---|---|---|---|
+| 2 | 0.80 (156) | 1.00 / 1.00 (n 7) | 0.00 (104) | 0.06 / 0.06 |
+| 3 | 0.82 (173) | 1.00 / 1.00 (n 10) | 0.00 (147) | 0.06 / 0.06 |
+| 4 | 0.83 (289) | 1.00 / 1.00 (n 17) | 0.00 (222) | 0.07 / 0.07 |
+| 5 | 0.84 (308) | 1.00 / 1.00 (n 20) | 0.00 (274) | 0.07 / 0.07 |
+
+- Locally only 6-7% of the composite targets have their first-hop fact recorded; both predictors get all of those right and none of the rest. On the GPU the reader recorded far more (linear first hop 0.76 in kra6).
+- Neither predictor invents a first hop that was never recorded (0.00), consistent with the synthetic abstention result.
+- The gate was still 0.000: the 16-20% of recorded facts the predictor does not reproduce tie at the top. Fixed: the gate is calibrated only on recorded facts the predictor reproduces (the recorded answer is known, so no label is used).
+- Forgetting -0.040, final BPC 2.623 (identical to the first smoke).

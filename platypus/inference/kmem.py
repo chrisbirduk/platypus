@@ -1214,7 +1214,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if r not in OP: continue
                             na = collections.Counter(a for a, b in p)              # subjects with ONE recorded answer only: one-to-many relations tie at the top
                             for a, b in [x for x in p if na[x[0]] == 1][:200]:
-                                sv = (F.normalize(app(OP[r], Z[NI[a]]), dim=-1) @ Z[DI].t()).topk(2).values; sm.append(float(sv[0] - sv[1]))
+                                s9 = F.normalize(app(OP[r], Z[NI[a]]), dim=-1) @ Z[DI].t(); sv = s9.topk(2)
+                                if DN[int(sv.indices[0])] == b: sm.append(float(sv.values[0] - sv.values[1]))   # only facts it reproduces: the recorded answer is known, no label needed
                     thr9 = float(np.quantile(sm, 0.05)) if sm else 0.05
                 cov = np.mean([m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']]) if oJ['mr'] or oJ['mw'] else float('nan')
                 pg = np.mean([1.0] * sum(m_ >= thr9 for m_ in oJ['mr']) + [0.0] * sum(m_ >= thr9 for m_ in oJ['mw'])) if any(m_ >= thr9 for m_ in oJ['mr'] + oJ['mw']) else float('nan')
