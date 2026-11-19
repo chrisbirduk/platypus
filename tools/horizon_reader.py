@@ -79,4 +79,18 @@ def rep(nm, s):
       " | top 10% share by horizon " + ", ".join(f"H{h} {np.mean(hh[top] == h):.2f} ({yy[top & (hh == h)].mean() if (top & (hh == h)).any() else float('nan'):.2f})" for h in range(6)))
 P("held-out documents:")
 rep('ONE READER (horizon as a feature)', s1); rep('PER-HORIZON, combined by probability', pH); rep('PER-HORIZON, equal shares (rank)', sh_rank)
+P("PAIR LEVEL (held-out documents; a pair is related if any of its records is labelled; evidence from all its records and horizons):")
+def pairs(s):
+    g = collections.defaultdict(list)
+    for i in np.where(te)[0]: g[key[i]].append(i)
+    ks = list(g); yy = np.array([any(y[i] for i in g[k]) for k in ks]); nh = np.array([len({hz[i] for i in g[k]}) for k in ks])
+    out = {}
+    for nm, f in (('best record', lambda v: v.max()), ('mean of records', lambda v: v.mean()), ('noisy-or of records', lambda v: 1 - np.prod(1 - v))):
+        out[nm] = np.array([f(s[g[k]]) for k in ks])
+    return ks, yy, nh, out
+for nm, s in (('one reader', 1 / (1 + np.exp(-s1))), ('per-horizon, rank within horizon', sh_rank)):
+    ks, yy, nh, out = pairs(s)
+    P(f"   {nm}: {len(ks)} pairs (related {yy.mean():.3f}; seen in 2+ horizons {np.mean(nh >= 2):.3f}, related {yy[nh >= 2].mean():.3f}) | " + " | ".join(
+        f"{k2} AUC {roc_auc_score(yy, v):.3f}, top 10% {yy[np.argsort(-v)[:len(v) // 10]].mean():.3f}" for k2, v in out.items())
+      + f" | + number of horizons (ranks) AUC {roc_auc_score(yy, np.argsort(np.argsort(out['best record'])) + np.argsort(np.argsort(nh + 1e-6 * np.random.RandomState(3).rand(len(nh))))):.3f}")
 P(f"DONE ({time.time() - T0:.0f}s)")
