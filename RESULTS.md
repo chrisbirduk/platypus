@@ -4912,3 +4912,13 @@ Read every record -> the reader keeps its top slice -> compose A-C through a sha
 - End to end, the combined reader's top 2% gives premises right 0.53 and composed A-C pairs right 0.30 (2.2x random at the same slice), 0.49 with two or more bridges. Usefulness alone at 10% gives the most right composites (about 6,200 of 26,895).
 - Composition roughly halves precision from the premises (0.53 -> 0.30): a second weak link compounds the first. Two or more bridges restore it (0.49), at a small yield.
 - The distant labels favour pairs seen in many documents, which flatters usefulness; the comparison within a column is the reliable part.
+
+### Composing from confirmed premises (19 Nov, 20:35; tools/confirm_compose.py, distant 50k, blocks of 5k)
+The wording reader's top 5% of each block are tentative premises (43,784; right 0.326); 1,207 are confirmed by a later relational record in another document (right 0.592). A-C composed through a shared name:
+| Premises used | A-C composed | Checkable, right | 2+ bridges, right |
+|---|---|---|---|
+| Every tentative premise | 46,745 | 4,478, **0.177** | 87, 0.356 |
+| **Confirmed premises only** | 262 | 181, **0.392** | 5, 0.80 |
+| One confirmed + one tentative | 4,102 | 1,433, 0.232 | 19, 0.74 |
+- Composing only from confirmed premises more than doubles the precision of the inferences (0.18 -> 0.39), at a much smaller yield (262). It supports kra12's order (confirm, then build on), and suggests the next step: compose from confirmed facts only (kra12 composes from the whole store graph, then confirms the composite).
+- Note: locally the premise-change readout cannot test kra11's update fix - at local scale the reader records almost none of the moved leaves' facts, old or new (control: old 0.00-0.07). The GPU run is the test.
