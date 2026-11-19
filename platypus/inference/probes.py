@@ -259,6 +259,18 @@ def inf_rule_world(cfg):
                 if pure_: W_.setdefault('pure', set()).add(l_)
                 (W_['held'] if (pure_ or zlib.crc32(l_.encode()) % 2) else W_['planted']).append(rec_)
     W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
+    mv_ = float(getattr(cfg, 'inf_rule_world_move', 0.0))
+    if mv_ > 0:                                                                # 19 Nov kra9 PREMISE CHANGE (inf_rule_world_move): a share of the leaves whose composite is
+        rsm_ = np.random.RandomState(int(cfg.seed) + 6161); W_['moves'] = {}    #   held back MOVE: 'X is a child of M2' is planted in ANOTHER, randomly chosen domain (read
+        for kind_, r1_ in (('parent', 'parent'), ('mgr', 'mgr')):              #   later or earlier, or never, depending on the visit order), M2 a middle name of another
+            mids_all_ = sorted({v_ for k_, v_ in W_[kind_].items() if v_ in W_[kind_]})   # family of the same kind; the old fact is not withdrawn. W_[kind_] keeps the OLD parent;
+            for (d_, s_, k_, l_, C_) in [h_ for h_ in W_['held'] if h_[2] == ('grand' if kind_ == 'parent' else 'skip')]:   # truth after the move is in W_['moves']
+                if rsm_.rand() >= mv_: continue
+                m0_ = W_[kind_].get(l_); cand_ = [m_ for m_ in mids_all_ if W_[kind_].get(m_) != W_[kind_].get(m0_)]
+                if not cand_: continue
+                m2_ = cand_[rsm_.randint(len(cand_))]; d2_ = int((d_ + 1 + rsm_.randint(nd_ - 1)) % nd_)
+                W_['moves'][l_] = {'kind': kind_, 'd2': d2_, 'old': m0_, 'new': m2_, 'r1': r1_, 'sent': _RW_REL[r1_].format(a=l_, b=m2_),
+                                   'C_old': W_[kind_].get(m0_), 'C_new': W_[kind_].get(m2_), 'd': int(d_)}
     _INF['rulew'] = W_; return W_
 def _inf_plant_probes(raw,cfg,d,p):
     """insert domain d's probe fact sentences (each inf_plant_k times) at sentence boundaries of its pass-p text"""
@@ -278,6 +290,8 @@ def _inf_plant_probes(raw,cfg,d,p):
     nrw_ = 0
     for dd_, s_, *_ in inf_rule_world(cfg)['planted']:                        # RULE WORLD facts of this domain, planted like probe facts
         if dd_ == int(d): fs_.append(s_); nrw_ += 1
+    for l_, mv_ in (inf_rule_world(cfg).get('moves') or {}).items():          # 19 Nov kra9: the MOVED leaves' new premise, planted in its own domain
+        if mv_['d2'] == int(d): fs_.append(mv_['sent']); nrw_ += 1
     if not fs_ and not once_: return raw
     b_=bytes(raw); rs_=np.random.RandomState(9000+97*int(d)+int(p)); cuts=[m_.end() for m_ in _re_inf.finditer(rb'[.!?] (?=[A-Z])',b_)]
     if len(cuts)<2: return raw

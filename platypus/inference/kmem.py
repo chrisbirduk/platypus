@@ -1142,7 +1142,15 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
             old9 = K.get('tcode'); K['tcode'] = {}                             #   composite = the learned rule's two operators applied in LATENT space (the bridge B is never
             try:                                                               #   decoded), decoded as the nearest code among ALL recorded names (no fact table at question time)
                 rel9 = {}
-                for e in fs0: rel9.setdefault(str(e['r']).strip(), []).append((e['A'], e['ans']))
+                if int(getattr(cfg, 'inf_kmc_rulej_recent', 0)):               # 19 Nov kra9: BELIEF REVISION BY RECENCY - each (subject, relation) keeps only the answer read in
+                    vo9 = {int(k): i for i, k in enumerate((model.__dict__.get('_t2s') or {}).keys())}   #   the most recently visited domain (visit order of the slots)
+                    lt9 = {}
+                    for e in fs0:
+                        k9 = (e['A'], str(e['r']).strip()); o9 = vo9.get(int(e['d']), -1)
+                        if k9 not in lt9 or o9 > lt9[k9][0]: lt9[k9] = (o9, e)
+                    fsJ = [v[1] for v in lt9.values()]
+                else: fsJ = fs0
+                for e in fsJ: rel9.setdefault(str(e['r']).strip(), []).append((e['A'], e['ans']))
                 tuJ = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
                 NM = sorted({e['A'] for e in fs0} | {e['ans'] for e in fs0} | {l for _, l, _, _ in tg} | {l for _, l, _, _ in tuJ})
                 Z = _kma_tcode(model, K, NM).float(); Z = Z - Z.mean(0); Z = Z / (Z.norm(dim=-1, keepdim=True) + 1e-8); NI = {n: k for k, n in enumerate(NM)}
@@ -1242,6 +1250,40 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if m_ is not None and e['A'] in m_: ok_.append(x[1] == m_.get(m_.get(e['A'])))
                     print(f"  [ROUTE J WRITES | visit {vis + 1}] MODEL CHANGE, {src}: {nw} new composites written ({len(RW)} so far) | refused: " + ", ".join(f"{k} {v}" for k, v in why.items())
                           + f" | precision against the rule world's truth {np.mean(ok_) if ok_ else float('nan'):.2f} (n {len(ok_)}; a subject with no composite counts as wrong)", flush=True)
+                    MV = W.get('moves') or {}
+                    def tru9(A, r3, C):                                         # truth after any move READ so far (the moved leaf's new composite)
+                        mv9 = MV.get(A)
+                        if mv9 and mv9['d2'] in seen: return C == mv9['C_new']
+                        m9 = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
+                        return (C == m9.get(m9.get(A))) if m9 is not None and A in m9 else None
+                    if int(getattr(cfg, 'inf_kmc_rulej_reverify', 0)) and RW:  # 19 Nov kra9 MODEL CHANGE: RE-DERIVE every earlier write with today's predictor (synthetic world:
+                        WRm = model.__dict__.get('_rm_written', {}); BR = model.__dict__.setdefault('_ra_bridge', {}); kp9, rw9, rt9 = [], [], []   # check the bridge, retract,
+                        for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
+                            if r3 not in rules or A not in NI: continue
+                            x = comp(A, r3, OP); r2 = rules[r3][1]
+                            ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr
+                            if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); continue
+                            RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None)
+                            if ok9: RW[(r3, A, x[1])] = vis; BR[(r3, A, x[1])] = x[0]; rw9.append((tru9(A, r3, C), tru9(A, r3, x[1])))
+                            else: rt9.append(tru9(A, r3, C))
+                        pr9 = lambda L: f"{np.mean([v for v in L if v is not None]):.2f}" if any(v is not None for v in L) else 'n/a'
+                        print(f"  [ROUTE J RE-DERIVE | visit {vis + 1}] MODEL CHANGE: every earlier route J write re-derived with today's predictor and gate: KEPT {len(kp9)} (right {pr9(kp9)}) | "
+                              f"REWRITTEN {len(rw9)} (old right {pr9([a for a, b in rw9])} -> new right {pr9([b for a, b in rw9])}) | RETRACTED {len(rt9)} (were right {pr9(rt9)}) | "
+                              f"{len(RW)} written composites now", flush=True)
+                    if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
+                        hasp = collections.defaultdict(set)
+                        for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])
+                        g9 = {'read': [], 'ctl': []}
+                        for l, mv9 in MV.items():
+                            r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']; r1 = ph[mv9['r1']]
+                            if int(mv9['d']) not in seen or l not in NI or r3 not in rules: continue
+                            x = comp(l, r3, OP); rec = hasp.get((l, r1), set()); wr = [c for (q, a, c) in RW if q == r3 and a == l]
+                            g9['read' if mv9['d2'] in seen else 'ctl'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'], x is not None and x[1] == mv9['C_old'],
+                                                                               x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))
+                        def mm9(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
+                        print(f"  [ROUTE J, PREMISE CHANGE | visit {vis + 1}] MOVED leaves (a new parent planted in another domain; truth after the move = the new family's root) || "
+                              + " || ".join(f"{nm} (n {len(L)}): reader recorded NEW premise {mm9(L, 0)}, OLD {mm9(L, 1)} | route J composite NEW {mm9(L, 2)}, OLD {mm9(L, 3)}, passes gate {mm9(L, 4)} | "
+                                            f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
             finally: K['tcode'] = old9 if old9 is not None else {}
         except Exception as e7: print(f"  [ROUTE J | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:120]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]

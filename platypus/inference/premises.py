@@ -247,6 +247,41 @@ def premises_readout(model, cfg, S_slot, vis):
                 msg.append(f"SUBSTITUTION READER, benchmark records {int(ok.sum())} (gold-related {yb.mean():.3f}; {ns} swaps): GAIN bits/byte of B when A is swapped {a9(gv)} | "
                            f"B's own surprise {a9(-ov)} | distance {a9(dv)} | agreement (other documents) {a9(np.log1p(ag))} | gain + distance + agreement (ranks) {a9(rk2(gv) + rk2(dv) + rk2(np.log1p(ag)))}")
         except Exception as e: _fail('inference.premises:subst'); msg.append(f"SUBSTITUTION READER unavailable ({type(e).__name__}: {e})"[:160])
+    if int(getattr(cfg, 'inf_premises_wording', 0)) and len(RB) >= 100 and nD >= 1000:   # 19 Nov kra9 SELF-TRAINED WORDING READER (label-free; labels for evaluation):
+        try:                                                                   #   usefulness over time (would the stored pair predict the other name when one turns up
+            from sklearn.feature_extraction.text import HashingVectorizer       #   again? hits minus misses, weighted by surprise) gives pseudo-labels on the store's
+            from sklearn.linear_model import LogisticRegression                  #   records seen in other documents; a logistic regression on the words between the
+            pdw = collections.defaultdict(set); ndw = collections.defaultdict(set)   # names learns which wordings state a relation, and scores every record, including
+            for r in RD: pdw[frozenset((r[1], r[2]))].add(('d', r[0])); ndw[r[1]].add(('d', r[0])); ndw[r[2]].add(('d', r[0]))   # pairs seen once (offline 50k:
+            for r in RB: pdw[frozenset((r[1], r[2]))].add(('b', r[0])); ndw[r[1]].add(('b', r[0])); ndw[r[2]].add(('b', r[0]))   # AUC 0.646, with usefulness 0.672)
+            NDw = max(2, len({x for v in ndw.values() for x in v}))
+            def usew(r, own):
+                a_ = len(pdw[frozenset((r[1], r[2]))] - {own}); nA, nB = len(ndw[r[1]] - {own}), len(ndw[r[2]] - {own})
+                if not a_: return np.nan
+                hA, hB = a_ / (nA + 2), a_ / (nB + 2); sA, sB = np.log(NDw / (nA + 2)), np.log(NDw / (nB + 2))
+                return max(hA * sB - (1 - hA) * 0.5, hB * sA - (1 - hB) * 0.5)
+            txw = lambda r: f"{r[3]} LAST_{r[4] or 'none'} DIST_{min(int(r[5]), 12) // 3}"
+            hv = HashingVectorizer(n_features=2 ** 20, ngram_range=(1, 2), alternate_sign=False, norm='l2', token_pattern=r"[^\s]+")
+            cut = int(ndv * 0.8); trI = [i for i in range(nD) if RD[i][0] < cut]; teI = [i for i in range(nD) if RD[i][0] >= cut]
+            uT = np.array([usew(RD[i], ('d', RD[i][0])) for i in trI]); okT = ~np.isnan(uT)
+            if okT.sum() >= 200:
+                hi_, lo_ = np.quantile(uT[okT], 0.8), np.quantile(uT[okT], 0.5); ps9 = [i for i, u in zip(trI, uT) if u >= hi_]; ng9 = [i for i, u in zip(trI, uT) if u <= lo_]
+                clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
+                def ev(L, own_of, yy):
+                    sw = clf.decision_function(hv.transform([txw(r) for r in L])); dv_ = -np.array([r[5] for r in L], float)
+                    uu = np.array([usew(r, own_of(r)) for r in L]); sn = ~np.isnan(uu); rk3 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
+                    cb = np.where(sn, rk3(sw) + rk3(np.nan_to_num(uu, nan=-9.0)), rk3(sw) * 0.5)
+                    def a9(v, m=None):
+                        v_, y_ = (v, yy) if m is None else (v[m], yy[m])
+                        if y_.sum() == 0 or y_.sum() == len(y_): return 'n/a'
+                        o = np.argsort(-v_); return f"AUC {_cg_auc(v_[y_], v_[~y_]):.3f} (top 5% {y_[o[:max(1, len(v_) // 20)]].mean():.2f})"
+                    return (f"distance {a9(dv_)} | usefulness {a9(np.nan_to_num(uu, nan=-9.0))} | WORDING READER {a9(sw)} | wording + usefulness {a9(cb)} | "
+                            f"pairs seen once: wording {a9(sw, ~sn)} (n {int((~sn).sum())})")
+                yB = np.array([bool(r[6]) for r in RB]); yD = np.array([bool(RD[i][6]) for i in teI])
+                msg.append(f"WORDING READER, self-trained from usefulness ({len(ps9)} / {len(ng9)} pseudo-labels; true related among them {np.mean([RD[i][6] for i in ps9]):.2f} / "
+                           f"{np.mean([RD[i][6] for i in ng9]):.2f}, evaluation only) || benchmark records {len(RB)} (gold-related {yB.mean():.3f}): {ev(RB, lambda r: ('b', r[0]), yB)} || "
+                           f"held-out distant records {len(teI)} (own-document labels {yD.mean():.3f}): {ev([RD[i] for i in teI], lambda r: ('d', r[0]), yD)}")
+        except Exception as e: _fail('inference.premises:wording'); msg.append(f"WORDING READER unavailable ({type(e).__name__}: {e})"[:160])
     # ---- INFERENCE: A-C through a shared name, store kept by each policy (distant scored records; distant labels)
     if scd is not None:
         try:

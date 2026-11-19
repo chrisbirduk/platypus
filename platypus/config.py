@@ -745,6 +745,10 @@ class Config:
     inf_distill_chainform=0         #   19 Nov MODEL CHANGE: written composites taught and recalled in chain form 'A <relation> B > C.' (the bridge kept)
     inf_premises_subst=0            #   19 Nov readout: substitution reader on the benchmark records (N swaps of A per record; 0 off)
     inf_distill_chain_conf=0        #   19 Nov readout: made-up chains for novel subjects after chain-form teaching, and the trunk's confidence
+    inf_rule_world_move=0.0         #   19 Nov kra9: share of held-back rule-world leaves that MOVE (a new 'X is a child of M2' planted in another domain)
+    inf_kmc_rulej_recent=0          #   19 Nov kra9: route J fits each (subject, relation) on its MOST RECENTLY read answer only (belief revision by recency)
+    inf_kmc_rulej_reverify=0        #   19 Nov kra9 MODEL CHANGE: every earlier route J write re-derived each sleep; kept, REWRITTEN (new answer and bridge) or retracted
+    inf_premises_wording=0          #   19 Nov kra9 readout: self-trained wording reader (usefulness pseudo-labels) on the benchmark records
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values
     inf_kmc_rulecomp_clarify=0      #   readout: what route A uses (shuffled-table and plain-dictionary controls)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
