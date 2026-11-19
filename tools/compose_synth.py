@@ -320,6 +320,17 @@ if COTLATE:                                                                    #
                 return f"NEW country {np.mean(nw):.2f}, STALE {np.mean(st_):.2f}"
             P(f"   [REV] {tag} form, after moving (new premise taught 600 steps): premise new city (rank among 10) {rank1(mm, liv([(a, bj) for a, bi, bj in mv], OLD), np.random.RandomState(9)):.2f} | "
               f"TAUGHT people: {revq(mv[:100])} | NEVER-TAUGHT people: {revq(mv[100:])}  ({time.time() - T0:.0f}s)")
+            if int(os.environ.get('CS_COTLATE_RETRACT', 0)) and tag == 'CHAIN':   # 19 Nov CS_COTLATE_RETRACT: RETRACT AND RE-DERIVE (label-free) - the chain names its bridge,
+                def rr_(G, moved):                                                #   so the model can check it: if the chain's city B differs from what the model now says
+                    fl, r0, r1 = [], [], []                                       #   'A lives in', the composite is flagged stale, retracted, and re-derived as the country
+                    for x in G:                                                   #   the model gives for the NEW city ('B2 lies in'). Unmoved people are the false-flag control.
+                        a, bi = x[0], x[1]; tc = CN[OLD[x[2] if moved else bi][1]]
+                        pt = [y.strip() for y in gen(mm, f"{a} is a citizen of ").split('>')]; bn = gen(mm, f"{a} lives in ").strip().rstrip('.').strip()
+                        f_ = len(pt) == 2 and pt[0] != bn; c0 = pt[-1]; c1 = gen(mm, f"{bn} lies in ").strip().rstrip('.').strip() if f_ else c0
+                        fl.append(f_); r0.append(c0 == tc); r1.append(c1 == tc)
+                    return f"flagged {np.mean(fl):.2f} | right country: as answered {np.mean(r0):.2f} -> after retract and re-derive {np.mean(r1):.2f}"
+                P(f"   [RETRACT] CHAIN form (label-free: chain bridge vs the model's current 'lives in'): MOVED taught {rr_(mv[:100], 1)} || MOVED never taught {rr_(mv[100:], 1)} || "
+                  f"UNMOVED taught (control) {rr_(TP[100:200], 0)} || UNMOVED never taught (control) {rr_(HELDP[100:200], 0)}  ({time.time() - T0:.0f}s)")
         if X_:
             byk = []
             for k in (1, 2, 4, 8):
