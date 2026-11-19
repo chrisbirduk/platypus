@@ -4976,3 +4976,8 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - PREMISE CHANGE at visit 4 (n 3): reader recorded the NEW premise 0.67 (kra9 at visit 4: 0.33); no composite updated yet. Small n.
 - MADE-UP CHAINS: novel 0.16, the confidence gate passes 0.10.
 - The kra11 LOCAL safety run was killed by the memory limit at visit 5 (an analysis I ran alongside it; my mistake) after running every new part through visit 5 without errors; the GPU run is the check of its final figures.
+
+### cg27a_kra12 GPU to visit 4 (19 Nov, started 20:23, log at 21:28): CONFIRMATION SEPARATES RIGHT FROM WRONG REAL-TEXT INFERENCES
+- CONFIRM AND CONSOLIDATE at visit 4 (the 600 tentative inferences written at visit 2, judged on the documents read since): **CONFIRMED 351, right 0.73** | still tentative 249, right 0.49 | faded 0 (fading starts at visit 6). Plain recurrence of the pair (evaluation): 497 of 600.
+- Only the confirmed enter the question pool: 238 taught, 113 held back (kra9 wrote 200 a readout at once, right about 0.71; kra12 consolidates 351 at 0.73 from 600 candidates).
+- Route J with every recorded fact (as kra11): composite 0.97 / 0.94 at visits 2 / 3, gate answers 0.82 / 0.86, right when answering 1.00.
