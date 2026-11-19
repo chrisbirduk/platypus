@@ -5045,3 +5045,15 @@ Horizons: H0 adjacent / comma / list (base 0.175), H1 short phrase (0.135), H2 l
 - A specialist reader per horizon is slightly better inside the adjacent / comma horizon (0.619 vs 0.592) and equal elsewhere; the pronoun specialist is worse (too few pseudo-labels).
 - Combining them without labels loses: the per-horizon probabilities (Platt scaling on each horizon's own pseudo-labels) are not comparable across horizons - every horizon's pseudo-labels are 20% positive by construction, whatever its true rate - so the next-sentence horizon (base 0.077) floods the top. Calibrating horizons against each other needs a label-free estimate of each horizon's true rate; the natural one is the pair: evidence for the SAME pair from several horizons and documents (which confirmation already uses).
 - PAIR LEVEL (238,477 held-out pairs, related 0.091): combining a pair's records by noisy-or: one reader AUC **0.650**, top 10% **0.209** (its best single record 0.641 / 0.186; mean of records 0.622); per-horizon readers 0.627 / 0.193. Pairs seen in 2+ horizons are related 0.155 (all 0.091). Evidence for a pair accumulating across its records and horizons helps a little; separate readers per horizon still do not.
+
+### A cleaner teacher, then richer features (19 Nov, 22:20-22:30; tools/clean_teacher.py, distant 40k in 8 blocks; own-document labels): NEGATIVE
+Learned types (label-free: k-means on the words around each name's mentions, 24 clusters over 348,710 names): purity 0.416 against the dataset's types (majority 0.300).
+| Teacher | Words between: AUC blocks 1 -> 7 | + learned types + context |
+|---|---|---|
+| USEFUL | 0.614 -> 0.629 (best 0.637) | 0.562 -> 0.578 |
+| KNOWLEDGE (usefulness + every record of a confirmed pair) | 0.614 -> 0.634 (best **0.641**) | 0.562 -> 0.574 |
+| CONFIRMED only (every record of a confirmed pair; usefulness -1 as negatives) | 0.614 -> 0.581 | 0.562 -> 0.535 |
+- The confirmed pairs are NOT a cleaner teacher here: confirmed by the reader itself, they are right only 0.34-0.49 (records of them as positives 0.35-0.52), no better than usefulness's +1 votes (0.41-0.42). Confirmation's precision depends on the reader doing the confirming; earlier 0.60-0.72 came from a stricter set-up (top 5% picks, different-text, own-document labels on the original record). A weak reader cannot confirm its way to clean labels.
+- Richer features hurt every teacher (about -0.06): learned types are too impure (0.42) and context words add more to learn from the teacher's bias than from the relation.
+- KNOWLEDGE stays a small, steady gain on words (+0.004-0.006), as at 50k.
+- Conclusion for the reader: within the label-free set-up tried, the teacher's noise is the binding limit and no available signal is clean enough to replace it; feature enrichment only pays with clean labels. The remaining levers are coverage (wider records), pooling evidence per pair, and filtering after the reader (confirmation, the relational memory's fit) - not a better reader from the same signals.
