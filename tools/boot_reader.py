@@ -37,6 +37,11 @@ y = np.array([frozenset((r[1], r[2])) in LAB for r in R], dtype=float)
 doc = np.array([r[0] for r in R]); test = doc >= int(ND * 0.8); train = ~test
 txt = [' '.join(r[3].lower().split()) for r in R]
 seed = np.array([any(rx.search(t) for rx in SRX) for t in txt]); neg0 = np.array([bool(t.split()) and all(x in GLUE for x in t.split()) for t in txt]) | np.array([r[5] >= 9 and all(x in GLUE for x in t.split()) for r, t in zip(R, txt)])
+if os.environ.get('BS_SEED', '') == 'agree':                                    # 19 Nov BS_SEED agree: seeds from CROSS-DOCUMENT AGREEMENT instead of templates - pairs that
+    pdl = collections.defaultdict(set)                                          #   BS_AGREE (2) other documents also record with a link word between the names (label-free;
+    for r in R:                                                                 #   tools/self_reader.py: 2.5x the base rate among the top records)
+        if r[4] and r[4] not in GLUE: pdl[frozenset((r[1], r[2]))].add(r[0])
+    seed = np.array([bool(r[4]) and r[4] not in GLUE and len(pdl[frozenset((r[1], r[2]))] - {r[0]}) >= int(os.environ.get('BS_AGREE', 2)) for r in R])
 same = np.array([TY.get(r[1], 'X') == TY.get(r[2], 'X') for r in R])          # BS_NEG sametype: list glue only between names of the SAME type ('A , B and C' lists)
 neg = neg0 & same if os.environ.get('BS_NEG', '') == 'sametype' else neg0
 P(f"{ND} documents, {len(R)} records ({train.sum()} training, {test.sum()} held out); {len(vocab)} features | seeds: {(seed & train).sum()} positives "
