@@ -320,6 +320,46 @@ def premises_readout(model, cfg, S_slot, vis):
                                f"states + words (ranks) {a8(rk8(sB9) + rk8(swB), yB)} || held-out distant {len(tS)}: STATES {a8(sD9, yD9)} | word counts {a8(swD, yD9)} | "
                                f"states + words {a8(rk8(sD9) + rk8(swD), yD9)} || CURVE over readouts (visit: benchmark AUC): " + ", ".join(f"{v_}: {a_:.3f}" for v_, a_ in _PM['states_curve']))
         except Exception as e: _fail('inference.premises:wording'); msg.append(f"WORDING READER unavailable ({type(e).__name__}: {e})"[:160])
+        if int(getattr(cfg, 'inf_premises_parse', 0)) and locals().get('clf') is not None:     # 19 Nov kra10 PARSER READER (readout; spaCy en_core_web_sm, an outside parser, by the user's
+            try:                                                               #   decision): the dependency path between the two names in the record's text (labels, the
+                import spacy                                                   #   word where the branches meet, length, pure coordination), self-trained from the same
+                nlp9 = _PM.get('nlp') or spacy.load('en_core_web_sm', disable=['ner']); _PM['nlp'] = nlp9   # usefulness pseudo-labels, alone and with the word counts
+                CO9 = {'conj', 'cc', 'punct', 'appos', 'compound', 'npadvmod'}; nP = int(getattr(cfg, 'inf_premises_parse', 0)); rp9 = np.random.RandomState(int(cfg.seed) + 53 + vis)
+                def pth(r, dd):
+                    t9 = r[7] if len(r) > 7 and isinstance(r[7], str) else ''
+                    sa, sb = dd.char_span(0, len(r[1]), alignment_mode='expand'), dd.char_span(len(t9) - len(r[2]), len(t9), alignment_mode='expand')
+                    if sa is None or sb is None or not t9.startswith(r[1]) or not t9.endswith(r[2]): return 'PATH_none'
+                    i, j = sa.root, sb.root; anc = {}; t, n = i, 0
+                    while True:
+                        anc[t.i] = n
+                        if t.head.i == t.i or n > 30: break
+                        t = t.head; n += 1
+                    dn = []; t = j
+                    while t.i not in anc and t.head.i != t.i and len(dn) < 30: dn.append(t.dep_); t = t.head
+                    if t.i not in anc: return 'PATH_none'
+                    lca = t; up = []; t = i
+                    while t.i != lca.i: up.append(t.dep_); t = t.head
+                    dp = up + dn[::-1]
+                    return (f"PATH_{'^'.join(up)}|{lca.lemma_.lower()}|{'v'.join(dn[::-1])} LCA_{lca.lemma_.lower()} PLEN_{min(len(dp), 8)} "
+                            f"COORD_{int(bool(dp) and all(x in CO9 for x in dp))}")
+                def pfe(L): return [pth(r, dd) for r, dd in zip(L, nlp9.pipe([r[7] if len(r) > 7 and isinstance(r[7], str) else '' for r in L], batch_size=256))]
+                k8 = min(nP, len(ps9), len(ng9)); pP = [ps9[i] for i in rp9.choice(len(ps9), k8, replace=False)]; nP_ = [ng9[i] for i in rp9.choice(len(ng9), k8, replace=False)]
+                tP = [teI[i] for i in rp9.choice(len(teI), min(len(teI), 2 * nP), replace=False)]
+                trL = [RD[i] for i in pP + nP_]; ytr = np.r_[np.ones(k8), np.zeros(k8)]; teL = [RD[i] for i in tP]; yP = np.array([bool(r[6]) for r in teL]); yB = np.array([bool(r[6]) for r in RB])
+                ptr, pB_, pD_ = pfe(trL), pfe(RB), pfe(teL)
+                cP = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); cP.fit(hv.transform(ptr), ytr)
+                cWP = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); cWP.fit(hv.transform([txw(r) + ' ' + p for r, p in zip(trL, ptr)]), ytr)
+                def a7(v, yy):
+                    if yy.sum() == 0 or yy.sum() == len(yy): return 'n/a'
+                    o = np.argsort(-v); return f"AUC {_cg_auc(v[yy], v[~yy]):.3f} (top 5% {yy[o[:max(1, len(v) // 20)]].mean():.2f})"
+                co8 = lambda P_: np.array([' COORD_1' in x for x in P_])
+                msg.append(f"PARSER READER (spaCy dependency path, self-trained from usefulness; {k8} + {k8} records; coordination paths {co8(pB_).mean():.2f} of benchmark records, "
+                           f"related among them {yB[co8(pB_)].mean() if co8(pB_).any() else float('nan'):.2f} vs {yB[~co8(pB_)].mean() if (~co8(pB_)).any() else float('nan'):.2f}) || "
+                           f"benchmark: PATH {a7(cP.decision_function(hv.transform(pB_)), yB)} | WORDS {a7(clf.decision_function(hv.transform([txw(r) for r in RB])), yB)} | "
+                           f"WORDS + PATH {a7(cWP.decision_function(hv.transform([txw(r) + ' ' + p for r, p in zip(RB, pB_)])), yB)} || held-out distant {len(teL)}: "
+                           f"PATH {a7(cP.decision_function(hv.transform(pD_)), yP)} | WORDS {a7(clf.decision_function(hv.transform([txw(r) for r in teL])), yP)} | "
+                           f"WORDS + PATH {a7(cWP.decision_function(hv.transform([txw(r) + ' ' + p for r, p in zip(teL, pD_)])), yP)}")
+            except Exception as e: _fail('inference.premises:parse'); msg.append(f"PARSER READER unavailable ({type(e).__name__}: {e})"[:160])
     # ---- INFERENCE: A-C through a shared name, store kept by each policy (distant scored records; distant labels)
     if scd is not None:
         try:

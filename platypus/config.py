@@ -750,6 +750,7 @@ class Config:
     inf_kmc_rulej_reverify=0        #   19 Nov kra9 MODEL CHANGE: every earlier route J write re-derived each sleep; kept, REWRITTEN (new answer and bridge) or retracted
     inf_premises_wording=0          #   19 Nov kra9 readout: self-trained wording reader (usefulness pseudo-labels) on the benchmark records
     inf_premises_states=0           #   19 Nov kra9 readout: the same reader on the trunk's own states (N pseudo-labelled records a class; 0 off)
+    inf_premises_parse=0            #   19 Nov kra10 readout: the same reader on spaCy dependency paths (N pseudo-labelled records a class; 0 off; needs en_core_web_sm)
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values
     inf_kmc_rulecomp_clarify=0      #   readout: what route A uses (shuffled-table and plain-dictionary controls)
     inf_rti_typed=0                 # 16 Nov TYPED WRITES: a written inference is 'head <wording> tail' (the store's commonest relational wording for its class
