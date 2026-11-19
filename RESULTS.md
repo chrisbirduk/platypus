@@ -4945,3 +4945,15 @@ Teachers voting +1 / -1 / abstain from what was read so far: USEFUL (usefulness 
 - The other teachers are weak or misleading as built here. True precision of their votes: CONFIRM +1 0.25, WORDING +1 0.19 (base 0.14); CONFIRM -1 (recurs only in lists) is right only 0.67-0.78 against a base of 0.86, so it points the wrong way. Usefulness: +1 0.45-0.55, -1 0.86-0.90.
 - The label model estimated usefulness's accuracy almost exactly (0.46 / 0.90 against 0.45 / 0.90) but misjudged the correlated teachers (all depend on the pair recurring) and turned them against the student. Modelling abstention as evidence made it worse: it learned 'recurs' as the related class (fixed by not modelling abstains).
 - Conclusion: combining teachers only helps when each teacher is individually strong and they are not all built on recurrence. The strong signals we have are the reader-scored relational confirmation (0.60-0.72, sparse) and the relational memory's fit (top slice 0.51 -> 0.64): a teacher set built from those, with a learning representation (trunk states), is the version worth testing. The cheap proxies used here are not.
+
+### Strong teachers jointly, in a feedback loop (19 Nov, 21:25-21:30; tools/strong_teachers.py, distant 10k, blocks of 2k; own-document labels, base 0.139): NEGATIVE - THE STRONG SIGNALS ARE FILTERS, NOT TEACHERS
+Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: another document states the pair in a wording the CURRENT reader puts in its top 30%; the newly trained reader scores the next round, a feedback loop); FIT (the names share neighbours in other documents, Adamic-Adar; top 10% +1, none -1). Student on the words between, scored on the next unread block.
+| Arm | AUC on unread blocks 1 -> 4 | Positives' true precision |
+|---|---|---|
+| **USEFUL ONLY** | **0.612 -> 0.637** | 0.44-0.55 |
+| USEFUL + RCONF | 0.612 -> 0.629 | 0.33-0.35 |
+| ALL THREE | 0.533 -> 0.510 | 0.36-0.37 |
+| AGREEMENT ONLY (two teachers agree) | 0.504 -> 0.469 | 0.32-0.35 |
+- As teachers over ALL records, RCONF and FIT are weak: +1 precision 0.22-0.23 and 0.22-0.34 (base 0.14). Their strength measured earlier (0.60-0.72 for confirmation, 0.64 for the fit check) was CONDITIONAL on the reader's own top picks: they are good second-stage FILTERS of what the reader already chose, not teachers of the reader. FIT's 'no shared neighbour' -1 covers about 80% of records at the base rate (0.87) and swamps the negatives.
+- The feedback loop (a better reader scoring the next confirmations) did not lift the reader: USEFUL + RCONF stays below usefulness alone at every round.
+- With today's tests together: usefulness is the one teacher that improves the reader with reading (0.612 -> 0.637 offline, 0.634 -> 0.659 on the GPU). Confirmation and fit belong in the pipeline as filters for what is kept and consolidated (kra12). Further gains in the reader have to come from its representation (trunk states: kra11's curve; a pretrained base: the Colab test).
