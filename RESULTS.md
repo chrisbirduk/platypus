@@ -4493,3 +4493,5 @@ kra6 visit 5:
 - Next: kra7 uses the MLP predictor with snapping for route J. The abstention gate still has to be checked at this capacity.
 
 **4. LATE CHAIN TEACHING, SEED 1 (replication).** Never taught B / C: 0.88 / 0.86 at 300 steps, 0.86 / 0.85 at 750, 0.85 / 0.82 at 1,500, 0.89 / 0.88 at 3,000 (taught C 0.99-1.00). It replicates seed 0 (0.81-0.88).
+
+**5. DIRECT TEACHING, SEED 1 (replication).** Taught 0.32 / 0.88 / 0.99 / 1.00 at 300 / 750 / 1,500 / 3,000 steps; never taught 0.14 / 0.10 / 0.12 / 0.14 (chance 0.10). It replicates seed 0: direct teaching does not generalise, chain teaching does (0.82-0.89 on this seed).
