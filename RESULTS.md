@@ -4594,3 +4594,18 @@ Late chain teaching itself replicates (never taught B / C 0.85 / 0.83 at 300 ste
 ### Bootstrapped reader seeded by cross-document agreement (BS_SEED agree, BS_NEG sametype, distant 10k): NEGATIVE
 - Seeds 2,302 records (0.39 labelled, 2.6x base). The classifier over the words between the names learns nothing that transfers: held-out AUC 0.47-0.47 over 4 rounds (distance 0.56).
 - Agreement is a property of the PAIR, not of the wording, so it does not teach a wording classifier. Agreement stays useful as a score, not as a teacher.
+
+### Substitution reader (19 Nov, 07:50-08:08; tools/sub_reader.py, stand-in trunk 192 x 3 (tg_lm192_6000), 90,629 records from 3,000 real documents, 2 swaps): NEGATIVE locally
+
+| Score (base rate 0.138) | AUC | Precision top 5% / 20% |
+|---|---|---|
+| Distance only | 0.555 | 0.162 / 0.174 |
+| Cross-document agreement | 0.572 | 0.352 / 0.207 |
+| **Substitution gain** (trunk surprise on Y when X is swapped for a same-type name), per byte / summed | 0.510 / 0.511 | 0.171 / 0.180 |
+| Original surprise of Y (control) | 0.567 | 0.235 / 0.177 |
+| Gain + distance + agreement (ranks) | 0.577 | 0.226 / 0.192 |
+| Distance + agreement (no trunk) | 0.586 | 0.294 / 0.203 |
+
+- The stand-in trunk's prediction of the second name barely depends on the first (gain at chance): a 192 x 3 byte model trained 6,000 steps does not know these real-world facts, so swapping a name costs it nothing.
+- This does not test the idea at scale: the GPU trunk's own reading is the real test (a readout for kra8: substitution gain on the benchmark records, scored against the gold relations).
+- Reader status after today's local tests: every label-free signal tried locally sits at AUC 0.51-0.68 (agreement best, where names are known). The local stand-in cannot carry the reader further; the remaining route is the GPU trunk.
