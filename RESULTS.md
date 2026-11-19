@@ -4737,3 +4737,19 @@ Route J: MLP predictor (1024), B snapped to the nearest recorded name, label-fre
 - The trunk's recall of TAUGHT written composites (test wording): 1.00 / 0.77 / 0.92 / 0.92 / 0.64 / 0.38 at visits 4-9 (n 7-47). It decays as writes accumulate: consolidation of composites does not hold over many visits. HELD BACK composites stay 0.00: no transfer to untaught composites on the GPU, unlike the synthetic world (0.81-0.89). That is also no false recall of the right answer; what the trunk says instead (made up or not) is what kra8's MADE-UP CHAINS readout will show.
 - Trunk probe recall at visit 9 (weights, rank among candidates): one-hop 0.74, two-hop 0.54, open two-hop 0.30, three-hop 0.08. No HEADLINE yet (log ends mid-visit 10).
 - Recall vs consolidation: route J answers are a recall claim (the module answers); the 0.38 taught-composite figure is the consolidation claim.
+
+### Writing back EVERY checked composite (19 Nov, 17:15-17:45; CS_COTLATE_WB_ALL 1, seeds 1 and 0): CONSOLIDATION OF REVISIONS WORKS ON BOTH SEEDS
+As the write-back above, but every checked person's chain is taught: flagged ones re-derived, unflagged ones as currently given (375 / 397 chains).
+
+| Group (seed 0 / seed 1), asked directly with no check | Before | Flagged only written back | EVERY checked chain written back |
+|---|---|---|---|
+| Moved, taught | 0.19 / 0.53 | 0.78 / 0.43 | **0.90 / 0.76** |
+| Moved, never taught | 0.14 / 0.50 | 0.84 / 0.49 | **0.83 / 0.82** |
+| Unmoved, taught (checked, so written back too) | 0.92 / 0.79 | 0.73 / 0.77 | 0.82 / 0.79 |
+| Unmoved, never taught (checked, written back) | 0.66 / 0.60 | 0.67 / 0.73 | 0.82 / 0.76 |
+| Unmoved taught 200-300, replayed originals | - | 1.00 / 0.99 | 0.99 / 0.97 |
+
+- Seed 1's failure is fixed (moved 0.43-0.49 to 0.76-0.82); seed 0 is as good or better. The revision is now consolidated, not only recomputed at question time: a consolidation claim.
+- Rewriting every checked composite also lifts never-taught unmoved people (0.60-0.66 to 0.76-0.82). Taught unmoved people are kept within 0.00-0.10 of before.
+- The label "not replayed" in the log is wrong for this variant: those people were checked, so their chains were written back.
+- Design: after a premise changes, re-check and rewrite every composite that depends on the changed name (via the stored bridge), not only those flagged.
