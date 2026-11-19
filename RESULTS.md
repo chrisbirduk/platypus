@@ -4625,3 +4625,15 @@ Late chain teaching itself replicates (never taught B / C 0.85 / 0.83 at 300 ste
 - **Seed 1 replicates both findings:** chain teaching reaches never-taught people (0.83-0.89) and confabulates chains for novel names (0.95); premises read up to 8 times do not chain (B 0.01-0.12).
 - **Abstention rows are only a partial fix, with a real cost:** made-up chains halve (0.93 -> 0.46), but a quarter of known people now abstain and correct chains fall from 0.85 to 0.65. The trunk's sense of who it knows is too weak (AUC 0.73-0.86) to abstain cleanly by training alone.
 - **Recommendation:** keep chain teaching for consolidation, but do not rely on the trunk to abstain. Answer composite questions through the gated memory (the package's integrated memory answers only where its address was written; route J's margin gate rejected 99-100% of unrecorded subjects in the synthetic world), and use the trunk's own chain confidence as a second check (AUC 0.83-0.86).
+
+### Belief revision of consolidated composites (19 Nov, 11:16-11:37; CS_COTLATE_REV 1, seed 0): chain teaching does NOT update by itself
+
+After late teaching (3,000 steps), 100 taught and 100 never-taught people move to a city in a different country; only 'A lives in B2.' is taught (600 steps; the new city is then known, rank 1.00). Asked 'A is a citizen of':
+
+| | Chain form: NEW / STALE country | Direct form: NEW / STALE country |
+|---|---|---|
+| Taught people | 0.19 / **0.65** | 0.03 / **0.61** |
+| Never-taught people | 0.14 / **0.52** | 0.08 / 0.00 (never knew it) |
+
+- Chain-taught composites go stale like direct ones (stale 0.65 vs 0.61): the trunk's chain still runs through the OLD city, even though the new city is known (rank 1.00). It updates a little (new 0.14-0.19 vs 0.03-0.08). The pretraining-time chain result (CS_REV, 17 Nov) does not carry over to late teaching.
+- So consolidated composites need explicit retraction and re-derivation when a premise changes (the package's written-composite retraction pops route J / A / D writes when a premise is retracted); the trunk will not revise them on its own. This needs a GPU readout: a premise change after consolidation, then the composite's answer.
