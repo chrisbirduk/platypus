@@ -4884,3 +4884,8 @@ Tentative top 5% right 0.32-0.36 (base 0.14).
 - PREMISE CHANGE, MOVE READ (n 18): reader recorded NEW 0.50, OLD 0.39; route J composite NEW 0.11, OLD 0.33; written NEW 0.11, stale 0.28. The old premise still wins in the reader for about 40% of read moves (the kra11 fix targets this). Control (n 13): old 1.00, old composite 0.85.
 - RE-DERIVE: KEPT 87 (right 0.94), RETRACTED 2 (1 right). Writes 89, precision 0.94.
 - Route J at visit 6: composite 0.53, pure 0.53, null 0.00; gate answers 0.53, right when answering **0.92** (kra7 visit 6: 0.60 / 0.96). Slightly below kra7; the moved leaves (scored against their new truth) and recency fitting are the likely causes.
+
+### cg27a_kra10 GPU visit 2 (19 Nov, restarted 19:35 with the fix): THE TRUNK'S OWN STATES BEAT WORD COUNTS ON THE BENCHMARK
+- STATE READER (the trunk's last-block states, 6000 + 6000 usefulness pseudo-labels): benchmark gold (3147 records, base 0.205) **AUC 0.646** (top 5% 0.36) vs word counts 0.634 (0.40); **states + words 0.671** (top 5% 0.43), the best label-free benchmark score so far. Held-out distant: states 0.617, words 0.647, both 0.655. The curve over visits starts at 0.646 (visit 2).
+- PARSER READER on the GPU benchmark: path 0.545, words 0.634, **words + path 0.612** - the parser does not help here (local distant test: +0.014). The record texts are short fragments (60 characters at most), which parse poorly.
+- WORDING READER identical to kra9 (same seed): 0.634 on the benchmark.
