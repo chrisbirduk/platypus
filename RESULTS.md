@@ -4662,3 +4662,4 @@ Continents are NEW facts ('C is part of K.', 20 countries -> 5 continents) taugh
 
 - Three-hop chain teaching transfers to never-taught people at 0.90, composing two pretrained premises with a fact learned only during teaching. Direct teaching learns the taught people (0.96) and transfers nothing (0.18-0.27, chance 0.20).
 - The same limits as two hops should apply (premises must be recallable; confabulation on novel names; revision partial) - not measured here.
+- **Seed 1 replicates (12:19-12:28):** chain three hops, never taught K 0.81 / 0.86 / 0.84 / **0.92** at 300 / 750 / 1,500 / 3,000 steps (B 0.85-0.89, C 0.76-0.90); taught 0.94-1.00.
