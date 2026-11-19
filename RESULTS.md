@@ -4511,3 +4511,9 @@ kra6 visit 5:
 - The null-margin gate does not work and should not be used.
 - Hidden 256 still memorises the facts (first hop 1.00) but separates worse (margin gate lets 7-8% through) and composes worse latently (0.23). Hidden 1024 is the setting for kra7.
 - Caveat: synthetic world, 2,200 facts, one relation pair. The GPU rule world has 22 relations and fewer facts per relation, so it is within this capacity.
+
+### kra7 draft, local smoke (19 Nov, 01:50-03:10; route J MLP 1024 + snapping + auto gate; oracle rules, 800 predictor steps)
+
+- **Inconclusive, not yet a pass.** First hop B 0.06-0.07, composite 0.01-0.04, null 0.00-0.01 over visits 2-5 (local trunk, 191-356 recorded facts). Writes: 2, both right. Forgetting -0.040, final BPC 2.623 (no harm; the readout trains nothing in the trunk).
+- The automatic gate came out at 0.000: one-to-many relations (several recorded answers per subject) tie at the top, so their margins are 0 and the 5th percentile is 0. Fixed: the gate is now calibrated on single-answer subjects only.
+- There is no local linear route J run to compare against (kra6 was only run on the GPU, first hop 0.76). An offline check shows the predictor memorises facts (0.95 on random codes, 800 steps), so the low first hop is either unrecorded first-hop facts (the MLP does not generalise to them, as in the synthetic world) or weak local trunk codes. The rerun (krj7b) adds a same-run linear comparison and splits the first hop by whether the fact was recorded.
