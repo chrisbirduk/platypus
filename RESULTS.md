@@ -5288,3 +5288,21 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
   - **The in-context transfer replicates and grows: never-taught chains given in the prompt 0.158 with chain teaching vs 0.104 with direct teaching (500 each, about 3 standard errors; first run 0.135 vs 0.110).** The trunk learns a composition step it applies to chains it never saw - a first real-text sign of inference in the trunk, in context.
   - Closed book (premises stored, nothing in the prompt), no derivation: CONTROL 0.11-0.14 in every arm, and the premise-only arm already gives 0.134 (association through the shared bridge, not a learned step). The stand-in holds few premises (0.20-0.42), so pairs with BOTH premises recalled are too few (26-33) to judge.
   - Consequence: kra16 (inf_rti_chain) prepared; the small clean set (150 + 150, 4,000 premise steps) with DIRECT / CHAIN / BOTH running next.
+
+### kra14 GPU to visit 8 (seed 4; log 74b7c91e, 20 Nov 11:40, visit 9 under way; no errors)
+| visit | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|
+| real-text inferences from the trunk, open: TAUGHT right vs HELD BACK right | 0.00 vs 0.00 | 0.00 vs 0.00 | **0.07 vs 0.02** | **0.10 vs 0.02** | **0.13 vs 0.03** |
+| the same, rank among 10: TAUGHT right vs HELD BACK right | 0.15 vs 0.12 | 0.16 vs 0.10 | 0.26 vs 0.13 | 0.30 vs 0.20 | **0.45 vs 0.21** |
+| taught WRONG inferences recalled open (false memories) vs held back | 0.00 vs 0.00 | 0.00 vs 0.00 | 0.08 vs 0.00 | 0.09 vs 0.00 | 0.08 vs 0.01 |
+| facts taught >= 1 visit, from the trunk | 0.88 | 0.85 | 0.77 | 0.73 | **0.62** |
+| conclusions taught >= 1 visit, from the trunk | 0.00 | 0.08 | 0.12 | 0.25 | **0.31** |
+| route J composite (learned rules) | 0.93 (92) | 0.84 (106) | 0.87 (148) | 0.87 (180) | 0.87 (219) |
+| fact table: right among the 600 written | 0.667 | - | 0.642 | - | 0.627 |
+| confirmed so far (right) / faded (right) | - | - | 353 (0.75) / 172 (0.59) | - | 370 (0.72) / 205 (0.57) |
+| gated answers: right when answered / never-read given a stored name | - | 1.00 / 0.00 | 0.88 / 0.00 | 1.00 / 0.01 | 0.86 / 0.02 |
+
+- **GOAL 2 ON THE GPU: confirmed real-text inferences now CONSOLIDATE into the trunk - taught vs held back 0.13 vs 0.03 open, 0.45 vs 0.21 rank at visit 8, rising every visit since the dose began (visit 5).** The first real-text inferences the trunk recalls, under kra14's decay; kra15 (no decay on these rows) should lift them further.
+- Costs: taught WRONG inferences are recalled too (0.08 vs 0.00-0.01): the confirmation filter passes right 0.72-0.75, so about a quarter of what is consolidated is wrong.
+- **FACTS fade as the ledger grows: 0.88 -> 0.62 over visits 4-8 (ledger 659 -> 1,151)** while conclusions rise 0.00 -> 0.31 - the same shape as the stand-in's decay arm (UNIFORM_D). kra15 exempts only the inference dose rows; facts keep the decay. A candidate later change: a floor on the facts' decay or rehearsal of facts taught earlier (the stand-in: REHEARSE 0.694 vs SEQ 0.379), to test locally.
+- The relational memory holds at 0.87 on 219 composites; the gate keeps never-read answers at 0.00-0.02.
