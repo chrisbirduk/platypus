@@ -5472,3 +5472,9 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - kra18 + inf_kmc_useful 2 (confirmed inferences train the trunk unless measured not useful: about 640-790 at right 0.775, against about 2% under 1) + inf_distill_wake_decay_min 0.25. Dose rows stay 16 (kra18).
 - Readouts: [REAL-TEXT INFERENCE TRAINED] - how many 'taught' inferences pass the keep rule, rank recall TRAINED vs NOT TRAINED vs HELD BACK; the matched readout's BROKEN CHAIN arm (another inference's A-B premise + this one's B-C premise: the answer in context, the chain broken) with own - broken and its SE.
 - What it tests for the first time: whether taught confirmed inferences consolidate (TRAINED vs HELD BACK) and whether taught WRONG ones become false memories.
+
+### cg27a_kra20 GPU, visit 4 (the first readout with the keep rule fixed)
+- **[REAL-TEXT INFERENCE TRAINED]: 219 of 219 taught inferences pass the keep rule (right 0.80)** - against 6-25 in kra17. They are first trained during visit 5 (the dose rows are built at this sleep): rank TRAINED right 0.21 / wrong 0.16 vs HELD BACK 0.15 / 0.19 is the pre-training baseline.
+- **MATCHED, BROKEN CHAIN (before any chain training):** HELD BACK right (n 51): closed 0.20 | own premises **0.29** | other premises 0.22 | broken chain (the answer in context, A not linked) **0.22** | own - broken +0.08 (SE 0.04), own - closed +0.10 (SE 0.04). TAUGHT right (n 114): closed 0.22 | own 0.24 | other 0.17 | broken 0.18 | own - broken +0.05 (SE 0.03). Pooled own - broken about +0.06 (about 2.3 SE).
+- Reading: the answer's presence in the context does NOT lift it (broken 0.18-0.22 = other 0.17-0.22 = closed 0.20-0.22); only the LINKED chain does. A first sign that the trunk uses the chain, not copying - one visit, n 165, before chain teaching.
+- Facts ever taught 0.84 (kra18 0.85); gated 0.36 (0.42); bits 1.9243 (kra18 1.9223).
