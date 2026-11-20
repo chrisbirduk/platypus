@@ -5243,3 +5243,13 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **CORRECTION to this morning's goal-1 result:** on the package's own candidates kra14's rule is far stronger than on tools/rcode_select.py's candidate set (top 100 0.75 vs 0.17-0.27 there), and **a selector taught on 1,000 labelled candidates does WORSE than kra14's rule in the top 100-600** (0.62-0.44 vs 0.75-0.54), though better on AUC (0.72 vs 0.63: it ranks the bulk better, not the head the package writes). The 'two to three times' claim held only against a weaker version of the rule.
 - With about 37,000 labelled candidates, gradient-boosted trees beat kra14's rule by +0.08 to +0.14 in the top 100-600 (0.83 / 0.68 vs 0.75 / 0.54) - a real but modest gain that needs a large labelled set.
 - DECISION: kra14's write rule stays; no selector in kra15. A middle seed (5,000-10,000 labelled candidates) is worth one more offline check.
+
+### cg27a_kra14 GPU to visit 4 (log at 07:44): MEMORY AND GATES STRONG; TAUGHT FACTS CONSOLIDATE, CONCLUSIONS DO NOT
+- Prequential bits, domains read: 2.0125 / 2.0371 / 2.0111 (visits 1-3). No Traceback, no 'unavailable'.
+- Route J visit 3: first hop 0.97, **composite 0.94, pure families 0.93, null 0.03**; 64 composites written at precision 0.98; re-derive kept 64 (right 0.98).
+- GATED ANSWERS visit 3: known facts right when answered **0.97**; never-read names given a stored name **0.06** (abstained 0.93).
+- Keyed memory visit 3: taught facts 0.77 / 0.85 vs held back 0.02 / 0.21; persistent across readouts 0.69-0.78 open by visit written.
+- FROM THE TRUNK at visit 4 (test wordings): **facts taught for at least one visit 0.88 (241; 2-3 visits 0.91) vs control 0.23** - facts consolidate. **Conclusions 0.00 (18), in the pool 0.03 (32); 2x2: taught 0.02 (62)** - conclusions still do not (the regression first seen in kgk/kcs).
+- Probe recall from the weights: one-hop 0.36, open 0.28, two-hop 0.04 (chance 0.05).
+- Real-text inferences: 600 written tentative at visit 2; none taught by visit 3 (confirmation at visit 4).
+- Reading of goal 2: facts have source sentences replayed and enter the pool early; conclusions and composites have neither, and every question row is scaled by the visit decay (0.5 per visit, no floor) while the anchor is not - the decay arms queued on the stand-in test exactly this.
