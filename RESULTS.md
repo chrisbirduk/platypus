@@ -5371,3 +5371,8 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **Gated answers fall 0.50 -> 0.17:** the name memory is capped at 384 entries and conclusions take a growing share (90 -> 192), leaving 192 facts for 1,333 candidates. A capacity limit, separate from the trunk's fade.
 - IN CONTEXT, held back with premises 0.27 / 0.24 vs held back closed book 0.21 / 0.19 at visits 8 / 9: a +0.05 hint of using shown premises (SE about 0.035), not yet a result.
 - Bits +0.017 vs kra14 at visit 8.
+
+### cg27a_kra18 prepared (kra17 + two existing options for kra17's visit 8-10 limits)
+- inf_nm_max 1024 (was 384): conclusions take up to half the name memory; by visit 9 they held 192 of 384 and facts 192 of 1,333 candidates; gated right overall 0.50 -> 0.17.
+- inf_distill_wake_rows 8 (was 4): the question pool grows on a fixed budget; facts taught 4+ visits 0.83 -> 0.60 over visits 8-10 with the 0.125 floor.
+- Local safety run after kra16's (about 17:25-18:45). The stand-in fact-fading test (uniform / floor / rehearse the fading first) follows; if it favours targeted rehearsal over more rows, that goes into kra19.
