@@ -5444,3 +5444,13 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **Label-free, pretrained states LOSE to word counts (0.58-0.60 vs 0.62-0.63):** the usefulness pseudo-labels (related 0.42 vs 0.11) are too noisy for a rich representation; the teacher, not the representation, limits the label-free reader.
 - **With true labels, pretrained states WIN by +0.06 to +0.09 AUC, on pairs seen once too (0.77-0.80 vs 0.72).** Size barely matters (GPT-2 124M 0.77 seen once, Qwen 1.5B 0.77-0.79), so the gain is mostly READING (relation cues), not KNOWING (a 12x larger model knows far more and gains nothing).
 - Implication: the package's seeded reader (20,000 labelled records, words) sits at the word ceiling (about 0.72); the same labels on a frozen small pretrained model's states would give about 0.78-0.80. A PRETRAINED READER (a component, the trunk unchanged) captures the measured reading gain; swapping the trunk is not needed for it.
+
+### Pretrained reader IN THE PIPELINE (20 Nov 20:45, Colab; tools/confirm_pre.py, 50,000 documents, 20,000 labelled seed records, 2,400 code writes): GPT-2 - NEGATIVE
+| | WORDS (the package's seeded reader) | STATES GPT-2 (layer 6) |
+|---|---|---|
+| held-out AUC (30,000 later records) | 0.757 | 0.770 |
+| written right (2,400) | 0.426 | 0.438 |
+| confirmed right / right kept, all read: >= 1 record | 0.604 / 0.62 | 0.594 / 0.60 |
+| 1 rated record (kra17) | **0.659 / 0.56** | 0.648 / 0.56 |
+| 2 rated records | **0.749 / 0.34** | 0.701 / 0.35 |
+- The package's word reader uses 3 CONTEXT words each side as well as the words between: AUC 0.757, not the 0.718 of words-between alone in tools/pretrained_reader.py. Against it GPT-2's states add +0.013 AUC, +0.012 written right, and confirm WORSE (-0.011 / -0.048). The +0.05-0.08 edge estimated at 20:34 compared against the weaker word reader; it does not exist against the package's own.
