@@ -7,6 +7,9 @@ typed writes, inf_rti_max CS_ROUNDS x 200 + 200 never taught as the control) are
   SEQ        each round teaches only its own 200
   REHEARSE   half the fact rows from the current round, half from every earlier round (spaced rehearsal of what was consolidated)
   UNIFORM    the fact rows drawn uniformly from every round taught so far (the package's RTI dose today: inf_rti_rows samples all taught rows)
+  UNIFORM_D  UNIFORM with the package's question-row DECAY: the fact rows' loss x CS_DECAY^round (inf_distill_wake_decay 0.5 from visit 1 in
+             kra14; the anchor is not decayed) - the suspected cause of the GPU's fading
+  UNIFORM_DF the same with a floor: x max(CS_FLOOR, CS_DECAY^round) (inf_distill_wake_decay_min)
   REHEARSE_R the same, and the KL anchor's teacher is the model at the START of the round (rolling) instead of the original trunk
 After every round: recall in the never-taught test wording ('It is on record that <head> <wording> ': rank of the true tail among 10,
 chance 0.10; open-ended exact) of EACH earlier round and of the never-taught control; forgetting = held-out bits added per domain vs the
@@ -18,7 +21,7 @@ import torch, torch.nn as nn, torch.nn.functional as F
 sys.path.insert(0, '.')
 import platypus.inference.premises as pm
 P = lambda *a: print(*a, flush=True); T0 = time.time(); torch.set_num_threads(2); torch.manual_seed(0)
-NR = int(os.environ.get('CS_ROUNDS', 5)); STEPS = int(os.environ.get('CS_STEPS', 600)); LR = float(os.environ.get('CS_LR', 1e-3))
+DEC = float(os.environ.get('CS_DECAY', 0.5)); FLR = float(os.environ.get('CS_FLOOR', 0.25)); NR = int(os.environ.get('CS_ROUNDS', 5)); STEPS = int(os.environ.get('CS_STEPS', 600)); LR = float(os.environ.get('CS_LR', 1e-3))
 cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel='code+aa',
                             inf_rcode_asym=1.0, inf_rcode_selreport=0, inf_rti_max=200 * (NR + 1), inf_rret=0, inf_rti_ctl=0.0, inf_rret_q=0.2, inf_rret_ctl=0.5, inf_rti_typed=1)
 pm._load_distant(cfg); ND = pm._PM['ND']; R = pm._PM['R']
@@ -83,7 +86,7 @@ for arm in os.environ.get('CS_ARMS', 'SEQ,REHEARSE,REHEARSE_R').split(','):
         if arm == 'REHEARSE_R': teacher = copy.deepcopy(m).eval()
         old = [x for j in range(k) for x in FACTS[j]]; m.train()
         for st in range(STEPS):
-            if arm == 'UNIFORM': allr = old + FACTS[k]; fb = [allr[i] for i in rs.randint(0, len(allr), 8)]
+            if arm.startswith('UNIFORM'): allr = old + FACTS[k]; fb = [allr[i] for i in rs.randint(0, len(allr), 8)]
             elif arm.startswith('REHEARSE') and old: fb = [FACTS[k][i] for i in rs.randint(0, len(FACTS[k]), 4)] + [old[i] for i in rs.randint(0, len(old), 4)]
             else: fb = [FACTS[k][i] for i in rs.randint(0, len(FACTS[k]), 8)]
             ds_ = list(DOMS); wb = [bytes(DOMS[ds_[j % 5]][i:i + 129]) for j, i in enumerate(rs.randint(0, mn, 24))]
@@ -91,6 +94,8 @@ for arm in os.environ.get('CS_ARMS', 'SEQ,REHEARSE,REHEARSE_R').split(','):
             Xw, Xwi = tens(wb); lw_ = m(Xwi)
             with torch.no_grad(): lo = F.log_softmax(teacher(Xwi), -1)
             lw = F.kl_div(F.log_softmax(lw_, -1), lo, log_target=True, reduction='batchmean') / Xw.shape[1]
+            if arm == 'UNIFORM_D': lf = lf * DEC ** k
+            elif arm == 'UNIFORM_DF': lf = lf * max(FLR, DEC ** k)
             loss = (8 * lf + 24 * lw) / 32; op.zero_grad(); loss.backward(); op.step()
         m.eval(); dd = dbits(m); rc = [recall(m, RND[j]) for j in range(k + 1)]; rcc = recall(m, CTL)
         P(f"   {arm:10s} after round {k + 1}: recall rank / open by round taught: " + " | ".join(f"r{j + 1} {a:.2f} / {b:.2f}" for j, (a, b) in enumerate(rc))
