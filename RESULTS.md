@@ -5164,5 +5164,5 @@ kra14 = kra13 + the SEEDED READER (inf_premises_seed 20000 labelled records from
 | Confirm and consolidate: confirmed (right) / tentative (right) | 79 (0.49) / 521 (0.23) | 70 (0.49) / 530 (0.24) |
 
 No Traceback, no "unavailable". Visit 2 (first attempt and rerun alike): seeded reader held-out AUC 0.671, top 2% premises 0.63, A-C right 0.454 (n 436).
-RECALL vs CONSOLIDATION: these are reading and inference-proposal readouts (premises kept, A-C proposals checked against distant labels); the consolidation readout (confirmed 0.49) is unchanged in kind and was not lifted by the reader in this short run - 600 tentative writes are drawn before the reader's ranking reaches them.
+RECALL vs CONSOLIDATION: these are reading and inference-proposal readouts (premises kept, A-C proposals checked against distant labels); the consolidation readout (confirmed right 0.49) did not move with the reader in this short run; why (where the tentative writes come from relative to the reader's ranking) is not yet checked.
 Caveat: the seed is labelled data (20,000 records of own-document labels, themselves noisy), so kra14 is no longer label-free on the reading side; the trunk, store and consolidation remain label-free.
