@@ -5232,3 +5232,14 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - Prequential bits, domains read: 2.0125 (visit 1) -> 2.0371 (visit 2). No Traceback, no 'unavailable'. Forgetting and final BPC await the full run.
 - For the selector decision: on the package's own candidates kra14's rule is right 0.73-0.76 in its top 100-400 - the bar a seeded selector must beat (tools/rcode_select_pkg.py, queued).
 - **UNIFORM (the package's current RTI dose: fact rows drawn uniformly from every inference taught so far) HOLDS AS WELL: all taught after rounds 1-5 0.860 / 0.755 / 0.720 / 0.731 / 0.724 rank (open 0.441), every round 0.58-0.81, mean forgetting -0.075.** So the package's sampling already rehearses; the GPU fading is not a sampling problem. Suspected cause (code): the whole question loss, RTI dose rows included, is scaled by inf_distill_wake_decay 0.5 per visit (kra14: from visit 1, no floor), while the KL anchor is not - at visit 9 the inferences are pushed at about 0.004 of their first strength. Arms UNIFORM_D (the decay) and UNIFORM_DF (decay with a 0.25 floor) queued.
+
+### Goal 1, DECISIVE: the seeded selector ON THE PACKAGE'S OWN CANDIDATES (20 Nov, 07:45; tools/rcode_select_pkg.py; premises._rcode_step as kra14 - 512 dims, graph from the seeded reader's top half, every name pair of a held-out document; 20k documents read; candidates split in half by pair hash, selector taught on half A, scored on half B, 37,909 candidates, labelled 0.089): NOT FOR A BUILD WITH A SMALL SEED
+| Ranking (half B) | AUC | top 100 / 200 / 400 / 600 |
+|---|---|---|
+| **kra14 rule (code + AA among |log degree ratio| > 1)** | 0.631 | **0.750 / 0.675 / 0.615 / 0.542** |
+| code | 0.609 | 0.470 / 0.460 / 0.370 / 0.357 |
+| selector, 37,397 labelled candidates: logistic / trees | 0.728 / **0.793** | 0.640 / 0.645 / 0.542 / 0.502 and **0.830 / 0.780 / 0.720 / 0.682** |
+| selector, 1,000 labelled candidates: logistic / trees | 0.718 / 0.686 | 0.620 / 0.545 / 0.472 / 0.438 and 0.460 / 0.475 / 0.465 / 0.460 |
+- **CORRECTION to this morning's goal-1 result:** on the package's own candidates kra14's rule is far stronger than on tools/rcode_select.py's candidate set (top 100 0.75 vs 0.17-0.27 there), and **a selector taught on 1,000 labelled candidates does WORSE than kra14's rule in the top 100-600** (0.62-0.44 vs 0.75-0.54), though better on AUC (0.72 vs 0.63: it ranks the bulk better, not the head the package writes). The 'two to three times' claim held only against a weaker version of the rule.
+- With about 37,000 labelled candidates, gradient-boosted trees beat kra14's rule by +0.08 to +0.14 in the top 100-600 (0.83 / 0.68 vs 0.75 / 0.54) - a real but modest gain that needs a large labelled set.
+- DECISION: kra14's write rule stays; no selector in kra15. A middle seed (5,000-10,000 labelled candidates) is worth one more offline check.
