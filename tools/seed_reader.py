@@ -6,7 +6,9 @@ reader is stuck in (noisy teacher -> weak reader). Seed sizes SD_SIZES; arms:
   SEED + LABEL-FREE + CONTEXT      the same with 3 words of context each side
   ... + TYPES (reference)          the dataset's entity types as features (annotation: an upper bound for learned types)
 Scored on held-out documents: AUC, top 10% precision, PHRASE recall in the top 10%, phrase-record AUC.
-Usage: python3 tools/seed_reader.py <distant_50k.json.gz>   env SD_DOCS (30000), SD_SIZES (0,500,2000,5000,20000), SD_W (3)"""
+20 Nov: SD_MI rounds (multi-instance: a positive pair keeps only its best mention) and SD_REVERB k (ReVerb phrases used with k+ pairs join the
+label-free positives) applied to the label-free half; then the arm SEED ONLY + CONTEXT is also reported and the types reference is dropped.
+Usage: python3 tools/seed_reader.py <distant_50k.json.gz>   env SD_DOCS (30000), SD_SIZES (0,500,2000,5000,20000), SD_W (3), SD_MI (0), SD_REVERB (0)"""
 import os, sys, gzip, json, time, collections
 import numpy as np
 from sklearn.metrics import roc_auc_score
@@ -46,6 +48,29 @@ base = lambda r: f"{r[3]} LAST_{r[4] or 'none'} DIST_{min(r[5], 12) // 3}"
 XW = hv.transform([base(r) for r in recs]); XC = hv.transform([base(r) + ' ' + ' '.join('C_' + w for w in r[7].split()) for r in recs])
 XT = hv.transform([base(r) + ' ' + ' '.join('C_' + w for w in r[7].split()) + f" TP_{r[8]}_{r[9]} TA_{r[8]} TB_{r[9]}" for r in recs])
 W8 = float(os.environ.get('SD_W', 3))
+MI = int(os.environ.get('SD_MI', 0)); RVK = int(os.environ.get('SD_REVERB', 0))   # 20 Nov: the two literature fixes on top of the seed
+if RVK:                                                                         # ReVerb: verb / verb + prep / verb + words + prep, used with RVK+ distinct pairs
+    import spacy
+    nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner', 'lemmatizer']); pbm = collections.defaultdict(set)
+    for i in np.where(tr & ph)[0]: pbm[recs[i][3]].add(key[i])
+    cm = [m for m, v in pbm.items() if len(v) >= RVK]; okm = set()
+    for m, dd in zip(cm, nlp.pipe(cm, batch_size=2048)):
+        tg = [t.pos_ for t in dd]
+        if tg and tg[0] in ('VERB', 'AUX') and (len(tg) == 1 or (len(tg) == 2 and tg[1] in ('ADP', 'PART')) or (tg[-1] == 'ADP' and all(t in ('NOUN', 'ADJ', 'ADV', 'PRON', 'DET', 'VERB', 'AUX', 'PROPN', 'PART') for t in tg[1:-1]))): okm.add(m)
+    ngs = set(ng.tolist()); rvp = np.array([i for i in np.where(tr & ph)[0] if recs[i][3] in okm and i not in ngs], int)
+    P(f"ReVerb: {len(okm)} phrases pass, {len(rvp)} records added as positives (right {y[rvp].mean() if len(rvp) else float('nan'):.3f})  ({time.time() - T0:.0f}s)")
+    ps = np.unique(np.r_[ps, rvp])
+def mi_pos(X, pos, neg):                                                        # multi-instance: a positive PAIR keeps only its best-scored mention
+    for _ in range(MI):
+        c = LogisticRegression(C=1.0, max_iter=400, class_weight='balanced'); c.fit(X[np.r_[pos, neg]], np.r_[np.ones(len(pos)), np.zeros(len(neg))])
+        s = c.decision_function(X[pos]); best = {}
+        for i, v in zip(pos, s):
+            if key[i] not in best or v > best[key[i]][1]: best[key[i]] = (i, v)
+        pos = np.array(sorted(v[0] for v in best.values()), int)
+    return pos
+if MI:
+    psW, psC = mi_pos(XW, ps, ng), mi_pos(XC, ps, ng); P(f"multi-instance ({MI} rounds): positives {len(ps)} -> {len(psW)} words / {len(psC)} context (right {y[ps].mean():.3f} -> {y[psW].mean():.3f} / {y[psC].mean():.3f})  ({time.time() - T0:.0f}s)")
+else: psW = psC = ps
 def fit(X, ix, yy, w):
     c = LogisticRegression(C=1.0, max_iter=400, class_weight='balanced'); c.fit(X[ix], yy, sample_weight=w); return c.decision_function(X[te])
 def rep(nm, s):
@@ -55,10 +80,11 @@ rs = np.random.RandomState(0); pool = np.where(tr)[0]
 for n in [int(x) for x in os.environ.get('SD_SIZES', '0,500,2000,5000,20000').split(',')]:
     seed = pool[rs.permutation(len(pool))[:n]] if n else np.zeros(0, int); line = []
     if n: line.append(rep('SEED ONLY', fit(XW, seed, y[seed], np.ones(n))))
-    lf = np.r_[ps, ng]; ly = np.r_[np.ones(len(ps)), np.zeros(len(ng))]
-    ix = np.r_[seed, lf]; yy = np.r_[y[seed], ly]; w = np.r_[np.full(n, W8), np.ones(len(lf))]
-    line.append(rep('SEED + LABEL-FREE', fit(XW, ix, yy, w)))
-    line.append(rep('+ CONTEXT', fit(XC, ix, yy, w)))
-    line.append(rep('+ CONTEXT + TYPES (reference)', fit(XT, ix, yy, w)))
+    if n and (MI or RVK): line.append(rep('SEED ONLY + CONTEXT', fit(XC, seed, y[seed], np.ones(n))))
+    def mix(pp):
+        lf = np.r_[pp, ng]; ly = np.r_[np.ones(len(pp)), np.zeros(len(ng))]; return np.r_[seed, lf], np.r_[y[seed], ly], np.r_[np.full(n, W8), np.ones(len(lf))]
+    ix, yy, w = mix(psW); line.append(rep('SEED + LABEL-FREE' + (' (MI/REVERB)' if MI or RVK else ''), fit(XW, ix, yy, w)))
+    ix, yy, w = mix(psC); line.append(rep('+ CONTEXT', fit(XC, ix, yy, w)))
+    if not (MI or RVK): line.append(rep('+ CONTEXT + TYPES (reference)', fit(XT, ix, yy, w)))
     P(f"   seed {n:6d} (related {y[seed].mean() if n else float('nan'):.3f}) || " + " || ".join(line) + f"  ({time.time() - T0:.0f}s)")
 P(f"DONE ({time.time() - T0:.0f}s)")
