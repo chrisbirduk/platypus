@@ -5393,3 +5393,6 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - IN CONTEXT minus closed book, HELD BACK right: +0.06 / +0.05 / +0.09 at visits 8 / 9 / 10 (n 150 each; about 2 SE pooled). The first sign the trunk uses premises put in front of it for inferences it was never taught; the cells are not the same inferences (in context needs both premises on record), so this needs a matched readout before it is a claim.
 - Open recall of taught right inferences fades with age (written at visit 2: 0.10 -> 0.08 over visits 8-10; visit 6: 0.01-0.02): the same pool-growth fade as the facts.
 - kra18 adds a READOUT (no model change): [REAL-TEXT INFERENCE IN CONTEXT, MATCHED] - the same inferences and the same distractors scored closed book, after their OWN premises and after ANOTHER inference's premises, with the paired difference and its SE.
+
+### cg27a_kra16 local safety run (20 Nov 17:20; tools/safety_run.sh)
+- PASS: HEADLINE -0.040 / 2.616 (fast store -0.039 / 2.617) vs kra15 -0.041 / 2.615; no Traceback. Chain dose rows at visit 4: 277 for 420 inferences, beside 861 plain rows. (Superseded on the GPU by kra17, which includes it.)
