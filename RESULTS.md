@@ -5333,3 +5333,21 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 | chain dose rows (visit 4) | - | 160 for 420 inferences, beside 588 plain rows |
 - PASS: forgetting and BPC within noise; no Traceback; the rated confirmation ran (no fallback line). It confirms fewer and more right, the direction tools/confirm_min.py found (small n here: one judging visit on 10k documents).
 - The IN CONTEXT readout runs but n is 3-9 per cell at this size; it needs the GPU run. The chain dose rows are built at visit 4 and are first trained at visit 5, the last visit here, so their effect is not exercised locally.
+
+### cg27a_kra17 GPU, visits 1-8 (20 Nov, log to the middle of visit 8; kra14 GPU beside it, same seed)
+| readout (kra17 vs kra14) | visit 4 | visit 6 | visit 7 | visit 8 |
+|---|---|---|---|---|
+| facts ever taught, from the trunk | 0.83 vs 0.88 | 0.78 vs 0.77 | 0.72 vs 0.73 | **0.72 vs 0.62** |
+| conclusions ever taught | 0.09 vs 0.00 | 0.36 vs 0.12 | 0.31 vs 0.25 | 0.34 vs 0.31 |
+| gated answers: right overall / never-read given a stored name | 0.47 / 0.02 vs 0.55 / 0.03 | 0.41 / 0.02 vs 0.36 / 0.00 | 0.39 / 0.00 vs 0.42 / 0.01 | **0.50 / 0.02 vs 0.23 / 0.02** |
+| confirmed this visit (right) | 326 (0.82) vs 365 (0.80) | 342 (0.77) vs 353 (0.75) | - | (not yet) |
+| real-text inferences open, TAUGHT right / TAUGHT wrong / HELD BACK right | - | 0.06 / 0.01 / 0.01 vs 0.07 / 0.08 / 0.02 | **0.06 / 0.01 / 0.02 vs 0.10 / 0.09 / 0.02** | (not yet) |
+| rank among 10, TAUGHT right / TAUGHT wrong / HELD BACK right | 0.16 / 0.09 / 0.11 vs 0.15 / 0.19 / 0.12 | 0.26 / 0.19 / 0.13 vs 0.26 / 0.17 / 0.13 | 0.32 / 0.12 / 0.18 vs 0.30 / 0.22 / 0.20 | (not yet) |
+| IN CONTEXT (premises before the question), TAUGHT right / HELD BACK right | 0.21 / 0.20 | 0.29 / 0.17 | 0.32 / 0.20 | (not yet) |
+| held-out bits per byte, domains read | - | 1.9222 vs 1.9078 | 1.8956 vs 1.8797 | (not yet) vs 1.8200 |
+| route J learned composites: precision | - | - | 0.90 (176) vs 0.89 (170) | - |
+- **FALSE MEMORIES DOWN: taught WRONG inferences recalled 0.01 vs 0.09 open (visit 7), 0.12 vs 0.22 rank;** taught right ones 0.06 vs 0.10 open, 0.32 vs 0.30 rank. Right over wrong goes from about 1x to 6x open.
+- **The fact floor holds at visit 8: 0.72 vs 0.62 (n 250), flat over visits 7-8; below the 0.75 target.** Gated answers right overall 0.50 vs 0.23 at visit 8 (kra14 answered only 0.28 of KNOWN questions there).
+- The rated confirmation moves less than offline: +0.02 right, about 5-10% fewer confirmed. It cannot explain the wrong-recall drop alone (101 taught wrong vs 119); the chain-form rows or the floor may. Not separable without kra16 on the GPU.
+- IN CONTEXT shows no learned composition step: held back with the premises in front 0.17-0.20, the same as held back closed book (0.13-0.18). Taught in context = taught closed book. The chain form as taught does not yet make the trunk use premises it is shown.
+- Cost: held-out bits +0.014 / +0.016 at visits 6 / 7 (seed noise on the harness about 0.017; consistent sign). Route J unchanged.
