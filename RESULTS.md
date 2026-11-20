@@ -5410,3 +5410,19 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 
 ### cg27a_kra18 local safety run (20 Nov 19:10; tools/safety_run.sh)
 - PASS: HEADLINE -0.041 / 2.612 (fast store -0.040 / 2.614) vs kra17 -0.040 / 2.616; no Traceback. 8 question rows per step; facts ever taught 0.30 vs 0.29 at visit 4. The name memory (70-110 entries locally) never reaches either cap, so that change is GPU-only. Stopped after the headline (end-of-run diagnostics) to free the machine.
+
+### cg27a_kra18 GPU, visits 5-8 (kra17 beside it, same seed)
+| kra18 vs kra17 | visit 5 | visit 6 | visit 7 | visit 8 |
+|---|---|---|---|---|
+| facts ever taught | 0.86 vs 0.85 | 0.81 vs 0.78 | 0.80 vs 0.72 | **0.75 vs 0.72** |
+| gated answers right overall | 0.50 vs 0.44 | 0.30 vs 0.41 | 0.31 vs 0.39 | 0.48 vs 0.50 |
+| name memory: facts / conclusions | 755 / 55 | 921 / 86 | 921 / 103 (cap 1,024 reached) vs 280 / 104 | - |
+| held-out bits | 1.8560 vs 1.8638 | 1.9101 vs 1.9222 | 1.8852 vs 1.8956 | - |
+| inferences open: TAUGHT right / wrong vs HELD BACK right / wrong | - | 0.03 / 0.02 vs 0.00 / 0.00 | 0.04 / 0.01 vs 0.01 / 0.00 | 0.07 / 0.04 vs 0.03 / 0.05 |
+| rank: TAUGHT right vs HELD BACK right | - | 0.20 vs 0.15 | 0.21 vs 0.15 | 0.33 vs 0.22 |
+| IN CONTEXT HELD BACK right (closed book) | - | 0.16 (0.15) | 0.24 (0.15) | 0.31 (0.22) |
+- Facts hold better from visit 6 (+0.03 to +0.08) and reach 0.75 at visit 8; bits stay about 0.01 better. The bigger name memory holds 3x the facts but gated answers do not rise (0.30-0.48): the gate's coverage, not the memory's size, now limits them.
+- False memories stay at the held-back level (taught wrong 0.04 vs held back 0.05). IN CONTEXT minus closed book on held-back right: +0.01 / +0.09 / +0.09 at visits 6-8, as in kra17.
+
+### Fact fading on the stand-in (tools/fact_fade.py; A6 trunk, 150 new facts a visit to 1,200, 250 steps a visit) - INCONCLUSIVE so far
+- FLOOR / DOUBLE / TARGET all fall to near chance by visit 4 (all facts 0.13-0.15; the newest cohort 0.07-0.15): at the floored weight (0.25 x 0.125) 250 steps teach the stand-in almost nothing, whereas the GPU trunk learns its newest facts at 0.97. The regime does not match the GPU; NODECAY (pending) shows whether full weight teaches at all. Not a basis for kra19.
