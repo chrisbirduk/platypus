@@ -5322,3 +5322,14 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - inf_distill_wake_decay_min 0.125 (a floor on the question rows' visit decay; GPU kcf: facts 0.72 vs 0.67 at visit 7, gated right overall 0.50 vs 0.31, bits within noise) - facts faded 0.88 -> 0.62 in kra14.
 - inf_rti_conf_rated 1 (new option: a tentative inference is confirmed only by a later relational record the seeded reader rates in its top half; falls back to any record, with a log line, if the reader's scores do not match the records).
 - Local safety runs: kra17 first (12:10), then kra16. The stand-in chain tests resume after them.
+
+### cg27a_kra17 local safety run (20 Nov 15:40; tools/safety_run.sh, the kra15 settings: 150 steps, distant_10k)
+| | kra15 (safety) | kra17 (safety) |
+|---|---|---|
+| HEADLINE weights only: forgetting / final BPC | -0.041 / 2.615 | -0.040 / 2.616 |
+| with the fast store | -0.039 / 2.617 | -0.039 / 2.617 |
+| confirmed at visit 4 (right) | 70 (0.49) | 54 (0.54) |
+| new inferences keeping premises as text (visit 2 / 4) | - | 194 of 599 / 226 of 600 |
+| chain dose rows (visit 4) | - | 160 for 420 inferences, beside 588 plain rows |
+- PASS: forgetting and BPC within noise; no Traceback; the rated confirmation ran (no fallback line). It confirms fewer and more right, the direction tools/confirm_min.py found (small n here: one judging visit on 10k documents).
+- The IN CONTEXT readout runs but n is 3-9 per cell at this size; it needs the GPU run. The chain dose rows are built at visit 4 and are first trained at visit 5, the last visit here, so their effect is not exercised locally.
