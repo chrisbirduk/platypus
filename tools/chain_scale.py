@@ -91,12 +91,15 @@ def rank(m, pref, cands, tgt):
 def evals(m, cl):
     cb = [rank(m, f"It is on record that {c[0]} {c[1]} ", CAND[c], c[2]) for c in cl]
     ic = [rank(m, f"{ps(c[4])}. {ps(c[5])}. So {c[0]} {c[1]} ", CAND[c], c[2]) for c in cl]
+    bk = [rank(m, f"{ps(cl[(j + 1) % len(cl)][4])}. {ps(c[5])}. So {c[0]} {c[1]} ", CAND[c], c[2]) for j, c in enumerate(cl)]   # 20 Nov: BROKEN CHAIN - another
+    #   inference's A-B premise, then this one's B-C: the answer is in the context but nothing links A to it (copying vs composing)
     pr = [rank(m, f"{p[0]} {p[1]} ", PCAND[p], p[2])[0] for c in cl for p in (c[4], c[5])]
     ri = [c[3] for c in cl]; cbr = [x[0] for x, t in zip(cb, ri) if t]
     both = [x[0] for j, x in enumerate(cb) if pr[2 * j] and pr[2 * j + 1]]; bothi = [x[0] for j, x in enumerate(ic) if pr[2 * j] and pr[2 * j + 1]]
     return (f"closed book rank {np.mean([x[0] for x in cb]):.3f} open {np.mean([x[1] for x in cb]):.3f} (right ones {np.mean(cbr) if cbr else float('nan'):.3f}; "
             f"BOTH PREMISES RECALLED {np.mean(both) if both else float('nan'):.3f} ({len(both)}), in context {np.mean(bothi) if bothi else float('nan'):.3f}) | "
-            f"in context rank {np.mean([x[0] for x in ic]):.3f} open {np.mean([x[1] for x in ic]):.3f} | premises recalled {np.mean(pr):.3f}")
+            f"in context rank {np.mean([x[0] for x in ic]):.3f} open {np.mean([x[1] for x in ic]):.3f} | BROKEN CHAIN rank {np.mean([x[0] for x in bk]):.3f} "
+            f"(in context - broken {np.mean([x[0] - y[0] for x, y in zip(ic, bk)]):+.3f}) | premises recalled {np.mean(pr):.3f}")
 d0 = dbits(base)
 P(f"BASE: TAUGHT {evals(base, TA)} || CONTROL {evals(base, CT)}  ({time.time() - T0:.0f}s)")
 mn = min(len(a) for a in DOMS.values()) - 200400
