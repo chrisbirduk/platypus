@@ -5426,3 +5426,9 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 
 ### Fact fading on the stand-in (tools/fact_fade.py; A6 trunk, 150 new facts a visit to 1,200, 250 steps a visit) - INCONCLUSIVE so far
 - FLOOR / DOUBLE / TARGET all fall to near chance by visit 4 (all facts 0.13-0.15; the newest cohort 0.07-0.15): at the floored weight (0.25 x 0.125) 250 steps teach the stand-in almost nothing, whereas the GPU trunk learns its newest facts at 0.97. The regime does not match the GPU; NODECAY (pending) shows whether full weight teaches at all. Not a basis for kra19.
+
+### cg27a_kra19 / kra19b prepared (20 Nov 20:35)
+- kra19 = kra18 + inf_rti_rows 32 (was 16): twice the dose of confirmed real-text inferences (they reach the trunk as recognition and fade with age). Includes the matched in-context readout and the window fix.
+- kra19b = kra19 + inf_distill_wake_decay_min 0.25: the fallback if kra18's facts fade at visits 9-10.
+- Evidence replay (inf_rti_evidence) is NOT used: it replays w['ev'], which only the older rti_write path fills (the code-written inferences have none: it would replay nothing), and it was negative on the stand-in (14 Nov).
+- The stand-in fact-fading test is set aside: even NODECAY fades (0.45 -> 0.19 by visit 6); the A6 trunk cannot hold a growing pool at any schedule, so it says nothing about the GPU trunk.
