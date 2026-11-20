@@ -5208,3 +5208,16 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - COVERAGE is 0.28 (20k) -> 0.35 (50k): the rest have a name never read in TRAIN, which no method can infer from; it grows with reading, not with scoring.
 - Caveat: the labels are distant labels (incomplete), the same seed assumption as the seeded reader; one split per size.
 - Build candidate: inf_rcode_sel 'seeded' - the package's write step ranks candidates by a logistic selector trained on about 1,000 labelled candidate pairs from documents already read.
+
+### Goal 2, CONSOLIDATION AT SCALE: REHEARSAL HOLDS what the trunk is taught (20 Nov, 06:40-07:15; tools/consolidate_scale.py, A6 stand-in trunk, 5 rounds x 200 of the package's typed real-text inferences (right 0.527), 600 steps a round, every weight, KL anchor to the original trunk on replay rows from all five domains, 24 frames, lr 1e-3; test wording never taught: rank among 10 (chance 0.10) / open-ended exact)
+| After round | SEQ (each round alone): rounds 1..k rank | SEQ all taught, rank / open | REHEARSE (half the fact rows from earlier rounds): rounds 1..k rank | REHEARSE all taught, rank / open | never taught (SEQ / REHEARSE) | forgetting, mean of 5 domains (SEQ / REHEARSE) |
+|---|---|---|---|---|---|---|
+| 1 | 0.78 | 0.780 / 0.465 | 0.69 | 0.695 / 0.375 | 0.17 / 0.14 | -0.020 / -0.029 |
+| 2 | 0.18, 0.90 | 0.542 / 0.372 | 0.83, 0.68 | 0.755 / 0.443 | 0.12 / 0.18 | -0.031 / -0.055 |
+| 3 | 0.21, 0.30, 0.92 | 0.478 / 0.300 | 0.72, 0.66, 0.74 | 0.705 / 0.388 | 0.15 / 0.15 | -0.052 / -0.053 |
+| 4 | 0.15, 0.20, 0.34, 0.98 | 0.420 / 0.259 | 0.71, 0.64, 0.65, 0.80 | 0.699 / 0.360 | 0.14 / 0.18 | -0.063 / -0.053 |
+| 5 | 0.21, 0.18, 0.24, 0.30, 0.96 | **0.379 / 0.206** | 0.76, 0.58, 0.65, 0.67, 0.82 | **0.694 / 0.350** | 0.17 / 0.18 | -0.057 / **-0.083** |
+- SEQ reproduces the GPU's decay (taught composites 1.00 -> 0.38 over visits 4-9): each round is learned (0.78-0.98) and lost after the next (0.15-0.34, near the never-taught 0.12-0.17). The loss is interference AMONG the inferences; general text is not harmed (mean forgetting negative; Wikipedia +0.12-0.17 in both arms).
+- **REHEARSE holds it: after 1,000 inferences in 5 rounds, every round is still recalled 0.58-0.82 (all 0.694 rank, 0.350 open) vs 0.379 / 0.206 without rehearsal**, at no forgetting (-0.083). The cost: a round's own recall when fresh is lower (0.68-0.82 vs 0.90-0.98) - half the fact rows go to rehearsal.
+- Never-taught inferences stay at chance in both arms (0.12-0.18): the trunk HOLDS what it is taught; it does not compose new ones (as before).
+- Build candidate for the package: question-pool rows for consolidated inferences rehearsed across visits (half the conclusion rows from earlier visits' consolidated inferences), without the global question-row decay for them. One stand-in trunk, one seed.
