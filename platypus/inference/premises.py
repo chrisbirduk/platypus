@@ -1133,7 +1133,25 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
                   f"{rk_(tr_(H_, True), True)} / wrong {rk_(tr_(H_, False), True)}", flush=True)
-    model.__dict__['_rret_x'] = X_                                            # retracted: the unlikelihood rows are built from these at the pool rebuild
+            rm_ = np.random.RandomState(int(cfg.seed) + 91 + vis)                # 20 Nov kra18 (readout only): MATCHED - the same inferences and the same 9
+            def mt_(L):                                                          #   distractors three ways: closed book, their OWN premises before the question,
+                L = [e for e in L if e['rm'] < vis and (W.get(rti_wkey(e)) or {}).get('chain')][:150]   # and ANOTHER inference's premises (any context vs these)
+                if len(L) < 2: return "nan (0)"
+                h = [[], [], []]
+                for i, e in enumerate(L):
+                    alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                    if len(alts) < 9: continue
+                    cs = [e['ans']] + [alts[j] for j in rm_.choice(len(alts), 9, replace=False)]
+                    q = f"It is on record that {e['A']} {e['r']} "
+                    for k, p in enumerate(('', W[rti_wkey(e)]['chain'] + ' ', W[rti_wkey(L[(i + 1) % len(L)])]['chain'] + ' ')):
+                        h[k].append(int(_dw_cand_mc(model, int(S_slot(e['d'])), p + q, cs) == 0))
+                if not h[0]: return "nan (0)"
+                d = np.array(h[1]) - np.array(h[0])
+                return (f"closed {np.mean(h[0]):.2f} | own premises {np.mean(h[1]):.2f} | other premises {np.mean(h[2]):.2f} | own - closed {d.mean():+.2f} "
+                        f"(SE {d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float('nan'):.2f}) (n {len(d)})")
+            print(f"  [REAL-TEXT INFERENCE IN CONTEXT, MATCHED | visit {vis + 1}] the same inferences and distractors, rank among 10: TAUGHT right {mt_(tr_(T_, True))} || "
+                  f"HELD BACK right {mt_(tr_(H_, True))} || HELD BACK wrong {mt_(tr_(H_, False))}", flush=True)
+    model.__dict__['_rret_x'] = X_                                           # retracted: the unlikelihood rows are built from these at the pool rebuild
     if int(getattr(cfg, 'inf_rret', 0)):                                      # 14 Nov RETRACTION RECALL: retracted vs flagged-but-kept (control) vs unflagged taught
         Kf = [e for e in T_ if e.get('flag')]; Nf = [e for e in T_ if not e.get('flag') and (W.get((e['A'], e['ans'])) or {}).get('judged') is not None]
         rr2 = np.random.RandomState(int(cfg.seed) + 78 + vis); pool2 = sorted({e['ans'] for e in H_})
