@@ -5351,3 +5351,23 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - The rated confirmation moves less than offline: +0.02 right, about 5-10% fewer confirmed. It cannot explain the wrong-recall drop alone (101 taught wrong vs 119); the chain-form rows or the floor may. Not separable without kra16 on the GPU.
 - IN CONTEXT shows no learned composition step: held back with the premises in front 0.17-0.20, the same as held back closed book (0.13-0.18). Taught in context = taught closed book. The chain form as taught does not yet make the trunk use premises it is shown.
 - Cost: held-out bits +0.014 / +0.016 at visits 6 / 7 (seed noise on the harness about 0.017; consistent sign). Route J unchanged.
+
+### cg27a_kra17 GPU, visits 8-10 (log to the middle of visit 10; kra14 stopped at visit 9)
+| readout | visit 8 | visit 9 | visit 10 |
+|---|---|---|---|
+| facts ever taught (kra14 at visit 8: 0.62) | 0.72 | 0.63 | 0.56 |
+| facts taught 4+ visits | 0.83 | 0.71 | 0.60 |
+| conclusions ever taught | 0.34 | 0.18 | 0.21 |
+| gated answers: right overall / never-read given a stored name (kra14 v8: 0.23 / 0.02) | 0.50 / 0.02 | 0.41 / 0.02 | 0.17 / 0.01 |
+| name memory: facts / conclusions of 384 entries (fact candidates) | 228 / 156 (1,248) | 192 / 192 (1,333) | - |
+| real-text inferences open, TAUGHT right / wrong vs HELD BACK right / wrong (kra14 v8: 0.13 / 0.08 vs 0.03 / 0.01) | 0.07 / 0.03 vs 0.03 / 0.03 | 0.06 / 0.04 vs 0.02 / 0.03 | (not yet) |
+| rank among 10, TAUGHT right / wrong, HELD BACK right (kra14 v8: 0.45 / 0.19, 0.21) | 0.35 / 0.14, 0.21 | 0.35 / 0.13, 0.19 | (not yet) |
+| IN CONTEXT, TAUGHT right / HELD BACK right | 0.37 / 0.27 | 0.31 / 0.24 | (not yet) |
+| confirmed this visit (right) (kra14 v8: 370 (0.72)) | 354 (0.75) | - | - |
+| held-out bits, domains read (kra14 v8: 1.8200) | 1.8372 | 1.7797 | - |
+| route J precision (composites) | - | 0.89 (240) | - |
+- **False memories stay at the held-back level: taught wrong 0.03-0.04 = held back wrong 0.03 (kra14: 0.08 vs 0.01).** The price: taught right 0.07 vs kra14 0.13 open, 0.35 vs 0.45 rank. Consolidation is weaker but no longer biased toward wrong inferences.
+- **The floor delays the fact fade by about one visit; it does not stop it: 0.72 -> 0.63 -> 0.56, and facts taught 4+ visits 0.83 -> 0.60.** The pool grows (1,232 -> 1,287) on a fixed dose budget, so each fact's share keeps falling.
+- **Gated answers fall 0.50 -> 0.17:** the name memory is capped at 384 entries and conclusions take a growing share (90 -> 192), leaving 192 facts for 1,333 candidates. A capacity limit, separate from the trunk's fade.
+- IN CONTEXT, held back with premises 0.27 / 0.24 vs held back closed book 0.21 / 0.19 at visits 8 / 9: a +0.05 hint of using shown premises (SE about 0.035), not yet a result.
+- Bits +0.017 vs kra14 at visit 8.
