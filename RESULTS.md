@@ -5376,3 +5376,19 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - inf_nm_max 1024 (was 384): conclusions take up to half the name memory; by visit 9 they held 192 of 384 and facts 192 of 1,333 candidates; gated right overall 0.50 -> 0.17.
 - inf_distill_wake_rows 8 (was 4): the question pool grows on a fixed budget; facts taught 4+ visits 0.83 -> 0.60 over visits 8-10 with the 0.125 floor.
 - Local safety run after kra16's (about 17:25-18:45). The stand-in fact-fading test (uniform / floor / rehearse the fading first) follows; if it favours targeted rehearsal over more rows, that goes into kra19.
+
+### cg27a_kra17 GPU, END OF RUN (visit 10 and the headline; run complete, then stopped by the user)
+- **HEADLINE weights only: FORGETTING +0.005 | FINAL BPC 1.793** (fast store on +0.006 / 1.793). The lowest forgetting of the seed-4 GPU runs recorded here (cg27a_replay +0.026 / 1.767, cg27a_rtxw +0.037 / 1.779, cg27a_rtxt +0.077 / 1.807); final BPC 0.026 above cg27a_replay. Per domain: Gutenberg -0.055, Github -0.033, Wikipedia -0.022 (better than after their own visit); USPTO +0.067, StackExchange +0.053, DM Mathematics +0.028 the largest.
+- End of run probe recall from the weights: one-hop 0.78, open one-hop 0.50 (n 134).
+| visit 10 | kra17 |
+|---|---|
+| real-text inferences open: TAUGHT right / wrong vs HELD BACK right / wrong | 0.04 / 0.04 vs 0.01 / 0.02 |
+| rank among 10: TAUGHT right / wrong vs HELD BACK right / wrong | 0.35 / 0.17 vs 0.19 / 0.18 |
+| IN CONTEXT: TAUGHT right vs HELD BACK right | 0.31 vs 0.28 |
+| confirmed this visit (right); all so far | 322 (0.71); 1,344 (0.76) |
+| name memory | 192 facts / 192 conclusions of 384 (1,361 candidates) |
+| route J precision | 0.89 (264 composites) |
+| held-out bits, domains read | 1.7781 |
+- Rank: taught wrong 0.17 = held back wrong 0.18 - no false-memory excess at the end; taught right 0.35 vs 0.19 held back.
+- IN CONTEXT minus closed book, HELD BACK right: +0.06 / +0.05 / +0.09 at visits 8 / 9 / 10 (n 150 each; about 2 SE pooled). The first sign the trunk uses premises put in front of it for inferences it was never taught; the cells are not the same inferences (in context needs both premises on record), so this needs a matched readout before it is a claim.
+- Open recall of taught right inferences fades with age (written at visit 2: 0.10 -> 0.08 over visits 8-10; visit 6: 0.01-0.02): the same pool-growth fade as the facts.
