@@ -881,6 +881,21 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
                 (w_, fw_), _ = TT_[cp_].most_common(1)[0]; th_, tt_ = (hd_, tl_) if fw_ else (tl_, hd_)
                 W[(A_, C_)].update(th=th_, tw=w_, tt=tt_)
         wr.append(bool(yy[j]))
+    if int(getattr(cfg, 'inf_rti_chain', 0)):                                  # 20 Nov kra16 CHAIN FORM (inf_rti_chain): each new inference keeps its premises as
+        new8 = [k for k, w in W.items() if w.get('vis') == vis and w.get('prem')]   #   text ('<A> <wording> <B>. <B> <wording> <C>.', the commonest recorded wording
+        need8 = {frozenset((a, b)) for a, c in new8 for b in W[(a, c)]['prem']} | {frozenset((b, c)) for a, c in new8 for b in W[(a, c)]['prem']}   #   of each pair,
+        pw8 = collections.defaultdict(collections.Counter)                     #   through the first bridge with a record on both sides); the dose rows of a taught
+        for r in RD:                                                           #   inference are then given half the time after its premises (distill.py), so the
+            if 1 <= r[5] <= 8 and not _rret_listlike(r) and any(ch.isalpha() for ch in r[3]):   #   trunk learns the composition step, not only the conclusion
+                f8 = frozenset((r[1], r[2]))                                   #   (the stand-in, tools/chain_scale.py: chain rows lift never-taught chains given
+                if f8 in need8: pw8[f8][(r[1], _rnorm(r[3]), r[2])] += 1       #   in context 0.110 -> 0.135)
+        nch8 = 0
+        for (A_, C_) in new8:
+            for b in W[(A_, C_)]['prem']:
+                c1, c2 = pw8.get(frozenset((A_, b))), pw8.get(frozenset((b, C_)))
+                if c1 and c2:
+                    p1, p2 = c1.most_common(1)[0][0], c2.most_common(1)[0][0]; W[(A_, C_)]['chain'] = f"{p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}."; nch8 += 1; break
+        print(f"  [CHAIN FORM | visit {vis + 1}] {nch8} of {len(new8)} new inferences keep their premises as text (both sides on record)", flush=True)
     if int(getattr(cfg, 'inf_rti_comp', 0)):                                   # 16 Nov TYPED COMPOSITION (inf_rti_comp): the premises' relational wordings (A-B, B-C,
         new9 = [k for k, w in W.items() if w.get('vis') == vis]                #   oriented) at write time; the table learned from kept, confirmed inferences types
         need9 = {frozenset((a, b)) for a, c in new9 for b in W[(a, c)]['prem']} | {frozenset((b, c)) for a, c in new9 for b in W[(a, c)]['prem']}   #   them where it can
@@ -1095,13 +1110,14 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         from platypus.inference.distill import _dw_cand_mc                     #   names (offline: rank 0.74 while exact 0.01); here the answer among itself and
         pool_ = sorted({e['ans'] for e in H_}) or sorted({e['ans'] for e in T_ + H_ + U_})   # distractors: HELD-BACK answers only (never taught), so taught
         rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)                     #   and held-back facts face the same untaught distractors (chance 0.10)
-        def rk_(L):
-            L = [e for e in L if e['rm'] < vis][:150]; hit = []
+        def rk_(L, chain=False):
+            L = [e for e in L if e['rm'] < vis and (not chain or (W.get(rti_wkey(e)) or {}).get('chain'))][:150]; hit = []
             for e in L:
                 alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
                 if len(alts) < 9: continue
                 cs = [e['ans']] + [alts[j] for j in rr_.choice(len(alts), 9, replace=False)]
-                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", cs) == 0))
+                pre_ = (W[rti_wkey(e)]['chain'] + ' ') if chain else ''          # 20 Nov kra16: IN CONTEXT - the inference's premises before the question
+                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"{pre_}It is on record that {e['A']} {e['r']} ", cs) == 0))
             return f"{np.mean(hit):.2f} ({len(hit)})" if hit else "nan (0)"
         tr_ = lambda L, t: [e for e in L if e['truth'] is t]
         dl_ = (model.__dict__.get('_dtw') or {}).get('rtil') or []
@@ -1109,6 +1125,10 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
               f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
               + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
               + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
+        if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
+            print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
+                  f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
+                  f"{rk_(tr_(H_, True), True)} / wrong {rk_(tr_(H_, False), True)}", flush=True)
     model.__dict__['_rret_x'] = X_                                            # retracted: the unlikelihood rows are built from these at the pool rebuild
     if int(getattr(cfg, 'inf_rret', 0)):                                      # 14 Nov RETRACTION RECALL: retracted vs flagged-but-kept (control) vs unflagged taught
         Kf = [e for e in T_ if e.get('flag')]; Nf = [e for e in T_ if not e.get('flag') and (W.get((e['A'], e['ans'])) or {}).get('judged') is not None]

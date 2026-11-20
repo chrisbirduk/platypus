@@ -2044,6 +2044,15 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 from platypus.inference.premises import _PM as _PM9, _RTI_R as _RR9
                 kk9 = {repr(('fact', A9, _RR9, C9)) for (A9, C9) in (_PM9.get('rti') or {})}
                 rtir9 = [rw for rw in rows if rw[3] in kk9]
+                if int(getattr(cfg, 'inf_rti_chain', 0)):                      # 20 Nov kra16 CHAIN FORM: every dose row also given after its inference's premises
+                    ch9 = {repr(('fact', A9, _RR9, C9)): w9['chain'] for (A9, C9), w9 in (_PM9.get('rti') or {}).items() if w9.get('chain')}   #   (premises.py), so
+                    chr9 = []                                                  #   about half the dose rows sampled are chains: '<A-B>. <B-C>. <question> <answer>'
+                    for rw in rtir9:
+                        if rw[3] in ch9:
+                            rm9 = L09 - 1 - len(rw[1]) - 1; pb9 = (ch9[rw[3]] + ' ').encode('latin-1', 'replace') + rw[0]
+                            if rm9 >= len(rw[0]) + 8: chr9.append((pb9[-rm9:],) + tuple(rw[1:]))
+                    print(f"  [CHAIN FORM DOSE | visit {vis + 1}] {len(chr9)} chain rows (premises before the question) for {len(ch9)} inferences with premises, "
+                          f"added to {len(rtir9)} plain dose rows", flush=True); rtir9 = rtir9 + chr9
             except Exception: _fail('inference.distill:rti_rows')
             print(f"  [REAL-TEXT INFERENCE DOSE | visit {vis + 1}] next visit: {len(rtir9)} rows of taught real-text inferences, {int(getattr(cfg, 'inf_rti_rows', 0))} of them "
                   f"added to every question-row step (on top of the pool's own rows)", flush=True)
