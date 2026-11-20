@@ -894,7 +894,8 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
             for b in W[(A_, C_)]['prem']:
                 c1, c2 = pw8.get(frozenset((A_, b))), pw8.get(frozenset((b, C_)))
                 if c1 and c2:
-                    p1, p2 = c1.most_common(1)[0][0], c2.most_common(1)[0][0]; W[(A_, C_)]['chain'] = f"{p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}."; nch8 += 1; break
+                    p1, p2 = c1.most_common(1)[0][0], c2.most_common(1)[0][0]; W[(A_, C_)]['chain'] = f"{p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}."
+                    W[(A_, C_)]['chain_p'] = (f"{p1[0]} {p1[1]} {p1[2]}.", f"{p2[0]} {p2[1]} {p2[2]}."); nch8 += 1; break   # 20 Nov kra20: the two premises apart (the broken-chain control)
         print(f"  [CHAIN FORM | visit {vis + 1}] {nch8} of {len(new8)} new inferences keep their premises as text (both sides on record)", flush=True)
     if int(getattr(cfg, 'inf_rti_comp', 0)):                                   # 16 Nov TYPED COMPOSITION (inf_rti_comp): the premises' relational wordings (A-B, B-C,
         new9 = [k for k, w in W.items() if w.get('vis') == vis]                #   oriented) at write time; the table learned from kept, confirmed inferences types
@@ -1132,26 +1133,36 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
               f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
               + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
               + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
+        from platypus.inference.distill import _kmc_pending                    # 20 Nov kra20 (readout): how many 'taught' inferences ACTUALLY train the trunk -
+        trn_ = lambda e: not _kmc_pending(cfg, [(b'', b'', 0, repr(e['key']))])   #   rows of the others are skipped by the keep rule (inf_kmc / inf_kmc_useful);
+        Ty_ = [e for e in T_ if trn_(e)]; Tn_ = [e for e in T_ if not trn_(e)]  #   kra17: about 2% of the confirmed ones under inf_kmc_useful 1
+        print(f"  [REAL-TEXT INFERENCE TRAINED | visit {vis + 1}] of {len(T_)} taught (question pool), {len(Ty_)} pass the keep rule and train the trunk "
+              f"(right {np.mean([bool(e['truth']) for e in Ty_]) if Ty_ else float('nan'):.2f}), {len(Tn_)} do not | rank among 10, TRAINED right {rk_(tr_(Ty_, True))} / wrong "
+              f"{rk_(tr_(Ty_, False))} | NOT TRAINED right {rk_(tr_(Tn_, True))} / wrong {rk_(tr_(Tn_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}", flush=True)
         if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
                   f"{rk_(tr_(H_, True), True)} / wrong {rk_(tr_(H_, False), True)}", flush=True)
             rm_ = np.random.RandomState(int(cfg.seed) + 91 + vis)                # 20 Nov kra18 (readout only): MATCHED - the same inferences and the same 9
             def mt_(L):                                                          #   distractors three ways: closed book, their OWN premises before the question,
-                L = [e for e in L if e['rm'] < vis and (W.get(rti_wkey(e)) or {}).get('chain')][:150]   # and ANOTHER inference's premises (any context vs these)
-                if len(L) < 2: return "nan (0)"
-                h = [[], [], []]
+                L = [e for e in L if e['rm'] < vis and (W.get(rti_wkey(e)) or {}).get('chain_p')][:150]   # and ANOTHER inference's premises (any context vs these);
+                if len(L) < 2: return "nan (0)"                                  #   20 Nov kra20: + BROKEN CHAIN - another inference's A-B premise then this one's
+                h = [[], [], [], []]                                             #   own B-C premise: C is in the context but nothing links A to it (copying vs reasoning)
                 for i, e in enumerate(L):
                     alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
                     if len(alts) < 9: continue
                     cs = [e['ans']] + [alts[j] for j in rm_.choice(len(alts), 9, replace=False)]
                     q = f"It is on record that {e['A']} {e['r']} "
-                    if max(len((p + q).encode('latin-1', 'replace')) for p in ('', W[rti_wkey(e)]['chain'] + ' ', W[rti_wkey(L[(i + 1) % len(L)])]['chain'] + ' ')) + max(len(c) for c in cs) + 2 > sq_: continue
-                    for k, p in enumerate(('', W[rti_wkey(e)]['chain'] + ' ', W[rti_wkey(L[(i + 1) % len(L)])]['chain'] + ' ')):
+                    oth_ = W[rti_wkey(L[(i + 1) % len(L)])]; own_ = W[rti_wkey(e)]
+                    pre4 = ('', own_['chain'] + ' ', oth_['chain'] + ' ', oth_['chain_p'][0] + ' ' + own_['chain_p'][1] + ' ')
+                    if max(len((p + q).encode('latin-1', 'replace')) for p in pre4) + max(len(c) for c in cs) + 2 > sq_: continue
+                    for k, p in enumerate(pre4):
                         h[k].append(int(_dw_cand_mc(model, int(S_slot(e['d'])), p + q, cs) == 0))
                 if not h[0]: return "nan (0)"
                 d = np.array(h[1]) - np.array(h[0])
-                return (f"closed {np.mean(h[0]):.2f} | own premises {np.mean(h[1]):.2f} | other premises {np.mean(h[2]):.2f} | own - closed {d.mean():+.2f} "
+                d2 = np.array(h[1]) - np.array(h[3])
+                return (f"closed {np.mean(h[0]):.2f} | own premises {np.mean(h[1]):.2f} | other premises {np.mean(h[2]):.2f} | BROKEN CHAIN (answer in context, A not linked) {np.mean(h[3]):.2f} | "
+                        f"own - broken {d2.mean():+.2f} (SE {d2.std(ddof=1) / np.sqrt(len(d2)) if len(d2) > 1 else float('nan'):.2f}) | own - closed {d.mean():+.2f} "
                         f"(SE {d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float('nan'):.2f}) (n {len(d)})")
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT, MATCHED | visit {vis + 1}] the same inferences and distractors, rank among 10: TAUGHT right {mt_(tr_(T_, True))} || "
                   f"HELD BACK right {mt_(tr_(H_, True))} || HELD BACK wrong {mt_(tr_(H_, False))}", flush=True)
