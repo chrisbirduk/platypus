@@ -760,6 +760,8 @@ class Config:
     inf_premises_knowledge=0        #   19 Nov kra13: the wording reader also taught by every record of a confirmed real-text inference
     inf_premises_reverb=0           #   19 Nov kra13: ReVerb relation phrases (used with N+ distinct pairs) as extra reader positives (0 off; needs spaCy)
     inf_premises_mi=0               #   19 Nov kra13: multi-instance rounds for the wording reader (a positive pair keeps its best-scored mention)
+    inf_premises_seed=0             #   20 Nov kra14: SEEDED READER - n labelled records (own-document labels) of documents read replace the label-free teacher
+    inf_premises_seed_ctx=0         #   20 Nov kra14: the seeded reader also sees 3 words of context each side of the pair
     inf_distill_gated_conf=0        #   19 Nov kra13 readout: made-up composite answers AFTER the memory's exact-name gate
     inf_premises_e2e=0              #   19 Nov kra11 readout: END-TO-END real text - the reader's kept slice (wording, usefulness, parser) composed A-C through shared names, scored on gold
     inf_premises_parse=0            #   19 Nov kra10 readout: the same reader on spaCy dependency paths (N pseudo-labelled records a class; 0 off; needs en_core_web_sm)

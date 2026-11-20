@@ -36,6 +36,7 @@ def _load_distant(cfg):
     if not os.path.exists(p):
         print(f"  [PREMISES AT SCALE] distant set not found at {p}: benchmark documents only (the notebook downloads it)", flush=True); return
     t0 = time.time(); D = json.load(gzip.open(p, 'rt') if p.endswith('.gz') else open(p)); R = []; TY = collections.defaultdict(collections.Counter); LAB = set(); PRD = {}
+    cx9 = {} if int(getattr(cfg, 'inf_premises_seed_ctx', 0)) else None        # 20 Nov kra14: 3 words of context each side, keyed by the record (seeded reader)
     for di in range(len(D)):
         d = D[di]; D[di] = None
         cn = [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
@@ -53,6 +54,7 @@ def _load_distant(cfg):
                     sp = ' '.join(toks[a0:b1])
                     if len(sp) > 60: continue
                     mid = toks[a1:b0]; R.append((di, cn[ea], cn[eb], ' '.join(mid).lower(), mid[-1].lower() if mid else '', len(mid), (ea, eb) in lab, sp))
+                    if cx9 is not None: cx9[id(R[-1])] = ' '.join(w.lower() for w in toks[max(0, a0 - 3):a0]) + ' ' + ' '.join(w.lower() for w in toks[b1:b1 + 3])
         if int(getattr(cfg, 'inf_premises_wide', 0)):                         # 19 Nov kra13 WIDER RECORDS (offline: labelled pairs covered 0.32 -> 0.52): the same sentence
             S9 = d['sents']; sub9 = None                                       #   13-30 words apart, the next sentence, and pronoun-led sentences (the article's subject);
             for si, ms in sorted(bys.items()):                                 #   their length field is 13+ so the relational checks (1-8 words) never count them
@@ -75,7 +77,7 @@ def _load_distant(cfg):
                         if eb == sub9 or cn[eb] == cn[sub9] or b0 > 15: continue
                         mw = ['<pron>'] + [w.lower() for w in S9[si][1:b0]]
                         R.append((di, cn[sub9], cn[eb], ' '.join(mw), mw[-1], 13 + len(mw), (sub9, eb) in lab, f"{cn[sub9]} <pron> {cn[eb]}"))
-    _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1, PRD=PRD)
+    _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1, PRD=PRD, CTX=cx9 or {})
     print(f"  [PREMISES AT SCALE] distant set read: {_PM['ND']} documents, {len(R)} records ({time.time() - t0:.0f} s)", flush=True)
 
 
@@ -307,8 +309,15 @@ def premises_readout(model, cfg, S_slot, vis):
                             if tg and tg[0] in ('VERB', 'AUX') and (len(tg) == 1 or (len(tg) == 2 and tg[1] in ('ADP', 'PART')) or (tg[-1] == 'ADP' and all(t in ('NOUN', 'ADJ', 'ADV', 'PRON', 'DET', 'VERB', 'AUX', 'PROPN', 'PART') for t in tg[1:-1]))): ok8.add(m)
                         ngs = set(ng9); rvp = [i for i in phr if RD[i][3] in ok8 and i not in ngs]; rv9 = len(rvp); ps9 = sorted(set(ps9) | set(rvp))
                     except Exception as e8: _fail('inference.premises:reverb'); msg.append(f"REVERB unavailable ({type(e8).__name__}: {e8})"[:120])
+                sd9 = int(getattr(cfg, 'inf_premises_seed', 0))
+                if sd9 > 0:                                                    # 20 Nov kra14 SEEDED READER: a small LABELLED seed (records of documents already read, with
+                    CX9 = _PM.get('CTX') or {}                                  #   their own-document labels) replaces the label-free teacher, which only hurt once a
+                    if CX9: txw = lambda r: f"{r[3]} LAST_{r[4] or 'none'} DIST_{min(int(r[5]), 12) // 3} " + ' '.join('C_' + w for w in CX9.get(id(r), '').split())
+                    sdI = [trI[j] for j in np.random.RandomState(int(cfg.seed) + 707 + vis).permutation(len(trI))[:sd9]]   # seed was given (offline, 30k documents: AUC
+                    ps9 = [i for i in sdI if RD[i][6]]; ng9 = [i for i in sdI if not RD[i][6]]   # 0.667 / 0.694 / 0.732 with context at 2k / 5k / 20k labels; label-free 0.63-0.65)
+                    msg.append(f"SEEDED READER: {len(sdI)} labelled records ({len(ps9)} related) from documents already read, context words {'on' if CX9 else 'off'}; label-free teaching off")
                 clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
-                for _ in range(int(getattr(cfg, 'inf_premises_mi', 0))):      # 19 Nov kra13: MULTI-INSTANCE ('at least one'): a positive pair keeps only its mention the reader
+                for _ in range(0 if sd9 > 0 else int(getattr(cfg, 'inf_premises_mi', 0))):      # 19 Nov kra13: MULTI-INSTANCE ('at least one'): a positive pair keeps only its mention the reader
                     sc8 = clf.decision_function(hv.transform([txw(RD[i]) for i in ps9])); bag = {}   #   scores highest (offline: pair AUC 0.654 -> 0.664, phrase recall +1/3)
                     for i, v8 in zip(ps9, sc8):
                         k8 = frozenset((RD[i][1], RD[i][2]))
