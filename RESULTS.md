@@ -5190,3 +5190,21 @@ READING: the high A-C figures in the end-to-end readouts (e2e_reader, kra13/kra1
 | reader top 10% | 0.550, 0.231 / 0.115 | 0.557, 0.189 / 0.116 |
 | SOFT: all records, edge = reader probability | - | **0.573**, 0.171 / **0.179** |
 A much better reader (held-out AUC 0.62 -> 0.75) moves the fact table by 0.01-0.02 AUC, matching kra14 in the run (CODE AUC 0.704 vs 0.706). The fact table's limit is not which records go in but the method and its COVERAGE: only 29% of candidates have both names in the graph. Next levers: coverage (names first seen in held-out documents) and the scoring of the code, not the reader.
+
+### Goal 1, NEW FACTS: a SEEDED SELECTOR for the compressed fact table (20 Nov, 06:30-06:40; tools/rcode_select.py): POSITIVE, LARGE
+Documents split by hash: TRAIN 80% (the name graph), VAL 10% (candidate pairs named together there, never in TRAIN, with labels: the selector's seed), TEST 10% (never in TRAIN or VAL; evaluation only). Write-time features: the code (plain and SOFT graph, edge = seeded reader probability), Adamic-Adar, resource allocation, common neighbours, degrees and their ratio, best two-step path. Scored among TEST candidates with both names in the graph.
+
+| Ranking (TEST, among coded) | 20k documents (base 0.111): AUC, top 1% / 5% / 10% | 50k documents (base 0.101): AUC, top 1% / 5% / 10% |
+|---|---|---|
+| code (package) | 0.555, 0.204 / 0.174 / 0.169 | 0.540, 0.217 / 0.153 / 0.152 |
+| code + RA (package rule) | 0.559, 0.280 / 0.213 / 0.182 | 0.543, 0.210 / 0.161 / 0.145 |
+| soft code | 0.575, 0.204 / 0.191 / 0.198 | 0.562, 0.210 / 0.170 / 0.165 |
+| best two-step path (A-B-C) | 0.518, 0.151 / 0.116 / 0.109 | 0.512, 0.120 / 0.084 / 0.088 |
+| **SEEDED SELECTOR, logistic** | **0.698**, 0.441 / 0.344 / 0.268 | **0.701**, 0.388 / 0.305 / 0.245 |
+| **SEEDED SELECTOR, trees** | **0.704, 0.613** / 0.400 / 0.311 | **0.721, 0.612** / 0.377 / 0.295 |
+
+HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic k 300: AUC 0.672, top 1% 0.387; **k 1,000: 0.696, 0.452**; k 3,000: 0.698, 0.441 (trees need 3,000+: 0.680, 0.581). About 1,000 labelled candidate pairs are enough for the logistic selector.
+- The selector more than doubles the precision of the best new facts (top 1%: 0.20-0.28 -> 0.44-0.61, base 0.10-0.11): the first real lever on GOAL 1 since the code itself. The logistic weights lean on Adamic-Adar (+) against common neighbours (-) and on name degrees: shared neighbours that are SPECIFIC, between names that are not hubs.
+- COVERAGE is 0.28 (20k) -> 0.35 (50k): the rest have a name never read in TRAIN, which no method can infer from; it grows with reading, not with scoring.
+- Caveat: the labels are distant labels (incomplete), the same seed assumption as the seeded reader; one split per size.
+- Build candidate: inf_rcode_sel 'seeded' - the package's write step ranks candidates by a logistic selector trained on about 1,000 labelled candidate pairs from documents already read.
