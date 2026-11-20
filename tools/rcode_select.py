@@ -67,10 +67,14 @@ P(f"VAL candidates {len(cv)} (coded {okv.mean():.2f}, labelled {yv.mean():.3f}) 
 rk = lambda v: np.argsort(np.argsort(v, kind='stable'), kind='stable') / max(1, len(v) - 1)
 sc = StandardScaler().fit(Fv); lr = LogisticRegression(C=1.0, max_iter=1000, class_weight='balanced').fit(sc.transform(Fv), yv)
 gb = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, random_state=0).fit(Fv, yv)
-S = {'code (package)': Ft[:, 0], 'code + RA (package rule)': rk(Ft[:, 0]) + rk(Ft[:, 3]), 'soft code': Ft[:, 1], 'Adamic-Adar': Ft[:, 2],
-     'best two-step path': Ft[:, 8], 'SEEDED SELECTOR, logistic': lr.decision_function(sc.transform(Ft)), 'SEEDED SELECTOR, trees': gb.predict_proba(Ft)[:, 1]}
+asy_ = Ft[:, 7] > 1.0; aat = rk(Ft[:, 0]) + rk(Ft[:, 2])                          # the package's kra14 rule: code + AA among |log degree ratio| > 1
+lrv = lr.decision_function(sc.transform(Ft)); gbv = gb.predict_proba(Ft)[:, 1]
+S = {'code (package)': Ft[:, 0], 'code + RA (package rule)': rk(Ft[:, 0]) + rk(Ft[:, 3]), 'code + AA, asym > 1 (kra14)': np.where(asy_, aat, -9.0),
+     'SELECTOR, logistic, asym > 1': np.where(asy_, lrv, -1e9), 'SELECTOR, trees, asym > 1': np.where(asy_, gbv, -9.0), 'soft code': Ft[:, 1], 'Adamic-Adar': Ft[:, 2],
+     'best two-step path': Ft[:, 8], 'SEEDED SELECTOR, logistic': lrv, 'SEEDED SELECTOR, trees': gbv}
 for nm_, s in S.items():
     o = np.argsort(-s, kind='stable'); top = lambda f: yt[o[:max(1, int(len(o) * f))]].mean()
-    P(f"   {nm_:28s} AUC {roc_auc_score(yt, s):.3f} | top 1% {top(0.01):.3f}, 5% {top(0.05):.3f}, 10% {top(0.10):.3f} | top 100 {yt[o[:100]].mean():.3f}")
+    P(f"   {nm_:30s} AUC {roc_auc_score(yt, s):.3f} | top 1% {top(0.01):.3f}, 5% {top(0.05):.3f}, 10% {top(0.10):.3f} | top 100 / 200 / 400 {yt[o[:100]].mean():.3f} / {yt[o[:200]].mean():.3f} / {yt[o[:400]].mean():.3f}")
+P(f"   asymmetric (|log degree ratio| > 1) share of coded TEST candidates {asy_.mean():.2f}, labelled {yt[asy_].mean():.3f}")
 P("   logistic weights (standardised): " + ", ".join(f"{a} {b:+.2f}" for a, b in zip(['code', 'soft code', 'AA', 'RA', 'CN', 'log deg sum', 'log deg min', 'deg ratio', 'path'], lr.coef_[0])))
 P(f"DONE ({time.time() - T0:.0f}s)")
