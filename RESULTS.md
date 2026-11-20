@@ -5276,3 +5276,15 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **No derivation from stored premises: CONTROL closed book stays at chance in every arm (0.08-0.11).** But the trunk holds few premises (control 0.21-0.33 recalled), so this does not yet separate "cannot combine" from "does not know the premises".
 - CHAIN teaches the taught set's composition in context (0.475 vs DIRECT 0.195) and transfers weakly to never-taught chains given in the prompt: **0.135 (open 0.033) vs 0.110 (DIRECT) / 0.072 (PREMISES)** - about 2 standard errors above DIRECT on 400; a hint of a learned composition step, not yet a result.
 - Follow-up running: PREMISES FIRST (3,000 premise-only steps, shared), then DIRECT vs CHAIN with 1,400 taught + 500 control, and control scored on the pairs whose BOTH premises the trunk recalls.
+- **PREMISES FIRST follow-up (11:00-12:05; 6,460 inferences with both premises on record, 1,400 taught + 500 control, 3,000 premise-only steps shared, then 3,000 steps an arm):**
+
+| step 3000 | TAUGHT closed book | TAUGHT in context | CONTROL closed book | **CONTROL in context** | premises recalled taught / control | forgetting |
+|---|---|---|---|---|---|---|
+| base | 0.094 | 0.097 | 0.094 | 0.092 | 0.10 / 0.11 | - |
+| premises first (3,000) | 0.120 | 0.111 | 0.134 | 0.096 | 0.22 / 0.24 | -0.056 |
+| DIRECT | 0.193 (open 0.038) | 0.117 | 0.142 | 0.104 (open 0.006) | 0.21 / 0.20 | -0.053 |
+| CHAIN | 0.166 | **0.268** (open 0.084) | 0.114 | **0.158 (open 0.036)** | 0.42 / 0.25 | -0.043 |
+
+  - **The in-context transfer replicates and grows: never-taught chains given in the prompt 0.158 with chain teaching vs 0.104 with direct teaching (500 each, about 3 standard errors; first run 0.135 vs 0.110).** The trunk learns a composition step it applies to chains it never saw - a first real-text sign of inference in the trunk, in context.
+  - Closed book (premises stored, nothing in the prompt), no derivation: CONTROL 0.11-0.14 in every arm, and the premise-only arm already gives 0.134 (association through the shared bridge, not a learned step). The stand-in holds few premises (0.20-0.42), so pairs with BOTH premises recalled are too few (26-33) to judge.
+  - Consequence: kra16 (inf_rti_chain) prepared; the small clean set (150 + 150, 4,000 premise steps) with DIRECT / CHAIN / BOTH running next.
