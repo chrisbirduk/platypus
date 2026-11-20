@@ -5166,3 +5166,17 @@ kra14 = kra13 + the SEEDED READER (inf_premises_seed 20000 labelled records from
 No Traceback, no "unavailable". Visit 2 (first attempt and rerun alike): seeded reader held-out AUC 0.671, top 2% premises 0.63, A-C right 0.454 (n 436).
 RECALL vs CONSOLIDATION: these are reading and inference-proposal readouts (premises kept, A-C proposals checked against distant labels); the consolidation readout (confirmed right 0.49) did not move with the reader in this short run; why (where the tentative writes come from relative to the reader's ranking) is not yet checked.
 Caveat: the seed is labelled data (20,000 records of own-document labels, themselves noisy), so kra14 is no longer label-free on the reading side; the trunk, store and consolidation remain label-free.
+
+### Which A-C proposals to believe? (20 Nov, 05:25-05:30; tools/compose_rank.py, distant 50k, seeded reader 20k + context, held-out AUC 0.750): A CORRECTION TO THE END-TO-END A-C FIGURES
+Proposals A-C through a shared name B from the reader's top share, ranked five ways. Two scorings:
+
+| Ranking | all documents read: AUC, top 100 / 500 / 2000 (keep 10%, base 0.277) | NEW facts only (CR_HOLD 1): AUC, top 100 / 500 (keep 10%, base 0.040) |
+|---|---|---|
+| bridges (number of B) | 0.620, 0.95 / 0.66 / 0.50 | 0.657, 0.13 / 0.05 |
+| best min premise | 0.615, 0.73 / 0.61 / 0.51 | 0.667, 0.15 / 0.05 |
+| hub-weighted | 0.603, 0.96 / 0.64 / 0.39 | 0.593, 0.04 / 0.05 |
+| sum x hub (rank sum) | 0.635, 0.85 / 0.63 / 0.47 | 0.658, 0.09 / 0.06 |
+
+(Keep 25%: all-documents base 0.161, new-facts base 0.020, top 100 at most 0.15.)
+NEW facts = composed only from the first 80% of documents, scored only on pairs NEVER named together there but named together in a held-out document, labelled by held-out labels - the way the package's compressed fact table is judged.
+READING: the high A-C figures in the end-to-end readouts (e2e_reader, kra13/kra14 INFERENCE A-C: 0.27-0.49 at 2%) are mostly RE-DERIVING pairs that some read document states directly; they are not evidence of new facts. For genuinely new pairs, path composition is weak (top 100 right 0.13-0.15 against base 0.04), while the compressed fact table on its own held-out candidates reaches top 5% 0.38 at base 0.087 (kra14 visit 4). The two candidate sets differ, so this is not a head-to-head; but it says the fact table, not A-B-C chaining, is the route to new facts on real text, and the INFERENCE A-C readout must be read as recall of stated facts.
