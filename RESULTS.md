@@ -5147,3 +5147,22 @@ End to end (read -> the reader keeps its top share -> compose A-C through a shar
 At the 10% cut every reader gives A-C right 0.18-0.21.
 - A seeded reader more than doubles the precision of the premises it keeps (0.26 -> 0.60 at the 2% cut), but inferences right rise less (0.24 -> 0.38, small n). **Composition, not reading, now limits end-to-end inference**: a shared name in two documents is weak evidence that A and C are related. That is why confirmation before consolidation matters (kra12: confirmed 0.73 against 0.49).
 - Next for the reader: a kra14 with a small labelled seed and context words (`inf_premises_seed`).
+
+### cg27a_kra14 local safety run (20 Nov, 03:52-05:20; five-domain harness, oracle writes, MLP 800 steps, parse off; a container restart at 03:50 killed the first attempt in phase 4): PASSES; THE SEEDED READER DOUBLES THE PRECISION OF THE PREMISES IT KEEPS
+kra14 = kra13 + the SEEDED READER (inf_premises_seed 20000 labelled records from documents already read, own-document labels; inf_premises_seed_ctx 1, 3 context words each side; label-free teaching, ReVerb and multi-instance off). Reading and composing only: the weights are untouched, so forgetting and BPC match kra13 exactly.
+
+| Readout (visit 4 unless stated) | kra13 local | kra14 local |
+|---|---|---|
+| HEADLINE forgetting / final BPC (weights only) | -0.041 / 2.615 | -0.041 / 2.615 |
+| with the fast store on | -0.039 / 2.617 | -0.039 / 2.617 |
+| Wording reader AUC, benchmark (top 5%) | 0.644 (0.33) | **0.692 (0.58)** |
+| Wording reader AUC, held-out distant (top 5%) | 0.617 (0.19) | **0.671 (0.39)** |
+| INFERENCE A-C, reader top 10%: premises / A-C right (checkable) | 0.21 / 0.193 (9,346) | **0.33 / 0.223** (12,061) |
+| INFERENCE A-C, reader top 2%: premises / A-C right (checkable) | 0.20 / 0.269 (695) | **0.57 / 0.486** (917) |
+| Compressed fact table ALL: CODE AUC, top 5% | 0.706, 0.368 | 0.704, 0.382 |
+| Compressed fact table (second slice): CODE AUC, top 5% | 0.714, 0.448 | 0.745, 0.455 |
+| Confirm and consolidate: confirmed (right) / tentative (right) | 79 (0.49) / 521 (0.23) | 70 (0.49) / 530 (0.24) |
+
+No Traceback, no "unavailable". Visit 2 (first attempt and rerun alike): seeded reader held-out AUC 0.671, top 2% premises 0.63, A-C right 0.454 (n 436).
+RECALL vs CONSOLIDATION: these are reading and inference-proposal readouts (premises kept, A-C proposals checked against distant labels); the consolidation readout (confirmed 0.49) is unchanged in kind and was not lifted by the reader in this short run - 600 tentative writes are drawn before the reader's ranking reaches them.
+Caveat: the seed is labelled data (20,000 records of own-document labels, themselves noisy), so kra14 is no longer label-free on the reading side; the trunk, store and consolidation remain label-free.
