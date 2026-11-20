@@ -1114,6 +1114,8 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         from platypus.inference.distill import _dw_cand_mc                     #   names (offline: rank 0.74 while exact 0.01); here the answer among itself and
         pool_ = sorted({e['ans'] for e in H_}) or sorted({e['ans'] for e in T_ + H_ + U_})   # distractors: HELD-BACK answers only (never taught), so taught
         rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)                     #   and held-back facts face the same untaught distractors (chance 0.10)
+        from platypus.inference.jepa import cfg_seq_
+        sq_ = int(cfg_seq_(model))                                             # 20 Nov: the scorer cuts text at the window; prompts that do not fit are skipped
         def rk_(L, chain=False):
             L = [e for e in L if e['rm'] < vis and (not chain or (W.get(rti_wkey(e)) or {}).get('chain'))][:150]; hit = []
             for e in L:
@@ -1121,6 +1123,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
                 if len(alts) < 9: continue
                 cs = [e['ans']] + [alts[j] for j in rr_.choice(len(alts), 9, replace=False)]
                 pre_ = (W[rti_wkey(e)]['chain'] + ' ') if chain else ''          # 20 Nov kra16: IN CONTEXT - the inference's premises before the question
+                if len((pre_ + f"It is on record that {e['A']} {e['r']} ").encode('latin-1', 'replace')) + max(len(c) for c in cs) + 2 > sq_: continue   # 20 Nov: must fit the window (else every candidate ties and the first, the true one, wins)
                 hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"{pre_}It is on record that {e['A']} {e['r']} ", cs) == 0))
             return f"{np.mean(hit):.2f} ({len(hit)})" if hit else "nan (0)"
         tr_ = lambda L, t: [e for e in L if e['truth'] is t]
@@ -1143,6 +1146,7 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
                     if len(alts) < 9: continue
                     cs = [e['ans']] + [alts[j] for j in rm_.choice(len(alts), 9, replace=False)]
                     q = f"It is on record that {e['A']} {e['r']} "
+                    if max(len((p + q).encode('latin-1', 'replace')) for p in ('', W[rti_wkey(e)]['chain'] + ' ', W[rti_wkey(L[(i + 1) % len(L)])]['chain'] + ' ')) + max(len(c) for c in cs) + 2 > sq_: continue
                     for k, p in enumerate(('', W[rti_wkey(e)]['chain'] + ' ', W[rti_wkey(L[(i + 1) % len(L)])]['chain'] + ' ')):
                         h[k].append(int(_dw_cand_mc(model, int(S_slot(e['d'])), p + q, cs) == 0))
                 if not h[0]: return "nan (0)"
