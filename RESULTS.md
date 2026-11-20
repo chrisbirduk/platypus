@@ -5478,3 +5478,15 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **MATCHED, BROKEN CHAIN (before any chain training):** HELD BACK right (n 51): closed 0.20 | own premises **0.29** | other premises 0.22 | broken chain (the answer in context, A not linked) **0.22** | own - broken +0.08 (SE 0.04), own - closed +0.10 (SE 0.04). TAUGHT right (n 114): closed 0.22 | own 0.24 | other 0.17 | broken 0.18 | own - broken +0.05 (SE 0.03). Pooled own - broken about +0.06 (about 2.3 SE).
 - Reading: the answer's presence in the context does NOT lift it (broken 0.18-0.22 = other 0.17-0.22 = closed 0.20-0.22); only the LINKED chain does. A first sign that the trunk uses the chain, not copying - one visit, n 165, before chain teaching.
 - Facts ever taught 0.84 (kra18 0.85); gated 0.36 (0.42); bits 1.9243 (kra18 1.9223).
+
+### cg27a_kra20 GPU, visit 5 (after ONE visit of real inference teaching) + local safety run
+| visit 5 | TAUGHT (trained, 219) right / wrong | HELD BACK right / wrong |
+|---|---|---|
+| open recall from the trunk | **0.96 (176) / 0.95 (43)** | 0.05 (91) / 0.06 (16) |
+| rank among 10 | 0.99 / 0.98-1.00 | **0.31-0.34 / 0.06** (visit 4: 0.15 / 0.19) |
+| MATCHED: closed / own premises / other / broken chain | 1.00 / 1.00 / 0.96 / 1.00 | right (n 51): 0.35 / **0.41** / 0.25 / 0.29; own - broken **+0.12 (SE 0.06)** |
+- **CONSOLIDATION WORKS: confirmed inferences taught for one visit are recalled open-ended at 0.96 (held back 0.05).** The ~2% keep rule, not the trunk, was the limit in kra12-kra19.
+- **FALSE MEMORIES, as expected once wrong ones are taught: taught WRONG inferences recalled 0.95 (held back 0.06).** What the trunk learns is now exactly as right as what confirmation passes (0.80 of the 219; 59 wrong of 326 confirmed). Distant labels are incomplete, so 'wrong' is an upper bound on false memories. The next lever is precision before teaching (two rated records: 0.749 offline) and retraction afterwards (inf_rret is on; no inference flagged yet at visit 4).
+- **Held-back RIGHT inferences rise without being taught (rank 0.15 -> 0.31-0.34) while held-back WRONG ones fall (0.19 -> 0.06):** teaching right inferences generalises to other right ones, not to wrong ones. With their own premises in context 0.41 vs broken chain 0.29.
+- No cost: bits 1.8606 (kra18 1.8560); facts ever taught 0.85 (0.86); gated answers 0.52 (0.50); never-read 0.00.
+- kra20 local safety run: HEADLINE -0.031 / 2.621 (fast store -0.029 / 2.623) vs kra18 -0.041 / 2.612: within noise; no Traceback; 28 of 28 taught inferences train locally at visit 4. PASS.
