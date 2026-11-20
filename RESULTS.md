@@ -5432,3 +5432,15 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - kra19b = kra19 + inf_distill_wake_decay_min 0.25: the fallback if kra18's facts fade at visits 9-10.
 - Evidence replay (inf_rti_evidence) is NOT used: it replays w['ev'], which only the older rti_write path fills (the code-written inferences have none: it would replay nothing), and it was negative on the stand-in (14 Nov).
 - The stand-in fact-fading test is set aside: even NODECAY fades (0.45 -> 0.19 by visit 6); the A6 trunk cannot hold a growing pool at any schedule, so it says nothing about the GPU trunk.
+
+### Pretrained-base reader test (20 Nov 20:30, Colab GPU; tools/pretrained_reader.py, 20,000 documents, 30,000 held-out pairs, base rate 0.133, 0.86 seen once)
+| reader | label-free (usefulness) AUC all / seen once | TRUE labels (ceiling) AUC all / seen once | ceiling top 5% precision all / seen once |
+|---|---|---|---|
+| word counts (ours) | **0.634 / 0.622** | 0.719 / 0.718 | 0.51 / 0.49 |
+| GPT-2 124M, mid / last | 0.584 / 0.596, 0.572 / 0.576 | 0.781 / 0.771, **0.784 / 0.772** | 0.57 / 0.51, 0.60 / 0.50 |
+| SmolLM2-360M, mid (last: NaN states, failed) | 0.587 / 0.594 | 0.800 / 0.790 | 0.60 / 0.51 |
+| Qwen2.5-0.5B, mid / last | 0.588 / 0.596, 0.577 / 0.576 | **0.806 / 0.797**, 0.788 / 0.776 | 0.62 / 0.55, 0.60 / 0.53 |
+| Qwen2.5-1.5B, mid / last | 0.587 / 0.594, 0.580 / 0.584 | 0.798 / 0.789, 0.778 / 0.765 | 0.58 / 0.49, 0.57 / 0.49 |
+- **Label-free, pretrained states LOSE to word counts (0.58-0.60 vs 0.62-0.63):** the usefulness pseudo-labels (related 0.42 vs 0.11) are too noisy for a rich representation; the teacher, not the representation, limits the label-free reader.
+- **With true labels, pretrained states WIN by +0.06 to +0.09 AUC, on pairs seen once too (0.77-0.80 vs 0.72).** Size barely matters (GPT-2 124M 0.77 seen once, Qwen 1.5B 0.77-0.79), so the gain is mostly READING (relation cues), not KNOWING (a 12x larger model knows far more and gains nothing).
+- Implication: the package's seeded reader (20,000 labelled records, words) sits at the word ceiling (about 0.72); the same labels on a frozen small pretrained model's states would give about 0.78-0.80. A PRETRAINED READER (a component, the trunk unchanged) captures the measured reading gain; swapping the trunk is not needed for it.
