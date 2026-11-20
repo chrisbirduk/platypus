@@ -5396,3 +5396,13 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 
 ### cg27a_kra16 local safety run (20 Nov 17:20; tools/safety_run.sh)
 - PASS: HEADLINE -0.040 / 2.616 (fast store -0.039 / 2.617) vs kra15 -0.041 / 2.615; no Traceback. Chain dose rows at visit 4: 277 for 420 inferences, beside 861 plain rows. (Superseded on the GPU by kra17, which includes it.)
+
+### cg27a_kra18 GPU, visits 1-4 (started 17:05, before the matched readout was pushed at 17:14: this run does not print it)
+| kra18 vs kra17 | visit 2 | visit 3 | visit 4 |
+|---|---|---|---|
+| held-out bits, domains read | 2.0261 vs 2.0359 | 2.0052 vs 2.0180 | 1.9223 vs 1.9343 |
+| name memory entries (facts) | 305 vs 300 | 495 (469) vs 384 (357) | 634 (594) vs 384 |
+| taught facts right after the visit | - | - | 0.97 vs 0.89 |
+| facts ever taught | - | - | 0.85 vs 0.83 |
+| gated answers right overall / never-read given a stored name | - | 0.41 / 0.01 vs 0.41 / 0.07 | 0.42 / 0.02 vs 0.47 / 0.02 |
+- Eight question rows teach harder (0.97 vs 0.89 just after the visit) at no cost in bits so far (about -0.012 each visit). The test is visits 8-10.
