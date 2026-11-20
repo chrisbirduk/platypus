@@ -5081,3 +5081,22 @@ Learned types (label-free: k-means on the words around each name's mentions, 24 
 - 2,000 labelled records already beat every label-free reader tried (0.662 vs 0.632-0.665); 5,000 give 0.68; 20,000 give 0.71-0.72 (0.735 with types).
 - Mixing in the label-free teaching does not help once the seed is 2,000 or more (it dilutes clean labels with noise), except through context features, which the seed can now use (5,000: 0.683; 20,000: 0.717 with phrase recall 0.190).
 - These seeds use the distant set's own labels, which are noisy and incomplete; a clean, human-checked seed (the benchmark's gold) should do better per label. The gain per label is steady, not dramatic: about +0.03 per 4x labels.
+
+### cg27a_kra13 local safety run (20 Nov, 23:10-00:14; five-domain harness, oracle writes, MLP 800 steps, parse off): PASSES; WIDER RECORDS AND THE READER'S GRAPH LIFT THE COMPRESSED FACT TABLE
+kra13 = kra12 + wider records (FAR / NEXT / PRONOUN), the compressed fact table built from the reader's top half (`inf_rcode_reader 0.5`), the reader taught by confirmed inferences, ReVerb phrases and multi-instance selection, and the after-gate made-up readout; the states reader off.
+
+| Readout (visit 4 unless stated) | kra11 local | kra13 local |
+|---|---|---|
+| HEADLINE, weights only: forgetting / final BPC | (kra8l) -0.039 / 2.622 | **-0.041 / 2.615** |
+| Store records (4,000 distant documents) | 83,777 | 256,955 |
+| Wording reader AUC, benchmark / held-out distant | 0.616 / 0.619 | **0.644** / 0.617 |
+| Compressed fact table, pairs never stated together: CODE AUC, top 5% | 0.624, 0.304 | **0.706, 0.368** |
+| Adamic-Adar on the same graph: AUC, top 5% | 0.597, 0.239 | 0.691, 0.337 |
+| Confirm and consolidate: confirmed (right) vs still tentative (right) | - | 79 (0.49) vs 521 (0.23) |
+| Through the exact-name gate: novel subjects answered / made up | - | 0.00 / 0.00 (held back answered from the memory 1.00) |
+
+- Safe: forgetting and final BPC within noise of kra8l. No "unavailable" lines; ReVerb (spaCy) ran; READER TEACHING added 37 / 133 ReVerb phrase records at visits 2 / 4 with 2 multi-instance rounds (0 confirmed-inference records yet: the first confirmations come after that visit's reader is trained).
+- The fact table gains most: inferred pairs never stated together are ranked at AUC 0.706 (from 0.624), top 5% precision 0.368 (from 0.304). Most of it is the three times larger store (wider records); the reader's top-half graph is the rest.
+- Confirmation still separates right from wrong inferences (0.49 vs 0.23), as in kra12.
+- Premise change and route J composites stay small at local scale (n 28-53 moves, 4 writes); these need the GPU run.
+- Recall vs consolidation: the fact table and the gate are recall claims; confirmed inferences are what may be consolidated.
