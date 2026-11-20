@@ -5407,3 +5407,6 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 | gated answers right overall / never-read given a stored name | - | 0.41 / 0.01 vs 0.41 / 0.07 | 0.42 / 0.02 vs 0.47 / 0.02 |
 - Eight question rows teach harder (0.97 vs 0.89 just after the visit) at no cost in bits so far (about -0.012 each visit). The test is visits 8-10.
 - READOUT FIX (20 Nov 18:45): the rank readouts score candidates with distill._dw_cand_mc, which cuts text at the model's window (seq_len). A prompt that does not fit leaves every candidate unscored, they tie, and the first - always the true answer - wins. Locally (seq_len 64) every IN CONTEXT prompt overflows: the local IN CONTEXT 1.00 values (kra17 and kra18 safety runs) and the matched readout's local 1.00 / 1.00 are this artifact. On the GPU (seq_len 1024) the premises fit and the GPU readouts stand. Rank, IN CONTEXT and MATCHED now skip any prompt that does not fit.
+
+### cg27a_kra18 local safety run (20 Nov 19:10; tools/safety_run.sh)
+- PASS: HEADLINE -0.041 / 2.612 (fast store -0.040 / 2.614) vs kra17 -0.040 / 2.616; no Traceback. 8 question rows per step; facts ever taught 0.30 vs 0.29 at visit 4. The name memory (70-110 entries locally) never reaches either cap, so that change is GPU-only. Stopped after the headline (end-of-run diagnostics) to free the machine.
