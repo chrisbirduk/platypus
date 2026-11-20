@@ -2193,6 +2193,9 @@ def distill_wake_loss(model, cfg):
                 if c2:                                                         # 14 Nov DOSE SCALING (inf_rti_rows_ref > 0): the loss is a mean over the rows'
                     l2 = t2 / c2; rf2 = int(getattr(cfg, 'inf_rti_rows_ref', 0))   #   answer bytes, so more rows a step would push each row less; weighting
                     w2 = (len(it2) / rf2) if rf2 > 0 else 1.0                      #   by rows / ref keeps each row's push at the ref's (cg27a_rcode4: 16 rows
+                    dc2 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))       # 20 Nov kra15 (inf_rti_nodecay): the real-text inferences' rows are NOT
+                    if int(getattr(cfg, 'inf_rti_nodecay', 0)) and dc2 < 1.0:      #   scaled down by the visit decay of the question rows (the stand-in: decay
+                        w2 /= max(float(getattr(cfg, 'inf_distill_wake_decay_min', 0.0)), dc2 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))), 1e-6)   #   0.5 a round: taught 0.724 -> 0.316)
                     loss = loss + w2 * l2; D['rtil'].append(float(l2.detach()))    #   at weight 1 halved it - each inference learned more slowly)
             except Exception as e2:
                 _fail('inference.distill:rti_dose')
