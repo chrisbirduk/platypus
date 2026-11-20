@@ -961,11 +961,15 @@ def _rret_judge(cfg, RD, ndv_, vis):
         if not TN:                                                             #   faded pairs are NOT false - 0.33 - so fading removes, never teaches against)
             print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
         want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))
-        for r in RD:
+        rds8 = _PM.get('rdscore'); rt8 = None                                  # 20 Nov kra17 RATED CONFIRMATION (inf_rti_conf_rated): only a record the seeded reader
+        if int(getattr(cfg, 'inf_rti_conf_rated', 0)):                         #   puts in its top half confirms (offline tools/confirm_min.py, 2,400 writes, 30k
+            if rds8 is not None and len(rds8) == len(RD): rt8 = float(np.median(rds8))   # documents read after: right 0.604 -> 0.659, right ones kept 0.62 -> 0.56)
+            else: print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] rated confirmation unavailable (reader scores {None if rds8 is None else len(rds8)} vs {len(RD)} records): any relational record confirms", flush=True)
+        for i8, r in enumerate(RD):
             fk = frozenset((r[1], r[2]))
             if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
                 any9[fk] += 1
-                if 1 <= r[5] <= 8 and not _rret_listlike(r): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
+                if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
         fv = int(getattr(cfg, 'inf_rti_fade', 4)); cf9, fd9, st9 = [], [], []
         for k in TN:
             w = W[k]; fk = frozenset(k)

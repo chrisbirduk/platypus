@@ -5306,3 +5306,19 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - Costs: taught WRONG inferences are recalled too (0.08 vs 0.00-0.01): the confirmation filter passes right 0.72-0.75, so about a quarter of what is consolidated is wrong.
 - **FACTS fade as the ledger grows: 0.88 -> 0.62 over visits 4-8 (ledger 659 -> 1,151)** while conclusions rise 0.00 -> 0.31 - the same shape as the stand-in's decay arm (UNIFORM_D). kra15 exempts only the inference dose rows; facts keep the decay. A candidate later change: a floor on the facts' decay or rehearsal of facts taught earlier (the stand-in: REHEARSE 0.694 vs SEQ 0.379), to test locally.
 - The relational memory holds at 0.87 on 219 composites; the gate keeps never-read answers at 0.00-0.02.
+
+### Tighter confirmation, offline (20 Nov 12:00; tools/confirm_min.py: the package's 2,400 code writes from 20,000 documents read, confirmed on the 30,000 read after, distant labels)
+| rule (all 50k read) | confirmed (share of writes) | right | right writes kept |
+|---|---|---|---|
+| >= 1 relational record (kra14) | 1,056 (0.44) | 0.604 | 0.62 |
+| >= 2 records | 648 (0.27) | 0.664 | 0.42 |
+| >= 3 records | 439 (0.18) | 0.720 | 0.31 |
+| >= 2 documents | 627 (0.26) | 0.670 | 0.41 |
+| **1 record the seeded reader rates (top half)** | 865 (0.36) | **0.659** | **0.56** |
+| 2 rated records | 467 (0.19) | 0.749 | 0.34 |
+- The same order at 60% and 80% read. A rated record is the cheapest gain: +0.055 right for 10% of the right ones; counting records buys precision only by halving what is confirmed. None reaches 0.85 on distant labels (incomplete: "right" is a lower bound).
+
+### cg27a_kra17 prepared (kra16 + two model changes for kra14's visit-8 problems)
+- inf_distill_wake_decay_min 0.125 (a floor on the question rows' visit decay; GPU kcf: facts 0.72 vs 0.67 at visit 7, gated right overall 0.50 vs 0.31, bits within noise) - facts faded 0.88 -> 0.62 in kra14.
+- inf_rti_conf_rated 1 (new option: a tentative inference is confirmed only by a later relational record the seeded reader rates in its top half; falls back to any record, with a log line, if the reader's scores do not match the records).
+- Local safety runs: kra17 first (12:10), then kra16. The stand-in chain tests resume after them.

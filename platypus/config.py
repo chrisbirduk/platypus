@@ -757,6 +757,7 @@ class Config:
     inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
     inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
+    inf_rti_conf_rated=0            #   20 Nov kra17 (MODEL CHANGE when 1): only a record the seeded reader puts in its top half confirms a tentative inference
     inf_premises_wide=0             #   19 Nov kra13: wider distant records - same sentence 13-30 words apart, next sentence, pronoun-led sentences (length field 13+)
     inf_rcode_reader=0.0            #   19 Nov kra13 MODEL CHANGE: the compressed fact table's graph from the wording reader's top share of records (0 = all records)
     inf_premises_knowledge=0        #   19 Nov kra13: the wording reader also taught by every record of a confirmed real-text inference
