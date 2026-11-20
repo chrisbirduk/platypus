@@ -6,6 +6,7 @@ typed writes, inf_rti_max CS_ROUNDS x 200 + 200 never taught as the control) are
 8 fact + 24 anchor rows a step. Arms (CS_ARMS):
   SEQ        each round teaches only its own 200
   REHEARSE   half the fact rows from the current round, half from every earlier round (spaced rehearsal of what was consolidated)
+  UNIFORM    the fact rows drawn uniformly from every round taught so far (the package's RTI dose today: inf_rti_rows samples all taught rows)
   REHEARSE_R the same, and the KL anchor's teacher is the model at the START of the round (rolling) instead of the original trunk
 After every round: recall in the never-taught test wording ('It is on record that <head> <wording> ': rank of the true tail among 10,
 chance 0.10; open-ended exact) of EACH earlier round and of the never-taught control; forgetting = held-out bits added per domain vs the
@@ -82,7 +83,8 @@ for arm in os.environ.get('CS_ARMS', 'SEQ,REHEARSE,REHEARSE_R').split(','):
         if arm == 'REHEARSE_R': teacher = copy.deepcopy(m).eval()
         old = [x for j in range(k) for x in FACTS[j]]; m.train()
         for st in range(STEPS):
-            if arm.startswith('REHEARSE') and old: fb = [FACTS[k][i] for i in rs.randint(0, len(FACTS[k]), 4)] + [old[i] for i in rs.randint(0, len(old), 4)]
+            if arm == 'UNIFORM': allr = old + FACTS[k]; fb = [allr[i] for i in rs.randint(0, len(allr), 8)]
+            elif arm.startswith('REHEARSE') and old: fb = [FACTS[k][i] for i in rs.randint(0, len(FACTS[k]), 4)] + [old[i] for i in rs.randint(0, len(old), 4)]
             else: fb = [FACTS[k][i] for i in rs.randint(0, len(FACTS[k]), 8)]
             ds_ = list(DOMS); wb = [bytes(DOMS[ds_[j % 5]][i:i + 129]) for j, i in enumerate(rs.randint(0, mn, 24))]
             Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD)
