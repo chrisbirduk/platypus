@@ -6,6 +6,7 @@ for TAUGHT and CONTROL inferences alike; the conclusions are taught for the TAUG
   PREMISES  no conclusion rows (the trunk reads only the premises)
   DIRECT    'h w t.' in 24 frames (the package's rows today)
   CHAIN     the premises then the conclusion in one row: '<A-B>. <B-C>. So h w t.' (and 'Since ... , h w t.')
+  BOTH      half the conclusion rows DIRECT, half CHAIN (what the package could teach: recall of the taught and the composition step)
 Readouts after training, for TAUGHT and CONTROL (premises read, conclusion never taught): (1) CLOSED BOOK 'It is on record that h w ' -> rank of
 the true tail among 10 (chance 0.10), open exact; (2) IN CONTEXT: the premises given in the prompt, '<A-B>. <B-C>. So h w ' -> rank among 10;
 (3) the premises themselves recalled ('n1 wording ' -> n2 rank). Forgetting = held-out bits added per domain vs the original trunk.
@@ -114,7 +115,7 @@ if PRE:                                                                       # 
     P(f"   PREMISES FIRST, {PRE} steps: TAUGHT {evals(start, TA)} || CONTROL {evals(start, CT)} || forgetting mean {np.mean([dd[d] - d0[d] for d in dd]):+.4f}  ({time.time() - T0:.0f}s)")
 for arm in os.environ.get('CH_ARMS', 'PREMISES,DIRECT,CHAIN').split(','):
     m = copy.deepcopy(start); rs = np.random.RandomState(11); op = torch.optim.Adam(m.parameters(), lr=LR); m.train()
-    CON = {'DIRECT': DIRECT, 'CHAIN': CHAIN}.get(arm, [])
+    CON = {'DIRECT': DIRECT, 'CHAIN': CHAIN, 'BOTH': DIRECT + CHAIN * 6}.get(arm, [])   # BOTH: half the conclusion rows direct, half chains
     for st in range(STEPS):
         fb = [PREM[i] for i in rs.randint(0, len(PREM), 4 if CON else 8)] + ([CON[i] for i in rs.randint(0, len(CON), 4)] if CON else [])
         step(m, op, rs, fb)
