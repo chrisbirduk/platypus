@@ -2,7 +2,7 @@
 
 usage: python tools/ckpt/tiny_run.py
   LAB_OVR and the PLATYPUS_* switches are read as in a GPU run; TINY_OVR (JSON) is applied on top
-  of the tiny sizes below. PLATYPUS_CKPT names the checkpoint folder (see platypus/checkpoint.py).
+  of the tiny sizes below. TINY_MODEL=preset keeps the preset's model size (only the data and steps shrink). PLATYPUS_CKPT names the checkpoint folder (see platypus/checkpoint.py).
 
 The Pile is replaced by local text: each domain reads its own slice of the Python standard library's
 source files, so no network and no Hugging Face download is needed.
@@ -33,9 +33,13 @@ def local_bytes(domain, seed, n):
     return bytes(buf[:n])
 
 
+_SIZE = ("d_model", "d_state", "n_layers", "seq_len", "batch_size", "dream_bank", "dream_batch")
+
+
 def main():
     ovr = json.loads(os.environ.get("LAB_OVR", "{}") or "{}")
-    ovr = {**TINY, **ovr, **json.loads(os.environ.get("TINY_OVR", "{}") or "{}")}
+    tiny = {k: v for k, v in TINY.items() if not (os.environ.get("TINY_MODEL") == "preset" and k in _SIZE)}   # preset: the build's own model size
+    ovr = {**tiny, **ovr, **json.loads(os.environ.get("TINY_OVR", "{}") or "{}")}
     os.environ["LAB_OVR"] = json.dumps(ovr)
     import torch; torch.set_num_threads(int(os.environ.get("TINY_THREADS", "2")))
     import platypus
