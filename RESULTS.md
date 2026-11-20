@@ -5180,3 +5180,13 @@ Proposals A-C through a shared name B from the reader's top share, ranked five w
 (Keep 25%: all-documents base 0.161, new-facts base 0.020, top 100 at most 0.15.)
 NEW facts = composed only from the first 80% of documents, scored only on pairs NEVER named together there but named together in a held-out document, labelled by held-out labels - the way the package's compressed fact table is judged.
 READING: the high A-C figures in the end-to-end readouts (e2e_reader, kra13/kra14 INFERENCE A-C: 0.27-0.49 at 2%) are mostly RE-DERIVING pairs that some read document states directly; they are not evidence of new facts. For genuinely new pairs, path composition is weak (top 100 right 0.13-0.15 against base 0.04), while the compressed fact table on its own held-out candidates reaches top 5% 0.38 at base 0.087 (kra14 visit 4). The two candidate sets differ, so this is not a head-to-head; but it says the fact table, not A-B-C chaining, is the route to new facts on real text, and the INFERENCE A-C readout must be read as recall of stated facts.
+
+### Does the SEEDED reader feed the compressed fact table? (20 Nov, 05:35; tools/rcode_reader.py RC_SEED, distant 20k, 128 dims; 33,380 held-out candidate pairs never in the training graph, labelled 0.133): ONLY A LITTLE
+| Graph built from | label-free reader: AUC, top 1% / 5% | seeded reader 20k + context: AUC, top 1% / 5% |
+|---|---|---|
+| ALL records | 0.551, 0.168 / 0.157 | (same) |
+| reader top 50% | 0.557, 0.243 / 0.168 | 0.559, 0.261 / 0.161 |
+| reader top 25% | 0.546, 0.222 / 0.144 | 0.567, 0.249 / 0.150 |
+| reader top 10% | 0.550, 0.231 / 0.115 | 0.557, 0.189 / 0.116 |
+| SOFT: all records, edge = reader probability | - | **0.573**, 0.171 / **0.179** |
+A much better reader (held-out AUC 0.62 -> 0.75) moves the fact table by 0.01-0.02 AUC, matching kra14 in the run (CODE AUC 0.704 vs 0.706). The fact table's limit is not which records go in but the method and its COVERAGE: only 29% of candidates have both names in the graph. Next levers: coverage (names first seen in held-out documents) and the scoring of the code, not the reader.
