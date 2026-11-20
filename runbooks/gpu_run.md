@@ -15,6 +15,10 @@ From a new build to its results.
 Colab: `colab/platypus_gpu.ipynb`, first cell set to the build and preset.
 Cloud machine: `docker run ... <build> <preset> 1` (see `docker/Dockerfile`).
 
+If the run stops before the end (session ended, machine taken back), resume
+it: `scripts/run_gpu.sh --resume runs/<run>` (Colab: set `RESUME` in the first
+cell). It continues after the last visit that was saved.
+
 A three-pass run takes four to five hours on one 95 GB-class GPU; each
 sleep adds two to three minutes.
 
