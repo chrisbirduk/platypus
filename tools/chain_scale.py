@@ -12,13 +12,13 @@ the true tail among 10 (chance 0.10), open exact; (2) IN CONTEXT: the premises g
 (3) the premises themselves recalled ('n1 wording ' -> n2 rank). Forgetting = held-out bits added per domain vs the original trunk.
 A route to inference in the trunk = CONTROL above chance and above PREMISES, closed book (derivation from stored premises) or at least in
 context (a learned composition step).
-Usage: TG_CKPT=<A6 trunk> python3 tools/chain_scale.py <distant_50k.json.gz>   env CH_N (400 taught), CH_NC (control, default = CH_N), CH_PRE (0: premises-only steps first, shared by every arm), CH_STEPS (2000), CH_LR (1e-3), CH_ARMS"""
+Usage: TG_CKPT=<A6 trunk> python3 tools/chain_scale.py <distant_50k.json.gz>   env CH_N (400 taught), CH_NC (control, default = CH_N), CH_PRE (0: premises-only steps first, shared by every arm), CH_STEPS (2000; a round's steps in rounds mode), CH_LR (1e-3), CH_ARMS, CH_SEED (0: the split and the sampling), CH_ROUNDS (1)"""
 import os, sys, types, copy, time, math, collections
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 sys.path.insert(0, '.')
 import platypus.inference.premises as pm
-P = lambda *a: print(*a, flush=True); T0 = time.time(); torch.set_num_threads(2); torch.manual_seed(0)
+P = lambda *a: print(*a, flush=True); T0 = time.time(); torch.set_num_threads(2); SD = int(os.environ.get('CH_SEED', 0)); torch.manual_seed(SD); NRD = int(os.environ.get('CH_ROUNDS', 1))
 NT = int(os.environ.get('CH_N', 400)); NC = int(os.environ.get('CH_NC', 0)); PRE = int(os.environ.get('CH_PRE', 0)); STEPS = int(os.environ.get('CH_STEPS', 2000)); LR = float(os.environ.get('CH_LR', 1e-3))
 cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel='code+aa',
                             inf_rcode_asym=1.0, inf_rcode_selreport=0, inf_rti_max=6 * NT, inf_rret=0, inf_rti_ctl=0.0, inf_rret_q=0.2, inf_rret_ctl=0.5, inf_rti_typed=1)
@@ -37,7 +37,7 @@ for (A_, C_), w in W:
     for b in w['prem']:
         p1, p2 = prem(A_, b), prem(b, C_)
         if p1 and p2 and len(f"{p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}. So {w['th']} {w['tw']} ") < 100: CL.append((w['th'], w['tw'], w['tt'], bool(w['truth']), p1, p2)); break
-CL = [CL[j] for j in np.random.RandomState(7).permutation(len(CL))]; NC = NC or NT; NT = min(NT, len(CL) - NC); TA, CT = CL[:NT], CL[NT:NT + NC]
+CL = [CL[j] for j in np.random.RandomState(7 + SD).permutation(len(CL))]; NC = NC or NT; NT = min(NT, len(CL) - NC); TA, CT = CL[:NT], CL[NT:NT + NC]
 P(f"{len(W)} typed inferences with bridges; {len(CL)} with both premises on record (right {np.mean([c[3] for c in CL]):.3f}) -> {NT} taught + {NC} control  ({time.time() - T0:.0f}s)")
 DW = 192; L_ = 128; PAD = 256; V_ = 257
 class Blk(nn.Module):
@@ -100,21 +100,40 @@ def evals(m, cl):
 d0 = dbits(base)
 P(f"BASE: TAUGHT {evals(base, TA)} || CONTROL {evals(base, CT)}  ({time.time() - T0:.0f}s)")
 mn = min(len(a) for a in DOMS.values()) - 200400
-def step(m, op, rs, fb):
+def step(m, op, rs, fb, fc=None, wc=1.0):
     ds_ = list(DOMS); wb = [bytes(DOMS[ds_[j % 5]][i:i + 129]) for j, i in enumerate(rs.randint(0, mn, 24))]
     Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD)
     Xw, Xwi = tens(wb); lw_ = m(Xwi)
     with torch.no_grad(): lo = F.log_softmax(base(Xwi), -1)
     lw = F.kl_div(F.log_softmax(lw_, -1), lo, log_target=True, reduction='batchmean') / Xw.shape[1]
-    loss = (8 * lf + 24 * lw) / 32; op.zero_grad(); loss.backward(); op.step()
+    if fc:                                                                    # conclusion rows with their own weight (the rounds mode's visit decay)
+        Xc, Xci = tens(fc); lc = F.cross_entropy(m(Xci).reshape(-1, V_), Xc.reshape(-1), ignore_index=PAD)
+        loss = (len(fb) * lf + len(fc) * wc * lc + 24 * lw) / 32
+    else: loss = (8 * lf + 24 * lw) / 32
+    op.zero_grad(); loss.backward(); op.step()
 start = base
 if PRE:                                                                       # PREMISES FIRST: the trunk stores every premise before any conclusion is taught
     start = copy.deepcopy(base); rs = np.random.RandomState(10); op = torch.optim.Adam(start.parameters(), lr=LR); start.train()
     for st in range(PRE): step(start, op, rs, [PREM[i] for i in rs.randint(0, len(PREM), 8)])
     start.eval(); dd = dbits(start)
     P(f"   PREMISES FIRST, {PRE} steps: TAUGHT {evals(start, TA)} || CONTROL {evals(start, CT)} || forgetting mean {np.mean([dd[d] - d0[d] for d in dd]):+.4f}  ({time.time() - T0:.0f}s)")
+DR = lambda c: [enc(f.format(h=c[0], w=c[1], t=c[2])) for f in FR]
+CR = lambda c: [enc(x) for x in (f"{ps(c[4])}. {ps(c[5])}. So {c[0]} {c[1]} {c[2]}.", f"Since {ps(c[4])} and {ps(c[5])}, {c[0]} {c[1]} {c[2]}.",
+                                 f"{ps(c[5])}. {ps(c[4])}. So {c[0]} {c[1]} {c[2]}.", f"Given that {ps(c[4])}; {ps(c[5])}: {c[0]} {c[1]} {c[2]}.")]
+FORM = {'DIRECT': DR, 'CHAIN': CR, 'BOTH': lambda c: DR(c) + CR(c) * 6}
+if NRD > 1:                                                                   # ROUNDS (test 2): the taught set in NRD rounds; conclusion rows drawn uniformly from every
+    RT = [TA[k * len(TA) // NRD:(k + 1) * len(TA) // NRD] for k in range(NRD)]   #   round taught so far (the package's dose); arm suffix _D = the kra14 visit decay
+    for arm in os.environ.get('CH_ARMS', 'DIRECT,CHAIN,BOTH,CHAIN_D').split(','):   #   (conclusion loss x 0.5^round), none = kra15 (inf_rti_nodecay)
+        m = copy.deepcopy(start); rs = np.random.RandomState(11 + SD); op = torch.optim.Adam(m.parameters(), lr=LR); fm_ = FORM[arm.split('_')[0]]
+        for k in range(NRD):
+            m.train(); CON = [x for j in range(k + 1) for c in RT[j] for x in fm_(c)]; wc = 0.5 ** k if arm.endswith('_D') else 1.0
+            for st in range(STEPS): step(m, op, rs, [PREM[i] for i in rs.randint(0, len(PREM), 4)], [CON[i] for i in rs.randint(0, len(CON), 4)], wc)
+            m.eval(); dd = dbits(m)
+            P(f"   {arm:8s} after round {k + 1}: " + " | ".join(f"r{j + 1} {evals(m, RT[j])}" for j in range(k + 1)) + f" || CONTROL {evals(m, CT)} || forgetting mean "
+              f"{np.mean([dd[d] - d0[d] for d in dd]):+.4f}  ({time.time() - T0:.0f}s)")
+    P(f"DONE ({time.time() - T0:.0f}s)"); sys.exit(0)
 for arm in os.environ.get('CH_ARMS', 'PREMISES,DIRECT,CHAIN').split(','):
-    m = copy.deepcopy(start); rs = np.random.RandomState(11); op = torch.optim.Adam(m.parameters(), lr=LR); m.train()
+    m = copy.deepcopy(start); rs = np.random.RandomState(11 + SD); op = torch.optim.Adam(m.parameters(), lr=LR); m.train()
     CON = {'DIRECT': DIRECT, 'CHAIN': CHAIN, 'BOTH': DIRECT + CHAIN * 6}.get(arm, [])   # BOTH: half the conclusion rows direct, half chains
     for st in range(STEPS):
         fb = [PREM[i] for i in rs.randint(0, len(PREM), 4 if CON else 8)] + ([CON[i] for i in rs.randint(0, len(CON), 4)] if CON else [])
