@@ -5100,3 +5100,50 @@ kra13 = kra12 + wider records (FAR / NEXT / PRONOUN), the compressed fact table 
 - Confirmation still separates right from wrong inferences (0.49 vs 0.23), as in kra12.
 - Premise change and route J composites stay small at local scale (n 28-53 moves, 4 writes); these need the GPU run.
 - Recall vs consolidation: the fact table and the gate are recall claims; confirmed inferences are what may be consolidated.
+
+### Overnight 20 Nov (1): the synthetic world on a THIRD seed (seed 2; tools/compose_synth.py, same settings as seeds 0 and 1)
+| | seed 0 | seed 1 | **seed 2** |
+|---|---|---|---|
+| Exact-name gate: made-up chains for NOVEL / NEAR-MISS names (trunk alone) | 0.00 / 0.00 (0.92 / 0.95) | 0.00 / 0.00 (0.97 / 0.92) | **0.00 / 0.00 (0.90 / 0.93)** |
+| Exact-name gate: recorded held-out answered right (answers given) | 0.85 (1.00) | 0.87 (1.00) | **0.81 (1.00)** |
+| Soft gate: made-up for novel / near-miss | 0.10 / 0.64 | 0.46 / 0.71 | 0.14 / 0.71 |
+| Premise moved: stale composites, taught / never taught | 0.65 / 0.52 | 0.28 / 0.19 | 0.40 / 0.28 |
+| Retract + re-derive, MOVED people: flagged; right country as answered -> after | 0.76-0.82; 0.14-0.19 -> 0.93 | 0.37-0.39; 0.50-0.53 -> 0.82-0.85 | **0.38-0.44; 0.15-0.20 -> 0.57-0.58** |
+| Retract + re-derive, UNMOVED controls: as answered -> after | 0.92 / 0.66 -> 0.83 / 0.81 | 0.79 / 0.60 -> 0.74 / 0.73 | 0.53 / 0.36 -> 0.39 / 0.32 |
+| Write-back of all re-derived chains (600 steps), asked directly: MOVED taught / never taught | 0.90 / 0.83 (397 chains) | 0.76 / 0.82 (375) | **0.57 / 0.62** (230) |
+| Write-back: UNMOVED not replayed; replayed | 0.82 / 0.82; 0.99 | 0.79 / 0.76; 0.97 | 0.74 / 0.61; 0.99 |
+| Forgetting (bits/byte on fixed pretraining windows) | - | - | 0.474 -> 0.493 |
+
+- **The exact-name gate replicates exactly on all three seeds**: no made-up chains for names never recorded, and every recorded name answered. The soft gate still fails on near-miss names (0.64-0.71) on all three.
+- **Retract and re-derive replicates in direction** (moved people 0.15-0.20 -> 0.57-0.58, about three times better) **but not in size**. The seed-2 trunk is a weaker chainer (unmoved people answered right only 0.53 / 0.36, against 0.79-0.92 on the other seeds), so re-derivation through it is weaker, and the re-derive step costs unmoved controls 0.04-0.14 on this seed (it did on seed 0 too for taught people).
+- Write-back carries what re-derivation gets right into the weights (moved 0.57 / 0.62 asked directly, no check), with the replayed facts held at 0.99. Write-back quality is bounded by re-derivation quality.
+- Claim to make: the gate is robust. Retract/re-derive/write-back works on every seed, with a size that depends on how well the trunk chains.
+
+### Overnight 20 Nov (2): the SEEDED READER with the literature fixes, and seeded readers end to end (tools/seed_reader.py SD_MI / SD_REVERB; tools/e2e_reader.py E2_SEED)
+Held-out documents of distant_50k (first 30,000 documents unless stated); AUC / top 10% precision:
+
+| Seed labels | seed only (words) | **seed only + context** | seed + label-free + context | ... with multi-instance | ... with ReVerb | ... with both |
+|---|---|---|---|---|---|---|
+| 2,000 | 0.661 / 0.311 | **0.667 / 0.371** | 0.651 / 0.285 | 0.649 / 0.283 | 0.652 / 0.284 | 0.648 / 0.276 |
+| 5,000 | 0.679 / 0.350 | **0.694 / 0.401** | 0.683 / - | 0.670 / 0.314 | 0.667 / 0.309 | 0.667 / 0.296 |
+| 20,000 | 0.709 / 0.386 | **0.732 / 0.445** | 0.703 / 0.375 | 0.711 / 0.389 | 0.700 / 0.365 | 0.705 / 0.368 |
+
+All 50,000 documents, seed only: 20,000 0.703 / 0.367; 50,000 0.722 / 0.401; 100,000 0.731 / 0.412 (with context 0.738 / 0.435; with the dataset's types, reference only, 0.776 / 0.463).
+
+- **Once there is a seed, the label-free teaching only hurts, and the literature fixes do not rescue it.** Multi-instance selection keeps positives that are LESS often right (0.426 -> 0.363), and ReVerb phrase positives are right only 0.163 (base rate 0.131). Both are label-free signals as noisy as the teacher they were meant to clean.
+- **The best reader is the seed alone with context words**: 0.667 / 0.694 / 0.732 at 2,000 / 5,000 / 20,000 labels, top 10% precision 0.37 / 0.40 / 0.45 (the label-free reader: 0.63-0.65, about 0.30). Gains flatten above about 50,000 labels (0.72-0.74); learned types would be the next step (+0.04 as an upper bound).
+
+End to end (read -> the reader keeps its top share -> compose A-C through a shared name in another document -> checkable A-C pairs right by the distant labels), all 50,000 documents:
+
+| Reader keeps its top 2% | premises right | A-C checkable | A-C right | with 2+ bridges right (n) |
+|---|---|---|---|---|
+| wording reader (label-free) | 0.26 | 1,472 | 0.241 | 0.469 (32) |
+| wording + usefulness | 0.53 | 3,831 | 0.302 | 0.485 (167) |
+| seed 2,000 only | 0.50 | 873 | 0.165 | 0.474 (19) |
+| seed 5,000 only | 0.55 | 441 | 0.274 | 0.909 (11) |
+| **seed 20,000 only** | **0.60** | 660 | **0.379** | 0.857 (14) |
+| seed 20,000 + label-free | 0.53 | 1,708 | 0.287 | 0.607 (61) |
+
+At the 10% cut every reader gives A-C right 0.18-0.21.
+- A seeded reader more than doubles the precision of the premises it keeps (0.26 -> 0.60 at the 2% cut), but inferences right rise less (0.24 -> 0.38, small n). **Composition, not reading, now limits end-to-end inference**: a shared name in two documents is weak evidence that A and C are related. That is why confirmation before consolidation matters (kra12: confirmed 0.73 against 0.49).
+- Next for the reader: a kra14 with a small labelled seed and context words (`inf_premises_seed`).
