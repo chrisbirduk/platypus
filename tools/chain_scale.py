@@ -11,14 +11,14 @@ the true tail among 10 (chance 0.10), open exact; (2) IN CONTEXT: the premises g
 (3) the premises themselves recalled ('n1 wording ' -> n2 rank). Forgetting = held-out bits added per domain vs the original trunk.
 A route to inference in the trunk = CONTROL above chance and above PREMISES, closed book (derivation from stored premises) or at least in
 context (a learned composition step).
-Usage: TG_CKPT=<A6 trunk> python3 tools/chain_scale.py <distant_50k.json.gz>   env CH_N (400 taught + 400 control), CH_STEPS (2000), CH_LR (1e-3), CH_ARMS"""
+Usage: TG_CKPT=<A6 trunk> python3 tools/chain_scale.py <distant_50k.json.gz>   env CH_N (400 taught), CH_NC (control, default = CH_N), CH_PRE (0: premises-only steps first, shared by every arm), CH_STEPS (2000), CH_LR (1e-3), CH_ARMS"""
 import os, sys, types, copy, time, math, collections
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 sys.path.insert(0, '.')
 import platypus.inference.premises as pm
 P = lambda *a: print(*a, flush=True); T0 = time.time(); torch.set_num_threads(2); torch.manual_seed(0)
-NT = int(os.environ.get('CH_N', 400)); STEPS = int(os.environ.get('CH_STEPS', 2000)); LR = float(os.environ.get('CH_LR', 1e-3))
+NT = int(os.environ.get('CH_N', 400)); NC = int(os.environ.get('CH_NC', 0)); PRE = int(os.environ.get('CH_PRE', 0)); STEPS = int(os.environ.get('CH_STEPS', 2000)); LR = float(os.environ.get('CH_LR', 1e-3))
 cfg = types.SimpleNamespace(inf_premises_path=sys.argv[1], inf_premises_visits=10, inf_rcode_hold=0.1, inf_rcode_k=512, seed=4, inf_rcode_sel='code+aa',
                             inf_rcode_asym=1.0, inf_rcode_selreport=0, inf_rti_max=6 * NT, inf_rret=0, inf_rti_ctl=0.0, inf_rret_q=0.2, inf_rret_ctl=0.5, inf_rti_typed=1)
 pm._load_distant(cfg); ND = pm._PM['ND']; R = pm._PM['R']; RD = [r for r in R if r[0] < int(round(ND * 0.4))]
@@ -36,8 +36,8 @@ for (A_, C_), w in W:
     for b in w['prem']:
         p1, p2 = prem(A_, b), prem(b, C_)
         if p1 and p2 and len(f"{p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}. So {w['th']} {w['tw']} ") < 100: CL.append((w['th'], w['tw'], w['tt'], bool(w['truth']), p1, p2)); break
-CL = [CL[j] for j in np.random.RandomState(7).permutation(len(CL))]; NT = min(NT, len(CL) // 2); TA, CT = CL[:NT], CL[NT:2 * NT]
-P(f"{len(W)} typed inferences with bridges; {len(CL)} with both premises on record (right {np.mean([c[3] for c in CL]):.3f}) -> {NT} taught + {NT} control  ({time.time() - T0:.0f}s)")
+CL = [CL[j] for j in np.random.RandomState(7).permutation(len(CL))]; NC = NC or NT; NT = min(NT, len(CL) - NC); TA, CT = CL[:NT], CL[NT:NT + NC]
+P(f"{len(W)} typed inferences with bridges; {len(CL)} with both premises on record (right {np.mean([c[3] for c in CL]):.3f}) -> {NT} taught + {NC} control  ({time.time() - T0:.0f}s)")
 DW = 192; L_ = 128; PAD = 256; V_ = 257
 class Blk(nn.Module):
     def __init__(s, d, hh):
@@ -92,22 +92,32 @@ def evals(m, cl):
     ic = [rank(m, f"{ps(c[4])}. {ps(c[5])}. So {c[0]} {c[1]} ", CAND[c], c[2]) for c in cl]
     pr = [rank(m, f"{p[0]} {p[1]} ", PCAND[p], p[2])[0] for c in cl for p in (c[4], c[5])]
     ri = [c[3] for c in cl]; cbr = [x[0] for x, t in zip(cb, ri) if t]
-    return (f"closed book rank {np.mean([x[0] for x in cb]):.3f} open {np.mean([x[1] for x in cb]):.3f} (right ones {np.mean(cbr) if cbr else float('nan'):.3f}) | "
+    both = [x[0] for j, x in enumerate(cb) if pr[2 * j] and pr[2 * j + 1]]; bothi = [x[0] for j, x in enumerate(ic) if pr[2 * j] and pr[2 * j + 1]]
+    return (f"closed book rank {np.mean([x[0] for x in cb]):.3f} open {np.mean([x[1] for x in cb]):.3f} (right ones {np.mean(cbr) if cbr else float('nan'):.3f}; "
+            f"BOTH PREMISES RECALLED {np.mean(both) if both else float('nan'):.3f} ({len(both)}), in context {np.mean(bothi) if bothi else float('nan'):.3f}) | "
             f"in context rank {np.mean([x[0] for x in ic]):.3f} open {np.mean([x[1] for x in ic]):.3f} | premises recalled {np.mean(pr):.3f}")
 d0 = dbits(base)
 P(f"BASE: TAUGHT {evals(base, TA)} || CONTROL {evals(base, CT)}  ({time.time() - T0:.0f}s)")
 mn = min(len(a) for a in DOMS.values()) - 200400
+def step(m, op, rs, fb):
+    ds_ = list(DOMS); wb = [bytes(DOMS[ds_[j % 5]][i:i + 129]) for j, i in enumerate(rs.randint(0, mn, 24))]
+    Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD)
+    Xw, Xwi = tens(wb); lw_ = m(Xwi)
+    with torch.no_grad(): lo = F.log_softmax(base(Xwi), -1)
+    lw = F.kl_div(F.log_softmax(lw_, -1), lo, log_target=True, reduction='batchmean') / Xw.shape[1]
+    loss = (8 * lf + 24 * lw) / 32; op.zero_grad(); loss.backward(); op.step()
+start = base
+if PRE:                                                                       # PREMISES FIRST: the trunk stores every premise before any conclusion is taught
+    start = copy.deepcopy(base); rs = np.random.RandomState(10); op = torch.optim.Adam(start.parameters(), lr=LR); start.train()
+    for st in range(PRE): step(start, op, rs, [PREM[i] for i in rs.randint(0, len(PREM), 8)])
+    start.eval(); dd = dbits(start)
+    P(f"   PREMISES FIRST, {PRE} steps: TAUGHT {evals(start, TA)} || CONTROL {evals(start, CT)} || forgetting mean {np.mean([dd[d] - d0[d] for d in dd]):+.4f}  ({time.time() - T0:.0f}s)")
 for arm in os.environ.get('CH_ARMS', 'PREMISES,DIRECT,CHAIN').split(','):
-    m = copy.deepcopy(base); rs = np.random.RandomState(11); op = torch.optim.Adam(m.parameters(), lr=LR); m.train()
+    m = copy.deepcopy(start); rs = np.random.RandomState(11); op = torch.optim.Adam(m.parameters(), lr=LR); m.train()
     CON = {'DIRECT': DIRECT, 'CHAIN': CHAIN}.get(arm, [])
     for st in range(STEPS):
         fb = [PREM[i] for i in rs.randint(0, len(PREM), 4 if CON else 8)] + ([CON[i] for i in rs.randint(0, len(CON), 4)] if CON else [])
-        ds_ = list(DOMS); wb = [bytes(DOMS[ds_[j % 5]][i:i + 129]) for j, i in enumerate(rs.randint(0, mn, 24))]
-        Xf, Xfi = tens(fb); lf = F.cross_entropy(m(Xfi).reshape(-1, V_), Xf.reshape(-1), ignore_index=PAD)
-        Xw, Xwi = tens(wb); lw_ = m(Xwi)
-        with torch.no_grad(): lo = F.log_softmax(base(Xwi), -1)
-        lw = F.kl_div(F.log_softmax(lw_, -1), lo, log_target=True, reduction='batchmean') / Xw.shape[1]
-        loss = (8 * lf + 24 * lw) / 32; op.zero_grad(); loss.backward(); op.step()
+        step(m, op, rs, fb)
         if (st + 1) % (STEPS // 2) == 0 or st + 1 == STEPS:
             m.eval(); dd = dbits(m)
             P(f"   {arm:8s} step {st + 1}: TAUGHT {evals(m, TA)} || CONTROL {evals(m, CT)} || forgetting mean {np.mean([dd[d] - d0[d] for d in dd]):+.4f} "

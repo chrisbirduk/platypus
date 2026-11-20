@@ -5262,3 +5262,17 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - Every readout matches kra14l within probe noise (real-text recall 0.09-0.14 vs 0.11-0.12; the rest identical). Real-text inferences: 1,200 written, pool 41 taught / 29 held back at visit 4; from the trunk right 0.00 (15) vs 0.00 (19), rank 0.13 vs 0.16, the same as kra14l.
 - **The change is NOT exercised locally**: the dose rows (861 rows of taught inferences) are ready only after visit 4's sleep, and no dose loss is reported at visit 5 (no "dose rows last visit" line), so the 5-visit local run ends before inf_rti_nodecay acts. The local run shows only that it does no harm and raises no error; whether the exemption stops the fading must be read on the GPU (visits 5-10: REAL-TEXT INFERENCE WRITES taught vs held back, and RANK RECALL with "dose rows last visit").
 - Passed as a safety run; kra15 released to the GPU.
+
+### Route to inference in the trunk: CHAIN-FORM TEACHING on the stand-in (20 Nov, 09:50-10:35; tools/chain_scale.py, A6 trunk)
+1,911 of the package's typed code-written inferences have both premises on record (A-B, B-C via a bridge; right 0.444). 400 TAUGHT + 400 CONTROL; every premise read by the trunk (6 frames each) for both halves; 2,000 steps, 8 fact + 24 anchor rows, KL to the base trunk, lr 1e-3. Rank of the true tail among 10 (chance 0.10).
+
+| arm (step 2000) | TAUGHT closed book | TAUGHT in context (premises in prompt) | CONTROL closed book | CONTROL in context | premises recalled taught / control | forgetting |
+|---|---|---|---|---|---|---|
+| base | 0.113 | 0.113 | 0.087 | 0.077 | 0.11 / 0.09 | - |
+| PREMISES only | 0.135 | 0.125 | 0.077 | 0.072 | 0.34 / 0.33 | -0.053 |
+| DIRECT 'h w t' | **0.375** (open 0.117) | 0.195 | 0.110 | 0.110 | 0.24 / 0.16 | -0.053 |
+| CHAIN '<A-B>. <B-C>. So h w t' | 0.287 (open 0.030) | **0.475** (open 0.165) | 0.102 | **0.135** (open 0.033) | 0.67 / 0.21 | -0.030 |
+
+- **No derivation from stored premises: CONTROL closed book stays at chance in every arm (0.08-0.11).** But the trunk holds few premises (control 0.21-0.33 recalled), so this does not yet separate "cannot combine" from "does not know the premises".
+- CHAIN teaches the taught set's composition in context (0.475 vs DIRECT 0.195) and transfers weakly to never-taught chains given in the prompt: **0.135 (open 0.033) vs 0.110 (DIRECT) / 0.072 (PREMISES)** - about 2 standard errors above DIRECT on 400; a hint of a learned composition step, not yet a result.
+- Follow-up running: PREMISES FIRST (3,000 premise-only steps, shared), then DIRECT vs CHAIN with 1,400 taught + 500 control, and control scored on the pairs whose BOTH premises the trunk recalls.
