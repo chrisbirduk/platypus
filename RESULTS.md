@@ -5490,3 +5490,8 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **Held-back RIGHT inferences rise without being taught (rank 0.15 -> 0.31-0.34) while held-back WRONG ones fall (0.19 -> 0.06):** teaching right inferences generalises to other right ones, not to wrong ones. With their own premises in context 0.41 vs broken chain 0.29.
 - No cost: bits 1.8606 (kra18 1.8560); facts ever taught 0.85 (0.86); gated answers 0.52 (0.50); never-read 0.00.
 - kra20 local safety run: HEADLINE -0.031 / 2.621 (fast store -0.029 / 2.623) vs kra18 -0.041 / 2.612: within noise; no Traceback; 28 of 28 taught inferences train locally at visit 4. PASS.
+
+### kra20 GPU, visit 6 (part) + a second review finding: RETRACTION NEVER RUNS under the confirm pipeline
+- Visit 6 so far: facts just taught 0.94 (control 0.29), ever taught 0.83 (kra18 0.81); gated answers 0.44 (kra18 0.30), never-read 0.01. [RETRACTION] 0 retracted, 0 unlikelihood rows at every visit; FLAGGED, KEPT none.
+- Code: with inf_rti_tentative on, premises' judge returns after the confirm/fade block, before the retraction trigger (the docs / rel / typed-confirmation score and W[k]['ret']). A confirmed inference is never re-judged: once taught it stays, right or wrong. Faded ones are flagged but were never taught. So the unlikelihood rows (inf_rret) have nothing to act on, and kra20's taught wrong inferences (recalled 0.95) have no path out.
+- For kra21: a retraction path for CONFIRMED inferences (e.g. the existing typed-confirmation score _cc9: head-first records since the write naming another tail are contradictions; contradictions > confirmations -> flag and retract with the unlikelihood rows), alongside a stricter confirmation.
