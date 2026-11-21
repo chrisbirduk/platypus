@@ -5645,3 +5645,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - PRIOR CONTROL: held-back right **+0.13 (SE 0.04)**, wrong +0.06 (SE 0.05). MATCHED held-back right own - broken **+0.11 (SE 0.03)**, own - closed +0.20 (SE 0.03): both back to their visit-5/6 sizes.
 - Gated (keep-75% rule, t 0.91): right overall 0.44, right when answered 0.90, never-read 0.02.
 - Facts: probe 0.80; ledger ever taught **0.76** (0.82 at visits 7-8), taught 1 visit 0.37 (n 30), 2-3 visits 0.79, 4+ 0.83; control 0.42. Visit 9 is DM Mathematics. Bits on read domains **1.7735** (best yet). No Traceback.
+
+### cg27a_kra22 GPU, visits 2-4 (21 Nov 10:35; started 09:17, the final preset confirmed in the log)
+- **Selection before teaching works as predicted: CONFIRMED 200 (right 0.88)** vs kra21 visit 4: 282 (0.83). Still tentative 400 (0.70). Taught 136 (right 0.87) vs kra21 188 (0.82). Offline forecast: 0.77 -> 0.84 at 77% of the right ones.
+- Gate (never-read calibration, before the floor fix): visit 2 t 0.09, never-read given a name 0.43 (the flaw); visit 3 t 0.99, right overall 0.45, never-read 0.02; visit 4 t 0.99, 0.33 / 0.02. Keep-75% rule beside it: 0.45 / 0.02 and 0.25 / 0.00. The smoothed line carries visit 2's 0.09 (never-read 0.12-0.27): ignore it in kra22.
+- Facts: probe 0.83 / 0.92 / 0.94 (visits 2-4), ledger 0.87 / 0.88 / 0.87; control 0.36-0.55. Bits on read domains 2.0357 / 2.0106 / 1.9248.
+- Visit 4 is the pre-teaching baseline for the new readouts (the 136 are first trained in visit 5): PRIOR CONTROL held-back right +0.02 (SE 0.04); TRANSFER SOURCE +0.00 in every split; TAUGHT RECALL BREAKDOWN 0.17-0.21 (CONFLICT 0.10, n 10, vs none 0.21). No Traceback.
