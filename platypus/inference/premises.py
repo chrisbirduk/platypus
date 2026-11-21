@@ -1153,6 +1153,25 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         print(f"  [REAL-TEXT INFERENCE TRAINED | visit {vis + 1}] of {len(T_)} taught (question pool), {len(Ty_)} pass the keep rule and train the trunk "
               f"(right {np.mean([bool(e['truth']) for e in Ty_]) if Ty_ else float('nan'):.2f}), {len(Tn_)} do not | rank among 10, TRAINED right {rk_(tr_(Ty_, True))} / wrong "
               f"{rk_(tr_(Ty_, False))} | NOT TRAINED right {rk_(tr_(Tn_, True))} / wrong {rk_(tr_(Tn_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}", flush=True)
+        rp_ = np.random.RandomState(int(cfg.seed) + 93 + vis)                  # 21 Nov kra21 (readout): PRIOR CONTROL - the same question and candidates with the
+        def sw_(L):                                                            #   subject SWAPPED for another inference's subject: a rise that survives the swap is a
+            L = [e for e in L if e['rm'] < vis][:150]                          #   preference for the answer NAME (taught names made familiar), not knowledge of A
+            if len(L) < 2: return "nan (0)"
+            h0, h1 = [], []
+            for i, e in enumerate(L):
+                alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                if len(alts) < 9: continue
+                cs = [e['ans']] + [alts[j] for j in rp_.choice(len(alts), 9, replace=False)]; oA = L[(i + 1) % len(L)]['A']
+                q0, q1 = f"It is on record that {e['A']} {e['r']} ", f"It is on record that {oA} {e['r']} "
+                if max(len(q0.encode('latin-1', 'replace')), len(q1.encode('latin-1', 'replace'))) + max(len(c) for c in cs) + 2 > sq_: continue
+                h0.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), q0, cs) == 0)); h1.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), q1, cs) == 0))
+            if not h0: return "nan (0)"
+            d = np.array(h0) - np.array(h1)
+            return f"own subject {np.mean(h0):.2f} | SWAPPED subject {np.mean(h1):.2f} | own - swapped {d.mean():+.2f} (SE {d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float('nan'):.2f}) (n {len(d)})"
+        try:
+            print(f"  [REAL-TEXT INFERENCE PRIOR CONTROL | visit {vis + 1}] rank among 10, the question's subject vs another inference's subject (same candidates; knowledge of A "
+                  f"if own > swapped): TRAINED right {sw_(tr_(Ty_, True))} || TRAINED wrong {sw_(tr_(Ty_, False))} || HELD BACK right {sw_(tr_(H_, True))} || HELD BACK wrong {sw_(tr_(H_, False))}", flush=True)
+        except Exception as e9: print(f"  [REAL-TEXT INFERENCE PRIOR CONTROL | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
         if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
