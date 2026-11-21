@@ -1,5 +1,5 @@
 {
- "_comment": "cg27a_kra22 = cg27a_kra21 + ONE DECISION-RULE CHANGE and ONE READOUT, no training change: (1) inf_distill_gate_q 0.9 (was 0.75) - the GATED ANSWERS rule keeps 90% of the previous sleep's right answers; kra21 visits 3-5 in sample: known answered +0.13 to +0.19 at accuracy 0.95-1.00, never-read given a name 0.01-0.12; the old 0.75 rule is printed beside it (inf_distill_gate_q2 0.75, [GATED ANSWERS, SECOND RULE]); (2) inf_rti_src 1 - [REAL-TEXT INFERENCE TRANSFER SOURCE]: kra21 visit 5's held-back own - swapped subject gap (+0.15, SE 0.05) split by what each held-back inference shares with the trained ones (a name, the answer, a bridge, nothing). RE-CONFIRMATION RETRACTION OFF (inf_rti_reconf 0; MODEL CHANGE back to kra20's no-retraction): kra21 GPU visit 6 retracted 72 of 282 confirmed at right 0.82 vs re-confirmed 0.84 - not selective on the GPU (offline 0.53 of wrong vs 0.34 of right), so its unlikelihood rows would unlearn about 4 right inferences per wrong one. Top-quarter confirmation stays (confirmed right 0.82 on the GPU).",
+ "_comment": "cg27a_kra22 = cg27a_kra21 + ONE DECISION-RULE CHANGE and ONE READOUT, no training change: (1) inf_distill_gate_leak 0.02 - the GATED ANSWERS threshold is calibrated at the previous sleep so at most 2% of never-read questions get a stored name (kra21's keep-75%-of-right rule swung 0.59 -> 0.36 -> 0.61 right overall at visits 6-8 and let 0.11 of never-read through at t 0.85); the old keep-75% rule is printed beside it (inf_distill_gate_q2 0.75, [GATED ANSWERS, SECOND RULE]); (2) inf_rti_src 1 - [REAL-TEXT INFERENCE TRANSFER SOURCE]: kra21 visit 5's held-back own - swapped subject gap (+0.15, SE 0.05) split by what each held-back inference shares with the trained ones (a name, the answer, a bridge, nothing). RE-CONFIRMATION RETRACTION OFF (inf_rti_reconf 0; MODEL CHANGE back to kra20's no-retraction): kra21 GPU visit 6 retracted 72 of 282 confirmed at right 0.82 vs re-confirmed 0.84 - not selective on the GPU (offline 0.53 of wrong vs 0.34 of right), so its unlikelihood rows would unlearn about 4 right inferences per wrong one. Top-quarter confirmation stays (confirmed right 0.82 on the GPU).",
  "inf_jx": 1,
  "_inf_jx": "train the index each sleep and print the JEPA INDEX readouts; readouts only, the trunk is not trained",
  "inf_jx_steps": 400,
@@ -280,10 +280,12 @@
  "_inf_rti_conf_q": "kra21: a confirming record in the reader top quarter (was the top half)",
  "inf_rti_reconf": 0,
  "_inf_rti_reconf": "kra22: off - kra21 visit 6 retracted right 0.82 vs kept 0.84, not selective",
- "inf_distill_gate_q": 0.9,
- "_inf_distill_gate_q": "kra22: the gated-answers rule keeps 90% of right answers (was 0.75)",
+ "inf_distill_gate_q": 0.75,
+ "_inf_distill_gate_q": "kra22: unchanged (the main rule is calibrated on never-read questions, inf_distill_gate_leak)",
  "inf_distill_gate_q2": 0.75,
  "_inf_distill_gate_q2": "kra22: the old 0.75 rule printed beside it for continuity",
  "inf_rti_src": 1,
- "_inf_rti_src": "kra22 readout: the prior control split by what held-back inferences share with trained ones"
+ "_inf_rti_src": "kra22 readout: the prior control split by what held-back inferences share with trained ones",
+ "inf_distill_gate_leak": 0.02,
+ "_inf_distill_gate_leak": "kra22: at most 2% of never-read questions answered"
 }

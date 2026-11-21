@@ -390,10 +390,16 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
             un2 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share gq of the known facts it answered
             kc2 = np.array([c for ok_, c, rf in kr2 if ok_ and not rf])       #   right) and APPLIED to this sleep's new questions: out of sample
             tp = model.__dict__.get('_gate_t'); tn = float(np.quantile(kc2, 1 - gq)) if len(kc2) >= 4 else tp
+            glk = float(getattr(cfg, 'inf_distill_gate_leak', 0.0))           # 21 Nov kra22 (decision rule): calibrate t on the NEVER-READ questions instead - the
+            if glk > 0 and un2:                                                #   lowest t at which at most glk of them still get a stored name (kra21: the 75% rule
+                ts_ = sorted({c for st, c, rf in un2} | {1.01})                #   swung 0.59 -> 0.36 -> 0.61 right overall and let 0.11 of never-read through at t 0.85)
+                ok_t = [t_ for t_ in ts_ if np.mean([bool(st) and not rf and c >= t_ for st, c, rf in un2]) <= glk]
+                tn = float(min(ok_t)) if ok_t else tp
             if tp is not None and kr2 and un2:
                 ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
-                print(f"  [DISTILLATION, GATED ANSWERS | visit {vis + 1}] rule: the trunk answers only when its confidence >= t = {tp:.2f} (calibrated at the previous sleep to keep "
-                      f"{gq:.0%} of its right answers), else abstains; on THIS sleep's new questions: KNOWN facts ({len(kr2)}): answered {len(ak) / len(kr2):.2f}, right when answered "
+                gl_ = float(getattr(cfg, 'inf_distill_gate_leak', 0.0)); lab_ = (f"at most {gl_:.0%} of never-read questions answered" if gl_ > 0 else f"keep {gq:.0%} of its right answers")
+                print(f"  [DISTILLATION, GATED ANSWERS | visit {vis + 1}] rule: the trunk answers only when its confidence >= t = {tp:.2f} (calibrated at the previous sleep to {lab_}),"
+                      f" else abstains; on THIS sleep's new questions: KNOWN facts ({len(kr2)}): answered {len(ak) / len(kr2):.2f}, right when answered "
                       f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} (ungated {np.mean([ok_ for ok_, c, rf in kr2]):.2f}) | "
                       f"NEVER READ ({len(un2)}): given a stored name {sum(ru) / len(un2):.2f} (ungated {np.mean([bool(st) and not rf for st, c, rf in un2]):.2f}), abstained "
                       f"{1 - len(ru) / len(un2):.2f} | next t {tn if tn is not None else float('nan'):.2f}", flush=True)
