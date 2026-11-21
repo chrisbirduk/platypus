@@ -5712,3 +5712,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - [RULE WORLD, THE TRUNK'S OWN CHAIN] (contaminated by route J teaching, see visit 4): held back C right 0.36, pure 0.43; chain format 0.71-0.76; bridge right 0.67-0.68 (premise recall in the chain is good).
 - SELF-SUPPORT JUDGE (visit 4, first GPU values): just confirmed, margin AUC 0.559 (n 149, 20 wrong) - too weak for a teach-gate; trained 0.43-0.57; held back 0.61-0.65 (n 64, 6 wrong). AUDIT SAMPLE printed (40 of 200 at visit 4).
 - Confirmed at visit 4: 200 (right 0.88), as kra22. Taught inferences 0.93 vs held back 0.03. Facts: probe 0.94, ledger 0.88. Gate (never-read calibration) t 1.00 at visit 5: right overall 0.17 / never-read 0.00 - too strict; keep-75%: 0.48 / 0.02.
+
+### Route A: bridge teaching on real-text containment chains (21 Nov 14:10; tools/bridge_teach.py BT_SOURCE=records, 5,734 chains built from records 'X in Y', 'Y in Z' read in distant_50k; 95% of the conclusions never stated in a record; TRAIN 400 / TEST 200 on bridges never in a train chain)
+- Premises recalled 0.56 after 3,000 steps. DIRECT: taught 0.68 / 0.90, never taught 0.05 / 0.035 (C first among 10, steps 1,500 / 3,000). **BRIDGE: taught 0.29 / 0.64 (exact 0.25 / 0.60), first hop written 0.42 / 0.68; NEVER TAUGHT 0.00 / 0.00, first hop 0.01, format 0.01-0.015.**
+- No composition through held-out bridges, as kra23 visit 5 predicted (pure families 0.00). Also, records 'X in 2007' make years into bridges - the name-shape check belongs on the premises too.
+- The earlier filters on the code writes left too few chains: containment 8, word-only relations 116 (78 first-hop wordings).
+- Next: tools/compose_synth.py CS_NEWB - in the synthetic world, never-taught people in cities that appear in a taught chain (seen bridge) vs cities that never do (new bridge), with taught chains concentrated or one per city.
