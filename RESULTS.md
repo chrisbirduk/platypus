@@ -5765,3 +5765,8 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - **Facts at visit 7: ledger ever taught 0.84 (kra23 0.79, kra22 0.82); probe (newly taught) 0.76 (kra23 0.82)**; control 0.29-0.31.
 - Route B, clean readout (never planted, never written by route J), visits 6 / 7: held back C right 0.33 (n 36) / 0.03 (n 37); **pure families 0.14 (n 35) / 0.08 (n 26)**; route J pure held back 0.06 / 0.03. Noisy and small. Route D explicit two steps 0.65-0.69 (pure 0.62-0.65).
 - Confirmed 322 so far at right 0.84. Taught inferences 0.65 / 0.80 (even / odd visit). Bits on read domains 1.8944 / **1.8603** (kra23 1.8954 / 1.8676). No Traceback.
+
+### Route A with an ORACLE reader (21 Nov 18:20; bridge_teach BT_SOURCE=records BT_ORACLE=P131,P17,P30,P361,P150: containment chains only from records whose pair carries a gold containment relation; 429 chains, TRAIN 312 / TEST 117 on bridges never in a train chain)
+- Premises recalled 0.95 (the noisy records: 0.56). BRIDGE (restated form 'Q: A r ? A w1 B. B w2 C. So A r C.'): taught C first 0.54 / 0.64; NEVER TAUGHT 0.000, first hop 0.034, format 0.017.
+- **A test-format failure, not a reader one:** for a new subject the stand-in writes a TAUGHT subject with similar letters ('Q: Nagpur Division in ?' -> 'Nazca Lines in Peru ...', 'Bangalore' -> 'Basel', 'Haryana' -> 'Hazarajat'): it cannot copy a new name into the restated chain. The synthetic and rule worlds never restate the subject ('A r B > C.'). P150 ('contains') also reverses direction in these labels ('Germany in Berlin'). Re-run in the arrow form without P150 (BT_FORMAT=arrow).
+- The earlier route A runs (writes, records) used the same restated form, so their 0.00 on held-out bridges is confounded the same way.
