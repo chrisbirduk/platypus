@@ -5540,3 +5540,15 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - 473 confirmed (right 0.708): 386 taught, 87 held back (52 right, 35 wrong). A held-back RIGHT inference's answer is more often also a taught answer (0.88 vs 0.74; taught 6.8 vs 4.2 times on average; AUC 0.64). Store degree does not separate them (AUC 0.52).
 - A PURE NAME PRIOR (the candidate taught most often wins) gives rank among 10: held-back right **0.29**, wrong **0.14**. kra20 GPU visit 5: right 0.31-0.34, wrong 0.06 (visit 4, before teaching: 0.15 / 0.19).
 - So most of kra20's held-back right rise can be explained by answer-name familiarity from teaching, without the trunk knowing anything about the subject. **The held-back rise is NOT evidence of generalisation** until kra21's [PRIOR CONTROL] (own vs swapped subject, same candidates) shows own > swapped for held-back right. The matched in-context own-vs-broken gap (+0.12, SE 0.06) is a separate measure and stands.
+
+### Stand-in chain test with the BROKEN-CHAIN control (21 Nov 03:50; tools/chain_scale.py, A6 stand-in trunk, 150 taught + 150 control two-hop chains, premises first 4,000 steps, then 3,000 steps an arm)
+| arm (step 3000) | taught: closed book | taught: premises in context | taught: BROKEN chain | in context - broken | control (untaught chains): in context / broken |
+|---|---|---|---|---|---|
+| premises only (before the arms) | 0.160 | 0.187 | 0.180 | +0.007 | 0.147 / 0.147 |
+| DIRECT (A r C taught) | 0.980 | 0.240 | 0.247 | -0.007 | 0.160 / 0.153 |
+| CHAIN (P1. P2. So A r C taught) | 0.653 | 0.993 | **0.993** | **+0.000** | 0.213 / 0.200 |
+| BOTH | 0.993 | 0.973 | 0.947 | +0.027 | 0.187 / 0.187 |
+- Rank among 10. The premises are recalled at 0.94-0.99 throughout. Forgetting -0.04 to -0.07 on every arm (within the stand-in's range).
+- **Training on worked chains teaches the taught answers, not a skill of reading premises.** CHAIN scores 0.993 with the right premises AND with a broken chain (one premise from another inference): the model answers from "So A r", i.e. it memorised A -> C. On untaught chains, in context equals broken (0.21 / 0.20). No arm learns to compose from premises in context at this scale.
+- **No latent two-hop**: with both premises learned (0.96), untaught conclusions stay at chance closed book (0.14 vs 0.12 at the start). The two-hop curse holds for the stand-in trunk, as in the literature; Platypus composes outside the trunk (route J) and teaches A -> C.
+- Against the GPU: kra20's matched readout (own +0.12 over broken, SE 0.06, held-back right, visit 5) is the only positive in-context sign so far; this test does not reproduce it at stand-in scale. Treat it as unconfirmed until kra21's visits 6-10 repeat it.
