@@ -256,13 +256,15 @@ def inf_rule_world(cfg):
             for m_, l_ in leaves_:                                             # 18 Nov PURE families (inf_rule_world_pure): NO composite planted for any of
                 W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_   #   their leaves, so a composite about them can
                 rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)                                 #   only come from composing the two hops
-                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra23 ROUTE B: the PLANTED composite is written
+                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 2 and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra26: the composite with its
+                    rec_ = (d_, _RW_REL[r2_].format(a=l_, b='').rstrip(' .') + ': ' + _RW_REL[r1_].format(a=l_, b=m_).rstrip('.') + '; ' + _RW_REL[r1_].format(a=m_, b=root_), r2_, l_, root_)   #   two steps spelled
+                elif int(getattr(cfg, 'inf_rule_world_chainplant', 0)) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra23 ROUTE B: the PLANTED composite is written
                     rec_ = (d_, _RW_REL[r2_].format(a=l_, b=m_ + ' > ' + root_), r2_, l_, root_)   #   with its bridge, 'X is a grandchild of M > Z.' (synthetic world: chain teaching composes
                                                                                    #   for people never taught, 0.85 with 300 taught; direct teaching never does)
                 if pure_: W_.setdefault('pure', set()).add(l_)
                 (W_['held'] if (pure_ or zlib.crc32(l_.encode()) % 2) else W_['planted']).append(rec_)
     W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
-    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)): _UNITS['chainplant'] = True   # 21 Nov kra23: the reader reads a chain-form composite as the composite itself
+    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)): _UNITS['chainplant'] = int(getattr(cfg, 'inf_rule_world_chainplant', 0))   # 21 Nov kra23: the reader reads a chain-form composite as the composite itself
     mv_ = float(getattr(cfg, 'inf_rule_world_move', 0.0))
     if mv_ > 0:                                                                # 19 Nov kra9 PREMISE CHANGE (inf_rule_world_move): a share of the leaves whose composite is
         rsm_ = np.random.RandomState(int(cfg.seed) + 6161); W_['moves'] = {}    #   held back MOVE: 'X is a child of M2' is planted in ANOTHER, randomly chosen domain (read

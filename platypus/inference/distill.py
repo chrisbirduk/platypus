@@ -1705,8 +1705,13 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
         out = []
         for (d, s_, r2, A, C) in L[:80]:
             if seen and int(d) not in seen: continue
-            m = up[r2]; B = m.get(A); pr = f"{A} {rw[r2]} ".encode('latin-1', 'replace')
-            g = _dw_greedy(model, pr, int(S_slot(d)), 40); pt = [x.strip(' .') for x in g.split('.')[0].split('>')]
+            m = up[r2]; B = m.get(A)
+            if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 2:        # 21 Nov kra26: spelled steps 'A r: A r1 B; B r1 C' -> the last word of each step
+                pr = f"{A} {rw[r2]}:".encode('latin-1', 'replace'); g = _dw_greedy(model, pr, int(S_slot(d)), 90)
+                st = [x.strip(' .').split(' ') for x in g.split('.')[0].split(';')]; pt = [x[-1] for x in st if x and x[-1]] if len(st) == 2 else [g.strip()]
+            else:
+                pr = f"{A} {rw[r2]} ".encode('latin-1', 'replace')
+                g = _dw_greedy(model, pr, int(S_slot(d)), 40); pt = [x.strip(' .') for x in g.split('.')[0].split('>')]
             out.append((len(pt) == 2 and all(pt), len(pt) == 2 and pt[0] == B, (pt[-1] if pt else '') == C, g.strip().startswith(C)))
         return out
     was = model.training; model.eval()
