@@ -232,9 +232,9 @@ def _inf_bench_readout(S_,cfg):
         if l_=='outside' or k9_>=5: continue
         k9_+=1; print(f"    BENCH: {dec_(c_.get('A'))} ~ {dec_(c_.get('C'))} via {dec_(c_.get('B'))} -> {l_}"+(f" [{nm_.get(str(pr_[0]),'?')} / {nm_.get(str(pr_[1]),'?')}]" if pr_ else ''),flush=True)
 _RW_PREMW = {'parent': ["{a} is a child of {b}.", "Records show that {a} is a child of {b}.", "{a}, who is a child of {b}, lives nearby.", "Of the family, {a} is a child of {b}.",
-                         "Everyone knows {a} is a child of {b}.", "Ask anyone: {a} is a child of {b}."],
+                         "Everyone knows {a} is a child of {b}.", "Ask anyone and they say {a} is a child of {b}."],
              'mgr': ["{a} is supervised by {b}.", "Records show that {a} is supervised by {b}.", "{a}, who is supervised by {b}, works nearby.", "At the office, {a} is supervised by {b}.",
-                     "Everyone knows {a} is supervised by {b}.", "Ask anyone: {a} is supervised by {b}."]}   # 21 Nov kra28 (inf_rule_world_premw): premise wordings
+                     "Everyone knows {a} is supervised by {b}.", "Ask anyone and they say {a} is supervised by {b}."]}   # 21 Nov kra28 (inf_rule_world_premw): premise wordings (no ':' or ' > ' - the chain readers rewrite those)
 _RW_REL = {'parent': "{a} is a child of {b}.", 'grand': "{a} is a grandchild of {b}.", 'mgr': "{a} is supervised by {b}.", 'skip': "{a} is overseen by {b}."}
 def inf_rule_world(cfg):
     """RULE WORLD (11 Nov; inf_rule_world = N families and N org charts, on by default): planted facts that OBEY composition rules, beside the
