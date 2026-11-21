@@ -140,6 +140,17 @@ def _dw_cand_mc(model, sl, prompt, cands):
     return int(np.argmax(sc))
 
 
+def _dw_cand_scores(model, sl, prompt, cands):
+    """21 Nov kra23: the MEAN log-probability per byte of each candidate after PROMPT (store and memory off), as _dw_cand_mc scores them"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    pb = prompt.encode('latin-1', 'replace'); cb = [(c + '.').encode('latin-1', 'replace') for c in cands]
+    X, _ = _ws_batch(model, [pb + c for c in cb]); lp = F.log_softmax(_ws_run(model, X, sl).float(), -1); sc = []
+    for j, c in enumerate(cb):
+        p0 = len(pb) - 1; n_ = min(len(c), lp.shape[1] - p0)
+        sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else float('nan'))
+    return sc
+
+
 def _rtx_rep(d, di):
     """12 Nov REAL-TEXT REPLAY: which benchmark documents are replayed (half, by a hash of domain and document index); the rest are the control"""
     import zlib
@@ -390,10 +401,18 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
             un2 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share gq of the known facts it answered
             kc2 = np.array([c for ok_, c, rf in kr2 if ok_ and not rf])       #   right) and APPLIED to this sleep's new questions: out of sample
             tp = model.__dict__.get('_gate_t'); tn = float(np.quantile(kc2, 1 - gq)) if len(kc2) >= 4 else tp
+            glk = float(getattr(cfg, 'inf_distill_gate_leak', 0.0))           # 21 Nov kra22 (decision rule): calibrate t on the NEVER-READ questions instead - the
+            if glk > 0 and un2:                                                #   lowest t at which at most glk of them still get a stored name (kra21: the 75% rule
+                ts_ = sorted({c for st, c, rf in un2} | {1.01})                #   swung 0.59 -> 0.36 -> 0.61 right overall and let 0.11 of never-read through at t 0.85)
+                ok_t = [t_ for t_ in ts_ if np.mean([bool(st) and not rf and c >= t_ for st, c, rf in un2]) <= glk]
+                tn = float(min(ok_t)) if ok_t else tp
+                if tn is not None and len(kc2) >= 4: tn = max(tn, float(np.quantile(kc2, 0.1)))   # floor: never below the keep-90%-of-right threshold (local kra22: with few
+                                                                               #   stored names every t passes, min t was 0.10, and 0.33 of the next sleep's never-read got a name)
             if tp is not None and kr2 and un2:
                 ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
-                print(f"  [DISTILLATION, GATED ANSWERS | visit {vis + 1}] rule: the trunk answers only when its confidence >= t = {tp:.2f} (calibrated at the previous sleep to keep "
-                      f"{gq:.0%} of its right answers), else abstains; on THIS sleep's new questions: KNOWN facts ({len(kr2)}): answered {len(ak) / len(kr2):.2f}, right when answered "
+                gl_ = float(getattr(cfg, 'inf_distill_gate_leak', 0.0)); lab_ = (f"at most {gl_:.0%} of never-read questions answered, never below keep-90% of right" if gl_ > 0 else f"keep {gq:.0%} of its right answers")
+                print(f"  [DISTILLATION, GATED ANSWERS | visit {vis + 1}] rule: the trunk answers only when its confidence >= t = {tp:.2f} (calibrated at the previous sleep to {lab_}),"
+                      f" else abstains; on THIS sleep's new questions: KNOWN facts ({len(kr2)}): answered {len(ak) / len(kr2):.2f}, right when answered "
                       f"{np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr2):.2f} (ungated {np.mean([ok_ for ok_, c, rf in kr2]):.2f}) | "
                       f"NEVER READ ({len(un2)}): given a stored name {sum(ru) / len(un2):.2f} (ungated {np.mean([bool(st) and not rf for st, c, rf in un2]):.2f}), abstained "
                       f"{1 - len(ru) / len(un2):.2f} | next t {tn if tn is not None else float('nan'):.2f}", flush=True)
@@ -406,6 +425,21 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
             if tn is not None: model.__dict__['_gate_t'] = tn; model.__dict__['_gate_te'] = tn if te is None else 0.5 * te + 0.5 * tn
         except Exception as e9:
             _fail('inference.distill:gate'); print(f"  [DISTILLATION, GATED ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        try:                                                                  # 21 Nov kra22: a SECOND RULE beside the first (inf_distill_gate_q2) - kra21 kept 75% and
+            gq2 = float(getattr(cfg, 'inf_distill_gate_q2', 0.0))              #   answered 0.44 (in sample, keeping 90% answered 0.13-0.19 more at 0.95-1.00 accuracy);
+            if gq2 > 0:                                                       #   kra22 raises the main rule to 0.9 and prints the old 0.75 here for continuity
+                kr3 = [(ok_, c, ref(a)) for (ok_, c), a in zip(K_, Ka)]
+                un3 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]
+                kc3 = np.array([c for ok_, c, rf in kr3 if ok_ and not rf])
+                tp3 = model.__dict__.get('_gate_t2'); tn3 = float(np.quantile(kc3, 1 - gq2)) if len(kc3) >= 4 else tp3
+                if tp3 is not None and kr3 and un3:
+                    ak = [(ok_, c) for ok_, c, rf in kr3 if not rf and c >= tp3]; ru = [bool(st) for st, c, rf in un3 if not rf and c >= tp3]
+                    print(f"  [DISTILLATION, GATED ANSWERS, SECOND RULE | visit {vis + 1}] keep {gq2:.0%} of right answers, t = {tp3:.2f} (previous sleep): KNOWN ({len(kr3)}) answered "
+                          f"{len(ak) / len(kr3):.2f}, right when answered {np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr3):.2f} | "
+                          f"NEVER READ ({len(un3)}) given a stored name {sum(ru) / len(un3):.2f}", flush=True)
+                if tn3 is not None: model.__dict__['_gate_t2'] = tn3
+        except Exception as e9:
+            print(f"  [DISTILLATION, GATED ANSWERS, SECOND RULE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
 
 def _dt_items(ents, rs, n):

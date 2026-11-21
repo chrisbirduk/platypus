@@ -871,6 +871,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         c = ks[j]
         if c in done: continue
         A_, C_ = sorted(c); cm_ = G[NI[A_]].multiply(G[NI[C_]]).indices
+        if int(getattr(cfg, 'inf_rti_nameshape', 0)) and any(any(ch.isdigit() or ch in '()"' for ch in n_) for n_ in (A_, C_)): continue   # 21 Nov kra22 NAME SHAPE: no numbers, years or fragments as names (hand audit: half the truly false)
         if 'INV' not in _PM or len(_PM['INV']) != len(NI): _PM['INV'] = {i: n for n, i in NI.items()}
         W[(A_, C_)] = dict(vis=vis, d=int(dsl), truth=bool(yy[j]), bridges=int(len(cm_)), rank=len(wr), novel=True, code=float(code[j]), ndv=int(ndv_),
                            prem=[_PM['INV'][int(x)] for x in cm_[:5]], rule=str(sel_), score=float(sc_[j]), state='inferred')   # 15 Nov PROVENANCE: premises (bridges), rule, score
@@ -959,22 +960,38 @@ def _rret_judge(cfg, RD, ndv_, vis):
     W = _PM.get('rti') or {}
     if int(getattr(cfg, 'inf_rti_tentative', 0)):                              # 19 Nov kra12 CONFIRM, CONSOLIDATE, FADE (the user's design; offline tools/confirm_reader.py:
         TN = [k for k, w in W.items() if w.get('tent') and w['vis'] < vis and w.get('ndv', ndv_) < ndv_]   #   relationally confirmed pairs right 0.60-0.72 vs 0.33 tentative;
-        if not TN:                                                             #   faded pairs are NOT false - 0.33 - so fading removes, never teaches against)
-            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
-        want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))
+        rcv = int(getattr(cfg, 'inf_rti_reconf', 0))                           # 21 Nov kra21 RE-CONFIRMATION (inf_rti_reconf = R visits; MODEL CHANGE when > 0): a confirmed
+        RC = [k for k, w in W.items() if rcv > 0 and w.get('state') == 'confirmed' and not w.get('ret') and vis - int(w.get('conf', vis)) >= rcv]   #   inference whose pair has
+        if not TN and not RC:                                                  #   NO relational record in the documents read since its confirmation, R visits on, is RETRACTED:
+            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return   # no longer taught + unlikelihood rows
+        dc9 = collections.defaultdict(set); cdn9 = int(getattr(cfg, 'inf_rti_conf_docs', 0))   # 21 Nov kra22 INDEPENDENT CONFIRMATION (inf_rti_conf_docs = D): also D+ distinct documents
+        want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))   #   (inf_rret). Offline
+        wantR = {frozenset(k): k for k in RC}; rec9 = collections.Counter()      #   tools/retract_min.py: removes 0.35-0.38 of the wrong confirmed, 0.19 of the right
         rds8 = _PM.get('rdscore'); rt8 = None                                  # 20 Nov kra17 RATED CONFIRMATION (inf_rti_conf_rated): only a record the seeded reader
         if int(getattr(cfg, 'inf_rti_conf_rated', 0)):                         #   puts in its top half confirms (offline tools/confirm_min.py, 2,400 writes, 30k
-            if rds8 is not None and len(rds8) == len(RD): rt8 = float(np.median(rds8))   # documents read after: right 0.604 -> 0.659, right ones kept 0.62 -> 0.56)
+            if rds8 is not None and len(rds8) == len(RD): rt8 = float(np.quantile(rds8, float(getattr(cfg, 'inf_rti_conf_q', 0.5))))   # documents read after: right 0.604 -> 0.659,
             else: print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] rated confirmation unavailable (reader scores {None if rds8 is None else len(rds8)} vs {len(RD)} records): any relational record confirms", flush=True)
-        for i8, r in enumerate(RD):
+        for i8, r in enumerate(RD):                                            #   right ones kept 0.62 -> 0.56; kra21: inf_rti_conf_q 0.75 = the top quarter, 0.708 -> 0.765)
             fk = frozenset((r[1], r[2]))
             if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
                 any9[fk] += 1
-                if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
+                if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rel9[fk] += 1
+                if 1 <= r[5] <= 8 and not _rret_listlike(r): dc9[fk].add(int(r[0]))   # 21 Nov kra22: distinct documents with a relational record (any rating)   #   a RELATIONAL record of the pair in a document read since the write
+            if fk in wantR and r[0] >= W[wantR[fk]].get('ndc', ndv_) and 1 <= r[5] <= 8 and not _rret_listlike(r): rec9[fk] += 1   # since its confirmation (any rating)
+        rt9 = []
+        for k in RC:
+            if rec9[frozenset(k)] == 0: W[k].update(state='retracted', flag=True, ret=True, retv=vis); rt9.append(W[k]['truth'])
+        if rcv > 0:
+            print(f"  [RE-CONFIRMATION | visit {vis + 1}] MODEL CHANGE: {len(RC)} inferences confirmed {rcv}+ visits ago checked for a relational record of the pair since: "
+                  f"RETRACTED (none) {len(rt9)} (right {np.mean([bool(x) for x in rt9]) if rt9 else float('nan'):.2f}) | re-confirmed {len(RC) - len(rt9)} "
+                  f"(right {np.mean([bool(W[k]['truth']) for k in RC if not W[k].get('ret')]) if len(RC) > len(rt9) else float('nan'):.2f}) || all retracted so far "
+                  f"{sum(1 for w in W.values() if w.get('state') == 'retracted')}", flush=True)
+        if not TN:
+            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
         fv = int(getattr(cfg, 'inf_rti_fade', 4)); cf9, fd9, st9 = [], [], []
         for k in TN:
             w = W[k]; fk = frozenset(k)
-            if rel9[fk] >= cm9: w.update(tent=False, conf=vis, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
+            if rel9[fk] >= cm9 and (cdn9 <= 1 or len(dc9[fk]) >= cdn9): w.update(tent=False, conf=vis, ndc=ndv_, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
             elif vis - w['vis'] >= fv: w.update(tent=False, faded=vis, state='faded', judged=vis, flag=True, ret=False); fd9.append(w['truth'])
             else: st9.append(w['truth'])
         rr = lambda L: f"{len(L)} (right {np.mean([bool(x) for x in L]):.2f})" if L else "0"
@@ -1139,6 +1156,104 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         print(f"  [REAL-TEXT INFERENCE TRAINED | visit {vis + 1}] of {len(T_)} taught (question pool), {len(Ty_)} pass the keep rule and train the trunk "
               f"(right {np.mean([bool(e['truth']) for e in Ty_]) if Ty_ else float('nan'):.2f}), {len(Tn_)} do not | rank among 10, TRAINED right {rk_(tr_(Ty_, True))} / wrong "
               f"{rk_(tr_(Ty_, False))} | NOT TRAINED right {rk_(tr_(Tn_, True))} / wrong {rk_(tr_(Tn_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}", flush=True)
+        rp_ = np.random.RandomState(int(cfg.seed) + 93 + vis)                  # 21 Nov kra21 (readout): PRIOR CONTROL - the same question and candidates with the
+        def sw_(L):                                                            #   subject SWAPPED for another inference's subject: a rise that survives the swap is a
+            L = [e for e in L if e['rm'] < vis][:150]                          #   preference for the answer NAME (taught names made familiar), not knowledge of A
+            if len(L) < 2: return "nan (0)"
+            h0, h1 = [], []
+            for i, e in enumerate(L):
+                alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                if len(alts) < 9: continue
+                cs = [e['ans']] + [alts[j] for j in rp_.choice(len(alts), 9, replace=False)]; oA = L[(i + 1) % len(L)]['A']
+                q0, q1 = f"It is on record that {e['A']} {e['r']} ", f"It is on record that {oA} {e['r']} "
+                if max(len(q0.encode('latin-1', 'replace')), len(q1.encode('latin-1', 'replace'))) + max(len(c) for c in cs) + 2 > sq_: continue
+                h0.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), q0, cs) == 0)); h1.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), q1, cs) == 0))
+            if not h0: return "nan (0)"
+            d = np.array(h0) - np.array(h1)
+            return f"own subject {np.mean(h0):.2f} | SWAPPED subject {np.mean(h1):.2f} | own - swapped {d.mean():+.2f} (SE {d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float('nan'):.2f}) (n {len(d)})"
+        try:
+            print(f"  [REAL-TEXT INFERENCE PRIOR CONTROL | visit {vis + 1}] rank among 10, the question's subject vs another inference's subject (same candidates; knowledge of A "
+                  f"if own > swapped): TRAINED right {sw_(tr_(Ty_, True))} || TRAINED wrong {sw_(tr_(Ty_, False))} || HELD BACK right {sw_(tr_(H_, True))} || HELD BACK wrong {sw_(tr_(H_, False))}", flush=True)
+        except Exception as e9: print(f"  [REAL-TEXT INFERENCE PRIOR CONTROL | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+        if int(getattr(cfg, 'inf_rti_src', 0)):                               # 21 Nov kra22 (readout): TRANSFER SOURCE - kra21 visit 5: held-back RIGHT own - swapped
+            try:                                                               #   +0.15 (SE 0.05), so teaching lifts other right answers for their own subject. Where
+                rs_ = np.random.RandomState(int(cfg.seed) + 97 + vis)          #   from? Split the held-back inferences by what they share with the TRAINED ones: a
+                nm_ = set(); an_ = set(); br_ = set()                          #   name (either side of a taught pair), the answer, a bridge (premise middle name),
+                for e in Ty_:                                                  #   or NOTHING. A lift with nothing shared is the strongest evidence of a learned step
+                    k_ = rti_wkey(e); nm_.update(k_); an_.add(e['ans']); br_.update((W.get(k_) or {}).get('prem') or [])
+                def pr_(L):
+                    out = []
+                    for i, e in enumerate([e for e in L if e['rm'] < vis][:150]):
+                        alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                        if len(alts) < 9 or len(L) < 2: continue
+                        cs = [e['ans']] + [alts[j] for j in rs_.choice(len(alts), 9, replace=False)]; oA = L[(i + 1) % len(L)]['A']
+                        q0, q1 = f"It is on record that {e['A']} {e['r']} ", f"It is on record that {oA} {e['r']} "
+                        if max(len(q0.encode('latin-1', 'replace')), len(q1.encode('latin-1', 'replace'))) + max(len(c) for c in cs) + 2 > sq_: continue
+                        out.append((e, int(_dw_cand_mc(model, int(S_slot(e['d'])), q0, cs) == 0) - int(_dw_cand_mc(model, int(S_slot(e['d'])), q1, cs) == 0)))
+                    return out
+                def gs_(P, f):
+                    d = np.array([x for e, x in P if f(e)], dtype=float)
+                    return f"{d.mean():+.2f} (SE {d.std(ddof=1) / np.sqrt(len(d)):.2f}, n {len(d)})" if len(d) > 1 else f"nan (n {len(d)})"
+                sA = lambda e: e['A'] in nm_; sC = lambda e: e['ans'] in an_
+                sB = lambda e: bool(set((W.get(rti_wkey(e)) or {}).get('prem') or []) & br_); sN = lambda e: not (e['A'] in nm_ or e['ans'] in nm_ or sB(e))
+                parts9 = []
+                for lab_, L_ in (('HELD BACK right', tr_(H_, True)), ('HELD BACK wrong', tr_(H_, False))):
+                    P_ = pr_(L_)
+                    parts9.append(f"{lab_} (n {len(P_)}): all {gs_(P_, lambda e: True)} | subject is a taught name {gs_(P_, sA)} / not {gs_(P_, lambda e: not sA(e))} | "
+                                  f"answer is a taught answer {gs_(P_, sC)} / not {gs_(P_, lambda e: not sC(e))} | shares a bridge {gs_(P_, sB)} / not {gs_(P_, lambda e: not sB(e))} | "
+                                  f"NOTHING SHARED {gs_(P_, sN)}")
+                print(f"  [REAL-TEXT INFERENCE TRANSFER SOURCE | visit {vis + 1}] own - swapped subject (rank among 10, as PRIOR CONTROL), held-back inferences split by what "
+                      f"they share with the {len(Ty_)} TRAINED ones ({len(nm_)} names, {len(an_)} answers, {len(br_)} bridges): " + " || ".join(parts9), flush=True)
+            except Exception as e9: print(f"  [REAL-TEXT INFERENCE TRANSFER SOURCE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+            try:                                                               # 21 Nov kra22 (readout): TAUGHT RECALL BREAKDOWN - kra21 visit 6: taught inferences written
+                rb_ = np.random.RandomState(int(cfg.seed) + 99 + vis)          #   at visit 2 fell 0.97 -> 0.66 open in one visit with the SAME dose rows (6,426 both
+                AR_ = collections.defaultdict(set)                             #   visits; dose loss 0.010 -> 0.003), so not dilution. Split by: the write visit, the keep
+                for e in T_: AR_[(e['A'], e['r'])].add(e['ans'])               #   rule's verdict now, a CONFLICT (another taught answer for the same subject and wording),
+                def bk_(L):                                                    #   and the prompt: the bare training form 'A r ' vs the test wording
+                    h0, h1 = [], []
+                    for e in L[:120]:
+                        alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                        if len(alts) < 9: continue
+                        cs = [e['ans']] + [alts[j] for j in rb_.choice(len(alts), 9, replace=False)]; q1 = f"It is on record that {e['A']} {e['r']} "
+                        if len(q1.encode('latin-1', 'replace')) + max(len(c) for c in cs) + 2 > sq_: continue
+                        h0.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"{e['A']} {e['r']} ", cs) == 0)); h1.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), q1, cs) == 0))
+                    return f"bare {np.mean(h0):.2f} / test {np.mean(h1):.2f} ({len(h0)})" if h0 else "- (0)"
+                old9 = [e for e in T_ if e['truth'] is True and e['rm'] < vis]; parts8 = []
+                for wv in sorted({int((W.get(rti_wkey(e)) or {}).get('vis', -1)) for e in old9}):
+                    parts8.append(f"written at visit {wv + 1}: {bk_([e for e in old9 if int((W.get(rti_wkey(e)) or {}).get('vis', -1)) == wv])}")
+                parts8.append(f"keep rule TRAINS {bk_([e for e in old9 if trn_(e)])} | does NOT {bk_([e for e in old9 if not trn_(e)])}")
+                parts8.append(f"CONFLICT (another taught answer, same subject and wording) {bk_([e for e in old9 if len(AR_[(e['A'], e['r'])]) > 1])} | none {bk_([e for e in old9 if len(AR_[(e['A'], e['r'])]) == 1])}")
+                print(f"  [REAL-TEXT INFERENCE TAUGHT RECALL BREAKDOWN | visit {vis + 1}] taught RIGHT inferences, rank among 10, bare training form 'A r ' / test wording: " + " || ".join(parts8), flush=True)
+            except Exception as e9: print(f"  [REAL-TEXT INFERENCE TAUGHT RECALL BREAKDOWN | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+        if int(getattr(cfg, 'inf_rti_judge', 0)):                             # 21 Nov kra23 (readout): SELF-SUPPORT AS A JUDGE - kra21 visit 8: trained WRONG inferences
+            try:                                                               #   had half the subject-specific support of trained right ones (+0.21 vs +0.45). Per
+                from platypus.inference.distill import _dw_cand_scores         #   inference: the answer's mean log-prob after its own subject minus after another
+                from sklearn.metrics import roc_auc_score                      #   inference's subject; AUC right vs wrong, by group. JUST CONFIRMED (not yet trained)
+                def sm_(L):                                                    #   is the one usable as a teach-gate; TRAINED as a retraction judge
+                    out = []
+                    for i, e in enumerate(L[:150]):
+                        oA = L[(i + 1) % len(L)]['A']
+                        if oA == e['A'] or len(L) < 2: continue
+                        a0 = _dw_cand_scores(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", [e['ans']])[0]
+                        a1 = _dw_cand_scores(model, int(S_slot(e['d'])), f"It is on record that {oA} {e['r']} ", [e['ans']])[0]
+                        if np.isfinite(a0) and np.isfinite(a1): out.append((bool(e['truth']), a0 - a1, a0))
+                    return out
+                def au_(P_):
+                    y_ = [t for t, m_, a_ in P_]
+                    if len(set(y_)) < 2: return f"n {len(P_)}"
+                    return (f"margin AUC {roc_auc_score(y_, [m_ for t, m_, a_ in P_]):.3f}, own log-prob AUC {roc_auc_score(y_, [a_ for t, m_, a_ in P_]):.3f} "
+                            f"(n {len(P_)}, {sum(not t for t in y_)} wrong; margin right {np.mean([m_ for t, m_, a_ in P_ if t]):+.2f} / wrong {np.mean([m_ for t, m_, a_ in P_ if not t]):+.2f})")
+                jc_ = [e for e in T_ + H_ if (W.get(rti_wkey(e)) or {}).get('conf') == vis and e['truth'] is not None]
+                print(f"  [REAL-TEXT INFERENCE SELF-SUPPORT JUDGE | visit {vis + 1}] own - swapped subject log-prob of the answer, right vs wrong: JUST CONFIRMED (never trained; "
+                      f"a teach-gate) {au_(sm_(jc_))} || TRAINED {au_(sm_([e for e in Ty_ if e['truth'] is not None]))} || HELD BACK {au_(sm_([e for e in H_ if e['truth'] is not None]))}", flush=True)
+            except Exception as e9: print(f"  [REAL-TEXT INFERENCE SELF-SUPPORT JUDGE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+        if int(getattr(cfg, 'inf_rti_audit', 0)):                             # 21 Nov kra23 (readout): AUDIT SAMPLE - 40 inferences confirmed at this sleep, printed
+            try:                                                               #   with their distant label, for a hand audit of the true false-memory rate
+                ra_ = np.random.RandomState(int(cfg.seed) + 101 + vis); ks_ = [k for k, w in W.items() if w.get('conf') == vis and w.get('state') == 'confirmed']
+                sm9 = [ks_[j] for j in ra_.permutation(len(ks_))[:40]]
+                print(f"  [AUDIT SAMPLE | visit {vis + 1}] {len(sm9)} of {len(ks_)} inferences confirmed at this sleep (label from the distant set): " +
+                      " | ".join(f"{W[k].get('th', k[0])} {W[k].get('tw', '~')} {W[k].get('tt', k[1])} [{'R' if W[k]['truth'] else 'W'}]" for k in sm9), flush=True)
+            except Exception as e9: print(f"  [AUDIT SAMPLE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
         if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "

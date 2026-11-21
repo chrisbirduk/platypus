@@ -5490,3 +5490,164 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **Held-back RIGHT inferences rise without being taught (rank 0.15 -> 0.31-0.34) while held-back WRONG ones fall (0.19 -> 0.06):** teaching right inferences generalises to other right ones, not to wrong ones. With their own premises in context 0.41 vs broken chain 0.29.
 - No cost: bits 1.8606 (kra18 1.8560); facts ever taught 0.85 (0.86); gated answers 0.52 (0.50); never-read 0.00.
 - kra20 local safety run: HEADLINE -0.031 / 2.621 (fast store -0.029 / 2.623) vs kra18 -0.041 / 2.612: within noise; no Traceback; 28 of 28 taught inferences train locally at visit 4. PASS.
+
+### kra20 GPU, visit 6 (part) + a second review finding: RETRACTION NEVER RUNS under the confirm pipeline
+- Visit 6 so far: facts just taught 0.94 (control 0.29), ever taught 0.83 (kra18 0.81); gated answers 0.44 (kra18 0.30), never-read 0.01. [RETRACTION] 0 retracted, 0 unlikelihood rows at every visit; FLAGGED, KEPT none.
+- Code: with inf_rti_tentative on, premises' judge returns after the confirm/fade block, before the retraction trigger (the docs / rel / typed-confirmation score and W[k]['ret']). A confirmed inference is never re-judged: once taught it stays, right or wrong. Faded ones are flagged but were never taught. So the unlikelihood rows (inf_rret) have nothing to act on, and kra20's taught wrong inferences (recalled 0.95) have no path out.
+- For kra21: a retraction path for CONFIRMED inferences (e.g. the existing typed-confirmation score _cc9: head-first records since the write naming another tail are contradictions; contradictions > confirmations -> flag and retract with the unlikelihood rows), alongside a stricter confirmation.
+
+### Confirm, teach, retract - offline (21 Nov 00:40; tools/retract_min.py, distant_50k, 2,400 code writes from 40% of the documents, confirmation on the next 20%, retraction on the rest)
+| confirmation rule | confirmed | right | right writes kept |
+|---|---|---|---|
+| any relational record (kra14) | 602 | 0.654 | 0.39 |
+| 1 record rated top half (kra17-kra20) | 473 | 0.708 | 0.33 |
+| **1 record rated top quarter** | 307 | **0.766** | 0.23 |
+| 1 record rated top tenth | 139 | 0.827 | 0.11 |
+| 2 records rated top half | 166 | 0.771 | 0.13 |
+| RETRACTION of confirmed inferences (on top of top-half / top-quarter confirmation) | wrong removed | right lost | kept right |
+| NO relational record of the pair in the later 40% | 0.38 / 0.35 | 0.19 / 0.19 | 0.759 / 0.803 |
+| ... in the later 30% | 0.42 / 0.39 | 0.26 / 0.25 | 0.756 / 0.800 |
+| **... in the later 20% (about 2 visits)** | 0.55 / **0.53** | 0.36 / **0.34** | 0.773 / **0.821** |
+| contradiction, own typed wording (1, > 2x confirmations) | 0.19 / 0.19 | 0.09 / 0.09 | 0.728 / 0.786 |
+| contradiction, any wording | 0.67-0.95 | 0.55-0.87 | near random |
+- RE-CONFIRMATION (the pair recurs relationally after confirmation) is the useful retraction signal; contradiction by another tail is near random in any wording and small in the typed wording. Top-quarter confirmation + re-confirmation within about 2 visits: kept right 0.708 -> 0.821 offline, at about half the right inferences.
+
+### cg27a_kra21 prepared (21 Nov 00:50)
+- kra20 + inf_rti_conf_q 0.75 + inf_rti_reconf 2 (new option: [RE-CONFIRMATION] retracts confirmed inferences with no relational record of the pair since confirmation, 2 visits on; retracted ones leave the pool and get unlikelihood rows, inf_rret 1). Unit test: the unrecorded pair retracted, the recorded one kept, the top-quarter record confirms.
+- Expected on the GPU: confirmed right about 0.80-0.82 -> about 0.88-0.90 by visit 8; taught WRONG recalled falls after retraction at visits 6 / 8 / 10 ([RETRACTION RECALL]); about half as many right inferences taught.
+- kra21 adds a READOUT (21 Nov 01:00): [REAL-TEXT INFERENCE PRIOR CONTROL] - rank among 10 with the question's own subject vs another inference's subject, same candidates, for trained and held-back right / wrong. kra20's held-back RIGHT rise (0.15 -> 0.33) could be a preference for answer names that taught inferences made familiar (states, countries) rather than knowledge of A: if it survives the swap, it is a name prior. Guarded by its own try (a readout failure must not skip the visit's writes).
+
+### The two fact readouts reconciled (21 Nov 01:10; logs of kra17, kra18, kra20)
+- Both score with distill._dt_recall (test wording + paraphrase, open-ended). They differ in WHICH facts: [INTERLEAVED] probes 32 random facts of the CURRENT pool (recent entries, one or two visits of teaching); [EVER TAUGHT] samples about 240 ever taught, dominated by long-taught ones. The probe therefore tracks the current teaching weight; the ledger tracks retention.
+- Probe, visits 4-6 / 8: kra17 0.89 / 0.61 / 0.76 ... 0.47; kra18 0.97 / 0.61 / 0.59 ... 0.44; **kra20 0.84 / 0.88 / 0.94** (control 0.29-0.40). kra20's 0.25 floor teaches new facts 2x (visit 5) to 4x (visit 6) harder than kra18's 0.125, and the probe shows it; the ledger agrees in kra20 (0.83-0.85).
+- Review point 5 was a composition difference, not a scoring conflict. The fact target should hold on BOTH: the ledger (retention) and the probe (newly taught facts) at 0.75 or more. kra20 meets both through visit 6.
+
+### kra21 local safety run (21 Nov 02:25; tools/safety_run.sh kra21, 150 steps a domain, distant_10k)
+- HEADLINE weights only: FORGETTING **-0.030** | FINAL BPC **2.622** (fast store on -0.028 / 2.624). kra20: -0.031 / 2.621. Within noise: PASS. No errors; the run was stopped at its time limit in the end-of-run diagnostics, after the HEADLINE.
+- [RE-CONFIRMATION] runs at visit 4 (0 checked: locally nothing is confirmed 2 visits before; it first acts at visit 6 on the GPU). [REAL-TEXT INFERENCE TRAINED]: 22 of 22 taught pass the keep rule. [PRIOR CONTROL] prints at visits 4-5 (n 4-15 locally, too few to read). The MATCHED in-context readout is empty locally (every prompt exceeds the 64-byte window; it reads on the GPU's 1024).
+- kra21 is cleared for the GPU.
+
+### Write budget for kra21's rules, offline (21 Nov 02:30; tools/retract_min.py, RT_W 2400 / 4800 / 7200, distant_50k, same windows as above)
+| written | right | top-quarter confirmed (right) | + retract if NO later record: kept (right, count right) | top-tenth confirmed (right, count right) |
+|---|---|---|---|---|
+| **2,400 (kra21)** | 0.426 | 307 (0.765) | **238 (0.803, 191)** | 139 (0.827, 115) |
+| 4,800 | 0.310 | 441 (0.703) | 333 (0.745, 248) | 194 (0.830, 161) |
+| 7,200 | 0.252 | 550 (0.662) | 413 (0.709, 293) | 221 (0.819, 181) |
+- More writes dilute: each extra write is less likely right, and the confirmation rules pass them in proportion. Volume of right inferences kept rises 191 -> 293 (x1.5 for x3 writes) but precision falls 0.80 -> 0.71. Only top-tenth confirmation holds precision (0.82-0.83) as the budget grows, at 115-181 right.
+- Do not raise the write budget in kra22. If volume is needed later, 7,200 writes + top-tenth confirmation (181 right at 0.82) matches kra21's 2,400 + top quarter + re-confirmation (191 at 0.80) without retraction - a fallback if kra21's retraction misbehaves on the GPU.
+
+### Name-prior forecast for kra20's held-back rise (21 Nov 02:30; tools/tail_prior.py, distant_50k, kra20's confirmation rule)
+- 473 confirmed (right 0.708): 386 taught, 87 held back (52 right, 35 wrong). A held-back RIGHT inference's answer is more often also a taught answer (0.88 vs 0.74; taught 6.8 vs 4.2 times on average; AUC 0.64). Store degree does not separate them (AUC 0.52).
+- A PURE NAME PRIOR (the candidate taught most often wins) gives rank among 10: held-back right **0.29**, wrong **0.14**. kra20 GPU visit 5: right 0.31-0.34, wrong 0.06 (visit 4, before teaching: 0.15 / 0.19).
+- So most of kra20's held-back right rise can be explained by answer-name familiarity from teaching, without the trunk knowing anything about the subject. **The held-back rise is NOT evidence of generalisation** until kra21's [PRIOR CONTROL] (own vs swapped subject, same candidates) shows own > swapped for held-back right. The matched in-context own-vs-broken gap (+0.12, SE 0.06) is a separate measure and stands.
+
+### Stand-in chain test with the BROKEN-CHAIN control (21 Nov 03:50; tools/chain_scale.py, A6 stand-in trunk, 150 taught + 150 control two-hop chains, premises first 4,000 steps, then 3,000 steps an arm)
+| arm (step 3000) | taught: closed book | taught: premises in context | taught: BROKEN chain | in context - broken | control (untaught chains): in context / broken |
+|---|---|---|---|---|---|
+| premises only (before the arms) | 0.160 | 0.187 | 0.180 | +0.007 | 0.147 / 0.147 |
+| DIRECT (A r C taught) | 0.980 | 0.240 | 0.247 | -0.007 | 0.160 / 0.153 |
+| CHAIN (P1. P2. So A r C taught) | 0.653 | 0.993 | **0.993** | **+0.000** | 0.213 / 0.200 |
+| BOTH | 0.993 | 0.973 | 0.947 | +0.027 | 0.187 / 0.187 |
+- Rank among 10. The premises are recalled at 0.94-0.99 throughout. Forgetting -0.04 to -0.07 on every arm (within the stand-in's range).
+- **Training on worked chains teaches the taught answers, not a skill of reading premises.** CHAIN scores 0.993 with the right premises AND with a broken chain (one premise from another inference): the model answers from "So A r", i.e. it memorised A -> C. On untaught chains, in context equals broken (0.21 / 0.20). No arm learns to compose from premises in context at this scale.
+- **No latent two-hop**: with both premises learned (0.96), untaught conclusions stay at chance closed book (0.14 vs 0.12 at the start). The two-hop curse holds for the stand-in trunk, as in the literature; Platypus composes outside the trunk (route J) and teaches A -> C.
+- Against the GPU: kra20's matched readout (own +0.12 over broken, SE 0.06, held-back right, visit 5) is the only positive in-context sign so far; this test does not reproduce it at stand-in scale. Treat it as unconfirmed until kra21's visits 6-10 repeat it.
+
+### cg27a_kra21 GPU, visits 4-5 (21 Nov 07:05; log to the end of visit 5, Phase 6 starting)
+| visit 5 | TAUGHT (trained, 188) right / wrong | HELD BACK right / wrong |
+|---|---|---|
+| open recall from the trunk | 0.97 (154) / 0.97 (34) | 0.05 (81) / 0.00 (13) |
+| rank among 10 | 0.99-1.00 / 1.00 | 0.21-0.28 / 0.15 (visit 4: 0.05-0.15 / 0.08) |
+| **PRIOR CONTROL: own subject / SWAPPED subject (same candidates)** | 1.00 / 0.23 | **right 0.26 / 0.11, own - swapped +0.15 (SE 0.05)**; wrong 0.08 / 0.08, +0.00 |
+| MATCHED: closed / own premises / other / broken chain | 1.00 / 1.00 / 0.93 / 1.00 | right (n 45): 0.31 / **0.44** / 0.18 / 0.27; own - broken **+0.18 (SE 0.07)**, own - closed +0.13 (SE 0.07) |
+- **THE NAME-PRIOR CHECK COMES OUT AGAINST THE NAME PRIOR.** A pure name prior would score the swapped subject as high as the own subject. Held-back RIGHT inferences: own 0.26 vs swapped 0.11 (about chance), +0.15 at 3 SE. At visit 4, before any inference teaching, the same gap was -0.01 (SE 0.03). So one visit of teaching right inferences makes the trunk rank OTHER, never-taught right answers higher for their own subject. Held-back WRONG ones get no such lift (+0.00, n 13). This is the first measure that separates subject-specific transfer from answer familiarity; it replaces the 02:30 forecast's reading for kra21.
+- Where the transfer comes from is not yet known (shared subjects or premises with taught inferences, or a learned composition step). It is recall (rank), not open-ended recall (0.05). Recall and consolidation claims stay separate: consolidation of TAUGHT inferences is 0.97; this row is generalisation evidence only.
+- **MATCHED in-context repeats kra20**: held-back right own premises 0.44 vs broken chain 0.27, +0.18 (SE 0.07); kra20 +0.12 (SE 0.06). Two builds, same sign. The stand-in test (03:50) still does not reproduce it.
+- False memories: taught WRONG recalled 0.97 (34), as expected before retraction. RE-CONFIRMATION at visit 4 checked 0 (acts from visit 6). CONFIRMED 282 (right 0.83), tentative 318 (0.66).
+- No cost: prequential bits on read domains 1.8587 (kra20 1.8606); facts ever taught 0.87 (taught 1 visit 0.95, 2-3 visits 0.86, 4+ 0.87; control 0.37); gated answers smoothed 0.44 right when answered 1.00 (kra20 0.52); never-read given a name 0.00. Route D two-step 0.73 vs direct 0.05. Sleep 1070 s (> 600 s budget: optional readouts skipped next sleep). GPU peak 56.7 of 95 GB.
+
+### cg27a_kra21 GPU, visit 6 (21 Nov 07:35): retraction fires but is NOT selective; the subject and in-context gaps hold
+- **[RE-CONFIRMATION]: 282 confirmed inferences checked, 72 RETRACTED (right 0.82) vs 210 re-confirmed (right 0.84).** No separation: offline (tools/retract_min.py) the same rule removed 0.53 of the wrong and 0.34 of the right. On the GPU almost every pair recurs somewhere ("any later record of the pair" 779 of 918), so the absence of a relational record in 2 visits is close to random. 47 retracted taught ones (38 right, 9 wrong) get 987 unlikelihood rows in visit 7: about 4 right unlearned per wrong one. [RETRACTION RECALL] before those rows: retracted right 0.92 / wrong 1.00.
+- **kra22 turns re-confirmation off** (inf_rti_reconf 0) and keeps top-quarter confirmation, which is already 0.82 right on the GPU (confirmed 509 at 0.82, faded 221 at 0.59, tentative 398 at 0.60). False memories stay at roughly 0.18 of taught inferences (an upper bound: distant labels are incomplete) until a selective signal is found.
+- **PRIOR CONTROL holds:** held-back RIGHT own 0.23 vs swapped 0.13, **+0.09 (SE 0.03, n 150)**; held-back wrong +0.03 (SE 0.06, n 29). Trained right +0.20 (SE 0.04).
+- **MATCHED holds a third time:** held-back right own premises 0.40 vs broken chain 0.28, **+0.12 (SE 0.04, n 86)**; own - closed +0.15 (SE 0.05).
+- **Taught inferences written at visit 2 fall 0.97 -> 0.66 open (right) and 0.97 -> 0.63 (wrong)** in one visit; those written at visit 4 (just confirmed, not yet trained) 0.09. Candidates: dose rows shared by 352 taught (was 188), the Github visit (bits on read domains 1.8587 -> 1.9049). Rank among 10 for taught right 0.73. Watch visit 7.
+- **Gated answers reach the goal with the old rule:** t fell to 0.94-0.96; known answered 0.58-0.61, right when answered 0.97, right overall **0.56-0.59**; never-read given a name 0.01-0.02.
+- Facts ever taught 0.83 (kra20 0.83 at visit 6); taught 1 visit 0.72, 4+ visits 0.85; control 0.33. No Traceback.
+
+### cg27a_kra21 GPU, visit 7 (21 Nov 08:10): unlearning works, the visit-6 dip recovers, the subject gap holds
+- **[RETRACTION RECALL]: the 47 retracted taught inferences fall from 0.92 / 1.00 (right / wrong) to 0.03 / 0.00 after one visit of unlikelihood rows** (unlikelihood loss 4.46 -> 0.18); judged, not flagged 0.80 / 0.84. The unlearning step is strong and contained; the SELECTION was the failure (38 of the 47 were right). Watch visits 8-10 for the retracted ones coming back (benign relearning).
+- **The visit-6 dip was transient:** taught inferences open recall right 0.43 -> **0.83**, wrong 0.36 -> 0.80; written at visit 2: 0.66 -> 0.75; written at visit 4 (first trained this visit) 0.95. Rank among 10: taught right 0.93. Visit 6 was Github; bits on read domains 1.9049 -> 1.8856.
+- **PRIOR CONTROL:** held-back right own - swapped **+0.09 (SE 0.04, n 150)**; held-back wrong +0.07 (SE 0.05, n 29) - the wrong ones now rise too, so the right-vs-wrong asymmetry of visits 5-6 is not clear at visit 7.
+- **MATCHED weakens:** held-back right own premises 0.44 vs broken chain 0.40, +0.05 (SE 0.03); own - closed +0.20 (SE 0.04). The answer in context alone now lifts it (broken 0.40 vs closed 0.24).
+- **Gated answers swing back down:** 75% rule, t 0.96: right overall 0.36 (visit 6: 0.59); ungated 0.73; never-read 0.00. The calibrated rule is unstable from sleep to sleep - kra22's 0.9 rule (with the 0.75 printed beside it) stands.
+- Facts: interleaved probe (newly taught) 0.89 / 0.91 / 0.87 / **0.79** at visits 4-7 (kra20 0.84 / 0.88 / 0.94 at 4-6); ledger ever taught 0.82, 4+ visits 0.83, control 0.37. No Traceback.
+
+### Bridge test (21 Nov 08:40; tools/bridge_probe.py, A6 stand-in, 1,256 chains from distant_50k code writes, TRAIN 400 / TEST 200 on bridges never in a train chain)
+- Premises first (5,000 steps): A-B and B-C recalled 0.84-0.85 (rank among 10); closed-book two-hop 0.125 (train) / 0.155 (test); forgetting -0.038.
+- **PART 1 - the bridge B is NOT formed before it is spelled out.** Ridge probe from each layer's last-byte state to B as read (layer 1 at B's last byte), B among 10 (chance 0.10), random / same-first-byte distractors: after 'A w1 ' (hop 1 asked) 0.09-0.15 / 0.05-0.12; after the two-hop question 0.09-0.12 / 0.09-0.13; after 'A w1 B' (B spelled, reference) **0.75-0.84 / 0.69-0.87**; 'A' alone 0.08-0.10. The trunk recalls B byte by byte, but its state before B carries no identity of B.
+- **PART 2 - a new top layer does not compose** (3,000 steps, closed book, TRAIN taught / TEST never taught): NONE (all weights) 0.890 / 0.190 | RANDOM new block + adapter 0.948 / 0.215 | COPY0 frozen copy of block 0 + adapter 0.258 / 0.185 | COPY1 0.610 / 0.180; forgetting -0.06 to -0.07. The copied layers cannot even learn the taught chains through an adapter (no 'B as predicted' to map); the random layer memorises taught chains best and lifts never-taught ones by +0.025 at most.
+- Conclusion: depth (neurogenesis) does not give latent two-hop composition at this scale; B must exist as text first (spell the bridge: route J outside the trunk, or 'A w1 B, and B w2 C' in the trunk).
+
+### cg27a_kra21 GPU, visit 8 (21 Nov 08:40)
+- **RE-CONFIRMATION again not selective:** 509 checked, 98 retracted (right 0.81) vs 411 kept (0.82); 170 retracted so far. Confirmations this visit 322 at right 0.76; all 733 at 0.79 (precision slipping: 0.83 -> 0.82 -> 0.79).
+- [RETRACTION RECALL]: retracted (118, mixing the 47 unlearned in visits 7-8 with 71 newly retracted) 0.55 / 0.57 right / wrong; judged, not flagged 0.48 / 0.30.
+- **PRIOR CONTROL: the asymmetry is back** - held-back RIGHT +0.13 (SE 0.04, n 150), held-back WRONG +0.00 (SE 0.04, n 51). Trained right +0.45 vs trained WRONG +0.21 (own 0.66 vs 0.38): wrong taught inferences have half the subject-specific support of right ones - a per-inference signal worth testing (select_min part B).
+- MATCHED held-back right own - broken +0.05 (SE 0.02), own - closed +0.12 (SE 0.03).
+- **Taught open recall dips again:** right 0.48 / wrong 0.35 (rank 0.89 / 0.57); written at visit 4: 0.95 -> 0.62; visit 2: 0.75 -> 0.64. Dips at visits 6 and 8 (Github, USPTO), recovery at 7. kra22's [TAUGHT RECALL BREAKDOWN] will split it.
+- **Gated answers:** the keep-75% rule at t 0.85: right overall 0.61, right when answered 0.93, but NEVER-READ given a stored name **0.11** (smoothed 0.56 / 0.09). The rule trades coverage for false answers from sleep to sleep. **kra22 changes the gate to calibrate on never-read questions** (inf_distill_gate_leak 0.02: the lowest threshold at which at most 2% of the previous sleep's never-read questions get a name), the keep-75% rule printed beside it; the keep-90% plan is dropped (it would let more never-read through).
+- Facts: probe 0.81, ledger ever taught 0.82, 4+ visits 0.84, control 0.38. Bits on read domains **1.8292** (best of the run). No Traceback.
+
+### Signals test: teach-gates on the confirmed set (21 Nov 08:55; tools/select_min.py part A, distant_50k, 2,400 code writes from 20k documents, top-quarter confirmation on the next 10k: 306 confirmed, right 0.768, 71 wrong)
+Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
+| teach only if | taught (right) | wrong removed | right lost | right lost per wrong |
+|---|---|---|---|---|
+| all confirmed (kra21) | 306 (0.768) | - | - | - |
+| **2+ documents confirm OR a second look (top-half record in the next 10k)** | 220 (**0.823**) | 0.45 | 0.23 | **1.69** |
+| second look: any relational record again | 190 (0.821) | 0.52 | 0.34 | 2.14 |
+| second look: top-quarter record again | 142 (0.852) | 0.70 | 0.49 | 2.28 |
+| 2+ distinct documents confirm | 159 (0.824) | 0.61 | 0.44 | 2.42 |
+| best record in the top tenth | 139 (0.827) | 0.66 | 0.51 | 2.55 |
+| 2+ records rated top quarter | 81 (0.889) | 0.87 | 0.69 | 2.63 |
+| VERBATIM: a confirming record in the inference's own wording | 57 (0.772) | 0.82 | 0.81 | 3.29 (random) |
+| NOT contradicted later in own wording (another tail) | 161 (0.733) | 0.39 | 0.50 | **4.18 (worse than random)** |
+- **Independent evidence helps; exact wording and contradiction do not.** A second document or a later second look removes wrong inferences about twice as efficiently as random (1.7-2.4 right lost per wrong vs 3.3). The best rule keeps 0.82 precision at 77% of the right inferences.
+- Own-wording ('verbatim') confirmation is random here: the typed wording is the commonest wording of the type pair, rarely the record's own. Contradiction by another tail is WORSE than random: prominent (often right) subjects simply get more records naming other tails. The one-answer filter was degenerate in this run (heads with one record counted as one-answer); fixed, to re-run with part B.
+- No rule loses fewer right than wrong ones: document signals alone cannot make retraction cheap.
+
+### Hand audit of 'wrong' confirmed inferences (21 Nov 09:00; Claude's judgement from general knowledge, NOT gold; 60 labelled wrong, 30 labelled right, sampled from the 306 above)
+- **Labelled WRONG (60): 26 true (43%), 9 ambiguous (15%), 25 false (42%).** True but unlabelled: 'AIR Studios in London', 'British Museum in London', 'Henry VIII of England', 'Memphis in Tennessee', 'Cleveland in Ohio', 'Times Square in New York City', 'Oxford University in England', 'Portland in Oregon', ... Distant labels miss them.
+- **Of the 25 false, 13 have a malformed entity** (a number, a year or a fragment as A or C: '12 in US', 'Telugu in 2015', 'CDP in Washington', '1893 ) was Chicago'); the other 12 are real confusions ('South America in Mexico', 'Namibia in South Africa', 'Northern Ireland in England', 'Shenzhen in Hong Kong').
+- Labelled RIGHT (30): 29 true, 1 questionable.
+- **So the true false-memory rate is about half the labelled one:** GPU confirmed labelled wrong 0.18-0.21 -> truly false about 0.08-0.12 (0.42-0.57 of labelled wrong). Half of those are extraction errors that a name-shape check (no numbers, years or fragments as names) would remove before writing.
+
+### Correction test: erase, suppress or replace (21 Nov 09:20; tools/correct_min.py, A6 stand-in, 150 made-up one-answer facts taught WRONG (Z), 150 bystanders right)
+| arm (600 steps) | false Z first, right after (test / new wording) | after 400 steps of other training | true Y first (after / later) | savings: Z re-taught 30 steps, corrected vs fresh |
+|---|---|---|---|---|
+| taught (start) | 0.55 / 0.63 | - | 0.08 | - |
+| NONE (stop teaching) | 0.13 / 0.15 | 0.17 / 0.18 | - | 0.33 vs 0.27 |
+| UNLIKE (kra21) | **0.07 / 0.08** | **0.11 / 0.08** | - | 0.27 vs 0.25 |
+| REPLACE (teach Y) | 0.27 / 0.21 | 0.15 / 0.17 | 0.56 / 0.26 | 0.27 vs 0.25 |
+| NOTREC ('nowhere on record') | 0.23 / 0.25 | 0.15 / 0.16 | - | 0.34 vs 0.29 |
+| REPLACE + UNLIKE | **0.05 / 0.05** | 0.11 / 0.13 | 0.44 / 0.25 | 0.27 vs 0.28 |
+- **Unlikelihood suppresses best** (with or without the replacement); **replacing alone keeps the false answer HIGHER right after** (0.27 vs 0.13 for doing nothing): rehearsing the question keeps both answers active. The misinformation finding (a retraction needs an alternative) does not carry over to this trunk. Savings are small everywhere (+0.00 to +0.06): no strong hidden suppression. Caveat: this stand-in forgets unrehearsed facts fast (NONE 0.55 -> 0.13); Platypus replays, so stopping alone would help less there.
+- Decision: unlikelihood rows stay the correction tool; the open problem is only WHICH inferences to correct.
+
+### kra22 selection rules checked (21 Nov 09:25; tools/select_min.py part A, 307 confirmed at right 0.769)
+- **NAME SHAPE (no digits, brackets or quotes in A or C): wrong removed 0.20, right lost 0.01 - 0.21 right lost per wrong (random 3.3).**
+- 2+ distinct documents (confirm + delay windows): 0.41 / 0.22 (1.76). BOTH: taught 217, right **0.839** (182 right of 236), 1.50 right lost per wrong.
+- One-answer wordings: none of the typed wordings ('in', 'of', ...) has heads with one tail 60%+ of the time (fixed measure), so contradiction cannot be restricted to one-answer relations with these wordings; it stays off.
+- **kra22 takes both: inf_rti_nameshape 1, inf_rti_conf_docs 2** (with retraction off and the never-read-calibrated gate).
+
+### cg27a_kra21 GPU, visit 9 (21 Nov 09:20)
+- [RETRACTION RECALL]: all 118 retracted (95 right, 23 wrong) now 0.13 / 0.09 open (rank 0.22 / 0.26); judged, not flagged 0.74 / 0.74. No sign yet of the visit-7 cohort coming back.
+- Taught inferences recover again at an odd visit: right 0.74 / wrong 0.73 open, rank 0.85 / 0.87. By write visit: 2 -> 0.55 (0.97, 0.66, 0.75, 0.64, 0.55 at visits 5-9: the oldest cohort decays slowly), 4 -> 0.82, 6 -> 0.91.
+- PRIOR CONTROL: held-back right **+0.13 (SE 0.04)**, wrong +0.06 (SE 0.05). MATCHED held-back right own - broken **+0.11 (SE 0.03)**, own - closed +0.20 (SE 0.03): both back to their visit-5/6 sizes.
+- Gated (keep-75% rule, t 0.91): right overall 0.44, right when answered 0.90, never-read 0.02.
+- Facts: probe 0.80; ledger ever taught **0.76** (0.82 at visits 7-8), taught 1 visit 0.37 (n 30), 2-3 visits 0.79, 4+ 0.83; control 0.42. Visit 9 is DM Mathematics. Bits on read domains **1.7735** (best yet). No Traceback.
+
+### cg27a_kra22 GPU, visits 2-4 (21 Nov 10:35; started 09:17, the final preset confirmed in the log)
+- **Selection before teaching works as predicted: CONFIRMED 200 (right 0.88)** vs kra21 visit 4: 282 (0.83). Still tentative 400 (0.70). Taught 136 (right 0.87) vs kra21 188 (0.82). Offline forecast: 0.77 -> 0.84 at 77% of the right ones.
+- Gate (never-read calibration, before the floor fix): visit 2 t 0.09, never-read given a name 0.43 (the flaw); visit 3 t 0.99, right overall 0.45, never-read 0.02; visit 4 t 0.99, 0.33 / 0.02. Keep-75% rule beside it: 0.45 / 0.02 and 0.25 / 0.00. The smoothed line carries visit 2's 0.09 (never-read 0.12-0.27): ignore it in kra22.
+- Facts: probe 0.83 / 0.92 / 0.94 (visits 2-4), ledger 0.87 / 0.88 / 0.87; control 0.36-0.55. Bits on read domains 2.0357 / 2.0106 / 1.9248.
+- Visit 4 is the pre-teaching baseline for the new readouts (the 136 are first trained in visit 5): PRIOR CONTROL held-back right +0.02 (SE 0.04); TRANSFER SOURCE +0.00 in every split; TAUGHT RECALL BREAKDOWN 0.17-0.21 (CONFLICT 0.10, n 10, vs none 0.21). No Traceback.

@@ -602,6 +602,8 @@ class Config:
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
     inf_distill_false_probe_n=64    #     questions per group (fresh names / missing relations / known facts; 32 before 12 Nov, 23:00); + the ABSTENTION readout
                                     #     (risk-coverage of the trunk's confidence, explicit refusals)
+    inf_distill_gate_leak=0.0       #     kra22: if > 0 the GATED ANSWERS threshold is calibrated so at most this share of never-read questions get a stored name
+    inf_distill_gate_q2=0.0         #     kra22: a SECOND calibrated gate printed beside the first (0 = off); kra22 sets q 0.9 and q2 0.75 for continuity
     inf_distill_gate_q=0.75         #     GATED ANSWERS readout: the trunk answers only above the confidence threshold that kept this share of its right answers
                                     #     at the PREVIOUS sleep (calibrated there, applied to the new questions: out of sample); a decision rule, no training change
     inf_compress_gain=2             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits (default 2 from 12 Nov, 23:00; 0 = off): does the trunk compress text better once a
@@ -654,6 +656,11 @@ class Config:
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
+    inf_rti_conf_docs=0             #     kra22: a tentative inference is confirmed only with relational records in this many distinct documents since its write (0/1 = off)
+    inf_rti_nameshape=0             #     kra22: code writes skip pairs whose names contain digits, brackets or quotes (numbers, years, fragments)
+    inf_rti_judge=0                 #     readout (kra23): SELF-SUPPORT JUDGE - own vs swapped subject log-prob margin, AUC right vs wrong
+    inf_rti_audit=0                 #     readout (kra23): print 40 newly confirmed inferences with labels for a hand audit
+    inf_rti_src=0                   #     readout (kra22): TRANSFER SOURCE - the prior control split by what a held-back inference shares with the trained ones
     inf_rti_rank_recall=0           #     readout: written inferences' answer ranked among 10 written answers (open-ended exact recall cannot see real names)
     inf_rti_rows_ref=0              #     > 0: weight the dose loss by rows / inf_rti_rows_ref, so each row pushes as hard as at that many rows (the loss is a mean over rows)
     inf_rti_nodecay=0               #   20 Nov kra15: 1 = the real-text inferences' dose rows are exempt from the question rows' visit decay (inf_distill_wake_decay)
@@ -758,6 +765,9 @@ class Config:
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
     inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
     inf_rti_conf_rated=0            #   20 Nov kra17 (MODEL CHANGE when 1): only a record the seeded reader puts in its top half confirms a tentative inference
+    inf_rti_conf_q=0.5              #   21 Nov kra21: the reader-score quantile a confirming record must reach (0.5 = top half, kra17; 0.75 = top quarter: offline right 0.708 -> 0.765, right kept 0.33 -> 0.23 of the right writes)
+    inf_rti_reconf=0                #   21 Nov kra21 RE-CONFIRMATION (MODEL CHANGE when > 0): a confirmed inference with no relational record of its pair in the documents read since its
+                                    #     confirmation, this many visits on, is RETRACTED (no longer taught; unlikelihood rows with inf_rret). Offline tools/retract_min.py: removes 0.35-0.38 of the wrong, 0.19 of the right
     inf_premises_wide=0             #   19 Nov kra13: wider distant records - same sentence 13-30 words apart, next sentence, pronoun-led sentences (length field 13+)
     inf_rcode_reader=0.0            #   19 Nov kra13 MODEL CHANGE: the compressed fact table's graph from the wording reader's top share of records (0 = all records)
     inf_premises_knowledge=0        #   19 Nov kra13: the wording reader also taught by every record of a confirmed real-text inference
