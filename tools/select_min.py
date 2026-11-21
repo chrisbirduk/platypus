@@ -37,11 +37,22 @@ P(f"{len(RD)} records read ({n0} of {ND} documents); {len(K)} written (right {np
 FK = {frozenset(k): k for k in K}; EC = collections.defaultdict(list); ED = collections.defaultdict(list); EW = collections.defaultdict(list); EWD = collections.defaultdict(list)
 need = {frozenset((a, b)) for (a, c_), w in W.items() for b in (w.get('prem') or [])[:3]} | {frozenset((b, c_)) for (a, c_), w in W.items() for b in (w.get('prem') or [])[:3]}
 PW = collections.defaultdict(collections.Counter)
+HDk = collections.defaultdict(list)                                           # MISMATCH AT USE (reconsolidation): a later record with the inference's head first, in
+for k in K:                                                                    #   its OWN wording, naming ANOTHER tail - only for one-answer (functional) wordings
+    if W[k].get('tw'): HDk[W[k]['th']].append(k)
+TLk = {W[k]['tt'] for k in K if W[k].get('tw')}; TWk = {pm._rnorm(W[k]['tw']) for k in K if W[k].get('tw')}; LK = set(); FT = collections.defaultdict(lambda: collections.defaultdict(set)); CTo = collections.Counter(); CTf = collections.Counter()
 for i, r in enumerate(R):
     rel = 1 <= r[5] <= 8 and not pm._rret_listlike(r); fk = frozenset((r[1], r[2]))
     if r[0] < n0:
         if rel and fk in need and any(ch.isalpha() for ch in r[3]): PW[fk][(r[1], pm._rnorm(r[3]), r[2])] += 1
+        if rel:
+            w8 = pm._rnorm(r[3])
+            if w8 in TWk: FT[w8][r[1]].add(r[2])
+            if r[1] in TLk or r[2] in TLk: LK.add(fk)                              # pairs linked before the write (a container of the tail is not a contradiction)
         continue
+    if rel and r[0] >= n1 and r[1] in HDk:                                      # later window, to the END of the documents
+        for k in HDk[r[1]]:
+            if r[2] != W[k]['tt'] and pm._rnorm(r[3]) == pm._rnorm(W[k]['tw']) and frozenset((r[2], W[k]['tt'])) not in LK: CTo[k] += 1
     if not rel or fk not in FK or r[0] >= n2: continue
     (EC if r[0] < n1 else ED)[FK[fk]].append((int(r[0]), float(score[i]))); (EW if r[0] < n1 else EWD)[FK[fk]].append(pm._rnorm(r[3]))
 del R
@@ -69,6 +80,16 @@ OW = lambda k: pm._rnorm(W[k].get('tw') or '')                              # fu
 rep('VERBATIM: a confirming record in the inference own wording', lambda k: OW(k) in EW.get(k, []))
 rep('VERBATIM: own wording in the confirming OR the delay window', lambda k: OW(k) in EW.get(k, []) + EWD.get(k, []))
 rep('VERBATIM or 2+ distinct documents', lambda k: OW(k) in EW.get(k, []) or len({d for d, s in EV(k)}) >= 2)
+def fun(w):                                                                    # one-answer wording: of heads with 2+ records before the write, the share with ONE tail
+    hs = [len(t) for h, t in FT.get(pm._rnorm(w or ''), {}).items()]; return (np.mean([x == 1 for x in hs]) if len(hs) >= 5 else 0.0), len(hs)
+FN = {k: fun(W[k].get('tw')) for k in CS}
+P(f"   one-answer wordings: {sum(FN[k][0] >= 0.8 for k in CS)} of {len(CS)} confirmed inferences have a wording whose heads have one tail >= 80% of the time; "
+  f"{sum(CTo[k] > 0 for k in CS)} have an own-wording contradiction later (any wording type)")
+rep('NOT contradicted later in own wording (any relation)', lambda k: CTo[k] == 0)
+rep('NOT contradicted later in own wording, one-answer wordings only (>= 0.8)', lambda k: not (CTo[k] > 0 and FN[k][0] >= 0.8))
+rep('NOT contradicted later in own wording, one-answer wordings only (>= 0.6)', lambda k: not (CTo[k] > 0 and FN[k][0] >= 0.6))
+rep('NOT contradicted (one-answer >= 0.6) more often than confirmed in own wording', lambda k: not (FN[k][0] >= 0.6 and CTo[k] > (EW.get(k, []) + EWD.get(k, [])).count(OW(k))))
+rep('VERBATIM confirmation AND not contradicted (one-answer >= 0.6)', lambda k: OW(k) in EW.get(k, []) and not (CTo[k] > 0 and FN[k][0] >= 0.6))
 P(f"PART A done ({time.time() - T0:.0f}s)")
 if os.environ.get('SM_DUMP'):                                                  # a sample for a hand audit of 'wrong' (distant labels are incomplete: the true rate)
     import json
