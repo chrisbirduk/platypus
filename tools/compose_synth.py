@@ -47,7 +47,7 @@ def person():                                                                  #
         if n not in used: used.add(n); return n
 CODES = ['q' + c for c in 'abcdefghijklmnopqrst']
 NC = 20; COUNTRY = [name(3) for _ in range(NC)]
-def city(c, informative=0.8):
+def city(c, informative=float(os.environ.get('CS_CODEINF', 0.8))):   # 21 Nov CS_CODEINF: share of cities whose name code is their country's (0 = uninformative)
     code = CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]
     return f"{name(3)}-{code}", c
 OLD = [city(rs.randint(NC)) for _ in range(300)]
