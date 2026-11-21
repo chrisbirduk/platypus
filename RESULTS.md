@@ -5733,3 +5733,8 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
   - Labelled WRONG 11 (14%): 5 true (Seattle in Washington, Cleveland in Ohio, Henry VIII of England, Union Army during American Civil War, Taliban in Afghanistan), 4 ambiguous (Basque in Spanish, Jewish state at Jerusalem, Jewish 's Holocaust, Hindi as Bollywood), 2 false (Central America in Mexico, Peru in administration of Peruvian).
   - Labelled RIGHT 69: **5 are stated BACKWARDS** after re-wording on confirmation ('Texas are located in Dallas', 'India is located in Himachal Pradesh', 'Puerto Rico in San Juan', 'Italy region of Lombardy', 'Pakistan they have settled in Karachi'): the pair is related, but the taught sentence is false. The record's word order is not the relation's direction.
   - **False as taught: 7 of 80 (9%), plus 4 ambiguous (5%).** Without re-wording it would have been about 2 of 80 (3%) plus the ambiguous. Re-wording did not fix the dips either (kra23 visit 6): drop it in kra24.
+
+### cg27a_kra23 GPU, visit 7 (21 Nov 15:10)
+- Route J held-back composites: 0.11 (n 70), never planted 0.12 (n 67) - down from 0.19-0.20 at visits 4-5 as the held-back set grows with later writes; **pure families held back 0.06 (n 33)**, the first non-zero (2 of 33); greedy: right 4, middle hop 4 of 70. Route D explicit two steps 0.54, pure 0.53.
+- Taught inferences recover at the odd visit: open right 0.82 / wrong 0.85, rank 0.90 / 0.93.
+- Facts: probe 0.82, ledger 0.79 (taught 1 visit 0.58). Gate: never-read calibration too strict (t 0.99, right overall 0.19, never-read 0.00); keep-75% 0.48 / 0.01. Bits on read domains 1.8676 (best of kra21-23 at visit 7: 1.8856 / 1.8832). No Traceback.
