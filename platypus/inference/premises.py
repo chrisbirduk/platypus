@@ -1202,6 +1202,26 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
                 print(f"  [REAL-TEXT INFERENCE TRANSFER SOURCE | visit {vis + 1}] own - swapped subject (rank among 10, as PRIOR CONTROL), held-back inferences split by what "
                       f"they share with the {len(Ty_)} TRAINED ones ({len(nm_)} names, {len(an_)} answers, {len(br_)} bridges): " + " || ".join(parts9), flush=True)
             except Exception as e9: print(f"  [REAL-TEXT INFERENCE TRANSFER SOURCE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+            try:                                                               # 21 Nov kra22 (readout): TAUGHT RECALL BREAKDOWN - kra21 visit 6: taught inferences written
+                rb_ = np.random.RandomState(int(cfg.seed) + 99 + vis)          #   at visit 2 fell 0.97 -> 0.66 open in one visit with the SAME dose rows (6,426 both
+                AR_ = collections.defaultdict(set)                             #   visits; dose loss 0.010 -> 0.003), so not dilution. Split by: the write visit, the keep
+                for e in T_: AR_[(e['A'], e['r'])].add(e['ans'])               #   rule's verdict now, a CONFLICT (another taught answer for the same subject and wording),
+                def bk_(L):                                                    #   and the prompt: the bare training form 'A r ' vs the test wording
+                    h0, h1 = [], []
+                    for e in L[:120]:
+                        alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                        if len(alts) < 9: continue
+                        cs = [e['ans']] + [alts[j] for j in rb_.choice(len(alts), 9, replace=False)]; q1 = f"It is on record that {e['A']} {e['r']} "
+                        if len(q1.encode('latin-1', 'replace')) + max(len(c) for c in cs) + 2 > sq_: continue
+                        h0.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"{e['A']} {e['r']} ", cs) == 0)); h1.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), q1, cs) == 0))
+                    return f"bare {np.mean(h0):.2f} / test {np.mean(h1):.2f} ({len(h0)})" if h0 else "- (0)"
+                old9 = [e for e in T_ if e['truth'] is True and e['rm'] < vis]; parts8 = []
+                for wv in sorted({int((W.get(rti_wkey(e)) or {}).get('vis', -1)) for e in old9}):
+                    parts8.append(f"written at visit {wv + 1}: {bk_([e for e in old9 if int((W.get(rti_wkey(e)) or {}).get('vis', -1)) == wv])}")
+                parts8.append(f"keep rule TRAINS {bk_([e for e in old9 if trn_(e)])} | does NOT {bk_([e for e in old9 if not trn_(e)])}")
+                parts8.append(f"CONFLICT (another taught answer, same subject and wording) {bk_([e for e in old9 if len(AR_[(e['A'], e['r'])]) > 1])} | none {bk_([e for e in old9 if len(AR_[(e['A'], e['r'])]) == 1])}")
+                print(f"  [REAL-TEXT INFERENCE TAUGHT RECALL BREAKDOWN | visit {vis + 1}] taught RIGHT inferences, rank among 10, bare training form 'A r ' / test wording: " + " || ".join(parts8), flush=True)
+            except Exception as e9: print(f"  [REAL-TEXT INFERENCE TAUGHT RECALL BREAKDOWN | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
         if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "

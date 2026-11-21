@@ -66,6 +66,17 @@ rep('SECOND LOOK: a top-quarter record again in the delay window', lambda k: any
 rep('2+ documents confirm OR a second look (top half)', lambda k: len({d for d, s in EV(k)}) >= 2 or any(s >= q50 for d, s in DL(k)))
 rep('mean rating of all records (confirm + delay) above the top-quarter line', lambda k: np.mean([s for d, s in EV(k) + DL(k)]) >= q75)
 P(f"PART A done ({time.time() - T0:.0f}s)")
+if os.environ.get('SM_DUMP'):                                                  # a sample for a hand audit of 'wrong' (distant labels are incomplete: the true rate)
+    import json
+    def pr0(X, Y):
+        cc = PW.get(frozenset((X, Y)))
+        return ' '.join(max(cc.items(), key=lambda kv: kv[1])[0]) if cc else None
+    rd = np.random.RandomState(12); wr = [k for k in CS if not T[k]]; rt = [k for k in CS if T[k]]
+    smp = [wr[j] for j in rd.permutation(len(wr))[:60]] + [rt[j] for j in rd.permutation(len(rt))[:30]]
+    json.dump([dict(claim=f"{W[k].get('th')} {W[k].get('tw')} {W[k].get('tt')}", label_right=T[k], pair=list(k),
+                    premises=[x for b in (W[k].get('prem') or [])[:2] for x in (pr0(W[k].get('th') or k[0], b), pr0(b, W[k].get('tt') or k[1])) if x])
+               for k in smp], open(os.environ['SM_DUMP'], 'w'), indent=1)
+    P(f"DUMPED {len(smp)} confirmed inferences ({min(60, len(wr))} labelled wrong, {min(30, len(rt))} right) to {os.environ['SM_DUMP']}")
 if not int(os.environ.get('SM_PARTB', 1)): P(f"DONE ({time.time() - T0:.0f}s)"); sys.exit()
 # ---------------- PART B: the model's own signal (A6 stand-in) ----------------
 import torch, torch.nn as nn, torch.nn.functional as F
