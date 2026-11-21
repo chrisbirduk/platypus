@@ -231,6 +231,10 @@ def _inf_bench_readout(S_,cfg):
         l_,_,pr_=lab_(c_)
         if l_=='outside' or k9_>=5: continue
         k9_+=1; print(f"    BENCH: {dec_(c_.get('A'))} ~ {dec_(c_.get('C'))} via {dec_(c_.get('B'))} -> {l_}"+(f" [{nm_.get(str(pr_[0]),'?')} / {nm_.get(str(pr_[1]),'?')}]" if pr_ else ''),flush=True)
+_RW_PREMW = {'parent': ["{a} is a child of {b}.", "Records show that {a} is a child of {b}.", "{a}, who is a child of {b}, lives nearby.", "Of the family, {a} is a child of {b}.",
+                         "Everyone knows {a} is a child of {b}.", "Ask anyone and they say {a} is a child of {b}."],
+             'mgr': ["{a} is supervised by {b}.", "Records show that {a} is supervised by {b}.", "{a}, who is supervised by {b}, works nearby.", "At the office, {a} is supervised by {b}.",
+                     "Everyone knows {a} is supervised by {b}.", "Ask anyone and they say {a} is supervised by {b}."]}   # 21 Nov kra28 (inf_rule_world_premw): premise wordings (no ':' or ' > ' - the chain readers rewrite those)
 _RW_REL = {'parent': "{a} is a child of {b}.", 'grand': "{a} is a grandchild of {b}.", 'mgr': "{a} is supervised by {b}.", 'skip': "{a} is overseen by {b}."}
 def inf_rule_world(cfg):
     """RULE WORLD (11 Nov; inf_rule_world = N families and N org charts, on by default): planted facts that OBEY composition rules, beside the
@@ -256,9 +260,17 @@ def inf_rule_world(cfg):
             for m_, l_ in leaves_:                                             # 18 Nov PURE families (inf_rule_world_pure): NO composite planted for any of
                 W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_   #   their leaves, so a composite about them can
                 rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)                                 #   only come from composing the two hops
+                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) in (2, 3) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra26: the composite with its
+                    s1_ = _RW_REL[r1_].format(a=l_, b=m_).rstrip('.')                                                        #   two steps spelled
+                    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 3: s1_ = s1_[len(l_) + 1:]                      # 21 Nov kra27: step 1 WITHOUT the subject restated
+                    rec_ = (d_, _RW_REL[r2_].format(a=l_, b='').rstrip(' .') + ': ' + s1_ + '; ' + _RW_REL[r1_].format(a=m_, b=root_), r2_, l_, root_)   #   ('X is a grandchild of: is a child of M; M is a child of Z.')
+                elif int(getattr(cfg, 'inf_rule_world_chainplant', 0)) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra23 ROUTE B: the PLANTED composite is written
+                    rec_ = (d_, _RW_REL[r2_].format(a=l_, b=m_ + ' > ' + root_), r2_, l_, root_)   #   with its bridge, 'X is a grandchild of M > Z.' (synthetic world: chain teaching composes
+                                                                                   #   for people never taught, 0.85 with 300 taught; direct teaching never does)
                 if pure_: W_.setdefault('pure', set()).add(l_)
                 (W_['held'] if (pure_ or zlib.crc32(l_.encode()) % 2) else W_['planted']).append(rec_)
     W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
+    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)): _UNITS['chainplant'] = int(getattr(cfg, 'inf_rule_world_chainplant', 0))   # 21 Nov kra23: the reader reads a chain-form composite as the composite itself
     mv_ = float(getattr(cfg, 'inf_rule_world_move', 0.0))
     if mv_ > 0:                                                                # 19 Nov kra9 PREMISE CHANGE (inf_rule_world_move): a share of the leaves whose composite is
         rsm_ = np.random.RandomState(int(cfg.seed) + 6161); W_['moves'] = {}    #   held back MOVE: 'X is a child of M2' is planted in ANOTHER, randomly chosen domain (read
@@ -288,8 +300,14 @@ def _inf_plant_probes(raw,cfg,d,p):
             for dd_,s_ in u_['new']:
                 if dd_==int(d): (fs_ if u_['type']=='true' else once_).append(s_)
     nrw_ = 0
-    for dd_, s_, *_ in inf_rule_world(cfg)['planted']:                        # RULE WORLD facts of this domain, planted like probe facts
-        if dd_ == int(d): fs_.append(s_); nrw_ += 1
+    pk_ = max(1, int(getattr(cfg, 'inf_rule_world_premk', 1)))                # 21 Nov kra25: the PREMISES (child of / supervised by) planted pk_ times as often - the
+    pw_ = int(getattr(cfg, 'inf_rule_world_premw', 0))                       # 21 Nov kra28 KNOWLEDGE AUGMENTATION OF THE PREMISES: each premise in pw_ wordings
+    for dd_, s_, rr_, *rest_ in inf_rule_world(cfg)['planted']:               #   (subject, relation and answer in varied positions and contexts) instead of one
+        if dd_ != int(d): continue                                             #   sentence repeated - a fact learned in one wording is keyed on that wording's
+        if pw_ > 1 and rr_ in ('parent', 'mgr') and len(rest_) >= 2:          #   state; the synthetic world (4 / 3 wordings) composes through new bridges
+            a_, b_ = rest_[0], rest_[1]; T_ = _RW_PREMW[rr_][:pw_]
+            ss_ = [T_[j_ % len(T_)].format(a=a_, b=b_) for j_ in range(max(pk_, len(T_)))]; fs_.extend(ss_); nrw_ += len(ss_); continue
+        k_ = pk_ if rr_ in ('parent', 'mgr') else 1; fs_.extend([s_] * k_); nrw_ += k_   #   world's second-hop premise is recalled about 0.5-0.7
     for l_, mv_ in (inf_rule_world(cfg).get('moves') or {}).items():          # 19 Nov kra9: the MOVED leaves' new premise, planted in its own domain
         if mv_['d2'] == int(d): fs_.append(mv_['sent']); nrw_ += 1
     if not fs_ and not once_: return raw

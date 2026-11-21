@@ -5651,3 +5651,179 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Gate (never-read calibration, before the floor fix): visit 2 t 0.09, never-read given a name 0.43 (the flaw); visit 3 t 0.99, right overall 0.45, never-read 0.02; visit 4 t 0.99, 0.33 / 0.02. Keep-75% rule beside it: 0.45 / 0.02 and 0.25 / 0.00. The smoothed line carries visit 2's 0.09 (never-read 0.12-0.27): ignore it in kra22.
 - Facts: probe 0.83 / 0.92 / 0.94 (visits 2-4), ledger 0.87 / 0.88 / 0.87; control 0.36-0.55. Bits on read domains 2.0357 / 2.0106 / 1.9248.
 - Visit 4 is the pre-teaching baseline for the new readouts (the 136 are first trained in visit 5): PRIOR CONTROL held-back right +0.02 (SE 0.04); TRANSFER SOURCE +0.00 in every split; TAUGHT RECALL BREAKDOWN 0.17-0.21 (CONFLICT 0.10, n 10, vs none 0.21). No Traceback.
+
+### cg27a_kra22 GPU, visits 5-6 (21 Nov 11:35)
+- **TRANSFER SOURCE - the lift on never-taught inferences comes through ANSWERS that were also taught.** Held-back RIGHT, own - swapped subject (visit 5 / 6): all +0.14 (SE 0.06, n 58) / +0.07 (SE 0.03, n 119); **answer is a taught answer +0.21 (SE 0.08, n 39) / +0.11 (SE 0.04, n 75) vs answer NOT taught +0.00 (n 19) / +0.00 (n 44)**; subject a taught name +0.33 (n 9) / +0.09 (n 23) vs not +0.10 / +0.06; shares a bridge +0.15 / +0.07 vs not +0.08 / +0.07; NOTHING SHARED +0.00 (n 7) / +0.00 (n 14). Held-back wrong +0.00 / +0.05.
+- Reading: teaching 'X r C' makes the trunk prefer C for OTHER subjects of the same kind (own subject over a swapped one), but only when C itself was taught. Subject-aware transfer of taught answers (a learned subject-kind -> answer association), not composition: no lift where the answer was never taught or nothing is shared.
+- **TAUGHT RECALL BREAKDOWN at the visit-6 dip:** bare training form and test wording equal (0.74 / 0.76 for the visit-2 cohort; not a wording effect). **CONFLICT (another taught answer for the same subject and wording) 0.44-0.46 vs none 0.78 (n 39 / 120)** - competing answers under the generic wording 'in' (often both right: 'X in Germany', 'X in Europe') split the trunk's answer. Keep rule: those it stops training are recalled 0.93-0.96 (already known); the ones it trains include the 61 just confirmed (0.11-0.13, not yet trained).
+- Taught inferences: visit 5 right 0.97 / wrong 1.00 open vs held back 0.03 / 0.00; visit 6 0.53 / 0.33 (visit-2 cohort 0.69 / 0.55; the visit-6 dip again, as kra21's 0.43).
+- Confirmation: visit 6 223 confirmed (right 0.78); all so far 423 (0.83; kra21 at visit 6: 509 at 0.82); faded 299 (0.67; kra21 0.59). The two-document rule's gain shrinks at the second judgement: it fades more right ones.
+- Gate (never-read calibration): visit 5 right overall 0.34 / never-read 0.00 (keep-75%: 0.53 / 0.01); visit 6 0.59 / 0.02 (same as keep-75%).
+- Facts: probe 1.00 / 0.84, ledger 0.86 / 0.83 (taught 1 visit 0.69 at visit 6), control 0.26-0.46. Bits on read domains 1.8614 / 1.9094 (kra21 1.8587 / 1.9049). No Traceback.
+
+### Bridge teaching on real-text chains (21 Nov 11:50; tools/bridge_teach.py, A6 stand-in, 872 chains from distant_50k code writes, TRAIN 400 / TEST 200 on bridges never in a train chain)
+- 606 distinct first-hop wordings for 13 conclusion wordings; premises recalled 0.67 after 3,000 steps (forgetting -0.04 to -0.05).
+- DIRECT ('Q: A tw ? So A tw C.'): taught C first among 10 0.79 / 0.92 at steps 1,500 / 3,000; never taught 0.19 / 0.14 (chance 0.10).
+- **BRIDGE ('Q: A tw ? A w1 B. B w2 C. So A tw C.'), the model writing its own chain (greedy): taught C first 0.18 / 0.33 (exact 0.12 / 0.27), first hop written exactly 0.31 / 0.51; NEVER TAUGHT C first 0.015 / 0.010, first hop 0.005 / 0.005, chain format written 0.08 / 0.105.** No composition: it memorises (slowly) the taught chains and cannot even write the format for new subjects.
+- The samples show why: real-text premises are mostly list fragments ('Bergen , norway and Iceland', 'Belize , guatemala , Nicaragua', 'Frankfurt , sweden ...'), not relations - there is no consistent first hop to learn, unlike the synthetic world's one rule. (A first run scored 0.000 everywhere because greedy decoding fed unshifted input; fixed, 4672a46.)
+- Next (route A): the same restricted to clean relation families (containment wordings; word-only relational wordings).
+
+### Route B dose test: how many taught chains make a trunk compose (21 Nov 12:05; tools/compose_synth.py CS_COTLATE 1, CHAIN arm, pretrained cs_impl0_s0, seed 0)
+| taught people (chain form 'A is a citizen of B > C.') | never taught B / C at 300 steps | 750 | 1,500 |
+|---|---|---|---|
+| 10 | 0.19 / 0.19 | 0.12 / 0.15 | 0.35 / 0.30 |
+| 30 | 0.47 / 0.46 | 0.51 / 0.52 | 0.61 / 0.62 |
+| **100** | 0.70 / 0.74 | 0.87 / 0.86 | **0.88 / 0.87** |
+| 300 (19 Nov) | 0.85 / 0.83 | - | 0.87 / 0.85 (3,000) |
+- Taught C 1.00 in every arm. The decomposition is learned from about 100 worked chains; 30 give 0.62.
+- On the GPU the rule world's planted composites are DIRECT ('X is a grandchild of Z'), which never composes, and route J's chain-form writes are a few dozen: held-back composites 0.00. **kra23 plants the composites with their bridge (inf_rule_world_chainplant 1) and doubles the rule world (96: about 118 chain composites per rule)** - the first GPU test of trunk-level inference on the rule world.
+
+### cg27a_kra22 GPU, visit 7 (21 Nov 12:10)
+- TRANSFER SOURCE, third visit running: held-back right own - swapped +0.14 (SE 0.04, n 119); **answer a taught answer +0.23 (SE 0.06, n 70) vs not +0.02 (SE 0.02, n 49); NOTHING SHARED +0.00 (n 15)**; subject a taught name +0.32 (n 22). Held-back wrong +0.11 (SE 0.07, n 19).
+- Taught inferences recover at the odd visit: open right 0.85 / wrong 0.80, rank 0.97 / 0.91; visit-2 cohort 0.82, visit-4 cohort 0.92. Breakdown: CONFLICT 0.90-0.92 vs none 0.97-0.99 (the conflict cost is largest at the dip visits: 0.44-0.46 vs 0.78 at visit 6).
+- MATCHED held-back right own - broken +0.09 (SE 0.05), own - closed +0.21 (SE 0.05).
+- Gate (never-read calibration): right overall 0.52, right when answered 0.92, never-read 0.01; keep-75%: 0.47 / 0.00.
+- Facts: probe 0.88, ledger 0.82 (taught 1 visit 0.65, 4+ visits 0.84), control 0.24-0.31. Bits on read domains 1.8832 (kra21 1.8856). No Traceback.
+
+### cg27a_kra22 GPU, visit 8 (21 Nov 12:40; stopped here to start kra23)
+- TRANSFER SOURCE: held-back right +0.12 (SE 0.04, n 150); answer a taught answer +0.16 (SE 0.05, n 93) vs not +0.05 (SE 0.04, n 57); nothing shared -0.07 (n 15). Held-back WRONG now also +0.13 (SE 0.06, n 30). Four visits: the lift follows taught answers; nothing shared never lifts.
+- Taught inferences dip again at the even visit: open right 0.54 / wrong 0.55, rank 0.92 / 0.63; CONFLICT 0.64-0.74 vs none 0.93-0.97 (n 76 / 120) - conflicts grow with the pool (39 at visit 6, 76 now).
+- Confirmed 639 so far at right 0.82 (kra21 at visit 8: 733 at 0.79); faded 662 (0.65).
+- Gate: both rules t 0.91-0.93, right overall 0.48, never-read given a name **0.07** - neither rule holds 2% out of sample at visit 8.
+- Facts: probe **0.68** (newly taught; first time below 0.75), ledger 0.81 (4+ visits 0.86). Bits on read domains 1.8250 (kra21 1.8292). No Traceback.
+- kra23 local check, visits 1-2: no errors; [RULE WORLD, THE TRUNK'S OWN CHAIN] prints (0.00 everywhere at 150 local steps, as expected); the gate floor was skipped when fewer than 4 right answers existed (t 0.09 at visit 2) - now floored at 0.9 then.
+- kra23 local check, visits 3-4 (stopped at visit 4 to free the CPU; the GPU run is under way): no errors; every new readout prints - SELF-SUPPORT JUDGE (first values at visit 4: just confirmed margin AUC 0.660 on n 15, trained 0.550), AUDIT SAMPLE (16 printed), the floored gate, and RULE WORLD, THE TRUNK'S OWN CHAIN (0.00 everywhere at 150 local steps a visit: the local harness does not learn the planted facts).
+
+### cg27a_kra23 GPU, visits 1-4 (21 Nov 13:35): route B - the trunk writes chains for composites never planted; first clean sign of composition
+- Reader fix works: the relational module finds both rules from visit 1, 0 false; 125 of 128 planted rule-world facts recorded at visit 1.
+- **[RULE WORLD, THE TRUNK'S OWN CHAIN]** (greedy, store and memory off, parsed 'B > C'), visits 2 / 3 / 4:
+  - PLANTED (read in chain form): chain format 0.46 / 0.29 / 0.31, C right 0.46 / 0.71 / 0.62 (n 13 / 17 / 26).
+  - HELD BACK, never planted: chain format 0.27 / 0.37 / **0.77**, bridge right 0.09 / 0.16 / 0.37, C right 0.09 / 0.05 / **0.30** (n 11 / 19 / 30; direct 0.00).
+  - PURE FAMILIES: chain format 0.17 / 0.30 / **0.71**, bridge right 0.08 / 0.20 / 0.36, C right 0.00 / 0.00 / **0.29** (n 12 / 20 / 28; direct 0.00).
+  - **CONTAMINATED:** route J also writes never-planted composites (76 by visit 3, 128 by visit 4; 68 taught in chain form), and this readout did not exclude them. Fixed for kra24 (NEVER WRITTEN BY ROUTE J).
+- **The clean number - route J's written composites HELD BACK as its control (never planted, never taught):** recalled from the trunk at visit 4 **0.17-0.21 (n 24)** (edits subtracted 0.17), greedy C right 2 of 24; pure families 0.08 (n 12); taught 0.98-1.00. kra21 / kra22: 0.00 held back at every visit. A first, small sign that the trunk composes from its own chain; n is small and it is one visit.
+- Route D (explicit two steps, store off): two-step C 0.36 / 0.47 vs direct 0.03 / 0.06. Route A (memory) 0.71-0.82.
+- Facts: probe 0.95 / 0.97, ledger 0.88 / 0.92. Gate visit 2 t 0.09 (the floor needs 4 right answers; patched 5a63346 after this run started), visit 3 keep-75% 0.42 / never-read 0.06. Bits 2.0216 / 2.0077 (kra22 2.0357 / 2.0106). No Traceback.
+
+### cg27a_kra23 GPU, visit 5 (21 Nov 14:00): the trunk composes for new SUBJECTS, not yet through new BRIDGES
+- Route J's held-back written composites (never planted, never taught): **0.19 (n 54)**, never planted 0.20 (n 51); taught 0.97-0.99 (67). **But PURE FAMILIES held back 0.00 (n 26)** (test wording, _dt_recall).
+- Reading: the held-back composites answered right are in families where another leaf's composite was planted as a chain ('Y is a grandchild of M > Z'). The trunk takes the first hop from the read premise ('X is a child of M', never in any chain for X) and the second hop from chains it read about M's other grandchildren ('M > Z'). Where the bridge M never appears in any chain (pure families), the second hop would have to come from the premise 'M is a child of Z' alone - and it does not (0.00), although route D, asking the two hops explicitly, gets pure families 0.42.
+- So: composition over new SUBJECTS (a genuine two-hop answer for a person never described), not yet over new BRIDGES. Consistent with every test so far: the synthetic world's held-out people lived in cities that appeared in taught chains (0.87); the bridge tests held out the bridges and failed (0.01-0.02); the dose test fits either.
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] (contaminated by route J teaching, see visit 4): held back C right 0.36, pure 0.43; chain format 0.71-0.76; bridge right 0.67-0.68 (premise recall in the chain is good).
+- SELF-SUPPORT JUDGE (visit 4, first GPU values): just confirmed, margin AUC 0.559 (n 149, 20 wrong) - too weak for a teach-gate; trained 0.43-0.57; held back 0.61-0.65 (n 64, 6 wrong). AUDIT SAMPLE printed (40 of 200 at visit 4).
+- Confirmed at visit 4: 200 (right 0.88), as kra22. Taught inferences 0.93 vs held back 0.03. Facts: probe 0.94, ledger 0.88. Gate (never-read calibration) t 1.00 at visit 5: right overall 0.17 / never-read 0.00 - too strict; keep-75%: 0.48 / 0.02.
+
+### Route A: bridge teaching on real-text containment chains (21 Nov 14:10; tools/bridge_teach.py BT_SOURCE=records, 5,734 chains built from records 'X in Y', 'Y in Z' read in distant_50k; 95% of the conclusions never stated in a record; TRAIN 400 / TEST 200 on bridges never in a train chain)
+- Premises recalled 0.56 after 3,000 steps. DIRECT: taught 0.68 / 0.90, never taught 0.05 / 0.035 (C first among 10, steps 1,500 / 3,000). **BRIDGE: taught 0.29 / 0.64 (exact 0.25 / 0.60), first hop written 0.42 / 0.68; NEVER TAUGHT 0.00 / 0.00, first hop 0.01, format 0.01-0.015.**
+- No composition through held-out bridges, as kra23 visit 5 predicted (pure families 0.00). Also, records 'X in 2007' make years into bridges - the name-shape check belongs on the premises too.
+- The earlier filters on the code writes left too few chains: containment 8, word-only relations 116 (78 first-hop wordings).
+- Next: tools/compose_synth.py CS_NEWB - in the synthetic world, never-taught people in cities that appear in a taught chain (seen bridge) vs cities that never do (new bridge), with taught chains concentrated or one per city.
+
+### cg27a_kra23 GPU, visit 6 (21 Nov 14:45) + the synthetic new-bridge test (first arm)
+- Route J held-back composites (never planted, never taught): 0.17 (n 65), never planted 0.18 (n 62); **pure families held back 0.00 (n 29)** again; held back answered with the middle hop 8 of 65. Route D (two hops asked explicitly, store off) 0.60, pure families 0.58 vs direct 0.00-0.03: the trunk knows both premises of pure families but its own chain does not use the second.
+- **Re-wording halved the conflicts (20 vs kra22's 39 at visit 6) and they are no longer recalled worse (0.75-0.80 vs 0.71-0.73), yet the visit-6 dip is unchanged** (taught right open 0.50, kra22 0.53; visit-2 cohort 0.97 -> 0.74). The dips at visits 6 and 8 (Github, USPTO) are domain interference that recovers at the next visit, not conflicting answers.
+- TRANSFER SOURCE: held-back right +0.03 (SE 0.03, n 119); answer taught +0.02 vs not +0.03 - the answer-transfer lift of kra22 (+0.11 to +0.23) is gone after re-wording (answers now in varied wordings).
+- SELF-SUPPORT JUDGE at visit 6: just confirmed AUC 0.424 (n 150, 37 wrong), trained 0.416 - below 0.5. Not a teach-gate.
+- Confirmed 423 so far at right 0.83 (as kra22). Facts: probe 0.91, ledger 0.88. Gate: never-read calibration 0.48 / never-read 0.06; keep-75% 0.56 / 0.07. Bits on read domains 1.8954 (kra22 1.9094). No Traceback.
+- **Synthetic new-bridge test (compose_synth CS_NEWB 1, 100 taught people in even-numbered cities, 73 cities):** never-taught people in cities NEVER in a taught chain compose at **B 0.84 / C 0.84** (3,000 steps), seen-bridge 0.92 / 0.96. **Confounded:** synthetic city names carry their country's code 80% of the time ('Name-qX'), so the second hop can be read off the bridge's name - which rule-world and real names cannot. Next: the same with uninformative codes (re-pretrained).
+
+### Synthetic new-bridge test, second arm + GPU audit of kra23 (21 Nov 14:55)
+- compose_synth CS_NEWB 1 CS_NEWB_DIV 1 (100 taught people, one per city): never taught, NEW bridge (n 70) B / C 0.83 / 0.83 at 3,000 steps; seen bridge (n 30) 0.93 / 0.93. Spreading the chains over 100 cities changes little against concentrating them over 73 (0.84). Same confound (city codes); the clean run (CS_CODEINF 0, re-pretrained) is under way.
+- **Audit of kra23's printed sample** (80 inferences confirmed at visits 4 and 6; the AI model's judgement from general knowledge, not gold):
+  - Labelled WRONG 11 (14%): 5 true (Seattle in Washington, Cleveland in Ohio, Henry VIII of England, Union Army during American Civil War, Taliban in Afghanistan), 4 ambiguous (Basque in Spanish, Jewish state at Jerusalem, Jewish 's Holocaust, Hindi as Bollywood), 2 false (Central America in Mexico, Peru in administration of Peruvian).
+  - Labelled RIGHT 69: **5 are stated BACKWARDS** after re-wording on confirmation ('Texas are located in Dallas', 'India is located in Himachal Pradesh', 'Puerto Rico in San Juan', 'Italy region of Lombardy', 'Pakistan they have settled in Karachi'): the pair is related, but the taught sentence is false. The record's word order is not the relation's direction.
+  - **False as taught: 7 of 80 (9%), plus 4 ambiguous (5%).** Without re-wording it would have been about 2 of 80 (3%) plus the ambiguous. Re-wording did not fix the dips either (kra23 visit 6): drop it in kra24.
+
+### cg27a_kra23 GPU, visit 7 (21 Nov 15:10)
+- Route J held-back composites: 0.11 (n 70), never planted 0.12 (n 67) - down from 0.19-0.20 at visits 4-5 as the held-back set grows with later writes; **pure families held back 0.06 (n 33)**, the first non-zero (2 of 33); greedy: right 4, middle hop 4 of 70. Route D explicit two steps 0.54, pure 0.53.
+- Taught inferences recover at the odd visit: open right 0.82 / wrong 0.85, rank 0.90 / 0.93.
+- Facts: probe 0.82, ledger 0.79 (taught 1 visit 0.58). Gate: never-read calibration too strict (t 0.99, right overall 0.19, never-read 0.00); keep-75% 0.48 / 0.01. Bits on read domains 1.8676 (best of kra21-23 at visit 7: 1.8856 / 1.8832). No Traceback.
+
+### Synthetic new-bridge test, CLEAN (21 Nov 15:45; compose_synth CS_CODEINF 0 - city names carry no country code; re-pretrained, city's country 1.00, person's city 1.00; 100 taught people in even-numbered cities)
+| arm | never taught, NEW bridge B / C (300 / 750 / 1,500 / 3,000 steps) | SEEN bridge B / C at 3,000 |
+|---|---|---|
+| concentrated (73 cities) | 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67, **0.90 / 0.73** (n 78) | 0.73 / 0.73 (n 22) |
+| one per city (100 cities) | 0.77 / 0.55, 0.82 / 0.62, 0.87 / 0.68, **0.87 / 0.82** (n 71) | 0.97 / 0.93 (n 29) |
+- **Composition through bridges never seen in a chain works without the name shortcut:** the second hop comes from the plain premise 'B lies in C' (direct teaching: 0.08). Diverse chains help a little (0.73 -> 0.82).
+- So the rule world's pure-family failure (kra23: 0.00-0.06) is specific. Candidate causes: the synthetic second hop chooses among 20 countries (rule world: about 190 roots), and its premise is known perfectly (rule world: recalled 0.53-0.58). Next: CS_NC 150.
+
+### cg27a_kra23 GPU, visit 8 (21 Nov 16:10; the user's log ends at the start of visit 9)
+- Route J held-back composites 0.12 (n 84; never planted 0.12, n 81); taught 0.73-0.74 (the visit-8 dip). **Pure families held back 0.02 (n 41)** (visit 7: 0.06, n 33). Route D explicit two steps 0.48, pure 0.47; direct 0.00-0.01.
+- Route B over kra23, held back (all / pure): visit 4 0.17-0.21 / 0.08, 5 0.19-0.20 / 0.00, 6 0.17-0.18 / 0.00, 7 0.11-0.12 / 0.06, 8 0.12 / 0.02. Composition over new subjects at about 0.12-0.20; through new bridges at about chance.
+- Confirmed 639 so far at right 0.82 (kra22 identical). Taught inferences 0.55 open at the even visit. Facts: probe 0.81, ledger 0.75. Gate: never-read calibration 0.58 / never-read 0.07; keep-75% 0.61 / 0.08. Bits on read domains 1.8125 (best yet; kra22 1.8250). No Traceback.
+- **150 countries (CS_NC 150, clean, one taught person per city, 100 taught): never taught, NEW bridge (n 66) B / C 0.95 / 0.92 at 300 steps, 0.94 / 0.94 at 3,000; seen bridge 0.88 / 0.88.** A many-valued second hop is no obstacle. What remains different from the rule world is premise strength (synthetic: the city's country recalled 1.00; rule world: about 0.5-0.7). **kra25 plants the rule world's premises three times as often (inf_rule_world_premk 3).**
+
+### cg27a_kra24 GPU, visits 5-6 (21 Nov 17:25)
+- **Pooled gate (keep-75% over 3 sleeps): right overall 0.64 / 0.62, right when answered 1.00, never-read given a name 0.03 / 0.02** (visit 4: 0.55 / 0.03). One-sleep keep-75% beside it: 0.64 / 0.03 and 0.58 / 0.02.
+- Facts: probe 0.94 / 0.88, ledger 0.89 / 0.89. Taught inferences visit 5: 0.96 vs held back 0.05.
+- Route D (explicit two steps, store off): first step B 0.80, two-step C **0.74**, pure families 0.71 (kra23 at visit 5-6: 0.47-0.60) - the 12 question rows a step raise premise recall. Route J held back: pure families 0.00 (n 25).
+- Bits on read domains 1.8496 at visit 5 (kra22 1.8614). No Traceback.
+- kra25 local check: visits 1-2 run without errors with the premises planted three times (domain 0: 726 rule-world facts in 25,290 planted sentences).
+
+### cg27a_kra24 GPU, visits 6-7 (21 Nov 18:10)
+- **Pooled gate: never-read given a name 0.02 / 0.01** (right overall 0.62 / 0.45, right when answered 1.00 / 0.97). kra22 / kra23 at visit 7: 0.01-0.07.
+- **Facts at visit 7: ledger ever taught 0.84 (kra23 0.79, kra22 0.82); probe (newly taught) 0.76 (kra23 0.82)**; control 0.29-0.31.
+- Route B, clean readout (never planted, never written by route J), visits 6 / 7: held back C right 0.33 (n 36) / 0.03 (n 37); **pure families 0.14 (n 35) / 0.08 (n 26)**; route J pure held back 0.06 / 0.03. Noisy and small. Route D explicit two steps 0.65-0.69 (pure 0.62-0.65).
+- Confirmed 322 so far at right 0.84. Taught inferences 0.65 / 0.80 (even / odd visit). Bits on read domains 1.8944 / **1.8603** (kra23 1.8954 / 1.8676). No Traceback.
+
+### Route A with an ORACLE reader (21 Nov 18:20; bridge_teach BT_SOURCE=records BT_ORACLE=P131,P17,P30,P361,P150: containment chains only from records whose pair carries a gold containment relation; 429 chains, TRAIN 312 / TEST 117 on bridges never in a train chain)
+- Premises recalled 0.95 (the noisy records: 0.56). BRIDGE (restated form 'Q: A r ? A w1 B. B w2 C. So A r C.'): taught C first 0.54 / 0.64; NEVER TAUGHT 0.000, first hop 0.034, format 0.017.
+- **A test-format failure, not a reader one:** for a new subject the stand-in writes a TAUGHT subject with similar letters ('Q: Nagpur Division in ?' -> 'Nazca Lines in Peru ...', 'Bangalore' -> 'Basel', 'Haryana' -> 'Hazarajat'): it cannot copy a new name into the restated chain. The synthetic and rule worlds never restate the subject ('A r B > C.'). P150 ('contains') also reverses direction in these labels ('Germany in Berlin'). Re-run in the arrow form without P150 (BT_FORMAT=arrow).
+- The earlier route A runs (writes, records) used the same restated form, so their 0.00 on held-out bridges is confounded the same way.
+
+### cg27a_kra24 GPU, visit 8 (21 Nov 18:50; stopped here to start kra25)
+- **Pooled gate at the patent visit: right overall 0.56, right when answered 1.00, never-read given a name 0.03** (kra23 0.07, kra22 0.07). Visits 4-8: 0.03 / 0.03 / 0.02 / 0.01 / 0.03.
+- **Facts: ledger ever taught 0.83 (kra23 0.75, kra22 0.81); probe 0.78 (kra23 0.81, kra22 0.68).** Both above 0.75 at visits 2-8.
+- **Bits on read domains 1.8040, the best of any build at visit 8** (kra23 1.8125, kra22 1.8250): 12 question rows a step cost nothing.
+- Route B: clean readout pure families 0.11 (n 46), never written 0.22 (n 46); route J pure held back 0.02 (n 53). Route D two-step 0.62, pure 0.57.
+- Confirmed 423 so far at right 0.84. No Traceback.
+- **kra24 meets the facts and gated-answers goals through visit 8** (one seed).
+- **Re-run in the arrow form ('A in B > C.', without P150; 21 Nov 19:00):** premises recalled 1.00. DIRECT never taught 0.050 / 0.075 (C first among 10, steps 1,500 / 3,000; chance 0.10). **BRIDGE never taught: C first 0.175 / 0.150, C exact 0.100 / 0.050, own bridge right 0.250 / 0.175, chain format 0.300 / 0.275** (n 117); taught 0.92-0.98.
+- **A weak positive with a clean reader:** bridge teaching beats direct teaching on chains through bridges never in a taught chain by about +0.10 (about 2-3 SE), but far below the synthetic world (0.73-0.94): the stand-in writes the chain form for under a third of new subjects and often answers in a single hop. Real containment is many-levelled (city in region in country in continent), so 'in' has several right answers.
+
+### cg27a_kra25 GPU, visits 1-5 (21 Nov 19:50; premises planted three times, inf_rule_world_premk 3)
+- **Premise recall rises:** route D premises, first step B 0.59 / 0.63 / 0.69 / **0.86** at visits 2-5 (kra24 at visit 5: 0.80; kra23: 0.50); explicit two steps 0.81, **pure families 0.80** (kra24 0.71, kra23 0.42).
+- **But the trunk's own chain does not use them for new bridges:** pure families, never written: chain format 0.89, **bridge right 0.22**, C right **0.00** (n 9); route J pure held back 0.00 (n 24). Non-pure held back: bridge right 0.54, C right 0.15 (n 13).
+- So premise strength is not the remaining gap: with premises recalled at 0.86 and the two hops answered 0.80 when asked one by one, the chain's FIRST hop is wrong for pure-family leaves (0.22) - asked 'X is a grandchild of ', the trunk does not retrieve X's parent the way it does when asked 'X is a child of '.
+- Cost: bits on read domains 1.8516 at visit 5 (kra24 1.8496); facts probe 0.97, ledger 0.90; gate 0.56 / never-read 0.02. No Traceback.
+
+### cg27a_kra25 GPU, visit 6 (21 Nov 20:25; stopped here to start kra26) + kra26 local check
+- Pure families: trunk's own chain (never written) bridge right 0.18, **C right 0.04 (n 28)**; route J pure held back 0.07 (n 27). Non-pure never written 0.34 (n 29). Premise recall at visit 6: first step 0.75 (0.86 at visit 5); explicit two steps 0.72, pure 0.68.
+- **Tripled premises raised premise recall (visit 5) but not composition through new bridges.** Cost: none - bits on read domains 1.8945 (kra24 1.8944); facts probe 0.91, ledger 0.87; gate 0.52 / never-read 0.00.
+- kra26 local check (spelled steps, inf_rule_world_chainplant 2): visits 1-2 run without errors; the reader records 192 rule-world facts by visit 2 (the local harness learns too little to show chains).
+
+### cg27a_kra26 GPU, visits 1-2 (21 Nov 21:05; spelled steps, inf_rule_world_chainplant 2)
+- The reader reads the spelled composites: both rules found from visit 1, 0 FALSE; route J composite 0.99, pure 1.00, writes precision 0.98 (81).
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 2: PLANTED chain format 0.69, bridge right 0.46, C right 0.38 (n 13); HELD BACK never written format 0.45, bridge 0.00, C 0.00 (n 11); **PURE FAMILIES never written: format 0.83 (kra23 at visit 2: 0.17), bridge right 0.00, C 0.00 (n 12)**. The spelled form is taken up fast; the first step for new subjects is wrong so far (small n, visit 2).
+- Route D: first step 0.59, two-step 0.52, pure 0.48 (direct 0.00-0.05) - as kra25 at visit 2. Facts taught one visit 0.87; control 0.20. Bits on read domains 2.0223. No Traceback.
+
+### cg27a_kra26 GPU, visit 3 (21 Nov 21:28)
+- [RULE WORLD, THE TRUNK'S OWN CHAIN]: PLANTED format 0.88, bridge right 0.82, **C right 0.76** (n 17; kra23 0.71). **HELD BACK, never planted, never written (new subjects): bridge right 0.25, C right 0.17 (n 12; direct 0.00)** - a clean readout (kra23's was contaminated). **PURE FAMILIES never written: format 0.75, bridge right 0.00, C 0.00 (n 12)**; kra23 (arrow form, subject not restated) had bridge right 0.20 at visit 3.
+- The trunk knows the first step when asked alone (route D first step 0.66, pure two-step 0.54) but writes a wrong bridge inside the spelled chain: consistent with the stand-in's copy failure (step 1 restates a NEW subject). kra27 prepared: step 1 without the subject (inf_rule_world_chainplant 3); and a readout of the subject the trunk writes in step 1 (subject copied / another subject with ITS true bridge) + 4 examples.
+- Facts taught 0.91 (one visit 0.93); gate never-read 0.02, right when answered 1.00; route J 0.96, writes 0.98; bits on read domains 2.0008. No Traceback.
+
+### cg27a_kra26 GPU, visit 4 (21 Nov 21:43)
+- [RULE WORLD, THE TRUNK'S OWN CHAIN]: PLANTED format 1.00, bridge 0.73, C 0.69 (n 26); HELD BACK never written: bridge 0.09, C 0.09 (n 11; visit 3: 0.25 / 0.17); **PURE FAMILIES never written: format 0.75, bridge right 0.17, C right 0.08 (n 12)** - kra23's arrow form at visit 4 (contaminated): bridge 0.36, C 0.29. Not above the 0.00-0.14 band of kra23-kra25.
+- Route D: first step 0.69, two-step 0.66, pure 0.57; "asked DIRECTLY" 0.29 / pure 0.26 (earlier builds 0.00-0.05) - route D's set does not exclude route J's written composites, which kra26 teaches directly (inf_distill_chainform 0), so this is likely their recall, not composition.
+- Facts taught 0.88 (2-3 visits 0.89); gate right when answered 1.00, never-read 0.02; route J 0.96, writes 0.96 (188); bits on read domains 1.9202. No Traceback.
+- kra27 local check, visit 1: no errors; new readout prints (subject copied 1.00 on planted; examples 'Anpelqui -> is a child of the could not ...' - the 150-step stand-in learns the form's start only).
+
+### cg27a_kra27 GPU, visit 1 (21 Nov 22:07; spelled steps without the restated subject, inf_rule_world_chainplant 3) + local check visits 1-2
+- No Traceback (GPU visit 1, local visits 1-2). The reader reads the new form: both rules found from visit 1, 0 FALSE. Bits on read domains 2.0086 (kra26 2.0043).
+- Trunk's own chain at visit 1: 0.00 everywhere, as every build; examples for pure families: 'Tevmizo -> is a child of Zonorbri', 'Vinquisen -> is a child of Zofaris' - the step-1 form is taken up already, with a common name in the slot.
+
+### cg27a_kra27 GPU, visits 2-3 (21 Nov 22:44; step 1 without the restated subject)
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 2 / 3: PLANTED bridge 0.62 / 0.88, C 0.38 / 0.82 (n 13 / 17); **HELD BACK never written: bridge 0.64 / 0.17, C 0.36 / 0.08 (n 11 / 12)** (kra26: 0.00 / 0.25, 0.00 / 0.17); **PURE FAMILIES never written: bridge 0.33 / 0.10, C 0.00 / 0.00 (n 12 / 10)** (kra26: 0.00 / 0.00).
+- Examples, pure families: 'Tevmizo -> is a child of Zogalka; Zogalka is a child of Zogalka', 'Pelsenzo -> is a child of Orzopel; Orzopel is a child of Orzopel', 'Quibrisal -> is a child of Quibeld; Quitevbri'. Step 1 is now sometimes right (no subject to copy), but STEP 2 fails inside the chain: the bridge is copied correctly and then repeated as its own parent, or step 2 is dropped - while asked on its own (route D) the second hop is right about 0.5. The same pattern as step 1 in kra26: a premise recalled in its own sentence but not inside the chain (premises planted in one wording; synthetic test running).
+- Facts taught 0.92 (one visit 0.93); gate never-read 0.00, right when answered 1.00; route J writes 0.97-0.98; bits on read domains 1.9977 (kra26 2.0008). No Traceback.
+
+### KNOWLEDGE AUGMENTATION OF THE PREMISES IS THE MISSING PIECE (synthetic, 21 Nov 22:55; compose_synth CS_PREMW 1 x12, CS_PTW 1 x6 - one wording per premise, same sentence count - CS_CODEINF 0, CS_NEWB 1, 100 taught people)
+- Premises recalled perfectly in their wording either way (city's country 1.00, person's city 1.00 from step 2,000).
+- **Chain teaching, never taught, NEW bridge B / C at 300 / 750 / 1,500 steps: one wording 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18 (n 78) vs four / three wordings 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67.** Seen bridge 0.18-0.27 (four wordings 0.73-0.91). Direct teaching 0.08-0.15 either way.
+- **The first hop fails inside the chain** (B 0.12-0.19) although asked alone it is 1.00 - the rule world's pattern exactly (kra26 step 1, kra27 step 2). A premise learned in one wording is keyed on that wording's state and is not retrieved inside the chain; varied wordings key it on the subject (Allen-Zhu & Li's knowledge augmentation, here for composition).
+- The rule world planted each premise in ONE wording (kra25: the same sentence three times). **kra28: kra27 + inf_rule_world_premw 6** (six wordings, subject and relation in varied contexts; no ':' or ' > ', which the chain readers rewrite).
+
+### cg27a_kra28 GPU, visits 1-2 (21 Nov 23:29; premises in six wordings, inf_rule_world_premw 6) + local check
+- No Traceback (GPU visits 1-2; local visits 1-2). Reader on the GPU: planted rule-world facts recorded 109 / 128 and 206 / 232 at visits 1 / 2 (kra27 128 / 128, 230 / 232) - the comma wording ('X, who is a child of M, lives nearby.') is split by the clause reader; locally the loss is about half (57 vs 110). Rules: 0 found at visit 1, both at visit 2, 0 FALSE (kra27: both from visit 1).
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 2: PLANTED bridge 0.46, C 0.31 (n 13); HELD BACK never written bridge 0.55, C 0.36 (n 11); **PURE FAMILIES bridge 0.25, C 0.00 (n 12)** - as kra27 at visit 2 (0.64 / 0.36; 0.33 / 0.00). Step 2 inside the chain still repeats the bridge in some examples ('Tarquira -> is a child of Zogalka; Zogalka is a child of Zogalka'). Visits 3-4 decide.
+- Route D: first step 0.65, two-step 0.56, pure 0.48. Bits on read domains 2.0339 (kra27 2.0187 at visit 2; +0.015, about seed noise).

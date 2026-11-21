@@ -27,6 +27,25 @@ need = {frozenset((a, b)) for (a, c), w in W for b in w['prem']} | {frozenset((b
 PW = collections.defaultdict(collections.Counter)
 for r in RD:
     if 1 <= r[5] <= 8 and frozenset((r[1], r[2])) in need and any(ch.isalpha() for ch in r[3]): PW[frozenset((r[1], r[2]))][(r[1], pm._rnorm(r[3]), r[2])] += 1
+SRC = os.environ.get('BT_SOURCE', 'writes')                                   # 21 Nov route A: 'records' - containment chains straight from the RECORDS read
+CW_ = {'in', 'is in', 'located in', 'is located in', 'part of', 'is part of', 'city in', 'town in', 'village in', 'region of', 'province of', 'capital of', 'state of'}
+ORC = set(x for x in os.environ.get('BT_ORACLE', '').split(',') if x)          # 21 Nov: an ORACLE reader - only records whose pair carries one of these gold relations
+PRD_ = pm._PM.get('PRD') or {}                                                #   (Wikidata ids, e.g. P131,P17,P30): an upper bound for route A with a clean reader
+if SRC == 'records':
+    HT = collections.defaultdict(collections.Counter); ST = set()
+    for r in RD:
+        if 1 <= r[5] <= 8 and r[1] != r[2]:
+            ST.add(frozenset((r[1], r[2])))
+            w = pm._rnorm(r[3])
+            if w in CW_ and (not ORC or (PRD_.get((r[1], r[2])) or set()) & ORC): HT[r[1]][(w, r[2])] += 1
+    RCL = []
+    for A_, c in HT.items():
+        (w1, B_), _ = c.most_common(1)[0]
+        if B_ not in HT: continue
+        (w2, C_), _ = HT[B_].most_common(1)[0]
+        if C_ in (A_, B_): continue
+        if len(f"Q: {A_} in ? {A_} {w1} {B_}. {B_} {w2} {C_}. So {A_} in {C_}.") >= 124: continue
+        RCL.append((A_, 'in', C_, frozenset((A_, C_)) not in ST, (A_, w1, B_), (B_, w2, C_)))   # 'truth' field: the conclusion was NEVER stated in a record
 del R, RD, pm._PM['R']
 def prem(X, Y):
     c = PW.get(frozenset((X, Y)))
@@ -39,10 +58,17 @@ for (A_, C_), w in W:
         p1, p2 = prem(th, b), prem(b, tt)
         if p1 and p2 and b not in (th, tt) and len(f"Q: {th} {w['tw']} ? {p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}. So {th} {w['tw']} {tt}.") < 124:
             CL.append((th, w['tw'], tt, bool(w['truth']), p1, p2)); break
+FLT = os.environ.get('BT_FILTER', '')                                          # 21 Nov route A: clean relation families only
+def wclean(w):                                                                 #   a relational wording: words only (no commas, brackets, digits), 1-4 words, not a list word
+    t = w.split(); return 1 <= len(t) <= 4 and all(x.isalpha() for x in t) and w not in pm._RRET_LISTW and w not in ('and', 'or', 'with', 'to')
+CONTAIN = {'in', 'is in', 'located in', 'is located in', 'of', 'part of', 'is part of', 'capital of', 'city in', 'town in', 'village in', 'region of', 'province of', 'state of'}
+if FLT == 'clean': CL = [c for c in CL if wclean(c[4][1]) and wclean(c[5][1])]
+elif FLT == 'contain': CL = [c for c in CL if c[4][1] in CONTAIN and c[5][1] in CONTAIN and c[1] in ('in', 'of')]
+if SRC == 'records': CL = RCL
 CL = [CL[j] for j in np.random.RandomState(7).permutation(len(CL))]
 BR = sorted({c[4][2] for c in CL}); rb = np.random.RandomState(5); rb.shuffle(BR); BTEST = set(BR[:int(len(BR) * 0.3)])
-TR = [c for c in CL if c[4][2] not in BTEST][:400]; TE = [c for c in CL if c[4][2] in BTEST][:200]
-P(f"{len(CL)} chains that fit the window (right {np.mean([c[3] for c in CL]):.3f}) -> TRAIN {len(TR)}, TEST {len(TE)} on bridges never in a train chain; "
+NTR = int(os.environ.get('BT_NTR', 400)); TR = [c for c in CL if c[4][2] not in BTEST][:NTR]; TE = [c for c in CL if c[4][2] in BTEST][:200]
+P(f"filter '{FLT or 'none'}': {len(CL)} chains that fit the window (right {np.mean([c[3] for c in CL]):.3f}) -> TRAIN {len(TR)}, TEST {len(TE)} on bridges never in a train chain; "
   f"first-hop wordings: {len({c[4][1] for c in CL})} distinct, conclusion wordings {len({c[1] for c in CL})}  ({time.time() - T0:.0f}s)")
 DW = 192; L_ = 128; PAD = 256; V_ = 257
 class Blk(nn.Module):
@@ -69,8 +95,14 @@ PF = ("{a} {w} {b}.", "Notes: {a} {w} {b}.", "We read that {a} {w} {b}.", "It is
 PREM = [enc(f.format(a=p[0], w=p[1], b=p[2])) for c in TR + TE for p in (c[4], c[5]) for f in PF]
 q_ = lambda c: f"Q: {c[0]} {c[1]} ? "
 so_ = lambda c: f"So {c[0]} {c[1]} "
-ROWS = {'DIRECT': [enc(q_(c) + so_(c) + c[2] + '.') for c in TR],
-        'BRIDGE': [enc(q_(c) + f"{c[4][0]} {c[4][1]} {c[4][2]}. {c[5][0]} {c[5][1]} {c[5][2]}. " + so_(c) + c[2] + '.') for c in TR]}
+ARW = os.environ.get('BT_FORMAT', '') in ('arrow', 'spelled')                             # 21 Nov: 'arrow' - the synthetic world's and the rule world's form 'A r B > C.' (the
+if ARW:                                                                        #   subject is never written again: the stand-in cannot copy a new name and wrote a
+    q_ = lambda c: f"{c[0]} {c[1]} "                                           #   taught one with similar letters in its place)
+    so_ = lambda c: f"{c[0]} {c[1]} "
+ROWS = {'DIRECT': [enc(q_(c) + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {c[1]} {c[2]}.") for c in TR],
+        'BRIDGE': [enc(q_(c) + f"{c[4][0]} {c[4][1]} {c[4][2]}. {c[5][0]} {c[5][1]} {c[5][2]}. " + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {c[1]} {c[4][2]} > {c[2]}.") for c in TR]}
+SPL = os.environ.get('BT_FORMAT', '') == 'spelled'                             # 21 Nov: kra26's form 'A r: A w1 B; B w2 C.' (both steps spelled, A restated)
+if SPL: ROWS['BRIDGE'] = [enc(f"{c[0]} {c[1]}: {c[4][0]} {c[4][1]} {c[4][2]}; {c[5][0]} {c[5][1]} {c[2]}.") for c in TR]
 EVD = {d: [bytes(a[len(a) - 200000 + k * 129:len(a) - 200000 + (k + 1) * 129]) for k in range(64)] for d, a in DOMS.items()}
 @torch.no_grad()
 def dbits(m):
@@ -101,6 +133,28 @@ def greedy(m, prompts, n=110):                                                # 
         out = [(b + bytes([t])) if t < 256 and len(b) < L_ - 1 else b for b, t in zip(out, nx)]
     return [b.decode('latin-1') for b in out]
 def ev(m, arm, cl):
+    if ARW:                                                                    # arrow form: DIRECT ranks C after 'A r '; BRIDGE decodes 'B > C' after 'A r '
+        if arm == 'DIRECT':
+            r = [rank_at(m, f"{c[0]} {c[1]} ", CAND[c]) for c in cl]; return f"C first among 10 {np.mean(r):.3f}"
+        if SPL:                                                                # spelled: decode after 'A r:'; step 1 must restate 'A w1 ', its tail is the bridge
+            g = greedy(m, [f"{c[0]} {c[1]}:" for c in cl], 110); r, fm, bb, ex, cp = [], [], [], [], []
+            if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:118]) for x in g[:3]))
+            for x, c in zip(g, cl):
+                st = [t.strip() for t in x[len(f"{c[0]} {c[1]}:"):].split('.')[0].split(';')]; h1 = f"{c[0]} {c[4][1]} "
+                cp.append(len(st) >= 1 and st[0].startswith(c[0] + ' '))
+                ok = len(st) == 2 and st[0].startswith(h1); fm.append(ok)
+                if not ok: r.append(0); ex.append(False); bb.append(False); continue
+                b_ = st[0][len(h1):]; bb.append(b_ == c[4][2]); ex.append(st[1].endswith(c[2]))
+                r.append(rank_at(m, f"{c[0]} {c[1]}: {st[0]}; {b_} {c[5][1]} ", CAND[c]))
+            return f"C first among 10 {np.mean(r):.3f} | C exact {np.mean(ex):.3f} | own bridge B right {np.mean(bb):.3f} | chain format {np.mean(fm):.3f} | subject copied {np.mean(cp):.3f}"
+        g = greedy(m, [f"{c[0]} {c[1]} " for c in cl], 60); r, fm, bb, ex = [], [], [], []
+        if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:100]) for x in g[:3]))
+        for x, c in zip(g, cl):
+            body = x[len(f"{c[0]} {c[1]} "):].split('.')[0]; pt = [t.strip() for t in body.split('>')]
+            fm.append(len(pt) == 2); bb.append(len(pt) == 2 and pt[0] == c[4][2])
+            if len(pt) != 2: r.append(0); ex.append(False); continue
+            r.append(rank_at(m, f"{c[0]} {c[1]} {pt[0]} > ", CAND[c])); ex.append(pt[1] == c[2])
+        return f"C first among 10 {np.mean(r):.3f} | C exact {np.mean(ex):.3f} | own bridge B right {np.mean(bb):.3f} | chain format {np.mean(fm):.3f}"
     if arm == 'DIRECT':
         r = [rank_at(m, q_(c) + so_(c), CAND[c]) for c in cl]
         g = greedy(m, [q_(c) + so_(c) for c in cl], 40); ex = [x[len(q_(c) + so_(c)):].startswith(c[2]) for x, c in zip(g, cl)]

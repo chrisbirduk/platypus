@@ -45,9 +45,9 @@ def person():                                                                  #
     while True:
         n = ''.join(rs.choice(SY) for _ in range(2)).capitalize() + ' ' + ''.join(rs.choice(SY) for _ in range(3)).capitalize()
         if n not in used: used.add(n); return n
-CODES = ['q' + c for c in 'abcdefghijklmnopqrst']
-NC = 20; COUNTRY = [name(3) for _ in range(NC)]
-def city(c, informative=0.8):
+CODES = ['q' + a + b for a in 'abcdefghijklmnop' for b in 'abcdefghij'][:max(20, int(os.environ.get('CS_NC', 20)))] if int(os.environ.get('CS_NC', 20)) > 20 else ['q' + c for c in 'abcdefghijklmnopqrst']
+NC = int(os.environ.get('CS_NC', 20)); COUNTRY = [name(3) for _ in range(NC)]   # 21 Nov CS_NC: number of countries (the second hop's answer set)
+def city(c, informative=float(os.environ.get('CS_CODEINF', 0.8))):   # 21 Nov CS_CODEINF: share of cities whose name code is their country's (0 = uninformative)
     code = CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]
     return f"{name(3)}-{code}", c
 OLD = [city(rs.randint(NC)) for _ in range(300)]
@@ -94,8 +94,9 @@ PT = ["{A} lives in {B}.", "{A} has a home in {B}.", "{A} moved to {B} years ago
 IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
 def pre_sentences():
     out = []
-    for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT] * 3
-    for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT] * 2
+    for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT[:int(os.environ.get('CS_PREMW', 4))]] * int(os.environ.get('CS_PREMREP', 3))   # 21 Nov: CS_PREMW wordings x CS_PREMREP copies (premise strength)
+    nw_ = int(os.environ.get('CS_PTW', 3))                                      # 21 Nov: CS_PTW person-city wordings, copies keep 6 sentences a person
+    for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT[:nw_]] * (6 // nw_)
     if IMPL and COT:
         for a, bi in TRAINP: out += [f"{a} is a citizen of {OLD[bi][0]} > {COUNTRY[OLD[bi][1]]}."] * 4
     elif IMPL:
@@ -153,9 +154,15 @@ def gen(m, pre, n=48):
         if c in (46, 10, PAD): break
         b.append(c)
     m.train(); return bytes(b[len(pre.encode('latin-1')):]).decode('latin-1', 'replace').strip()
-def chain(m, people, cities):
+SPELL = int(os.environ.get('CS_SPELL', 0))                                   # 21 Nov CS_SPELL 1: kra27 / kra28's spelled form, step 1 without the subject:
+def chain(m, people, cities):                                                  #   'A is a citizen of: lives in B; B lies in C.' (each step a premise's own wording)
     rb, rc = [], []
     for a, bi in people:
+        if SPELL:
+            g = gen(m, f"{a} is a citizen of:", 64); st = [x.strip() for x in g.split('.')[0].split(';')]
+            b_ = st[0][len('lives in '):].strip() if st and st[0].startswith('lives in ') else ''
+            c_ = st[1].split(' lies in ')[-1].strip() if len(st) == 2 and ' lies in ' in st[1] else ''
+            rb.append(b_ == cities[bi][0]); rc.append(c_ == CN[cities[bi][1]]); continue
         g = gen(m, f"{a} is a citizen of "); parts = [x.strip() for x in g.split('>')]
         rb.append(len(parts) == 2 and parts[0] == cities[bi][0]); rc.append(len(parts) == 2 and parts[1] == CN[cities[bi][1]])
     return float(np.mean(rb)), float(np.mean(rc))
@@ -247,10 +254,19 @@ if OPJ:                                                                        #
                       f"pass at the threshold keeping 95% of recorded: {np.mean(o_ >= th):.2f}")
             P(f"   ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
-    NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
+    NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #
+    NB_ = int(os.environ.get('CS_NEWB', 0))                                    # 21 Nov NEW BRIDGES: taught people only in even-numbered cities (CS_NEWB_DIV 1: one per city);
+    if NB_:                                                                    #   never-taught people scored apart: cities in a taught chain (SEEN bridge) vs never (NEW bridge)
+        pool_ = [p_ for p_ in TRAINP if p_[1] % 2 == 0]
+        if int(os.environ.get('CS_NEWB_DIV', 0)):
+            d_ = {}
+            for p_ in pool_: d_.setdefault(p_[1], p_)
+            pool_ = list(d_.values())
+        TP = pool_[:NT]
+    TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
     KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
-    for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
+    for tag, fmt in [x for x in (('CHAIN', (lambda a, bi: f"{a} is a citizen of: lives in {OLD[bi][0]}; {OLD[bi][0]} lies in {CN[OLD[bi][1]]}.") if SPELL else (lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}.")), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
                                  ('CHAIN3', lambda a, bi: f"{a} is a resident of {OLD[bi][0]} > {CN[OLD[bi][1]]} > {KC[CN[OLD[bi][1]]]}."),
                                  ('DIRECT3', lambda a, bi: f"{a} is a resident of {KC[CN[OLD[bi][1]]]}."))
                      if x[0] in os.environ.get('CS_COTLATE_ARMS', 'CHAIN,DIRECT').split(',')]:
@@ -294,6 +310,7 @@ if COTLATE:                                                                    #
             step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
+                if tag == 'CHAIN' and NB_: s1 = chain(mm, HS_, OLD) if HS_ else (float('nan'),) * 2; s2 = chain(mm, HN_, OLD) if HN_ else (float('nan'),) * 2; out[-1] += f" [SEEN bridge (n {len(HS_)}) B {s1[0]:.2f} C {s1[1]:.2f} | NEW bridge (n {len(HN_)}) B {s2[0]:.2f} C {s2[1]:.2f}; taught cities {len(TPC_)}]"
                 elif tag.endswith('3'):
                     def h3(G):
                         r_ = [[], [], [], []]

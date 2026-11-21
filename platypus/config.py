@@ -570,6 +570,9 @@ class Config:
     inf_rw_nosleep=0                # 12 Nov: 1 = the sleep layer never concludes the rule world's two-hop pairs (held out like inf_kgx_hold): composites reach the trunk only via step 4
     inf_distill_relmod_write_ctl=0.0  # 12 Nov POWERED STEP 4: > 0 = this share of the relational module's written facts held back (own hash) instead of the general fifth
     inf_distill_relmod_ctl_tail=0   #   18 Nov: 1 = the held-back share is drawn BY ANSWER (relation, C): every composite with the same answer (a family's grandchildren) is held back together, so none can be answered from a taught sibling
+    inf_rule_world_premk=1          #   21 Nov kra25 (MODEL CHANGE when > 1): rule-world premises (child of / supervised by) planted this many times as often
+    inf_rule_world_chainplant=0     #   21 Nov kra23 ROUTE B (MODEL CHANGE when 1): planted rule-world composites written with their bridge, 'X is a grandchild of M > Z.' 2 (kra26): both steps spelled, 'X is a grandchild of: X is a child of M; M is a child of Z.' 3 (kra27): step 1 without the subject restated
+    inf_rule_world_premw=0          #   21 Nov kra28 (MODEL CHANGE when > 1): rule-world premises planted in this many wordings (knowledge augmentation; probes._RW_PREMW)
     inf_rule_world_pure=0.0         #   18 Nov: share of rule-world families / charts with NO composite planted (pure test families; readout RELATIONAL MODULE WRITES, PURE FAMILIES)
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
@@ -602,6 +605,7 @@ class Config:
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
     inf_distill_false_probe_n=64    #     questions per group (fresh names / missing relations / known facts; 32 before 12 Nov, 23:00); + the ABSTENTION readout
                                     #     (risk-coverage of the trunk's confidence, explicit refusals)
+    inf_distill_gate_pool=0         #     kra24: the gate's keep-gq threshold calibrated on the last N sleeps' right answers together (0 = one sleep)
     inf_distill_gate_leak=0.0       #     kra22: if > 0 the GATED ANSWERS threshold is calibrated so at most this share of never-read questions get a stored name
     inf_distill_gate_q2=0.0         #     kra22: a SECOND calibrated gate printed beside the first (0 = off); kra22 sets q 0.9 and q2 0.75 for continuity
     inf_distill_gate_q=0.75         #     GATED ANSWERS readout: the trunk answers only above the confidence threshold that kept this share of its right answers
@@ -656,6 +660,7 @@ class Config:
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
+    inf_rti_conf_retype=0           #     kra23: a confirmed inference takes its confirming record's own clean wording and order (fewer conflicting answers under 'in')
     inf_rti_conf_docs=0             #     kra22: a tentative inference is confirmed only with relational records in this many distinct documents since its write (0/1 = off)
     inf_rti_nameshape=0             #     kra22: code writes skip pairs whose names contain digits, brackets or quotes (numbers, years, fragments)
     inf_rti_judge=0                 #     readout (kra23): SELF-SUPPORT JUDGE - own vs swapped subject log-prob margin, AUC right vs wrong

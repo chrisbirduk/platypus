@@ -401,12 +401,16 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
             un2 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share gq of the known facts it answered
             kc2 = np.array([c for ok_, c, rf in kr2 if ok_ and not rf])       #   right) and APPLIED to this sleep's new questions: out of sample
             tp = model.__dict__.get('_gate_t'); tn = float(np.quantile(kc2, 1 - gq)) if len(kc2) >= 4 else tp
+            gpl = int(getattr(cfg, 'inf_distill_gate_pool', 0))                # 21 Nov kra24 POOLED CALIBRATION: keep-gq over the known-right confidences of the last
+            if gpl > 0 and len(kc2):                                           #   gpl sleeps together (one sleep has about 40 right answers: t swung 0.85 -> 1.00)
+                pool9 = model.__dict__.setdefault('_gate_pool', []); pool9.append(kc2.copy()); del pool9[:-gpl]
+                cc9 = np.concatenate(pool9); tn = float(np.quantile(cc9, 1 - gq)) if len(cc9) >= 4 else tp
             glk = float(getattr(cfg, 'inf_distill_gate_leak', 0.0))           # 21 Nov kra22 (decision rule): calibrate t on the NEVER-READ questions instead - the
             if glk > 0 and un2:                                                #   lowest t at which at most glk of them still get a stored name (kra21: the 75% rule
                 ts_ = sorted({c for st, c, rf in un2} | {1.01})                #   swung 0.59 -> 0.36 -> 0.61 right overall and let 0.11 of never-read through at t 0.85)
                 ok_t = [t_ for t_ in ts_ if np.mean([bool(st) and not rf and c >= t_ for st, c, rf in un2]) <= glk]
                 tn = float(min(ok_t)) if ok_t else tp
-                if tn is not None and len(kc2) >= 4: tn = max(tn, float(np.quantile(kc2, 0.1)))   # floor: never below the keep-90%-of-right threshold (local kra22: with few
+                if tn is not None: tn = max(tn, float(np.quantile(kc2, 0.1)) if len(kc2) >= 4 else 0.9)   # floor: never below the keep-90%-of-right threshold (local kra22: with few
                                                                                #   stored names every t passes, min t was 0.10, and 0.33 of the next sleep's never-read got a name)
             if tp is not None and kr2 and un2:
                 ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
@@ -1565,6 +1569,9 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     import zlib
     from platypus.inference.probes import inf_rule_world
     from platypus.inference.namemem import _nm_layer
+    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)):                     # 21 Nov kra23 ROUTE B readout
+        try: _dw_rule_chain(model, cfg, S_slot, vis)
+        except Exception as e9: print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     WR = model.__dict__.get('_rm_written') or {}
     if not WR:
         print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
@@ -1684,6 +1691,47 @@ def _dw_stored(model, S_, S_slot, es, L0, bs=32):
 
 
 @torch.no_grad()
+@torch.no_grad()
+def _dw_rule_chain(model, cfg, S_slot, vis):
+    """21 Nov kra23 ROUTE B: does the TRUNK compose? Rule-world composites planted with their bridge ('X is a grandchild of M > Z.') teach the
+    decomposition; the HELD-BACK composites (never planted in any form) and those of PURE families (no composite planted in the family) are
+    asked in the bare relation wording, store and memory off; the trunk's greedy answer is parsed as 'B > C'. Right bridge B (the leaf's
+    parent / manager) and right C (the root) - a right C for a held-back leaf can only come from the trunk composing its own two hops.
+    Synthetic world (tools/compose_synth.py, late chain teaching): 100 taught chains -> never taught 0.87; direct teaching 0.10-0.14."""
+    from platypus.inference.probes import inf_rule_world
+    W = inf_rule_world(cfg); rw = W.get('rel', {}); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+    up = {'grand': W.get('parent', {}), 'skip': W.get('mgr', {})}; pure = W.get('pure') or set()
+    def run(L):
+        out = []
+        for (d, s_, r2, A, C) in L[:80]:
+            if seen and int(d) not in seen: continue
+            m = up[r2]; B = m.get(A)
+            if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) >= 2:        # 21 Nov kra26: spelled steps 'A r: A r1 B; B r1 C' -> the last word of each step
+                pr = f"{A} {rw[r2]}:".encode('latin-1', 'replace'); g = _dw_greedy(model, pr, int(S_slot(d)), 90)
+                st = [x.strip(' .').split(' ') for x in g.split('.')[0].split(';')]; pt = [x[-1] for x in st if x and x[-1]] if len(st) == 2 else [g.strip()]
+                a1 = st[0][0] if st and st[0] else ''                         # 21 Nov kra27 readout: the subject the trunk WROTE in step 1; its bridge is
+                cp_, cn_ = a1 == A, len(pt) == 2 and a1 != A and m.get(a1) == pt[0]
+                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 3: cp_, cn_ = True, False   # kra27: no subject in step 1   #   that subject's true parent = copy failure, not retrieval
+            else:
+                pr = f"{A} {rw[r2]} ".encode('latin-1', 'replace')
+                g = _dw_greedy(model, pr, int(S_slot(d)), 40); pt = [x.strip(' .') for x in g.split('.')[0].split('>')]; cp_, cn_ = True, False
+            out.append((len(pt) == 2 and all(pt), len(pt) == 2 and pt[0] == B, (pt[-1] if pt else '') == C, g.strip().startswith(C), cp_, cn_, f"{A} -> {g[:70]}"))
+        return out
+    was = model.training; model.eval()
+    try:
+        WR9 = model.__dict__.get('_rm_written') or {}; wr9 = {A9 for (r9, A9, C9) in WR9}   # 21 Nov: composites route J WROTE are taught in chain form (unless held
+        pl = run([x for x in W['planted'] if x[2] in ('grand', 'skip')])                     #   back as its control), so they are excluded: NEVER WRITTEN = clean
+        hp = [x for x in W['held'] if x[3] in pure and x[3] not in wr9]; hn = [x for x in W['held'] if x[3] not in pure and x[3] not in wr9]
+        rp, rn = run(hp), run(hn)
+    finally: model.train(was)
+    f = lambda L: (f"{len(L)}: chain format {np.mean([x[0] for x in L]):.2f}, bridge right {np.mean([x[1] for x in L]):.2f}, C right {np.mean([x[2] for x in L]):.2f} "
+                   f"(C first, direct {np.mean([x[3] for x in L]):.2f}; subject copied {np.mean([x[4] for x in L]):.2f}, another subject written with ITS true bridge "
+                   f"{np.mean([x[5] for x in L]):.2f})") if L else "0"
+    print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
+          f"{f(pl)} || HELD BACK, NEVER PLANTED, NEVER WRITTEN BY ROUTE J {f(rn)} || PURE FAMILIES, NEVER WRITTEN {f(rp)}", flush=True)
+    if rp: print("      PURE FAMILIES, e.g. " + " | ".join(x[6] for x in rp[:4]), flush=True)
+
+
 def _dw_greedy(model, prompt, sl, n=24):
     """the trunk's greedy continuation of PROMPT (store and memory off), up to n bytes or a full stop"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
