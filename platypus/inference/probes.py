@@ -262,6 +262,7 @@ def inf_rule_world(cfg):
                 if pure_: W_.setdefault('pure', set()).add(l_)
                 (W_['held'] if (pure_ or zlib.crc32(l_.encode()) % 2) else W_['planted']).append(rec_)
     W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
+    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)): _UNITS['chainplant'] = True   # 21 Nov kra23: the reader reads a chain-form composite as the composite itself
     mv_ = float(getattr(cfg, 'inf_rule_world_move', 0.0))
     if mv_ > 0:                                                                # 19 Nov kra9 PREMISE CHANGE (inf_rule_world_move): a share of the leaves whose composite is
         rsm_ = np.random.RandomState(int(cfg.seed) + 6161); W_['moves'] = {}    #   held back MOVE: 'X is a child of M2' is planted in ANOTHER, randomly chosen domain (read

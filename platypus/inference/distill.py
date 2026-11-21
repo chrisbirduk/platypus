@@ -1565,6 +1565,9 @@ def _dw_relmod_write(model, cfg, S_, S_slot, ents, held, ctl, vis):
     import zlib
     from platypus.inference.probes import inf_rule_world
     from platypus.inference.namemem import _nm_layer
+    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)):                     # 21 Nov kra23 ROUTE B readout
+        try: _dw_rule_chain(model, cfg, S_slot, vis)
+        except Exception as e9: print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
     WR = model.__dict__.get('_rm_written') or {}
     if not WR:
         print(f"  [RELATIONAL MODULE WRITES | visit {vis + 1}] none yet", flush=True); return ents, held
@@ -1684,6 +1687,35 @@ def _dw_stored(model, S_, S_slot, es, L0, bs=32):
 
 
 @torch.no_grad()
+@torch.no_grad()
+def _dw_rule_chain(model, cfg, S_slot, vis):
+    """21 Nov kra23 ROUTE B: does the TRUNK compose? Rule-world composites planted with their bridge ('X is a grandchild of M > Z.') teach the
+    decomposition; the HELD-BACK composites (never planted in any form) and those of PURE families (no composite planted in the family) are
+    asked in the bare relation wording, store and memory off; the trunk's greedy answer is parsed as 'B > C'. Right bridge B (the leaf's
+    parent / manager) and right C (the root) - a right C for a held-back leaf can only come from the trunk composing its own two hops.
+    Synthetic world (tools/compose_synth.py, late chain teaching): 100 taught chains -> never taught 0.87; direct teaching 0.10-0.14."""
+    from platypus.inference.probes import inf_rule_world
+    W = inf_rule_world(cfg); rw = W.get('rel', {}); seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+    up = {'grand': W.get('parent', {}), 'skip': W.get('mgr', {})}; pure = W.get('pure') or set()
+    def run(L):
+        out = []
+        for (d, s_, r2, A, C) in L[:80]:
+            if seen and int(d) not in seen: continue
+            m = up[r2]; B = m.get(A); pr = f"{A} {rw[r2]} ".encode('latin-1', 'replace')
+            g = _dw_greedy(model, pr, int(S_slot(d)), 40); pt = [x.strip(' .') for x in g.split('.')[0].split('>')]
+            out.append((len(pt) == 2 and all(pt), len(pt) == 2 and pt[0] == B, (pt[-1] if pt else '') == C, g.strip().startswith(C)))
+        return out
+    was = model.training; model.eval()
+    try:
+        pl = run([x for x in W['planted'] if x[2] in ('grand', 'skip')]); hp = [x for x in W['held'] if x[3] in pure]; hn = [x for x in W['held'] if x[3] not in pure]
+        rp, rn = run(hp), run(hn)
+    finally: model.train(was)
+    f = lambda L: (f"{len(L)}: chain format {np.mean([x[0] for x in L]):.2f}, bridge right {np.mean([x[1] for x in L]):.2f}, C right {np.mean([x[2] for x in L]):.2f} "
+                   f"(C first, direct {np.mean([x[3] for x in L]):.2f})") if L else "0"
+    print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
+          f"{f(pl)} || HELD BACK, NEVER PLANTED {f(rn)} || PURE FAMILIES (no composite planted in the family) {f(rp)}", flush=True)
+
+
 def _dw_greedy(model, prompt, sl, n=24):
     """the trunk's greedy continuation of PROMPT (store and memory off), up to n bytes or a full stop"""
     from platypus.inference.closed_form import _ws_batch, _ws_run

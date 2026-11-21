@@ -72,6 +72,7 @@ class _UnitTrip:
     """drop-in for the fact pattern: two consecutive units with 1-4 non-unit words between them (single spaces, no punctuation).
     'all' mode: the clause's two RAREST words (lowest window frequency) are its arguments, the 1-6 words between them its relation"""
     def finditer(s,b_):
+        if _UNITS.get('chainplant') and b' > ' in b_: b_=_re_inf.sub(rb'[A-Za-z]+ > ',b'',b_)   # 21 Nov kra23: a chain-form sentence 'A r B > C' is read as 'A r C'
         if _UNITS.get('all'):
             if not _RDR.get('on'): yield from s._base(b_); return                 # (reader off: exactly the earlier behaviour)
             bs_={frozenset((m_.group(1),m_.group(3))):m_ for m_ in s._base(b_) if not (_RDR.get('drop') and _rdr_prefix(b_,m_.start(1)) in _RDR['drop'])}
