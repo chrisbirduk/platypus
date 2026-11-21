@@ -5786,3 +5786,8 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - **But the trunk's own chain does not use them for new bridges:** pure families, never written: chain format 0.89, **bridge right 0.22**, C right **0.00** (n 9); route J pure held back 0.00 (n 24). Non-pure held back: bridge right 0.54, C right 0.15 (n 13).
 - So premise strength is not the remaining gap: with premises recalled at 0.86 and the two hops answered 0.80 when asked one by one, the chain's FIRST hop is wrong for pure-family leaves (0.22) - asked 'X is a grandchild of ', the trunk does not retrieve X's parent the way it does when asked 'X is a child of '.
 - Cost: bits on read domains 1.8516 at visit 5 (kra24 1.8496); facts probe 0.97, ledger 0.90; gate 0.56 / never-read 0.02. No Traceback.
+
+### cg27a_kra25 GPU, visit 6 (21 Nov 20:25; stopped here to start kra26) + kra26 local check
+- Pure families: trunk's own chain (never written) bridge right 0.18, **C right 0.04 (n 28)**; route J pure held back 0.07 (n 27). Non-pure never written 0.34 (n 29). Premise recall at visit 6: first step 0.75 (0.86 at visit 5); explicit two steps 0.72, pure 0.68.
+- **Tripled premises raised premise recall (visit 5) but not composition through new bridges.** Cost: none - bits on read domains 1.8945 (kra24 1.8944); facts probe 0.91, ledger 0.87; gate 0.52 / never-read 0.00.
+- kra26 local check (spelled steps, inf_rule_world_chainplant 2): visits 1-2 run without errors; the reader records 192 rule-world facts by visit 2 (the local harness learns too little to show chains).
