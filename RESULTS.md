@@ -5778,3 +5778,5 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Route B: clean readout pure families 0.11 (n 46), never written 0.22 (n 46); route J pure held back 0.02 (n 53). Route D two-step 0.62, pure 0.57.
 - Confirmed 423 so far at right 0.84. No Traceback.
 - **kra24 meets the facts and gated-answers goals through visit 8** (one seed).
+- **Re-run in the arrow form ('A in B > C.', without P150; 21 Nov 19:00):** premises recalled 1.00. DIRECT never taught 0.050 / 0.075 (C first among 10, steps 1,500 / 3,000; chance 0.10). **BRIDGE never taught: C first 0.175 / 0.150, C exact 0.100 / 0.050, own bridge right 0.250 / 0.175, chain format 0.300 / 0.275** (n 117); taught 0.92-0.98.
+- **A weak positive with a clean reader:** bridge teaching beats direct teaching on chains through bridges never in a taught chain by about +0.10 (about 2-3 SE), but far below the synthetic world (0.73-0.94): the stand-in writes the chain form for under a third of new subjects and often answers in a single hop. Real containment is many-levelled (city in region in country in continent), so 'in' has several right answers.
