@@ -5807,3 +5807,7 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Route D: first step 0.69, two-step 0.66, pure 0.57; "asked DIRECTLY" 0.29 / pure 0.26 (earlier builds 0.00-0.05) - route D's set does not exclude route J's written composites, which kra26 teaches directly (inf_distill_chainform 0), so this is likely their recall, not composition.
 - Facts taught 0.88 (2-3 visits 0.89); gate right when answered 1.00, never-read 0.02; route J 0.96, writes 0.96 (188); bits on read domains 1.9202. No Traceback.
 - kra27 local check, visit 1: no errors; new readout prints (subject copied 1.00 on planted; examples 'Anpelqui -> is a child of the could not ...' - the 150-step stand-in learns the form's start only).
+
+### cg27a_kra27 GPU, visit 1 (21 Nov 22:07; spelled steps without the restated subject, inf_rule_world_chainplant 3) + local check visits 1-2
+- No Traceback (GPU visit 1, local visits 1-2). The reader reads the new form: both rules found from visit 1, 0 FALSE. Bits on read domains 2.0086 (kra26 2.0043).
+- Trunk's own chain at visit 1: 0.00 everywhere, as every build; examples for pure families: 'Tevmizo -> is a child of Zonorbri', 'Vinquisen -> is a child of Zofaris' - the step-1 form is taken up already, with a common name in the slot.
