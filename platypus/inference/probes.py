@@ -256,6 +256,9 @@ def inf_rule_world(cfg):
             for m_, l_ in leaves_:                                             # 18 Nov PURE families (inf_rule_world_pure): NO composite planted for any of
                 W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_   #   their leaves, so a composite about them can
                 rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)                                 #   only come from composing the two hops
+                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra23 ROUTE B: the PLANTED composite is written
+                    rec_ = (d_, _RW_REL[r2_].format(a=l_, b=m_ + ' > ' + root_), r2_, l_, root_)   #   with its bridge, 'X is a grandchild of M > Z.' (synthetic world: chain teaching composes
+                                                                                   #   for people never taught, 0.85 with 300 taught; direct teaching never does)
                 if pure_: W_.setdefault('pure', set()).add(l_)
                 (W_['held'] if (pure_ or zlib.crc32(l_.encode()) % 2) else W_['planted']).append(rec_)
     W_['rel'] = {k_: v_.split('{a} ')[1].split(' {b}')[0] for k_, v_ in _RW_REL.items()}
