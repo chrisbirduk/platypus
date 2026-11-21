@@ -39,10 +39,16 @@ for (A_, C_), w in W:
         p1, p2 = prem(th, b), prem(b, tt)
         if p1 and p2 and b not in (th, tt) and len(f"Q: {th} {w['tw']} ? {p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}. So {th} {w['tw']} {tt}.") < 124:
             CL.append((th, w['tw'], tt, bool(w['truth']), p1, p2)); break
+FLT = os.environ.get('BT_FILTER', '')                                          # 21 Nov route A: clean relation families only
+def wclean(w):                                                                 #   a relational wording: words only (no commas, brackets, digits), 1-4 words, not a list word
+    t = w.split(); return 1 <= len(t) <= 4 and all(x.isalpha() for x in t) and w not in pm._RRET_LISTW and w not in ('and', 'or', 'with', 'to')
+CONTAIN = {'in', 'is in', 'located in', 'is located in', 'of', 'part of', 'is part of', 'capital of', 'city in', 'town in', 'village in', 'region of', 'province of', 'state of'}
+if FLT == 'clean': CL = [c for c in CL if wclean(c[4][1]) and wclean(c[5][1])]
+elif FLT == 'contain': CL = [c for c in CL if c[4][1] in CONTAIN and c[5][1] in CONTAIN and c[1] in ('in', 'of')]
 CL = [CL[j] for j in np.random.RandomState(7).permutation(len(CL))]
 BR = sorted({c[4][2] for c in CL}); rb = np.random.RandomState(5); rb.shuffle(BR); BTEST = set(BR[:int(len(BR) * 0.3)])
-TR = [c for c in CL if c[4][2] not in BTEST][:400]; TE = [c for c in CL if c[4][2] in BTEST][:200]
-P(f"{len(CL)} chains that fit the window (right {np.mean([c[3] for c in CL]):.3f}) -> TRAIN {len(TR)}, TEST {len(TE)} on bridges never in a train chain; "
+NTR = int(os.environ.get('BT_NTR', 400)); TR = [c for c in CL if c[4][2] not in BTEST][:NTR]; TE = [c for c in CL if c[4][2] in BTEST][:200]
+P(f"filter '{FLT or 'none'}': {len(CL)} chains that fit the window (right {np.mean([c[3] for c in CL]):.3f}) -> TRAIN {len(TR)}, TEST {len(TE)} on bridges never in a train chain; "
   f"first-hop wordings: {len({c[4][1] for c in CL})} distinct, conclusion wordings {len({c[1] for c in CL})}  ({time.time() - T0:.0f}s)")
 DW = 192; L_ = 128; PAD = 256; V_ = 257
 class Blk(nn.Module):
