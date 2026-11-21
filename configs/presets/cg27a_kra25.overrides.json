@@ -1,5 +1,5 @@
 {
- "_comment": "cg27a_kra25 = cg27a_kra24 + ONE MODEL CHANGE for composition through NEW BRIDGES: inf_rule_world_premk 2 - the rule world's premises (child of / supervised by) planted twice as often (kra23: the trunk composes for new subjects, 0.12-0.20 held back, but not through bridges never in a chain, pure families 0.00-0.06, while it knows both hops asked explicitly 0.47-0.58; clean synthetic world: new bridges compose at 0.73-0.82 with the second-hop premise known at 1.00). Rule-world text rises from about 3% to about 6% of a visit. Everything else as kra24.",
+ "_comment": "cg27a_kra25 = cg27a_kra24 + ONE MODEL CHANGE for composition through NEW BRIDGES: inf_rule_world_premk 3 - the rule world's premises (child of / supervised by) planted three times as often (kra23: the trunk composes for new subjects, 0.12-0.20 held back, but not through bridges never in a chain, pure families 0.00-0.06, while it knows both hops asked explicitly 0.47-0.58; clean synthetic world: new bridges compose at 0.73-0.82 with the second-hop premise known at 1.00). Synthetic, clean (no name codes), 150 countries: new bridges compose at 0.94 - a many-valued second hop is no obstacle; premise strength is the remaining difference. Rule-world text rises from about 3% to about 9% of a visit. Everything else as kra24.",
  "inf_jx": 1,
  "_inf_jx": "train the index each sleep and print the JEPA INDEX readouts; readouts only, the trunk is not trained",
  "inf_jx_steps": 400,
@@ -303,6 +303,6 @@
  "_inf_rti_audit": "kra23 readout: 40 newly confirmed inferences printed for a hand audit",
  "inf_distill_gate_pool": 3,
  "_inf_distill_gate_pool": "kra24: gate calibrated on the last 3 sleeps",
- "inf_rule_world_premk": 2,
- "_inf_rule_world_premk": "kra25: rule-world premises planted twice as often"
+ "inf_rule_world_premk": 3,
+ "_inf_rule_world_premk": "kra25: rule-world premises planted three times as often"
 }
