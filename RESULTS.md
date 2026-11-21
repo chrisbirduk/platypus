@@ -5738,3 +5738,11 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Route J held-back composites: 0.11 (n 70), never planted 0.12 (n 67) - down from 0.19-0.20 at visits 4-5 as the held-back set grows with later writes; **pure families held back 0.06 (n 33)**, the first non-zero (2 of 33); greedy: right 4, middle hop 4 of 70. Route D explicit two steps 0.54, pure 0.53.
 - Taught inferences recover at the odd visit: open right 0.82 / wrong 0.85, rank 0.90 / 0.93.
 - Facts: probe 0.82, ledger 0.79 (taught 1 visit 0.58). Gate: never-read calibration too strict (t 0.99, right overall 0.19, never-read 0.00); keep-75% 0.48 / 0.01. Bits on read domains 1.8676 (best of kra21-23 at visit 7: 1.8856 / 1.8832). No Traceback.
+
+### Synthetic new-bridge test, CLEAN (21 Nov 15:45; compose_synth CS_CODEINF 0 - city names carry no country code; re-pretrained, city's country 1.00, person's city 1.00; 100 taught people in even-numbered cities)
+| arm | never taught, NEW bridge B / C (300 / 750 / 1,500 / 3,000 steps) | SEEN bridge B / C at 3,000 |
+|---|---|---|
+| concentrated (73 cities) | 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67, **0.90 / 0.73** (n 78) | 0.73 / 0.73 (n 22) |
+| one per city (100 cities) | 0.77 / 0.55, 0.82 / 0.62, 0.87 / 0.68, **0.87 / 0.82** (n 71) | 0.97 / 0.93 (n 29) |
+- **Composition through bridges never seen in a chain works without the name shortcut:** the second hop comes from the plain premise 'B lies in C' (direct teaching: 0.08). Diverse chains help a little (0.73 -> 0.82).
+- So the rule world's pure-family failure (kra23: 0.00-0.06) is specific. Candidate causes: the synthetic second hop chooses among 20 countries (rule world: about 190 roots), and its premise is known perfectly (rule world: recalled 0.53-0.58). Next: CS_NC 150.
