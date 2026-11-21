@@ -308,6 +308,17 @@ if COTLATE:                                                                    #
             ab_ = [ABN[r2.randint(len(ABN))].encode('latin-1') for _ in range(2)] if X_ and ABN else []
             if tag.endswith('3'): ab_ = [KF[r2.randint(len(KF))].encode('latin-1') for _ in range(2)]
             step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
+            AW_ = float(os.environ.get('CS_ALIGN', 0))                         # 21 Nov CS_ALIGN w (JEPA KEY ALIGNMENT, after LLM-JEPA): the trunk's state where the
+            if AW_ > 0 and tag == 'CHAIN':                                     #   chain's step 1 predicts the bridge ('A is a citizen of: lives in ') is pulled to its
+                ap_ = [TP[r2.randint(len(TP))] for _ in range(8)]              #   state in the premise's own sentence ('A lives in '; stop-gradient target), on taught
+                q1 = [(f"{a} is a citizen of: lives in " if SPELL else f"{a} is a citizen of ").encode('latin-1') for a, bi in ap_]   #   people only
+                q2 = [f"{a} lives in ".encode('latin-1') for a, bi in ap_]
+                def hlast(qs):
+                    X = tens(qs); Xi = torch.cat([torch.full((len(qs), 1), PAD), X[:, :-1]], 1); H = mm.hid(Xi)
+                    return torch.stack([H[k, min(len(q), L - 1)] for k, q in enumerate(qs)])
+                h1 = hlast(q1)
+                with torch.no_grad(): h2 = hlast(q2)
+                la_ = AW_ * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean(); op2.zero_grad(); la_.backward(); op2.step()
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
                 if tag == 'CHAIN' and NB_: s1 = chain(mm, HS_, OLD) if HS_ else (float('nan'),) * 2; s2 = chain(mm, HN_, OLD) if HN_ else (float('nan'),) * 2; out[-1] += f" [SEEN bridge (n {len(HS_)}) B {s1[0]:.2f} C {s1[1]:.2f} | NEW bridge (n {len(HN_)}) B {s2[0]:.2f} C {s2[1]:.2f}; taught cities {len(TPC_)}]"
