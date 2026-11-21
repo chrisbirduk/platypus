@@ -5638,3 +5638,10 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - 2+ distinct documents (confirm + delay windows): 0.41 / 0.22 (1.76). BOTH: taught 217, right **0.839** (182 right of 236), 1.50 right lost per wrong.
 - One-answer wordings: none of the typed wordings ('in', 'of', ...) has heads with one tail 60%+ of the time (fixed measure), so contradiction cannot be restricted to one-answer relations with these wordings; it stays off.
 - **kra22 takes both: inf_rti_nameshape 1, inf_rti_conf_docs 2** (with retraction off and the never-read-calibrated gate).
+
+### cg27a_kra21 GPU, visit 9 (21 Nov 09:20)
+- [RETRACTION RECALL]: all 118 retracted (95 right, 23 wrong) now 0.13 / 0.09 open (rank 0.22 / 0.26); judged, not flagged 0.74 / 0.74. No sign yet of the visit-7 cohort coming back.
+- Taught inferences recover again at an odd visit: right 0.74 / wrong 0.73 open, rank 0.85 / 0.87. By write visit: 2 -> 0.55 (0.97, 0.66, 0.75, 0.64, 0.55 at visits 5-9: the oldest cohort decays slowly), 4 -> 0.82, 6 -> 0.91.
+- PRIOR CONTROL: held-back right **+0.13 (SE 0.04)**, wrong +0.06 (SE 0.05). MATCHED held-back right own - broken **+0.11 (SE 0.03)**, own - closed +0.20 (SE 0.03): both back to their visit-5/6 sizes.
+- Gated (keep-75% rule, t 0.91): right overall 0.44, right when answered 0.90, never-read 0.02.
+- Facts: probe 0.80; ledger ever taught **0.76** (0.82 at visits 7-8), taught 1 visit 0.37 (n 30), 2-3 visits 0.79, 4+ 0.83; control 0.42. Visit 9 is DM Mathematics. Bits on read domains **1.7735** (best yet). No Traceback.
