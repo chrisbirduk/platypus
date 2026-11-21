@@ -658,6 +658,8 @@ class Config:
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
     inf_rti_conf_docs=0             #     kra22: a tentative inference is confirmed only with relational records in this many distinct documents since its write (0/1 = off)
     inf_rti_nameshape=0             #     kra22: code writes skip pairs whose names contain digits, brackets or quotes (numbers, years, fragments)
+    inf_rti_judge=0                 #     readout (kra23): SELF-SUPPORT JUDGE - own vs swapped subject log-prob margin, AUC right vs wrong
+    inf_rti_audit=0                 #     readout (kra23): print 40 newly confirmed inferences with labels for a hand audit
     inf_rti_src=0                   #     readout (kra22): TRANSFER SOURCE - the prior control split by what a held-back inference shares with the trained ones
     inf_rti_rank_recall=0           #     readout: written inferences' answer ranked among 10 written answers (open-ended exact recall cannot see real names)
     inf_rti_rows_ref=0              #     > 0: weight the dose loss by rows / inf_rti_rows_ref, so each row pushes as hard as at that many rows (the loss is a mean over rows)

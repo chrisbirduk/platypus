@@ -140,6 +140,17 @@ def _dw_cand_mc(model, sl, prompt, cands):
     return int(np.argmax(sc))
 
 
+def _dw_cand_scores(model, sl, prompt, cands):
+    """21 Nov kra23: the MEAN log-probability per byte of each candidate after PROMPT (store and memory off), as _dw_cand_mc scores them"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    pb = prompt.encode('latin-1', 'replace'); cb = [(c + '.').encode('latin-1', 'replace') for c in cands]
+    X, _ = _ws_batch(model, [pb + c for c in cb]); lp = F.log_softmax(_ws_run(model, X, sl).float(), -1); sc = []
+    for j, c in enumerate(cb):
+        p0 = len(pb) - 1; n_ = min(len(c), lp.shape[1] - p0)
+        sc.append(float(lp[j, torch.arange(p0, p0 + n_, device=lp.device), X[j, p0 + 1:p0 + 1 + n_]].mean()) if n_ > 0 else float('nan'))
+    return sc
+
+
 def _rtx_rep(d, di):
     """12 Nov REAL-TEXT REPLAY: which benchmark documents are replayed (half, by a hash of domain and document index); the rest are the control"""
     import zlib

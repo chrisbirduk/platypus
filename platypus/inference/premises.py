@@ -1225,6 +1225,35 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
                 parts8.append(f"CONFLICT (another taught answer, same subject and wording) {bk_([e for e in old9 if len(AR_[(e['A'], e['r'])]) > 1])} | none {bk_([e for e in old9 if len(AR_[(e['A'], e['r'])]) == 1])}")
                 print(f"  [REAL-TEXT INFERENCE TAUGHT RECALL BREAKDOWN | visit {vis + 1}] taught RIGHT inferences, rank among 10, bare training form 'A r ' / test wording: " + " || ".join(parts8), flush=True)
             except Exception as e9: print(f"  [REAL-TEXT INFERENCE TAUGHT RECALL BREAKDOWN | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+        if int(getattr(cfg, 'inf_rti_judge', 0)):                             # 21 Nov kra23 (readout): SELF-SUPPORT AS A JUDGE - kra21 visit 8: trained WRONG inferences
+            try:                                                               #   had half the subject-specific support of trained right ones (+0.21 vs +0.45). Per
+                from platypus.inference.distill import _dw_cand_scores         #   inference: the answer's mean log-prob after its own subject minus after another
+                from sklearn.metrics import roc_auc_score                      #   inference's subject; AUC right vs wrong, by group. JUST CONFIRMED (not yet trained)
+                def sm_(L):                                                    #   is the one usable as a teach-gate; TRAINED as a retraction judge
+                    out = []
+                    for i, e in enumerate(L[:150]):
+                        oA = L[(i + 1) % len(L)]['A']
+                        if oA == e['A'] or len(L) < 2: continue
+                        a0 = _dw_cand_scores(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", [e['ans']])[0]
+                        a1 = _dw_cand_scores(model, int(S_slot(e['d'])), f"It is on record that {oA} {e['r']} ", [e['ans']])[0]
+                        if np.isfinite(a0) and np.isfinite(a1): out.append((bool(e['truth']), a0 - a1, a0))
+                    return out
+                def au_(P_):
+                    y_ = [t for t, m_, a_ in P_]
+                    if len(set(y_)) < 2: return f"n {len(P_)}"
+                    return (f"margin AUC {roc_auc_score(y_, [m_ for t, m_, a_ in P_]):.3f}, own log-prob AUC {roc_auc_score(y_, [a_ for t, m_, a_ in P_]):.3f} "
+                            f"(n {len(P_)}, {sum(not t for t in y_)} wrong; margin right {np.mean([m_ for t, m_, a_ in P_ if t]):+.2f} / wrong {np.mean([m_ for t, m_, a_ in P_ if not t]):+.2f})")
+                jc_ = [e for e in T_ + H_ if (W.get(rti_wkey(e)) or {}).get('conf') == vis and e['truth'] is not None]
+                print(f"  [REAL-TEXT INFERENCE SELF-SUPPORT JUDGE | visit {vis + 1}] own - swapped subject log-prob of the answer, right vs wrong: JUST CONFIRMED (never trained; "
+                      f"a teach-gate) {au_(sm_(jc_))} || TRAINED {au_(sm_([e for e in Ty_ if e['truth'] is not None]))} || HELD BACK {au_(sm_([e for e in H_ if e['truth'] is not None]))}", flush=True)
+            except Exception as e9: print(f"  [REAL-TEXT INFERENCE SELF-SUPPORT JUDGE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+        if int(getattr(cfg, 'inf_rti_audit', 0)):                             # 21 Nov kra23 (readout): AUDIT SAMPLE - 40 inferences confirmed at this sleep, printed
+            try:                                                               #   with their distant label, for a hand audit of the true false-memory rate
+                ra_ = np.random.RandomState(int(cfg.seed) + 101 + vis); ks_ = [k for k, w in W.items() if w.get('conf') == vis and w.get('state') == 'confirmed']
+                sm9 = [ks_[j] for j in ra_.permutation(len(ks_))[:40]]
+                print(f"  [AUDIT SAMPLE | visit {vis + 1}] {len(sm9)} of {len(ks_)} inferences confirmed at this sleep (label from the distant set): " +
+                      " | ".join(f"{W[k].get('th', k[0])} {W[k].get('tw', '~')} {W[k].get('tt', k[1])} [{'R' if W[k]['truth'] else 'W'}]" for k in sm9), flush=True)
+            except Exception as e9: print(f"  [AUDIT SAMPLE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
         if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
