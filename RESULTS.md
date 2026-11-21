@@ -5521,3 +5521,8 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - Both score with distill._dt_recall (test wording + paraphrase, open-ended). They differ in WHICH facts: [INTERLEAVED] probes 32 random facts of the CURRENT pool (recent entries, one or two visits of teaching); [EVER TAUGHT] samples about 240 ever taught, dominated by long-taught ones. The probe therefore tracks the current teaching weight; the ledger tracks retention.
 - Probe, visits 4-6 / 8: kra17 0.89 / 0.61 / 0.76 ... 0.47; kra18 0.97 / 0.61 / 0.59 ... 0.44; **kra20 0.84 / 0.88 / 0.94** (control 0.29-0.40). kra20's 0.25 floor teaches new facts 2x (visit 5) to 4x (visit 6) harder than kra18's 0.125, and the probe shows it; the ledger agrees in kra20 (0.83-0.85).
 - Review point 5 was a composition difference, not a scoring conflict. The fact target should hold on BOTH: the ledger (retention) and the probe (newly taught facts) at 0.75 or more. kra20 meets both through visit 6.
+
+### kra21 local safety run (21 Nov 02:25; tools/safety_run.sh kra21, 150 steps a domain, distant_10k)
+- HEADLINE weights only: FORGETTING **-0.030** | FINAL BPC **2.622** (fast store on -0.028 / 2.624). kra20: -0.031 / 2.621. Within noise: PASS. No errors; the run was stopped at its time limit in the end-of-run diagnostics, after the HEADLINE.
+- [RE-CONFIRMATION] runs at visit 4 (0 checked: locally nothing is confirmed 2 visits before; it first acts at visit 6 on the GPU). [REAL-TEXT INFERENCE TRAINED]: 22 of 22 taught pass the keep rule. [PRIOR CONTROL] prints at visits 4-5 (n 4-15 locally, too few to read). The MATCHED in-context readout is empty locally (every prompt exceeds the 64-byte window; it reads on the GPU's 1024).
+- kra21 is cleared for the GPU.
