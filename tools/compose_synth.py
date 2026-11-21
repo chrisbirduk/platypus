@@ -247,7 +247,16 @@ if OPJ:                                                                        #
                       f"pass at the threshold keeping 95% of recorded: {np.mean(o_ >= th):.2f}")
             P(f"   ({time.time() - T0:.0f}s)")
 if COTLATE:                                                                    # 18 Nov LATE CHAIN TEACHING (the package's situation): the model was pretrained with NO citizenship
-    NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
+    NT = int(os.environ.get('CS_COTLATE_N', 300)); TP = TRAINP[:NT]           #
+    NB_ = int(os.environ.get('CS_NEWB', 0))                                    # 21 Nov NEW BRIDGES: taught people only in even-numbered cities (CS_NEWB_DIV 1: one per city);
+    if NB_:                                                                    #   never-taught people scored apart: cities in a taught chain (SEEN bridge) vs never (NEW bridge)
+        pool_ = [p_ for p_ in TRAINP if p_[1] % 2 == 0]
+        if int(os.environ.get('CS_NEWB_DIV', 0)):
+            d_ = {}
+            for p_ in pool_: d_.setdefault(p_[1], p_)
+            pool_ = list(d_.values())
+        TP = pool_[:NT]
+    TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
     KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
     for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
@@ -294,6 +303,7 @@ if COTLATE:                                                                    #
             step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
+                if tag == 'CHAIN' and NB_: s1 = chain(mm, HS_, OLD) if HS_ else (float('nan'),) * 2; s2 = chain(mm, HN_, OLD) if HN_ else (float('nan'),) * 2; out[-1] += f" [SEEN bridge (n {len(HS_)}) B {s1[0]:.2f} C {s1[1]:.2f} | NEW bridge (n {len(HN_)}) B {s2[0]:.2f} C {s2[1]:.2f}; taught cities {len(TPC_)}]"
                 elif tag.endswith('3'):
                     def h3(G):
                         r_ = [[], [], [], []]
