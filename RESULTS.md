@@ -5770,3 +5770,11 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Premises recalled 0.95 (the noisy records: 0.56). BRIDGE (restated form 'Q: A r ? A w1 B. B w2 C. So A r C.'): taught C first 0.54 / 0.64; NEVER TAUGHT 0.000, first hop 0.034, format 0.017.
 - **A test-format failure, not a reader one:** for a new subject the stand-in writes a TAUGHT subject with similar letters ('Q: Nagpur Division in ?' -> 'Nazca Lines in Peru ...', 'Bangalore' -> 'Basel', 'Haryana' -> 'Hazarajat'): it cannot copy a new name into the restated chain. The synthetic and rule worlds never restate the subject ('A r B > C.'). P150 ('contains') also reverses direction in these labels ('Germany in Berlin'). Re-run in the arrow form without P150 (BT_FORMAT=arrow).
 - The earlier route A runs (writes, records) used the same restated form, so their 0.00 on held-out bridges is confounded the same way.
+
+### cg27a_kra24 GPU, visit 8 (21 Nov 18:50; stopped here to start kra25)
+- **Pooled gate at the patent visit: right overall 0.56, right when answered 1.00, never-read given a name 0.03** (kra23 0.07, kra22 0.07). Visits 4-8: 0.03 / 0.03 / 0.02 / 0.01 / 0.03.
+- **Facts: ledger ever taught 0.83 (kra23 0.75, kra22 0.81); probe 0.78 (kra23 0.81, kra22 0.68).** Both above 0.75 at visits 2-8.
+- **Bits on read domains 1.8040, the best of any build at visit 8** (kra23 1.8125, kra22 1.8250): 12 question rows a step cost nothing.
+- Route B: clean readout pure families 0.11 (n 46), never written 0.22 (n 46); route J pure held back 0.02 (n 53). Route D two-step 0.62, pure 0.57.
+- Confirmed 423 so far at right 0.84. No Traceback.
+- **kra24 meets the facts and gated-answers goals through visit 8** (one seed).
