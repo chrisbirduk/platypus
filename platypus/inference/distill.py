@@ -1706,13 +1706,16 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
         for (d, s_, r2, A, C) in L[:80]:
             if seen and int(d) not in seen: continue
             m = up[r2]; B = m.get(A)
-            if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 2:        # 21 Nov kra26: spelled steps 'A r: A r1 B; B r1 C' -> the last word of each step
+            if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) >= 2:        # 21 Nov kra26: spelled steps 'A r: A r1 B; B r1 C' -> the last word of each step
                 pr = f"{A} {rw[r2]}:".encode('latin-1', 'replace'); g = _dw_greedy(model, pr, int(S_slot(d)), 90)
                 st = [x.strip(' .').split(' ') for x in g.split('.')[0].split(';')]; pt = [x[-1] for x in st if x and x[-1]] if len(st) == 2 else [g.strip()]
+                a1 = st[0][0] if st and st[0] else ''                         # 21 Nov kra27 readout: the subject the trunk WROTE in step 1; its bridge is
+                cp_, cn_ = a1 == A, len(pt) == 2 and a1 != A and m.get(a1) == pt[0]
+                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 3: cp_, cn_ = True, False   # kra27: no subject in step 1   #   that subject's true parent = copy failure, not retrieval
             else:
                 pr = f"{A} {rw[r2]} ".encode('latin-1', 'replace')
-                g = _dw_greedy(model, pr, int(S_slot(d)), 40); pt = [x.strip(' .') for x in g.split('.')[0].split('>')]
-            out.append((len(pt) == 2 and all(pt), len(pt) == 2 and pt[0] == B, (pt[-1] if pt else '') == C, g.strip().startswith(C)))
+                g = _dw_greedy(model, pr, int(S_slot(d)), 40); pt = [x.strip(' .') for x in g.split('.')[0].split('>')]; cp_, cn_ = True, False
+            out.append((len(pt) == 2 and all(pt), len(pt) == 2 and pt[0] == B, (pt[-1] if pt else '') == C, g.strip().startswith(C), cp_, cn_, f"{A} -> {g[:70]}"))
         return out
     was = model.training; model.eval()
     try:
@@ -1722,9 +1725,11 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
         rp, rn = run(hp), run(hn)
     finally: model.train(was)
     f = lambda L: (f"{len(L)}: chain format {np.mean([x[0] for x in L]):.2f}, bridge right {np.mean([x[1] for x in L]):.2f}, C right {np.mean([x[2] for x in L]):.2f} "
-                   f"(C first, direct {np.mean([x[3] for x in L]):.2f})") if L else "0"
+                   f"(C first, direct {np.mean([x[3] for x in L]):.2f}; subject copied {np.mean([x[4] for x in L]):.2f}, another subject written with ITS true bridge "
+                   f"{np.mean([x[5] for x in L]):.2f})") if L else "0"
     print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
           f"{f(pl)} || HELD BACK, NEVER PLANTED, NEVER WRITTEN BY ROUTE J {f(rn)} || PURE FAMILIES, NEVER WRITTEN {f(rp)}", flush=True)
+    if rp: print("      PURE FAMILIES, e.g. " + " | ".join(x[6] for x in rp[:4]), flush=True)
 
 
 def _dw_greedy(model, prompt, sl, n=24):

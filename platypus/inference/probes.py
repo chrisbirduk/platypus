@@ -256,8 +256,10 @@ def inf_rule_world(cfg):
             for m_, l_ in leaves_:                                             # 18 Nov PURE families (inf_rule_world_pure): NO composite planted for any of
                 W_['planted'].append((d_, _RW_REL[r1_].format(a=l_, b=m_), r1_, l_, m_)); W_[kind_][l_] = m_   #   their leaves, so a composite about them can
                 rec_ = (d_, _RW_REL[r2_].format(a=l_, b=root_), r2_, l_, root_)                                 #   only come from composing the two hops
-                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 2 and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra26: the composite with its
-                    rec_ = (d_, _RW_REL[r2_].format(a=l_, b='').rstrip(' .') + ': ' + _RW_REL[r1_].format(a=l_, b=m_).rstrip('.') + '; ' + _RW_REL[r1_].format(a=m_, b=root_), r2_, l_, root_)   #   two steps spelled
+                if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) in (2, 3) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra26: the composite with its
+                    s1_ = _RW_REL[r1_].format(a=l_, b=m_).rstrip('.')                                                        #   two steps spelled
+                    if int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 3: s1_ = s1_[len(l_) + 1:]                      # 21 Nov kra27: step 1 WITHOUT the subject restated
+                    rec_ = (d_, _RW_REL[r2_].format(a=l_, b='').rstrip(' .') + ': ' + s1_ + '; ' + _RW_REL[r1_].format(a=m_, b=root_), r2_, l_, root_)   #   ('X is a grandchild of: is a child of M; M is a child of Z.')
                 elif int(getattr(cfg, 'inf_rule_world_chainplant', 0)) and not pure_ and not (zlib.crc32(l_.encode()) % 2):   # 21 Nov kra23 ROUTE B: the PLANTED composite is written
                     rec_ = (d_, _RW_REL[r2_].format(a=l_, b=m_ + ' > ' + root_), r2_, l_, root_)   #   with its bridge, 'X is a grandchild of M > Z.' (synthetic world: chain teaching composes
                                                                                    #   for people never taught, 0.85 with 300 taught; direct teaching never does)

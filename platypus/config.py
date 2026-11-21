@@ -571,7 +571,7 @@ class Config:
     inf_distill_relmod_write_ctl=0.0  # 12 Nov POWERED STEP 4: > 0 = this share of the relational module's written facts held back (own hash) instead of the general fifth
     inf_distill_relmod_ctl_tail=0   #   18 Nov: 1 = the held-back share is drawn BY ANSWER (relation, C): every composite with the same answer (a family's grandchildren) is held back together, so none can be answered from a taught sibling
     inf_rule_world_premk=1          #   21 Nov kra25 (MODEL CHANGE when > 1): rule-world premises (child of / supervised by) planted this many times as often
-    inf_rule_world_chainplant=0     #   21 Nov kra23 ROUTE B (MODEL CHANGE when 1): planted rule-world composites written with their bridge, 'X is a grandchild of M > Z.'
+    inf_rule_world_chainplant=0     #   21 Nov kra23 ROUTE B (MODEL CHANGE when 1): planted rule-world composites written with their bridge, 'X is a grandchild of M > Z.' 2 (kra26): both steps spelled, 'X is a grandchild of: X is a child of M; M is a child of Z.' 3 (kra27): step 1 without the subject restated
     inf_rule_world_pure=0.0         #   18 Nov: share of rule-world families / charts with NO composite planted (pure test families; readout RELATIONAL MODULE WRITES, PURE FAMILIES)
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out
     inf_distill_lchain=0            #   11 Nov READOUT: LATENT CHAINING - JEPA-style predictors over trunk name codes (P one-hop, Q learned composition), N training steps
