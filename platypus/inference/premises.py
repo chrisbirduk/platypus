@@ -964,7 +964,7 @@ def _rret_judge(cfg, RD, ndv_, vis):
         RC = [k for k, w in W.items() if rcv > 0 and w.get('state') == 'confirmed' and not w.get('ret') and vis - int(w.get('conf', vis)) >= rcv]   #   inference whose pair has
         if not TN and not RC:                                                  #   NO relational record in the documents read since its confirmation, R visits on, is RETRACTED:
             print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return   # no longer taught + unlikelihood rows
-        dc9 = collections.defaultdict(set); cdn9 = int(getattr(cfg, 'inf_rti_conf_docs', 0))   # 21 Nov kra22 INDEPENDENT CONFIRMATION (inf_rti_conf_docs = D): also D+ distinct documents
+        dc9 = collections.defaultdict(set); cdn9 = int(getattr(cfg, 'inf_rti_conf_docs', 0)); rw9 = collections.defaultdict(list)   # 21 Nov kra22 INDEPENDENT CONFIRMATION (inf_rti_conf_docs = D): also D+ distinct documents
         want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))   #   (inf_rret). Offline
         wantR = {frozenset(k): k for k in RC}; rec9 = collections.Counter()      #   tools/retract_min.py: removes 0.35-0.38 of the wrong confirmed, 0.19 of the right
         rds8 = _PM.get('rdscore'); rt8 = None                                  # 20 Nov kra17 RATED CONFIRMATION (inf_rti_conf_rated): only a record the seeded reader
@@ -976,7 +976,8 @@ def _rret_judge(cfg, RD, ndv_, vis):
             if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
                 any9[fk] += 1
                 if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rel9[fk] += 1
-                if 1 <= r[5] <= 8 and not _rret_listlike(r): dc9[fk].add(int(r[0]))   # 21 Nov kra22: distinct documents with a relational record (any rating)   #   a RELATIONAL record of the pair in a document read since the write
+                if 1 <= r[5] <= 8 and not _rret_listlike(r): dc9[fk].add(int(r[0]))   # 21 Nov kra22: distinct documents with a relational record (any rating)
+                if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rw9[fk].append((r[1], _rnorm(r[3]), r[2]))   # 21 Nov kra23: confirming wordings   #   a RELATIONAL record of the pair in a document read since the write
             if fk in wantR and r[0] >= W[wantR[fk]].get('ndc', ndv_) and 1 <= r[5] <= 8 and not _rret_listlike(r): rec9[fk] += 1   # since its confirmation (any rating)
         rt9 = []
         for k in RC:
@@ -992,6 +993,11 @@ def _rret_judge(cfg, RD, ndv_, vis):
         for k in TN:
             w = W[k]; fk = frozenset(k)
             if rel9[fk] >= cm9 and (cdn9 <= 1 or len(dc9[fk]) >= cdn9): w.update(tent=False, conf=vis, ndc=ndv_, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
+            if rel9[fk] >= cm9 and (cdn9 <= 1 or len(dc9[fk]) >= cdn9) and int(getattr(cfg, 'inf_rti_conf_retype', 0)) and rw9.get(fk):   # 21 Nov kra23 RE-WORD ON
+                cl9 = [x for x in rw9[fk] if 1 <= len(x[1].split()) <= 4 and all(t.isalpha() for t in x[1].split()) and x[1] not in _RRET_LISTW and x[1] not in ('and', 'or', 'with', 'to')]
+                if cl9:                                                        #   CONFIRMATION: the confirming record's own clean wording and order replace the generic typed
+                    X9, w9_, Y9 = collections.Counter(cl9).most_common(1)[0][0]; w.update(th=X9, tw=w9_, tt=Y9, retyped=vis)   #   one ('in'); kra22: two taught answers for one
+                                                                               #   subject and wording were recalled 0.44-0.46 vs 0.78 without a conflict
             elif vis - w['vis'] >= fv: w.update(tent=False, faded=vis, state='faded', judged=vis, flag=True, ret=False); fd9.append(w['truth'])
             else: st9.append(w['truth'])
         rr = lambda L: f"{len(L)} (right {np.mean([bool(x) for x in L]):.2f})" if L else "0"

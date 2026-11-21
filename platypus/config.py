@@ -657,6 +657,7 @@ class Config:
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
+    inf_rti_conf_retype=0           #     kra23: a confirmed inference takes its confirming record's own clean wording and order (fewer conflicting answers under 'in')
     inf_rti_conf_docs=0             #     kra22: a tentative inference is confirmed only with relational records in this many distinct documents since its write (0/1 = off)
     inf_rti_nameshape=0             #     kra22: code writes skip pairs whose names contain digits, brackets or quotes (numbers, years, fragments)
     inf_rti_judge=0                 #     readout (kra23): SELF-SUPPORT JUDGE - own vs swapped subject log-prob margin, AUC right vs wrong
