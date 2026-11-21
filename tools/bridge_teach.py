@@ -106,6 +106,7 @@ def ev(m, arm, cl):
         g = greedy(m, [q_(c) + so_(c) for c in cl], 40); ex = [x[len(q_(c) + so_(c)):].startswith(c[2]) for x, c in zip(g, cl)]
         return f"C first among 10 {np.mean(r):.3f} | C exact {np.mean(ex):.3f}"
     g = greedy(m, [q_(c) for c in cl]); r, fm, bb, ex = [], [], [], []
+    if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:118]) for x in g[:3]))
     for x, c in zip(g, cl):
         body = x[len(q_(c)):]; j = body.find(so_(c)); fm.append(j >= 0); bb.append(body.startswith(f"{c[4][0]} {c[4][1]} {c[4][2]}"))
         if j < 0: r.append(0); ex.append(False); continue
