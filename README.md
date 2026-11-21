@@ -11,19 +11,35 @@ Current build: **cg27a with interleaved distillation and replay** (branch `cg27a
 ---
 ## Note from author
 Documentation here is LLM generated. This has proved problematic, and the LLM often got carried away - either making wild claims or underestimating the benchmarks which had been undertaken. 
-The original core memory prototype (before this repository) was built, tested and benchmarked at a number of sizes (50M, 170M, 500M) and against several other baselines; those results are not reproduced here. In its initial form, it did well, but probably needs benchmarking again with all the extra bloat.
+The original core memory prototype (before this repository) was built, tested and benchmarked at a number of sizes (50M, 170M, 500M) and against several other baselines; those results are not reproduced here. In its initial form, it did well, but probably needs benchmarking again with all the extra bloat. I believe the current implementation can be optimised to run at 1.3x-1.7x a naive baseline, the core certainly can.
+
 The original aim of the project was to create a continuous learning memory system, ideally for deployment with agents. This then expanded to understand if the dream system could be expanded to provide inference abilities. My gut feeling is that it can, but this would require more layers and additional features. Recent work in this area is promising.  Taught facts are successfully recalled from the trunk alone (wordings never trained on) at 0.6-0.7 on GPU against 0.01-0.06 for never taught facts.
 Theta gating put on hold, but potentially revisited later.
 
 The closed-loop approach also requires work. My gut feeling here is that should only be an encoder. An encoder would work within a "hippocampal" layer to identify similarity (soft features) and mix these with less predictable raw data, with the raw data component likely decaying faster. The trunk should be able to take the gist and raw data in parallel. Dreams would aid helping avoiding forgetting and inference building. 
-Different dreaming would potentially occur during normal training, and gated depending on the state of the model.
-Whilst not included within the results here, I had some partial success getting this to work - but I would need to test this at a scale which isn't available to me. Mixing of "concepts" is likely what is required to advance the model, but this cannot easily be achieved with a byte stream as SFA/JEPA decoding is not feasible back to byte form - ultimately, the decoder needs to go (and this creates new challenges). Recent research gives further weight to this, but some loose ends need clearing up.
-Other thoughts here - there seems to be a struggle to ensure that memory traces are smaller than the original memory. IMHO this doesn't matter, instead the focus needs to be - can the traces convey all of the information required for modelling state change AND providing inference. Sure, memory traces should be as small as possible, but not so small that they prevent advanced function.
-I have made some significant progress on inference. Rule-free inference from real text now works in the memory store (about 60% of the written inferences are right, against a 9% base rate), and these inferred facts are recalled from the weights in wordings never taught. The model itself does not yet infer them, and it learns wrong inferences as readily as right ones.
+
+A lot of recent changes. I've started some new contract work, so any work on the model is done in the evening often whilst watching my son play football. I devise the tests in the evening and run them overnight and during the day.
+
 I have barely sufficient time to work on this project. The original aim was to understand if a memory system could be developed for agents which didn't decay into nonsense. I think the project demonstrates this is possible, at least through the first pass, and along with existing research points towards how this could be achieved. In the last few weeks, so many products have arrived in this area, that this work is less novel than when I started it.
+
 The code is very messy, I apologise for this - it is largely LLM generated and only the core memory system was sufficiently reviewed and has since deteriorated.
+
 I am not an AI engineer or AI researcher - this is a pet project.
 There are some issues after the first pass (passes 2 and 3) - I'm aware of this, but haven't got around to fixing it yet.
+
+If anything in the project is useful then please drop me an email on chrisbirduk1@gmail.com or add me on LinkedIn https://www.linkedin.com/in/chris-bird-uk/
+
+I'm open to any feedback on the model, negative or positive.
+
+What is next?
+* Final 5%
+* Optimisation
+* Cleanup
+* Refactoring
+* Remove back prop altogether - this is possible with the model, but difficult with current mess
+* Extend to multi-modal
+
+(Whatever is possible with limited time available)
 
 ## What it is, in one paragraph
 
