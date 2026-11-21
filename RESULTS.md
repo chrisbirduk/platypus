@@ -5746,3 +5746,8 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 | one per city (100 cities) | 0.77 / 0.55, 0.82 / 0.62, 0.87 / 0.68, **0.87 / 0.82** (n 71) | 0.97 / 0.93 (n 29) |
 - **Composition through bridges never seen in a chain works without the name shortcut:** the second hop comes from the plain premise 'B lies in C' (direct teaching: 0.08). Diverse chains help a little (0.73 -> 0.82).
 - So the rule world's pure-family failure (kra23: 0.00-0.06) is specific. Candidate causes: the synthetic second hop chooses among 20 countries (rule world: about 190 roots), and its premise is known perfectly (rule world: recalled 0.53-0.58). Next: CS_NC 150.
+
+### cg27a_kra23 GPU, visit 8 (21 Nov 16:10; the user's log ends at the start of visit 9)
+- Route J held-back composites 0.12 (n 84; never planted 0.12, n 81); taught 0.73-0.74 (the visit-8 dip). **Pure families held back 0.02 (n 41)** (visit 7: 0.06, n 33). Route D explicit two steps 0.48, pure 0.47; direct 0.00-0.01.
+- Route B over kra23, held back (all / pure): visit 4 0.17-0.21 / 0.08, 5 0.19-0.20 / 0.00, 6 0.17-0.18 / 0.00, 7 0.11-0.12 / 0.06, 8 0.12 / 0.02. Composition over new subjects at about 0.12-0.20; through new bridges at about chance.
+- Confirmed 639 so far at right 0.82 (kra22 identical). Taught inferences 0.55 open at the even visit. Facts: probe 0.81, ledger 0.75. Gate: never-read calibration 0.58 / never-read 0.07; keep-75% 0.61 / 0.08. Bits on read domains 1.8125 (best yet; kra22 1.8250). No Traceback.
