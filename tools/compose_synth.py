@@ -95,7 +95,8 @@ IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
 def pre_sentences():
     out = []
     for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT[:int(os.environ.get('CS_PREMW', 4))]] * int(os.environ.get('CS_PREMREP', 3))   # 21 Nov: CS_PREMW wordings x CS_PREMREP copies (premise strength)
-    for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT] * 2
+    nw_ = int(os.environ.get('CS_PTW', 3))                                      # 21 Nov: CS_PTW person-city wordings, copies keep 6 sentences a person
+    for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT[:nw_]] * (6 // nw_)
     if IMPL and COT:
         for a, bi in TRAINP: out += [f"{a} is a citizen of {OLD[bi][0]} > {COUNTRY[OLD[bi][1]]}."] * 4
     elif IMPL:

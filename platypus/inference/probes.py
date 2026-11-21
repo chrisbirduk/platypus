@@ -231,6 +231,10 @@ def _inf_bench_readout(S_,cfg):
         l_,_,pr_=lab_(c_)
         if l_=='outside' or k9_>=5: continue
         k9_+=1; print(f"    BENCH: {dec_(c_.get('A'))} ~ {dec_(c_.get('C'))} via {dec_(c_.get('B'))} -> {l_}"+(f" [{nm_.get(str(pr_[0]),'?')} / {nm_.get(str(pr_[1]),'?')}]" if pr_ else ''),flush=True)
+_RW_PREMW = {'parent': ["{a} is a child of {b}.", "Records show that {a} is a child of {b}.", "{a}, who is a child of {b}, lives nearby.", "Of the family, {a} is a child of {b}.",
+                         "Everyone knows {a} is a child of {b}.", "Ask anyone: {a} is a child of {b}."],
+             'mgr': ["{a} is supervised by {b}.", "Records show that {a} is supervised by {b}.", "{a}, who is supervised by {b}, works nearby.", "At the office, {a} is supervised by {b}.",
+                     "Everyone knows {a} is supervised by {b}.", "Ask anyone: {a} is supervised by {b}."]}   # 21 Nov kra28 (inf_rule_world_premw): premise wordings
 _RW_REL = {'parent': "{a} is a child of {b}.", 'grand': "{a} is a grandchild of {b}.", 'mgr': "{a} is supervised by {b}.", 'skip': "{a} is overseen by {b}."}
 def inf_rule_world(cfg):
     """RULE WORLD (11 Nov; inf_rule_world = N families and N org charts, on by default): planted facts that OBEY composition rules, beside the
@@ -297,8 +301,13 @@ def _inf_plant_probes(raw,cfg,d,p):
                 if dd_==int(d): (fs_ if u_['type']=='true' else once_).append(s_)
     nrw_ = 0
     pk_ = max(1, int(getattr(cfg, 'inf_rule_world_premk', 1)))                # 21 Nov kra25: the PREMISES (child of / supervised by) planted pk_ times as often - the
-    for dd_, s_, rr_, *_ in inf_rule_world(cfg)['planted']:                   #   synthetic world composes through new bridges with premises known at 1.00; the rule
-        if dd_ == int(d): k_ = pk_ if rr_ in ('parent', 'mgr') else 1; fs_.extend([s_] * k_); nrw_ += k_   #   world's second-hop premise is recalled about 0.5-0.7
+    pw_ = int(getattr(cfg, 'inf_rule_world_premw', 0))                       # 21 Nov kra28 KNOWLEDGE AUGMENTATION OF THE PREMISES: each premise in pw_ wordings
+    for dd_, s_, rr_, *rest_ in inf_rule_world(cfg)['planted']:               #   (subject, relation and answer in varied positions and contexts) instead of one
+        if dd_ != int(d): continue                                             #   sentence repeated - a fact learned in one wording is keyed on that wording's
+        if pw_ > 1 and rr_ in ('parent', 'mgr') and len(rest_) >= 2:          #   state; the synthetic world (4 / 3 wordings) composes through new bridges
+            a_, b_ = rest_[0], rest_[1]; T_ = _RW_PREMW[rr_][:pw_]
+            ss_ = [T_[j_ % len(T_)].format(a=a_, b=b_) for j_ in range(max(pk_, len(T_)))]; fs_.extend(ss_); nrw_ += len(ss_); continue
+        k_ = pk_ if rr_ in ('parent', 'mgr') else 1; fs_.extend([s_] * k_); nrw_ += k_   #   world's second-hop premise is recalled about 0.5-0.7
     for l_, mv_ in (inf_rule_world(cfg).get('moves') or {}).items():          # 19 Nov kra9: the MOVED leaves' new premise, planted in its own domain
         if mv_['d2'] == int(d): fs_.append(mv_['sent']); nrw_ += 1
     if not fs_ and not once_: return raw
