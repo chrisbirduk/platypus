@@ -95,12 +95,14 @@ PF = ("{a} {w} {b}.", "Notes: {a} {w} {b}.", "We read that {a} {w} {b}.", "It is
 PREM = [enc(f.format(a=p[0], w=p[1], b=p[2])) for c in TR + TE for p in (c[4], c[5]) for f in PF]
 q_ = lambda c: f"Q: {c[0]} {c[1]} ? "
 so_ = lambda c: f"So {c[0]} {c[1]} "
-ARW = os.environ.get('BT_FORMAT', '') == 'arrow'                               # 21 Nov: 'arrow' - the synthetic world's and the rule world's form 'A r B > C.' (the
+ARW = os.environ.get('BT_FORMAT', '') in ('arrow', 'spelled')                             # 21 Nov: 'arrow' - the synthetic world's and the rule world's form 'A r B > C.' (the
 if ARW:                                                                        #   subject is never written again: the stand-in cannot copy a new name and wrote a
     q_ = lambda c: f"{c[0]} {c[1]} "                                           #   taught one with similar letters in its place)
     so_ = lambda c: f"{c[0]} {c[1]} "
 ROWS = {'DIRECT': [enc(q_(c) + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {c[1]} {c[2]}.") for c in TR],
         'BRIDGE': [enc(q_(c) + f"{c[4][0]} {c[4][1]} {c[4][2]}. {c[5][0]} {c[5][1]} {c[5][2]}. " + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {c[1]} {c[4][2]} > {c[2]}.") for c in TR]}
+SPL = os.environ.get('BT_FORMAT', '') == 'spelled'                             # 21 Nov: kra26's form 'A r: A w1 B; B w2 C.' (both steps spelled, A restated)
+if SPL: ROWS['BRIDGE'] = [enc(f"{c[0]} {c[1]}: {c[4][0]} {c[4][1]} {c[4][2]}; {c[5][0]} {c[5][1]} {c[2]}.") for c in TR]
 EVD = {d: [bytes(a[len(a) - 200000 + k * 129:len(a) - 200000 + (k + 1) * 129]) for k in range(64)] for d, a in DOMS.items()}
 @torch.no_grad()
 def dbits(m):
@@ -134,6 +136,17 @@ def ev(m, arm, cl):
     if ARW:                                                                    # arrow form: DIRECT ranks C after 'A r '; BRIDGE decodes 'B > C' after 'A r '
         if arm == 'DIRECT':
             r = [rank_at(m, f"{c[0]} {c[1]} ", CAND[c]) for c in cl]; return f"C first among 10 {np.mean(r):.3f}"
+        if SPL:                                                                # spelled: decode after 'A r:'; step 1 must restate 'A w1 ', its tail is the bridge
+            g = greedy(m, [f"{c[0]} {c[1]}:" for c in cl], 110); r, fm, bb, ex, cp = [], [], [], [], []
+            if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:118]) for x in g[:3]))
+            for x, c in zip(g, cl):
+                st = [t.strip() for t in x[len(f"{c[0]} {c[1]}:"):].split('.')[0].split(';')]; h1 = f"{c[0]} {c[4][1]} "
+                cp.append(len(st) >= 1 and st[0].startswith(c[0] + ' '))
+                ok = len(st) == 2 and st[0].startswith(h1); fm.append(ok)
+                if not ok: r.append(0); ex.append(False); bb.append(False); continue
+                b_ = st[0][len(h1):]; bb.append(b_ == c[4][2]); ex.append(st[1].endswith(c[2]))
+                r.append(rank_at(m, f"{c[0]} {c[1]}: {st[0]}; {b_} {c[5][1]} ", CAND[c]))
+            return f"C first among 10 {np.mean(r):.3f} | C exact {np.mean(ex):.3f} | own bridge B right {np.mean(bb):.3f} | chain format {np.mean(fm):.3f} | subject copied {np.mean(cp):.3f}"
         g = greedy(m, [f"{c[0]} {c[1]} " for c in cl], 60); r, fm, bb, ex = [], [], [], []
         if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:100]) for x in g[:3]))
         for x, c in zip(g, cl):
