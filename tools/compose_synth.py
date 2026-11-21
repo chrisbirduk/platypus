@@ -154,9 +154,15 @@ def gen(m, pre, n=48):
         if c in (46, 10, PAD): break
         b.append(c)
     m.train(); return bytes(b[len(pre.encode('latin-1')):]).decode('latin-1', 'replace').strip()
-def chain(m, people, cities):
+SPELL = int(os.environ.get('CS_SPELL', 0))                                   # 21 Nov CS_SPELL 1: kra27 / kra28's spelled form, step 1 without the subject:
+def chain(m, people, cities):                                                  #   'A is a citizen of: lives in B; B lies in C.' (each step a premise's own wording)
     rb, rc = [], []
     for a, bi in people:
+        if SPELL:
+            g = gen(m, f"{a} is a citizen of:", 64); st = [x.strip() for x in g.split('.')[0].split(';')]
+            b_ = st[0][len('lives in '):].strip() if st and st[0].startswith('lives in ') else ''
+            c_ = st[1].split(' lies in ')[-1].strip() if len(st) == 2 and ' lies in ' in st[1] else ''
+            rb.append(b_ == cities[bi][0]); rc.append(c_ == CN[cities[bi][1]]); continue
         g = gen(m, f"{a} is a citizen of "); parts = [x.strip() for x in g.split('>')]
         rb.append(len(parts) == 2 and parts[0] == cities[bi][0]); rc.append(len(parts) == 2 and parts[1] == CN[cities[bi][1]])
     return float(np.mean(rb)), float(np.mean(rc))
@@ -260,7 +266,7 @@ if COTLATE:                                                                    #
     TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
     KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
-    for tag, fmt in [x for x in (('CHAIN', lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}."), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
+    for tag, fmt in [x for x in (('CHAIN', (lambda a, bi: f"{a} is a citizen of: lives in {OLD[bi][0]}; {OLD[bi][0]} lies in {CN[OLD[bi][1]]}.") if SPELL else (lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}.")), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
                                  ('CHAIN3', lambda a, bi: f"{a} is a resident of {OLD[bi][0]} > {CN[OLD[bi][1]]} > {KC[CN[OLD[bi][1]]]}."),
                                  ('DIRECT3', lambda a, bi: f"{a} is a resident of {KC[CN[OLD[bi][1]]]}."))
                      if x[0] in os.environ.get('CS_COTLATE_ARMS', 'CHAIN,DIRECT').split(',')]:
