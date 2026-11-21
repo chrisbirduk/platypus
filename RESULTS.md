@@ -5660,3 +5660,10 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Confirmation: visit 6 223 confirmed (right 0.78); all so far 423 (0.83; kra21 at visit 6: 509 at 0.82); faded 299 (0.67; kra21 0.59). The two-document rule's gain shrinks at the second judgement: it fades more right ones.
 - Gate (never-read calibration): visit 5 right overall 0.34 / never-read 0.00 (keep-75%: 0.53 / 0.01); visit 6 0.59 / 0.02 (same as keep-75%).
 - Facts: probe 1.00 / 0.84, ledger 0.86 / 0.83 (taught 1 visit 0.69 at visit 6), control 0.26-0.46. Bits on read domains 1.8614 / 1.9094 (kra21 1.8587 / 1.9049). No Traceback.
+
+### Bridge teaching on real-text chains (21 Nov 11:50; tools/bridge_teach.py, A6 stand-in, 872 chains from distant_50k code writes, TRAIN 400 / TEST 200 on bridges never in a train chain)
+- 606 distinct first-hop wordings for 13 conclusion wordings; premises recalled 0.67 after 3,000 steps (forgetting -0.04 to -0.05).
+- DIRECT ('Q: A tw ? So A tw C.'): taught C first among 10 0.79 / 0.92 at steps 1,500 / 3,000; never taught 0.19 / 0.14 (chance 0.10).
+- **BRIDGE ('Q: A tw ? A w1 B. B w2 C. So A tw C.'), the model writing its own chain (greedy): taught C first 0.18 / 0.33 (exact 0.12 / 0.27), first hop written exactly 0.31 / 0.51; NEVER TAUGHT C first 0.015 / 0.010, first hop 0.005 / 0.005, chain format written 0.08 / 0.105.** No composition: it memorises (slowly) the taught chains and cannot even write the format for new subjects.
+- The samples show why: real-text premises are mostly list fragments ('Bergen , norway and Iceland', 'Belize , guatemala , Nicaragua', 'Frankfurt , sweden ...'), not relations - there is no consistent first hop to learn, unlike the synthetic world's one rule. (A first run scored 0.000 everywhere because greedy decoding fed unshifted input; fixed, 4672a46.)
+- Next (route A): the same restricted to clean relation families (containment wordings; word-only relational wordings).
