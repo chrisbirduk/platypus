@@ -45,8 +45,8 @@ def person():                                                                  #
     while True:
         n = ''.join(rs.choice(SY) for _ in range(2)).capitalize() + ' ' + ''.join(rs.choice(SY) for _ in range(3)).capitalize()
         if n not in used: used.add(n); return n
-CODES = ['q' + c for c in 'abcdefghijklmnopqrst']
-NC = 20; COUNTRY = [name(3) for _ in range(NC)]
+CODES = ['q' + a + b for a in 'abcdefghijklmnop' for b in 'abcdefghij'][:max(20, int(os.environ.get('CS_NC', 20)))] if int(os.environ.get('CS_NC', 20)) > 20 else ['q' + c for c in 'abcdefghijklmnopqrst']
+NC = int(os.environ.get('CS_NC', 20)); COUNTRY = [name(3) for _ in range(NC)]   # 21 Nov CS_NC: number of countries (the second hop's answer set)
 def city(c, informative=float(os.environ.get('CS_CODEINF', 0.8))):   # 21 Nov CS_CODEINF: share of cities whose name code is their country's (0 = uninformative)
     code = CODES[c] if rs.rand() < informative else CODES[rs.randint(NC)]
     return f"{name(3)}-{code}", c
