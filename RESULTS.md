@@ -5791,3 +5791,8 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Pure families: trunk's own chain (never written) bridge right 0.18, **C right 0.04 (n 28)**; route J pure held back 0.07 (n 27). Non-pure never written 0.34 (n 29). Premise recall at visit 6: first step 0.75 (0.86 at visit 5); explicit two steps 0.72, pure 0.68.
 - **Tripled premises raised premise recall (visit 5) but not composition through new bridges.** Cost: none - bits on read domains 1.8945 (kra24 1.8944); facts probe 0.91, ledger 0.87; gate 0.52 / never-read 0.00.
 - kra26 local check (spelled steps, inf_rule_world_chainplant 2): visits 1-2 run without errors; the reader records 192 rule-world facts by visit 2 (the local harness learns too little to show chains).
+
+### cg27a_kra26 GPU, visits 1-2 (21 Nov 21:05; spelled steps, inf_rule_world_chainplant 2)
+- The reader reads the spelled composites: both rules found from visit 1, 0 FALSE; route J composite 0.99, pure 1.00, writes precision 0.98 (81).
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 2: PLANTED chain format 0.69, bridge right 0.46, C right 0.38 (n 13); HELD BACK never written format 0.45, bridge 0.00, C 0.00 (n 11); **PURE FAMILIES never written: format 0.83 (kra23 at visit 2: 0.17), bridge right 0.00, C 0.00 (n 12)**. The spelled form is taken up fast; the first step for new subjects is wrong so far (small n, visit 2).
+- Route D: first step 0.59, two-step 0.52, pure 0.48 (direct 0.00-0.05) - as kra25 at visit 2. Facts taught one visit 0.87; control 0.20. Bits on read domains 2.0223. No Traceback.
