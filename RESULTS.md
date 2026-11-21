@@ -5759,3 +5759,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Route D (explicit two steps, store off): first step B 0.80, two-step C **0.74**, pure families 0.71 (kra23 at visit 5-6: 0.47-0.60) - the 12 question rows a step raise premise recall. Route J held back: pure families 0.00 (n 25).
 - Bits on read domains 1.8496 at visit 5 (kra22 1.8614). No Traceback.
 - kra25 local check: visits 1-2 run without errors with the premises planted three times (domain 0: 726 rule-world facts in 25,290 planted sentences).
+
+### cg27a_kra24 GPU, visits 6-7 (21 Nov 18:10)
+- **Pooled gate: never-read given a name 0.02 / 0.01** (right overall 0.62 / 0.45, right when answered 1.00 / 0.97). kra22 / kra23 at visit 7: 0.01-0.07.
+- **Facts at visit 7: ledger ever taught 0.84 (kra23 0.79, kra22 0.82); probe (newly taught) 0.76 (kra23 0.82)**; control 0.29-0.31.
+- Route B, clean readout (never planted, never written by route J), visits 6 / 7: held back C right 0.33 (n 36) / 0.03 (n 37); **pure families 0.14 (n 35) / 0.08 (n 26)**; route J pure held back 0.06 / 0.03. Noisy and small. Route D explicit two steps 0.65-0.69 (pure 0.62-0.65).
+- Confirmed 322 so far at right 0.84. Taught inferences 0.65 / 0.80 (even / odd visit). Bits on read domains 1.8944 / **1.8603** (kra23 1.8954 / 1.8676). No Traceback.
