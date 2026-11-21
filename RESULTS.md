@@ -5677,3 +5677,10 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 | 300 (19 Nov) | 0.85 / 0.83 | - | 0.87 / 0.85 (3,000) |
 - Taught C 1.00 in every arm. The decomposition is learned from about 100 worked chains; 30 give 0.62.
 - On the GPU the rule world's planted composites are DIRECT ('X is a grandchild of Z'), which never composes, and route J's chain-form writes are a few dozen: held-back composites 0.00. **kra23 plants the composites with their bridge (inf_rule_world_chainplant 1) and doubles the rule world (96: about 118 chain composites per rule)** - the first GPU test of trunk-level inference on the rule world.
+
+### cg27a_kra22 GPU, visit 7 (21 Nov 12:10)
+- TRANSFER SOURCE, third visit running: held-back right own - swapped +0.14 (SE 0.04, n 119); **answer a taught answer +0.23 (SE 0.06, n 70) vs not +0.02 (SE 0.02, n 49); NOTHING SHARED +0.00 (n 15)**; subject a taught name +0.32 (n 22). Held-back wrong +0.11 (SE 0.07, n 19).
+- Taught inferences recover at the odd visit: open right 0.85 / wrong 0.80, rank 0.97 / 0.91; visit-2 cohort 0.82, visit-4 cohort 0.92. Breakdown: CONFLICT 0.90-0.92 vs none 0.97-0.99 (the conflict cost is largest at the dip visits: 0.44-0.46 vs 0.78 at visit 6).
+- MATCHED held-back right own - broken +0.09 (SE 0.05), own - closed +0.21 (SE 0.05).
+- Gate (never-read calibration): right overall 0.52, right when answered 0.92, never-read 0.01; keep-75%: 0.47 / 0.00.
+- Facts: probe 0.88, ledger 0.82 (taught 1 visit 0.65, 4+ visits 0.84), control 0.24-0.31. Bits on read domains 1.8832 (kra21 1.8856). No Traceback.
