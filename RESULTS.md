@@ -5526,3 +5526,17 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - HEADLINE weights only: FORGETTING **-0.030** | FINAL BPC **2.622** (fast store on -0.028 / 2.624). kra20: -0.031 / 2.621. Within noise: PASS. No errors; the run was stopped at its time limit in the end-of-run diagnostics, after the HEADLINE.
 - [RE-CONFIRMATION] runs at visit 4 (0 checked: locally nothing is confirmed 2 visits before; it first acts at visit 6 on the GPU). [REAL-TEXT INFERENCE TRAINED]: 22 of 22 taught pass the keep rule. [PRIOR CONTROL] prints at visits 4-5 (n 4-15 locally, too few to read). The MATCHED in-context readout is empty locally (every prompt exceeds the 64-byte window; it reads on the GPU's 1024).
 - kra21 is cleared for the GPU.
+
+### Write budget for kra21's rules, offline (21 Nov 02:30; tools/retract_min.py, RT_W 2400 / 4800 / 7200, distant_50k, same windows as above)
+| written | right | top-quarter confirmed (right) | + retract if NO later record: kept (right, count right) | top-tenth confirmed (right, count right) |
+|---|---|---|---|---|
+| **2,400 (kra21)** | 0.426 | 307 (0.765) | **238 (0.803, 191)** | 139 (0.827, 115) |
+| 4,800 | 0.310 | 441 (0.703) | 333 (0.745, 248) | 194 (0.830, 161) |
+| 7,200 | 0.252 | 550 (0.662) | 413 (0.709, 293) | 221 (0.819, 181) |
+- More writes dilute: each extra write is less likely right, and the confirmation rules pass them in proportion. Volume of right inferences kept rises 191 -> 293 (x1.5 for x3 writes) but precision falls 0.80 -> 0.71. Only top-tenth confirmation holds precision (0.82-0.83) as the budget grows, at 115-181 right.
+- Do not raise the write budget in kra22. If volume is needed later, 7,200 writes + top-tenth confirmation (181 right at 0.82) matches kra21's 2,400 + top quarter + re-confirmation (191 at 0.80) without retraction - a fallback if kra21's retraction misbehaves on the GPU.
+
+### Name-prior forecast for kra20's held-back rise (21 Nov 02:30; tools/tail_prior.py, distant_50k, kra20's confirmation rule)
+- 473 confirmed (right 0.708): 386 taught, 87 held back (52 right, 35 wrong). A held-back RIGHT inference's answer is more often also a taught answer (0.88 vs 0.74; taught 6.8 vs 4.2 times on average; AUC 0.64). Store degree does not separate them (AUC 0.52).
+- A PURE NAME PRIOR (the candidate taught most often wins) gives rank among 10: held-back right **0.29**, wrong **0.14**. kra20 GPU visit 5: right 0.31-0.34, wrong 0.06 (visit 4, before teaching: 0.15 / 0.19).
+- So most of kra20's held-back right rise can be explained by answer-name familiarity from teaching, without the trunk knowing anything about the subject. **The held-back rise is NOT evidence of generalisation** until kra21's [PRIOR CONTROL] (own vs swapped subject, same candidates) shows own > swapped for held-back right. The matched in-context own-vs-broken gap (+0.12, SE 0.06) is a separate measure and stands.
