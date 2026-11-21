@@ -34,7 +34,7 @@ RD = [R[i] for i in iRD]; pm._PM['rdscore'] = score[iRD]; pm._PM['rti'] = {}; pm
 W = pm._PM['rti']; K = list(W); T = {k: bool(W[k]['truth']) for k in K}
 q50, q75, q90 = (float(np.quantile(score[iRD], q)) for q in (0.5, 0.75, 0.9))
 P(f"{len(RD)} records read ({n0} of {ND} documents); {len(K)} written (right {np.mean(list(T.values())):.3f}); confirm on {n0}-{n1}, delay window {n1}-{n2}  ({time.time() - T0:.0f}s)")
-FK = {frozenset(k): k for k in K}; EC = collections.defaultdict(list); ED = collections.defaultdict(list)
+FK = {frozenset(k): k for k in K}; EC = collections.defaultdict(list); ED = collections.defaultdict(list); EW = collections.defaultdict(list); EWD = collections.defaultdict(list)
 need = {frozenset((a, b)) for (a, c_), w in W.items() for b in (w.get('prem') or [])[:3]} | {frozenset((b, c_)) for (a, c_), w in W.items() for b in (w.get('prem') or [])[:3]}
 PW = collections.defaultdict(collections.Counter)
 for i, r in enumerate(R):
@@ -43,7 +43,7 @@ for i, r in enumerate(R):
         if rel and fk in need and any(ch.isalpha() for ch in r[3]): PW[fk][(r[1], pm._rnorm(r[3]), r[2])] += 1
         continue
     if not rel or fk not in FK or r[0] >= n2: continue
-    (EC if r[0] < n1 else ED)[FK[fk]].append((int(r[0]), float(score[i])))
+    (EC if r[0] < n1 else ED)[FK[fk]].append((int(r[0]), float(score[i]))); (EW if r[0] < n1 else EWD)[FK[fk]].append(pm._rnorm(r[3]))
 del R
 CS = [k for k in K if any(s >= q75 for d, s in EC.get(k, []))]                 # kra21's confirmation: one record in the reader's top quarter
 nr = sum(T[k] for k in CS); nw = len(CS) - nr
@@ -65,6 +65,10 @@ rep('SECOND LOOK: a top-half record again in the delay window', lambda k: any(s 
 rep('SECOND LOOK: a top-quarter record again in the delay window', lambda k: any(s >= q75 for d, s in DL(k)))
 rep('2+ documents confirm OR a second look (top half)', lambda k: len({d for d, s in EV(k)}) >= 2 or any(s >= q50 for d, s in DL(k)))
 rep('mean rating of all records (confirm + delay) above the top-quarter line', lambda k: np.mean([s for d, s in EV(k) + DL(k)]) >= q75)
+OW = lambda k: pm._rnorm(W[k].get('tw') or '')                              # fuzzy-trace 'verbatim' evidence: a record stating the SAME relation (own typed wording)
+rep('VERBATIM: a confirming record in the inference own wording', lambda k: OW(k) in EW.get(k, []))
+rep('VERBATIM: own wording in the confirming OR the delay window', lambda k: OW(k) in EW.get(k, []) + EWD.get(k, []))
+rep('VERBATIM or 2+ distinct documents', lambda k: OW(k) in EW.get(k, []) or len({d for d, s in EV(k)}) >= 2)
 P(f"PART A done ({time.time() - T0:.0f}s)")
 if os.environ.get('SM_DUMP'):                                                  # a sample for a hand audit of 'wrong' (distant labels are incomplete: the true rate)
     import json
