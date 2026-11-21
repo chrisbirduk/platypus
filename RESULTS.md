@@ -4998,3 +4998,495 @@ Teachers: USEFUL (usefulness over time); RCONF (reader-scored confirmation: anot
 - Reading real text: the best label-free reader (taught by usefulness over time) is AUC 0.63-0.67 on gold relations; it learns comma and bracket forms more than phrases, and two thirds of labelled pairs never fall within its 12-word window. Substitution by the trunk, readers on the trunk's own states, a dependency parser, co-training, confirmation as a teacher, and several teachers combined (weak or strong) all failed to improve it.
 - End-to-end real-text inference: about 0.30-0.35 right from the reader's top 2% (random 0.13); 0.39 when composed from confirmed premises only (offline, small yield).
 - No final summary (forgetting, final BPC) from the 18-19 November GPU builds yet; one seed throughout.
+
+### cg27a_kra12 GPU visit 4, remaining readouts (19 Nov, log at 21:46)
+- Route J at visit 4: first hop 0.95, composite **0.92**, pure 0.90, null 0.00; gate answers 0.88, right **1.00**; never-read families passing 0.05. Re-derive kept 85 (right 0.99), retracted 4 (2 right).
+- MADE-UP CHAINS: novel subjects given a chain **0.50** (28), the confidence gate passes 0.29 (kra11 visit 4: 0.16 / 0.10; kra9: 0.00-0.46 by visit). The trunk's chain answers for never-read names come and go between visits and builds; composite answers must come from the gated memory, not the trunk.
+- State reader 0.607 -> 0.601 (visits 2 -> 4): flat, as in kra11. Premise change as kra11 (same seed): new premise recorded 0.67 of 3 moves read, no composite updated yet.
+
+### Overnight reader tests, full runs (19 Nov, 21:45-22:00)
+**Wider records** (tools/wide_reader.py, 20,000 documents, 1.46 M records): labelled pairs covered by some record: near (current) 0.316 -> + far in the sentence 0.395, + next sentence 0.434, + pronoun-led 0.339, **all four 0.520**. The self-trained reader (usefulness pseudo-labels over all kinds) on held-out documents: near AUC 0.622 (top 10% 0.24, base 0.131), far 0.597 (0.17, base 0.092), next sentence 0.580 (0.13, base 0.078), pronoun 0.569 (0.19, base 0.145). The new kinds roughly double the related pairs within reach at lower precision: worth reading, with confirmation as the filter.
+
+**Teaching meaning** (tools/teach_reader.py, 50,000 documents, blocks of 5,000; AUC on each unread block, blocks 1 -> 9):
+| Arm | AUC | Top 10% at block 9 | Phrase recall (2-12 words, not a list) | Person-place recall |
+|---|---|---|---|---|
+| USEFUL (now) | 0.625 -> 0.648 (best 0.653) | 0.301 | 0.165-0.183 | 0.098-0.126 |
+| BALANCED across wording forms | 0.593 -> 0.634 | 0.296 | **0.214** | 0.103-0.114 |
+| **KNOWLEDGE** (every record of a confirmed pair positive) | 0.625 -> **0.654 (best 0.658)** | **0.309** | 0.166-0.174 | 0.105-0.127 |
+| KNOWLEDGE + BALANCED | 0.593 -> 0.616 | 0.221 | 0.04-0.05 | 0.04-0.06 |
+- Knowledge-taught: a small, steady gain over usefulness alone (+0.004-0.006 AUC at every block from 5 on, top 10% 0.309 vs 0.301), from 952 confirmed pairs (right 0.67). The first loop in which what the system confirmed teaches its reader and the reader gets better; small so far.
+- Balanced teacher: phrase recall up (0.214 vs 0.165-0.183) at an AUC cost (-0.015). A trade, not a gain.
+- Combining the two drifts (its confirmations fall to 0.35 right) and is worse than either.
+
+### Does the reader feed inference? (19 Nov, 22:05; tools/rcode_reader.py, distant 20k; the package's compressed-fact-table method at 128 dimensions; distant labels, candidates base 0.133)
+Codes from the name x name graph of ALL records (as the package) or of the reader's top slice; candidates = pairs named together in held-out documents and never in the training graph.
+| Graph built from | Records | Candidates coded | AUC | Precision top 1% / 5% / 10% |
+|---|---|---|---|---|
+| All records (now) | 374,587 | 0.29 | 0.551 | 0.168 / 0.157 / 0.140 |
+| Reader top 50% | 187,294 | 0.27 | 0.557 | **0.243** / 0.168 / 0.131 |
+| Reader top 25% | 94,055 | 0.22 | 0.546 | 0.222 / 0.144 / 0.120 |
+| Reader top 10% | 57,346 | 0.18 | 0.550 | 0.231 / 0.135 / 0.115 |
+- A graph from the reader's top half sharpens the very top of the inferences (top 1% 0.24 vs 0.17) and keeps 93% of the coverage; narrower slices lose coverage without further gain. A small, cheap model change for kra13 (`inf_rcode_reader 0.5`).
+
+### Where the reader fails: teacher or features? (19 Nov, 22:00-22:05; tools/reader_ceiling.py, distant 30k, held-out documents; labels used only to diagnose)
+1. Same features (words between), self-trained vs TRUE labels: comma / bracket / list 0.641 vs 0.768 (gap 0.126); short phrase 0.595 vs 0.726 (0.131); longer phrase 0.603 vs 0.700 (0.097); all 0.638 vs 0.741. **The teacher costs about 0.10-0.13 AUC in every form**, not only on phrases; the features themselves are weaker on phrases (0.70-0.73 even with true labels).
+2. The teacher (usefulness) by form: +1 precision 0.450 on comma-type records (base 0.174: 2.6x), **0.385 on phrases (base 0.104-0.136: 2.8-3.7x)**; -1 precision 0.86-0.93; it votes on only 9-13% of records. It is informative for phrases, but sparse and noisy.
+3. Learning curve on phrase records with true labels: 1k 0.599, 5k 0.638, 20k 0.671, 100k 0.703. The words-between features need many, clean labels.
+4. Features with true labels: words 0.741; **+ the names' types 0.796; + 3 words of context each side 0.772; + both 0.816** (phrases 0.778-0.803); + the names themselves 0.790. Types are the largest single gain. But SELF-TRAINED with types + context drops to 0.616 (from 0.638): richer features let the reader learn the teacher's bias (type pairs that recur, such as place-place) faster.
+- Summary: the reader loses about 0.10 to its teacher's noise everywhere and is capped near 0.74 by its features; types and context would lift the cap to about 0.82, but only with a teacher whose errors they cannot learn.
+
+### Readers per horizon, combined (19 Nov, 22:10; tools/horizon_reader.py, distant 20k, 1.46 M records; the user's idea)
+Horizons: H0 adjacent / comma / list (base 0.175), H1 short phrase (0.135), H2 longer phrase (0.104), H3 far in the sentence (0.093), H4 next sentence (0.077), H5 pronoun-led (0.142). Held-out documents:
+| Arm | AUC all | Top 10% precision (related found) | Within-horizon AUC H0 / H1 / H2 / H3 / H4 / H5 |
+|---|---|---|---|
+| One reader (horizon as a feature) | **0.616** | **0.202** (5,946) | 0.592 / 0.600 / 0.609 / 0.596 / 0.580 / 0.573 |
+| Per-horizon readers, combined by probability | 0.588 | 0.161 (4,735) | **0.619** / 0.603 / 0.611 / 0.598 / 0.578 / 0.511 |
+| Per-horizon readers, equal shares | 0.595 | 0.180 (5,296) | as above |
+- A specialist reader per horizon is slightly better inside the adjacent / comma horizon (0.619 vs 0.592) and equal elsewhere; the pronoun specialist is worse (too few pseudo-labels).
+- Combining them without labels loses: the per-horizon probabilities (Platt scaling on each horizon's own pseudo-labels) are not comparable across horizons - every horizon's pseudo-labels are 20% positive by construction, whatever its true rate - so the next-sentence horizon (base 0.077) floods the top. Calibrating horizons against each other needs a label-free estimate of each horizon's true rate; the natural one is the pair: evidence for the SAME pair from several horizons and documents (which confirmation already uses).
+- PAIR LEVEL (238,477 held-out pairs, related 0.091): combining a pair's records by noisy-or: one reader AUC **0.650**, top 10% **0.209** (its best single record 0.641 / 0.186; mean of records 0.622); per-horizon readers 0.627 / 0.193. Pairs seen in 2+ horizons are related 0.155 (all 0.091). Evidence for a pair accumulating across its records and horizons helps a little; separate readers per horizon still do not.
+
+### A cleaner teacher, then richer features (19 Nov, 22:20-22:30; tools/clean_teacher.py, distant 40k in 8 blocks; own-document labels): NEGATIVE
+Learned types (label-free: k-means on the words around each name's mentions, 24 clusters over 348,710 names): purity 0.416 against the dataset's types (majority 0.300).
+| Teacher | Words between: AUC blocks 1 -> 7 | + learned types + context |
+|---|---|---|
+| USEFUL | 0.614 -> 0.629 (best 0.637) | 0.562 -> 0.578 |
+| KNOWLEDGE (usefulness + every record of a confirmed pair) | 0.614 -> 0.634 (best **0.641**) | 0.562 -> 0.574 |
+| CONFIRMED only (every record of a confirmed pair; usefulness -1 as negatives) | 0.614 -> 0.581 | 0.562 -> 0.535 |
+- The confirmed pairs are NOT a cleaner teacher here: confirmed by the reader itself, they are right only 0.34-0.49 (records of them as positives 0.35-0.52), no better than usefulness's +1 votes (0.41-0.42). Confirmation's precision depends on the reader doing the confirming; earlier 0.60-0.72 came from a stricter set-up (top 5% picks, different-text, own-document labels on the original record). A weak reader cannot confirm its way to clean labels.
+- Richer features hurt every teacher (about -0.06): learned types are too impure (0.42) and context words add more to learn from the teacher's bias than from the relation.
+- KNOWLEDGE stays a small, steady gain on words (+0.004-0.006), as at 50k.
+- Conclusion for the reader: within the label-free set-up tried, the teacher's noise is the binding limit and no available signal is clean enough to replace it; feature enrichment only pays with clean labels. The remaining levers are coverage (wider records), pooling evidence per pair, and filtering after the reader (confirmation, the relational memory's fit) - not a better reader from the same signals.
+
+### Two reader fixes from the literature (19 Nov, 22:40-22:45; tools/research_reader.py, distant 30k, held-out documents, own-document labels)
+**B. ReVerb's relation-phrase constraints** (verb, verb + preposition, or verb + words + preposition, by spaCy part-of-speech tags; and at least 10 distinct name pairs): 5.5% of phrase records pass the syntactic constraint, 1.3% both; those are related **0.166 vs 0.122** for other phrase records (1.36x). Commonest: 'was born in' 702, 'died in' 256, 'moved to' 152, 'was founded in' 109, 'returned to', 'died on', 'was released in', 'was established in', 'is located in', 'graduated from', 'led by'.
+| Arm | Record AUC | Top 10% | **Phrase recall** | Phrase-record AUC | Pair AUC (noisy-or) |
+|---|---|---|---|---|---|
+| USEFUL (now) | 0.648 | 0.291 | 0.111 | 0.619 | 0.654 |
+| **MULTI-INSTANCE** ('at least one' mention per positive pair; hard EM, 2 rounds) | **0.654** | 0.279 | 0.149 | 0.608 | **0.664** |
+| **REVERB-TAUGHT** (passing phrase records added as positives) | 0.648 | 0.286 | **0.181** | 0.613 | 0.656 |
+| Both | 0.653 | 0.272 | 0.163 | 0.599 | **0.665** |
+- Multi-instance training lifts the pair-level score by 0.010 and phrase recall by a third, at a small cost in top-10% precision; its chosen mentions are less often labelled (0.374 vs 0.442) but more often phrases.
+- ReVerb's constraints lift phrase recall by 63% (0.111 -> 0.181) at no AUC cost, where balancing the teacher cost 0.015. The phrases they find are the relations the reader missed ('was born in', 'died in', 'founded in'). Their own precision is modest because the distant labels cover few of these relations' pairs.
+- Both are small, label-free gains in the direction the error analysis asked for; candidates for kra13's reader (multi-instance for pairs, ReVerb phrases as extra positives).
+
+### How many labels does the reader need? (19 Nov, 22:50-23:00; tools/seed_reader.py, distant 30k; the seed's labels are the distant set's own-document labels, themselves noisy and incomplete)
+| Seed size | Seed only | Seed + label-free (weight 3 / 15) | + context (weight 15) | + context + dataset types (reference, weight 3) |
+|---|---|---|---|---|
+| 0 | - | 0.632 | 0.627 | 0.602 |
+| 500 | 0.630 | 0.634 | 0.633 | 0.612 |
+| 2,000 | **0.662** | 0.649 / 0.657 | 0.663 | 0.640 |
+| 5,000 | **0.680** | 0.657 / 0.666 | **0.683** (phrase recall 0.141) | 0.670 |
+| 20,000 | **0.708** | 0.685 / 0.693 | **0.717** (top 10% 0.412, phrase recall 0.190) | 0.735 |
+- 2,000 labelled records already beat every label-free reader tried (0.662 vs 0.632-0.665); 5,000 give 0.68; 20,000 give 0.71-0.72 (0.735 with types).
+- Mixing in the label-free teaching does not help once the seed is 2,000 or more (it dilutes clean labels with noise), except through context features, which the seed can now use (5,000: 0.683; 20,000: 0.717 with phrase recall 0.190).
+- These seeds use the distant set's own labels, which are noisy and incomplete; a clean, human-checked seed (the benchmark's gold) should do better per label. The gain per label is steady, not dramatic: about +0.03 per 4x labels.
+
+### cg27a_kra13 local safety run (20 Nov, 23:10-00:14; five-domain harness, oracle writes, MLP 800 steps, parse off): PASSES; WIDER RECORDS AND THE READER'S GRAPH LIFT THE COMPRESSED FACT TABLE
+kra13 = kra12 + wider records (FAR / NEXT / PRONOUN), the compressed fact table built from the reader's top half (`inf_rcode_reader 0.5`), the reader taught by confirmed inferences, ReVerb phrases and multi-instance selection, and the after-gate made-up readout; the states reader off.
+
+| Readout (visit 4 unless stated) | kra11 local | kra13 local |
+|---|---|---|
+| HEADLINE, weights only: forgetting / final BPC | (kra8l) -0.039 / 2.622 | **-0.041 / 2.615** |
+| Store records (4,000 distant documents) | 83,777 | 256,955 |
+| Wording reader AUC, benchmark / held-out distant | 0.616 / 0.619 | **0.644** / 0.617 |
+| Compressed fact table, pairs never stated together: CODE AUC, top 5% | 0.624, 0.304 | **0.706, 0.368** |
+| Adamic-Adar on the same graph: AUC, top 5% | 0.597, 0.239 | 0.691, 0.337 |
+| Confirm and consolidate: confirmed (right) vs still tentative (right) | - | 79 (0.49) vs 521 (0.23) |
+| Through the exact-name gate: novel subjects answered / made up | - | 0.00 / 0.00 (held back answered from the memory 1.00) |
+
+- Safe: forgetting and final BPC within noise of kra8l. No "unavailable" lines; ReVerb (spaCy) ran; READER TEACHING added 37 / 133 ReVerb phrase records at visits 2 / 4 with 2 multi-instance rounds (0 confirmed-inference records yet: the first confirmations come after that visit's reader is trained).
+- The fact table gains most: inferred pairs never stated together are ranked at AUC 0.706 (from 0.624), top 5% precision 0.368 (from 0.304). Most of it is the three times larger store (wider records); the reader's top-half graph is the rest.
+- Confirmation still separates right from wrong inferences (0.49 vs 0.23), as in kra12.
+- Premise change and route J composites stay small at local scale (n 28-53 moves, 4 writes); these need the GPU run.
+- Recall vs consolidation: the fact table and the gate are recall claims; confirmed inferences are what may be consolidated.
+
+### Overnight 20 Nov (1): the synthetic world on a THIRD seed (seed 2; tools/compose_synth.py, same settings as seeds 0 and 1)
+| | seed 0 | seed 1 | **seed 2** |
+|---|---|---|---|
+| Exact-name gate: made-up chains for NOVEL / NEAR-MISS names (trunk alone) | 0.00 / 0.00 (0.92 / 0.95) | 0.00 / 0.00 (0.97 / 0.92) | **0.00 / 0.00 (0.90 / 0.93)** |
+| Exact-name gate: recorded held-out answered right (answers given) | 0.85 (1.00) | 0.87 (1.00) | **0.81 (1.00)** |
+| Soft gate: made-up for novel / near-miss | 0.10 / 0.64 | 0.46 / 0.71 | 0.14 / 0.71 |
+| Premise moved: stale composites, taught / never taught | 0.65 / 0.52 | 0.28 / 0.19 | 0.40 / 0.28 |
+| Retract + re-derive, MOVED people: flagged; right country as answered -> after | 0.76-0.82; 0.14-0.19 -> 0.93 | 0.37-0.39; 0.50-0.53 -> 0.82-0.85 | **0.38-0.44; 0.15-0.20 -> 0.57-0.58** |
+| Retract + re-derive, UNMOVED controls: as answered -> after | 0.92 / 0.66 -> 0.83 / 0.81 | 0.79 / 0.60 -> 0.74 / 0.73 | 0.53 / 0.36 -> 0.39 / 0.32 |
+| Write-back of all re-derived chains (600 steps), asked directly: MOVED taught / never taught | 0.90 / 0.83 (397 chains) | 0.76 / 0.82 (375) | **0.57 / 0.62** (230) |
+| Write-back: UNMOVED not replayed; replayed | 0.82 / 0.82; 0.99 | 0.79 / 0.76; 0.97 | 0.74 / 0.61; 0.99 |
+| Forgetting (bits/byte on fixed pretraining windows) | - | - | 0.474 -> 0.493 |
+
+- **The exact-name gate replicates exactly on all three seeds**: no made-up chains for names never recorded, and every recorded name answered. The soft gate still fails on near-miss names (0.64-0.71) on all three.
+- **Retract and re-derive replicates in direction** (moved people 0.15-0.20 -> 0.57-0.58, about three times better) **but not in size**. The seed-2 trunk is a weaker chainer (unmoved people answered right only 0.53 / 0.36, against 0.79-0.92 on the other seeds), so re-derivation through it is weaker, and the re-derive step costs unmoved controls 0.04-0.14 on this seed (it did on seed 0 too for taught people).
+- Write-back carries what re-derivation gets right into the weights (moved 0.57 / 0.62 asked directly, no check), with the replayed facts held at 0.99. Write-back quality is bounded by re-derivation quality.
+- Claim to make: the gate is robust. Retract/re-derive/write-back works on every seed, with a size that depends on how well the trunk chains.
+
+### Overnight 20 Nov (2): the SEEDED READER with the literature fixes, and seeded readers end to end (tools/seed_reader.py SD_MI / SD_REVERB; tools/e2e_reader.py E2_SEED)
+Held-out documents of distant_50k (first 30,000 documents unless stated); AUC / top 10% precision:
+
+| Seed labels | seed only (words) | **seed only + context** | seed + label-free + context | ... with multi-instance | ... with ReVerb | ... with both |
+|---|---|---|---|---|---|---|
+| 2,000 | 0.661 / 0.311 | **0.667 / 0.371** | 0.651 / 0.285 | 0.649 / 0.283 | 0.652 / 0.284 | 0.648 / 0.276 |
+| 5,000 | 0.679 / 0.350 | **0.694 / 0.401** | 0.683 / - | 0.670 / 0.314 | 0.667 / 0.309 | 0.667 / 0.296 |
+| 20,000 | 0.709 / 0.386 | **0.732 / 0.445** | 0.703 / 0.375 | 0.711 / 0.389 | 0.700 / 0.365 | 0.705 / 0.368 |
+
+All 50,000 documents, seed only: 20,000 0.703 / 0.367; 50,000 0.722 / 0.401; 100,000 0.731 / 0.412 (with context 0.738 / 0.435; with the dataset's types, reference only, 0.776 / 0.463).
+
+- **Once there is a seed, the label-free teaching only hurts, and the literature fixes do not rescue it.** Multi-instance selection keeps positives that are LESS often right (0.426 -> 0.363), and ReVerb phrase positives are right only 0.163 (base rate 0.131). Both are label-free signals as noisy as the teacher they were meant to clean.
+- **The best reader is the seed alone with context words**: 0.667 / 0.694 / 0.732 at 2,000 / 5,000 / 20,000 labels, top 10% precision 0.37 / 0.40 / 0.45 (the label-free reader: 0.63-0.65, about 0.30). Gains flatten above about 50,000 labels (0.72-0.74); learned types would be the next step (+0.04 as an upper bound).
+
+End to end (read -> the reader keeps its top share -> compose A-C through a shared name in another document -> checkable A-C pairs right by the distant labels), all 50,000 documents:
+
+| Reader keeps its top 2% | premises right | A-C checkable | A-C right | with 2+ bridges right (n) |
+|---|---|---|---|---|
+| wording reader (label-free) | 0.26 | 1,472 | 0.241 | 0.469 (32) |
+| wording + usefulness | 0.53 | 3,831 | 0.302 | 0.485 (167) |
+| seed 2,000 only | 0.50 | 873 | 0.165 | 0.474 (19) |
+| seed 5,000 only | 0.55 | 441 | 0.274 | 0.909 (11) |
+| **seed 20,000 only** | **0.60** | 660 | **0.379** | 0.857 (14) |
+| seed 20,000 + label-free | 0.53 | 1,708 | 0.287 | 0.607 (61) |
+
+At the 10% cut every reader gives A-C right 0.18-0.21.
+- A seeded reader more than doubles the precision of the premises it keeps (0.26 -> 0.60 at the 2% cut), but inferences right rise less (0.24 -> 0.38, small n). **Composition, not reading, now limits end-to-end inference**: a shared name in two documents is weak evidence that A and C are related. That is why confirmation before consolidation matters (kra12: confirmed 0.73 against 0.49).
+- Next for the reader: a kra14 with a small labelled seed and context words (`inf_premises_seed`).
+
+### cg27a_kra14 local safety run (20 Nov, 03:52-05:20; five-domain harness, oracle writes, MLP 800 steps, parse off; a container restart at 03:50 killed the first attempt in phase 4): PASSES; THE SEEDED READER DOUBLES THE PRECISION OF THE PREMISES IT KEEPS
+kra14 = kra13 + the SEEDED READER (inf_premises_seed 20000 labelled records from documents already read, own-document labels; inf_premises_seed_ctx 1, 3 context words each side; label-free teaching, ReVerb and multi-instance off). Reading and composing only: the weights are untouched, so forgetting and BPC match kra13 exactly.
+
+| Readout (visit 4 unless stated) | kra13 local | kra14 local |
+|---|---|---|
+| HEADLINE forgetting / final BPC (weights only) | -0.041 / 2.615 | -0.041 / 2.615 |
+| with the fast store on | -0.039 / 2.617 | -0.039 / 2.617 |
+| Wording reader AUC, benchmark (top 5%) | 0.644 (0.33) | **0.692 (0.58)** |
+| Wording reader AUC, held-out distant (top 5%) | 0.617 (0.19) | **0.671 (0.39)** |
+| INFERENCE A-C, reader top 10%: premises / A-C right (checkable) | 0.21 / 0.193 (9,346) | **0.33 / 0.223** (12,061) |
+| INFERENCE A-C, reader top 2%: premises / A-C right (checkable) | 0.20 / 0.269 (695) | **0.57 / 0.486** (917) |
+| Compressed fact table ALL: CODE AUC, top 5% | 0.706, 0.368 | 0.704, 0.382 |
+| Compressed fact table (second slice): CODE AUC, top 5% | 0.714, 0.448 | 0.745, 0.455 |
+| Confirm and consolidate: confirmed (right) / tentative (right) | 79 (0.49) / 521 (0.23) | 70 (0.49) / 530 (0.24) |
+
+No Traceback, no "unavailable". Visit 2 (first attempt and rerun alike): seeded reader held-out AUC 0.671, top 2% premises 0.63, A-C right 0.454 (n 436).
+RECALL vs CONSOLIDATION: these are reading and inference-proposal readouts (premises kept, A-C proposals checked against distant labels); the consolidation readout (confirmed right 0.49) did not move with the reader in this short run; why (where the tentative writes come from relative to the reader's ranking) is not yet checked.
+Caveat: the seed is labelled data (20,000 records of own-document labels, themselves noisy), so kra14 is no longer label-free on the reading side; the trunk, store and consolidation remain label-free.
+
+### Which A-C proposals to believe? (20 Nov, 05:25-05:30; tools/compose_rank.py, distant 50k, seeded reader 20k + context, held-out AUC 0.750): A CORRECTION TO THE END-TO-END A-C FIGURES
+Proposals A-C through a shared name B from the reader's top share, ranked five ways. Two scorings:
+
+| Ranking | all documents read: AUC, top 100 / 500 / 2000 (keep 10%, base 0.277) | NEW facts only (CR_HOLD 1): AUC, top 100 / 500 (keep 10%, base 0.040) |
+|---|---|---|
+| bridges (number of B) | 0.620, 0.95 / 0.66 / 0.50 | 0.657, 0.13 / 0.05 |
+| best min premise | 0.615, 0.73 / 0.61 / 0.51 | 0.667, 0.15 / 0.05 |
+| hub-weighted | 0.603, 0.96 / 0.64 / 0.39 | 0.593, 0.04 / 0.05 |
+| sum x hub (rank sum) | 0.635, 0.85 / 0.63 / 0.47 | 0.658, 0.09 / 0.06 |
+
+(Keep 25%: all-documents base 0.161, new-facts base 0.020, top 100 at most 0.15.)
+NEW facts = composed only from the first 80% of documents, scored only on pairs NEVER named together there but named together in a held-out document, labelled by held-out labels - the way the package's compressed fact table is judged.
+READING: the high A-C figures in the end-to-end readouts (e2e_reader, kra13/kra14 INFERENCE A-C: 0.27-0.49 at 2%) are mostly RE-DERIVING pairs that some read document states directly; they are not evidence of new facts. For genuinely new pairs, path composition is weak (top 100 right 0.13-0.15 against base 0.04), while the compressed fact table on its own held-out candidates reaches top 5% 0.38 at base 0.087 (kra14 visit 4). The two candidate sets differ, so this is not a head-to-head; but it says the fact table, not A-B-C chaining, is the route to new facts on real text, and the INFERENCE A-C readout must be read as recall of stated facts.
+
+### Does the SEEDED reader feed the compressed fact table? (20 Nov, 05:35; tools/rcode_reader.py RC_SEED, distant 20k, 128 dims; 33,380 held-out candidate pairs never in the training graph, labelled 0.133): ONLY A LITTLE
+| Graph built from | label-free reader: AUC, top 1% / 5% | seeded reader 20k + context: AUC, top 1% / 5% |
+|---|---|---|
+| ALL records | 0.551, 0.168 / 0.157 | (same) |
+| reader top 50% | 0.557, 0.243 / 0.168 | 0.559, 0.261 / 0.161 |
+| reader top 25% | 0.546, 0.222 / 0.144 | 0.567, 0.249 / 0.150 |
+| reader top 10% | 0.550, 0.231 / 0.115 | 0.557, 0.189 / 0.116 |
+| SOFT: all records, edge = reader probability | - | **0.573**, 0.171 / **0.179** |
+A much better reader (held-out AUC 0.62 -> 0.75) moves the fact table by 0.01-0.02 AUC, matching kra14 in the run (CODE AUC 0.704 vs 0.706). The fact table's limit is not which records go in but the method and its COVERAGE: only 29% of candidates have both names in the graph. Next levers: coverage (names first seen in held-out documents) and the scoring of the code, not the reader.
+
+### Goal 1, NEW FACTS: a SEEDED SELECTOR for the compressed fact table (20 Nov, 06:30-06:40; tools/rcode_select.py): POSITIVE, LARGE
+Documents split by hash: TRAIN 80% (the name graph), VAL 10% (candidate pairs named together there, never in TRAIN, with labels: the selector's seed), TEST 10% (never in TRAIN or VAL; evaluation only). Write-time features: the code (plain and SOFT graph, edge = seeded reader probability), Adamic-Adar, resource allocation, common neighbours, degrees and their ratio, best two-step path. Scored among TEST candidates with both names in the graph.
+
+| Ranking (TEST, among coded) | 20k documents (base 0.111): AUC, top 1% / 5% / 10% | 50k documents (base 0.101): AUC, top 1% / 5% / 10% |
+|---|---|---|
+| code (package) | 0.555, 0.204 / 0.174 / 0.169 | 0.540, 0.217 / 0.153 / 0.152 |
+| code + RA (package rule) | 0.559, 0.280 / 0.213 / 0.182 | 0.543, 0.210 / 0.161 / 0.145 |
+| soft code | 0.575, 0.204 / 0.191 / 0.198 | 0.562, 0.210 / 0.170 / 0.165 |
+| best two-step path (A-B-C) | 0.518, 0.151 / 0.116 / 0.109 | 0.512, 0.120 / 0.084 / 0.088 |
+| **SEEDED SELECTOR, logistic** | **0.698**, 0.441 / 0.344 / 0.268 | **0.701**, 0.388 / 0.305 / 0.245 |
+| **SEEDED SELECTOR, trees** | **0.704, 0.613** / 0.400 / 0.311 | **0.721, 0.612** / 0.377 / 0.295 |
+
+HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic k 300: AUC 0.672, top 1% 0.387; **k 1,000: 0.696, 0.452**; k 3,000: 0.698, 0.441 (trees need 3,000+: 0.680, 0.581). About 1,000 labelled candidate pairs are enough for the logistic selector.
+- The selector more than doubles the precision of the best new facts (top 1%: 0.20-0.28 -> 0.44-0.61, base 0.10-0.11): the first real lever on GOAL 1 since the code itself. The logistic weights lean on Adamic-Adar (+) against common neighbours (-) and on name degrees: shared neighbours that are SPECIFIC, between names that are not hubs.
+- COVERAGE is 0.28 (20k) -> 0.35 (50k): the rest have a name never read in TRAIN, which no method can infer from; it grows with reading, not with scoring.
+- Caveat: the labels are distant labels (incomplete), the same seed assumption as the seeded reader; one split per size.
+- Build candidate: inf_rcode_sel 'seeded' - the package's write step ranks candidates by a logistic selector trained on about 1,000 labelled candidate pairs from documents already read.
+
+### Goal 2, CONSOLIDATION AT SCALE: REHEARSAL HOLDS what the trunk is taught (20 Nov, 06:40-07:15; tools/consolidate_scale.py, A6 stand-in trunk, 5 rounds x 200 of the package's typed real-text inferences (right 0.527), 600 steps a round, every weight, KL anchor to the original trunk on replay rows from all five domains, 24 frames, lr 1e-3; test wording never taught: rank among 10 (chance 0.10) / open-ended exact)
+| After round | SEQ (each round alone): rounds 1..k rank | SEQ all taught, rank / open | REHEARSE (half the fact rows from earlier rounds): rounds 1..k rank | REHEARSE all taught, rank / open | never taught (SEQ / REHEARSE) | forgetting, mean of 5 domains (SEQ / REHEARSE) |
+|---|---|---|---|---|---|---|
+| 1 | 0.78 | 0.780 / 0.465 | 0.69 | 0.695 / 0.375 | 0.17 / 0.14 | -0.020 / -0.029 |
+| 2 | 0.18, 0.90 | 0.542 / 0.372 | 0.83, 0.68 | 0.755 / 0.443 | 0.12 / 0.18 | -0.031 / -0.055 |
+| 3 | 0.21, 0.30, 0.92 | 0.478 / 0.300 | 0.72, 0.66, 0.74 | 0.705 / 0.388 | 0.15 / 0.15 | -0.052 / -0.053 |
+| 4 | 0.15, 0.20, 0.34, 0.98 | 0.420 / 0.259 | 0.71, 0.64, 0.65, 0.80 | 0.699 / 0.360 | 0.14 / 0.18 | -0.063 / -0.053 |
+| 5 | 0.21, 0.18, 0.24, 0.30, 0.96 | **0.379 / 0.206** | 0.76, 0.58, 0.65, 0.67, 0.82 | **0.694 / 0.350** | 0.17 / 0.18 | -0.057 / **-0.083** |
+- SEQ reproduces the GPU's decay (taught composites 1.00 -> 0.38 over visits 4-9): each round is learned (0.78-0.98) and lost after the next (0.15-0.34, near the never-taught 0.12-0.17). The loss is interference AMONG the inferences; general text is not harmed (mean forgetting negative; Wikipedia +0.12-0.17 in both arms).
+- **REHEARSE holds it: after 1,000 inferences in 5 rounds, every round is still recalled 0.58-0.82 (all 0.694 rank, 0.350 open) vs 0.379 / 0.206 without rehearsal**, at no forgetting (-0.083). The cost: a round's own recall when fresh is lower (0.68-0.82 vs 0.90-0.98) - half the fact rows go to rehearsal.
+- Never-taught inferences stay at chance in both arms (0.12-0.18): the trunk HOLDS what it is taught; it does not compose new ones (as before).
+- Build candidate for the package: question-pool rows for consolidated inferences rehearsed across visits (half the conclusion rows from earlier visits' consolidated inferences), without the global question-row decay for them. One stand-in trunk, one seed.
+- **REHEARSE_R (rehearsal + the KL anchor's teacher = the model at the start of each round, rolling): better recall, but FORGETTING ACCUMULATES - rejected.** All taught after rounds 1-5: 0.840 / 0.810 / 0.815 / 0.794 / **0.770** rank (open 0.432 at round 5), every round 0.69-0.87; but mean forgetting -0.018 -> -0.004 -> +0.013 -> +0.031 -> **+0.051** (Wikipedia +0.14 -> +0.37, PubMed +0.01 -> +0.14), and never-taught drifts up to 0.22. A rolling anchor lets drift compound round on round; the FIXED anchor to the original trunk (REHEARSE: 0.694, -0.083) is the one to build. The package's anchor (inf_distill_wake_akl on every old domain) is fixed in the same sense.
+- RECHECK against kra14's actual write rule (code + Adamic-Adar rank sum among |log degree ratio| > 1), same candidates (20k / 50k documents): kra14 rule AUC 0.609 / 0.579, top 100 / 200 / 400 0.270 / 0.265 / 0.270 and 0.170 / 0.175 / 0.165; SELECTOR (trees) under the same filter 0.681 / 0.678, top 100 0.610 / 0.740, top 400 0.417 / 0.555; logistic under the filter top 100 0.490 / 0.470. The selector still wins. BUT this candidate set (record pairs, 128-dim codes from every record) is not the package's: in the package kra14's rule reports top 100 0.72 (labelled base 0.088, every name pair co-occurring in a held-out document, 512 dims, the graph from the reader's top half). The decisive comparison is on the package's own candidates (tools/rcode_select_pkg.py), queued.
+
+### cg27a_kra14 GPU to visit 2 (20 Nov, started 06:46, log at 07:25; seed 4): THE SEEDED READER HOLDS AT SCALE; NO ERRORS
+- SEEDED READER: 20,000 labelled records (2,062 related), context on, from 20,375 documents read (1.30 M records). **Wording reader AUC: benchmark 0.683 (top 5% 0.56), held-out distant 0.680 (top 5% 0.40)** - as local (0.692 / 0.671); kra11 GPU: state reader 0.592, word counts 0.634.
+- INFERENCE A-C at visit 2 (reader's top share): 25% premises 0.21, A-C right 0.176 | 10% premises 0.32, 0.279 (2+ bridges 0.505, n 673) | **2% premises 0.55, A-C right 0.595 (n 822; 2+ bridges 0.944, n 18)**; random 0.106. kra11 GPU (combined reader, 2%): premises 0.54, A-C 0.349. NOTE (20 Nov correction): these A-C figures are mostly RE-DERIVED stated pairs, not new facts.
+- COMPRESSED FACT TABLE (new facts, held-out candidates, labelled 0.093): CODE 512 AUC 0.689, top 5% 0.331 (with a bridge 0.721 / 0.403); SELECTION top 100 / 200 / 400: code 0.26 / 0.32 / 0.38, Adamic-Adar 0.77 / 0.64 / 0.53, **kra14's rule (code + AA among |log degree ratio| > 1) 0.73 / 0.76 / 0.755; WROTE 600, right 0.740**.
+- Route J (learned rules on recorded facts) visit 2: first hop / composite 0.97 (linear operator), 33 composites written at precision 0.97.
+- Prequential bits, domains read: 2.0125 (visit 1) -> 2.0371 (visit 2). No Traceback, no 'unavailable'. Forgetting and final BPC await the full run.
+- For the selector decision: on the package's own candidates kra14's rule is right 0.73-0.76 in its top 100-400 - the bar a seeded selector must beat (tools/rcode_select_pkg.py, queued).
+- **UNIFORM (the package's current RTI dose: fact rows drawn uniformly from every inference taught so far) HOLDS AS WELL: all taught after rounds 1-5 0.860 / 0.755 / 0.720 / 0.731 / 0.724 rank (open 0.441), every round 0.58-0.81, mean forgetting -0.075.** So the package's sampling already rehearses; the GPU fading is not a sampling problem. Suspected cause (code): the whole question loss, RTI dose rows included, is scaled by inf_distill_wake_decay 0.5 per visit (kra14: from visit 1, no floor), while the KL anchor is not - at visit 9 the inferences are pushed at about 0.004 of their first strength. Arms UNIFORM_D (the decay) and UNIFORM_DF (decay with a 0.25 floor) queued.
+
+### Goal 1, DECISIVE: the seeded selector ON THE PACKAGE'S OWN CANDIDATES (20 Nov, 07:45; tools/rcode_select_pkg.py; premises._rcode_step as kra14 - 512 dims, graph from the seeded reader's top half, every name pair of a held-out document; 20k documents read; candidates split in half by pair hash, selector taught on half A, scored on half B, 37,909 candidates, labelled 0.089): NOT FOR A BUILD WITH A SMALL SEED
+| Ranking (half B) | AUC | top 100 / 200 / 400 / 600 |
+|---|---|---|
+| **kra14 rule (code + AA among |log degree ratio| > 1)** | 0.631 | **0.750 / 0.675 / 0.615 / 0.542** |
+| code | 0.609 | 0.470 / 0.460 / 0.370 / 0.357 |
+| selector, 37,397 labelled candidates: logistic / trees | 0.728 / **0.793** | 0.640 / 0.645 / 0.542 / 0.502 and **0.830 / 0.780 / 0.720 / 0.682** |
+| selector, 1,000 labelled candidates: logistic / trees | 0.718 / 0.686 | 0.620 / 0.545 / 0.472 / 0.438 and 0.460 / 0.475 / 0.465 / 0.460 |
+- **CORRECTION to this morning's goal-1 result:** on the package's own candidates kra14's rule is far stronger than on tools/rcode_select.py's candidate set (top 100 0.75 vs 0.17-0.27 there), and **a selector taught on 1,000 labelled candidates does WORSE than kra14's rule in the top 100-600** (0.62-0.44 vs 0.75-0.54), though better on AUC (0.72 vs 0.63: it ranks the bulk better, not the head the package writes). The 'two to three times' claim held only against a weaker version of the rule.
+- With about 37,000 labelled candidates, gradient-boosted trees beat kra14's rule by +0.08 to +0.14 in the top 100-600 (0.83 / 0.68 vs 0.75 / 0.54) - a real but modest gain that needs a large labelled set.
+- DECISION: kra14's write rule stays; no selector in kra15. A middle seed (5,000-10,000 labelled candidates) is worth one more offline check.
+
+### cg27a_kra14 GPU to visit 4 (log at 07:44): MEMORY AND GATES STRONG; TAUGHT FACTS CONSOLIDATE, CONCLUSIONS DO NOT
+- Prequential bits, domains read: 2.0125 / 2.0371 / 2.0111 (visits 1-3). No Traceback, no 'unavailable'.
+- Route J visit 3: first hop 0.97, **composite 0.94, pure families 0.93, null 0.03**; 64 composites written at precision 0.98; re-derive kept 64 (right 0.98).
+- GATED ANSWERS visit 3: known facts right when answered **0.97**; never-read names given a stored name **0.06** (abstained 0.93).
+- Keyed memory visit 3: taught facts 0.77 / 0.85 vs held back 0.02 / 0.21; persistent across readouts 0.69-0.78 open by visit written.
+- FROM THE TRUNK at visit 4 (test wordings): **facts taught for at least one visit 0.88 (241; 2-3 visits 0.91) vs control 0.23** - facts consolidate. **Conclusions 0.00 (18), in the pool 0.03 (32); 2x2: taught 0.02 (62)** - conclusions still do not (the regression first seen in kgk/kcs).
+- Probe recall from the weights: one-hop 0.36, open 0.28, two-hop 0.04 (chance 0.05).
+- Real-text inferences: 600 written tentative at visit 2; none taught by visit 3 (confirmation at visit 4).
+- Reading of goal 2: facts have source sentences replayed and enter the pool early; conclusions and composites have neither, and every question row is scaled by the visit decay (0.5 per visit, no floor) while the anchor is not - the decay arms queued on the stand-in test exactly this.
+- **THE CAUSE OF THE FADING, CONFIRMED ON THE STAND-IN (UNIFORM_D: the package's sampling + its question-row decay, the fact loss x 0.5 per round, the anchor not decayed): all taught after rounds 1-5 0.800 / 0.720 / 0.497 / 0.432 / 0.316 rank (open 0.120), every round 0.22-0.49 at round 5 - vs UNIFORM without the decay 0.724 / 0.441.** The decay gives NO forgetting benefit here (mean -0.068 vs -0.075 without). A 0.25 floor (UNIFORM_DF) helps little: 0.421 / 0.197 (newest rounds learned poorly, 0.28-0.31).
+- In the package the decay does protect forgetting for FACTS (B5 without it +0.007, B6 with it -0.032, local), so the fix is targeted: **cg27a_kra15 = kra14 + inf_rti_nodecay 1 - the confirmed real-text inferences' dose rows are exempt from the visit decay; facts keep it.** Local safety run next.
+- MIDDLE SEEDS (same split): 5,000 labelled candidates - trees top 100 / 200 / 400 / 600 0.660 / 0.650 / 0.588 / 0.572 (AUC 0.751), logistic 0.620 / 0.635 / 0.560 / 0.487; **10,000 - trees 0.830 / 0.785 / 0.677 / 0.628 (AUC 0.772)**, with the asymmetry filter 0.850 / 0.765 / 0.662 / 0.598. kra14 rule 0.750 / 0.675 / 0.615 / 0.542. **The crossover is about 10,000 labelled candidate pairs: then trees beat kra14's rule by +0.08 to +0.11 across the 100-600 the package writes.** A candidate for a later build (labelled candidate pairs from documents already read, as the reader's seed); not kra15, which keeps one change.
+
+### cg27a_kra15 local safety run (20 Nov)
+- **HEADLINE identical to kra14l: forgetting -0.041 | final BPC 2.615 (fast store on -0.039 / 2.617).** No Traceback, no "unavailable".
+- Every readout matches kra14l within probe noise (real-text recall 0.09-0.14 vs 0.11-0.12; the rest identical). Real-text inferences: 1,200 written, pool 41 taught / 29 held back at visit 4; from the trunk right 0.00 (15) vs 0.00 (19), rank 0.13 vs 0.16, the same as kra14l.
+- **The change is NOT exercised locally**: the dose rows (861 rows of taught inferences) are ready only after visit 4's sleep, and no dose loss is reported at visit 5 (no "dose rows last visit" line), so the 5-visit local run ends before inf_rti_nodecay acts. The local run shows only that it does no harm and raises no error; whether the exemption stops the fading must be read on the GPU (visits 5-10: REAL-TEXT INFERENCE WRITES taught vs held back, and RANK RECALL with "dose rows last visit").
+- Passed as a safety run; kra15 released to the GPU.
+
+### Route to inference in the trunk: CHAIN-FORM TEACHING on the stand-in (20 Nov, 09:50-10:35; tools/chain_scale.py, A6 trunk)
+1,911 of the package's typed code-written inferences have both premises on record (A-B, B-C via a bridge; right 0.444). 400 TAUGHT + 400 CONTROL; every premise read by the trunk (6 frames each) for both halves; 2,000 steps, 8 fact + 24 anchor rows, KL to the base trunk, lr 1e-3. Rank of the true tail among 10 (chance 0.10).
+
+| arm (step 2000) | TAUGHT closed book | TAUGHT in context (premises in prompt) | CONTROL closed book | CONTROL in context | premises recalled taught / control | forgetting |
+|---|---|---|---|---|---|---|
+| base | 0.113 | 0.113 | 0.087 | 0.077 | 0.11 / 0.09 | - |
+| PREMISES only | 0.135 | 0.125 | 0.077 | 0.072 | 0.34 / 0.33 | -0.053 |
+| DIRECT 'h w t' | **0.375** (open 0.117) | 0.195 | 0.110 | 0.110 | 0.24 / 0.16 | -0.053 |
+| CHAIN '<A-B>. <B-C>. So h w t' | 0.287 (open 0.030) | **0.475** (open 0.165) | 0.102 | **0.135** (open 0.033) | 0.67 / 0.21 | -0.030 |
+
+- **No derivation from stored premises: CONTROL closed book stays at chance in every arm (0.08-0.11).** But the trunk holds few premises (control 0.21-0.33 recalled), so this does not yet separate "cannot combine" from "does not know the premises".
+- CHAIN teaches the taught set's composition in context (0.475 vs DIRECT 0.195) and transfers weakly to never-taught chains given in the prompt: **0.135 (open 0.033) vs 0.110 (DIRECT) / 0.072 (PREMISES)** - about 2 standard errors above DIRECT on 400; a hint of a learned composition step, not yet a result.
+- Follow-up running: PREMISES FIRST (3,000 premise-only steps, shared), then DIRECT vs CHAIN with 1,400 taught + 500 control, and control scored on the pairs whose BOTH premises the trunk recalls.
+- **PREMISES FIRST follow-up (11:00-12:05; 6,460 inferences with both premises on record, 1,400 taught + 500 control, 3,000 premise-only steps shared, then 3,000 steps an arm):**
+
+| step 3000 | TAUGHT closed book | TAUGHT in context | CONTROL closed book | **CONTROL in context** | premises recalled taught / control | forgetting |
+|---|---|---|---|---|---|---|
+| base | 0.094 | 0.097 | 0.094 | 0.092 | 0.10 / 0.11 | - |
+| premises first (3,000) | 0.120 | 0.111 | 0.134 | 0.096 | 0.22 / 0.24 | -0.056 |
+| DIRECT | 0.193 (open 0.038) | 0.117 | 0.142 | 0.104 (open 0.006) | 0.21 / 0.20 | -0.053 |
+| CHAIN | 0.166 | **0.268** (open 0.084) | 0.114 | **0.158 (open 0.036)** | 0.42 / 0.25 | -0.043 |
+
+  - **The in-context transfer replicates and grows: never-taught chains given in the prompt 0.158 with chain teaching vs 0.104 with direct teaching (500 each, about 3 standard errors; first run 0.135 vs 0.110).** The trunk learns a composition step it applies to chains it never saw - a first real-text sign of inference in the trunk, in context.
+  - Closed book (premises stored, nothing in the prompt), no derivation: CONTROL 0.11-0.14 in every arm, and the premise-only arm already gives 0.134 (association through the shared bridge, not a learned step). The stand-in holds few premises (0.20-0.42), so pairs with BOTH premises recalled are too few (26-33) to judge.
+  - Consequence: kra16 (inf_rti_chain) prepared; the small clean set (150 + 150, 4,000 premise steps) with DIRECT / CHAIN / BOTH running next.
+
+### kra14 GPU to visit 8 (seed 4; log 74b7c91e, 20 Nov 11:40, visit 9 under way; no errors)
+| visit | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|
+| real-text inferences from the trunk, open: TAUGHT right vs HELD BACK right | 0.00 vs 0.00 | 0.00 vs 0.00 | **0.07 vs 0.02** | **0.10 vs 0.02** | **0.13 vs 0.03** |
+| the same, rank among 10: TAUGHT right vs HELD BACK right | 0.15 vs 0.12 | 0.16 vs 0.10 | 0.26 vs 0.13 | 0.30 vs 0.20 | **0.45 vs 0.21** |
+| taught WRONG inferences recalled open (false memories) vs held back | 0.00 vs 0.00 | 0.00 vs 0.00 | 0.08 vs 0.00 | 0.09 vs 0.00 | 0.08 vs 0.01 |
+| facts taught >= 1 visit, from the trunk | 0.88 | 0.85 | 0.77 | 0.73 | **0.62** |
+| conclusions taught >= 1 visit, from the trunk | 0.00 | 0.08 | 0.12 | 0.25 | **0.31** |
+| route J composite (learned rules) | 0.93 (92) | 0.84 (106) | 0.87 (148) | 0.87 (180) | 0.87 (219) |
+| fact table: right among the 600 written | 0.667 | - | 0.642 | - | 0.627 |
+| confirmed so far (right) / faded (right) | - | - | 353 (0.75) / 172 (0.59) | - | 370 (0.72) / 205 (0.57) |
+| gated answers: right when answered / never-read given a stored name | - | 1.00 / 0.00 | 0.88 / 0.00 | 1.00 / 0.01 | 0.86 / 0.02 |
+
+- **GOAL 2 ON THE GPU: confirmed real-text inferences now CONSOLIDATE into the trunk - taught vs held back 0.13 vs 0.03 open, 0.45 vs 0.21 rank at visit 8, rising every visit since the dose began (visit 5).** The first real-text inferences the trunk recalls, under kra14's decay; kra15 (no decay on these rows) should lift them further.
+- Costs: taught WRONG inferences are recalled too (0.08 vs 0.00-0.01): the confirmation filter passes right 0.72-0.75, so about a quarter of what is consolidated is wrong.
+- **FACTS fade as the ledger grows: 0.88 -> 0.62 over visits 4-8 (ledger 659 -> 1,151)** while conclusions rise 0.00 -> 0.31 - the same shape as the stand-in's decay arm (UNIFORM_D). kra15 exempts only the inference dose rows; facts keep the decay. A candidate later change: a floor on the facts' decay or rehearsal of facts taught earlier (the stand-in: REHEARSE 0.694 vs SEQ 0.379), to test locally.
+- The relational memory holds at 0.87 on 219 composites; the gate keeps never-read answers at 0.00-0.02.
+
+### Tighter confirmation, offline (20 Nov 12:00; tools/confirm_min.py: the package's 2,400 code writes from 20,000 documents read, confirmed on the 30,000 read after, distant labels)
+| rule (all 50k read) | confirmed (share of writes) | right | right writes kept |
+|---|---|---|---|
+| >= 1 relational record (kra14) | 1,056 (0.44) | 0.604 | 0.62 |
+| >= 2 records | 648 (0.27) | 0.664 | 0.42 |
+| >= 3 records | 439 (0.18) | 0.720 | 0.31 |
+| >= 2 documents | 627 (0.26) | 0.670 | 0.41 |
+| **1 record the seeded reader rates (top half)** | 865 (0.36) | **0.659** | **0.56** |
+| 2 rated records | 467 (0.19) | 0.749 | 0.34 |
+- The same order at 60% and 80% read. A rated record is the cheapest gain: +0.055 right for 10% of the right ones; counting records buys precision only by halving what is confirmed. None reaches 0.85 on distant labels (incomplete: "right" is a lower bound).
+
+### cg27a_kra17 prepared (kra16 + two model changes for kra14's visit-8 problems)
+- inf_distill_wake_decay_min 0.125 (a floor on the question rows' visit decay; GPU kcf: facts 0.72 vs 0.67 at visit 7, gated right overall 0.50 vs 0.31, bits within noise) - facts faded 0.88 -> 0.62 in kra14.
+- inf_rti_conf_rated 1 (new option: a tentative inference is confirmed only by a later relational record the seeded reader rates in its top half; falls back to any record, with a log line, if the reader's scores do not match the records).
+- Local safety runs: kra17 first (12:10), then kra16. The stand-in chain tests resume after them.
+
+### cg27a_kra17 local safety run (20 Nov 15:40; tools/safety_run.sh, the kra15 settings: 150 steps, distant_10k)
+| | kra15 (safety) | kra17 (safety) |
+|---|---|---|
+| HEADLINE weights only: forgetting / final BPC | -0.041 / 2.615 | -0.040 / 2.616 |
+| with the fast store | -0.039 / 2.617 | -0.039 / 2.617 |
+| confirmed at visit 4 (right) | 70 (0.49) | 54 (0.54) |
+| new inferences keeping premises as text (visit 2 / 4) | - | 194 of 599 / 226 of 600 |
+| chain dose rows (visit 4) | - | 160 for 420 inferences, beside 588 plain rows |
+- PASS: forgetting and BPC within noise; no Traceback; the rated confirmation ran (no fallback line). It confirms fewer and more right, the direction tools/confirm_min.py found (small n here: one judging visit on 10k documents).
+- The IN CONTEXT readout runs but n is 3-9 per cell at this size; it needs the GPU run. The chain dose rows are built at visit 4 and are first trained at visit 5, the last visit here, so their effect is not exercised locally.
+
+### cg27a_kra17 GPU, visits 1-8 (20 Nov, log to the middle of visit 8; kra14 GPU beside it, same seed)
+| readout (kra17 vs kra14) | visit 4 | visit 6 | visit 7 | visit 8 |
+|---|---|---|---|---|
+| facts ever taught, from the trunk | 0.83 vs 0.88 | 0.78 vs 0.77 | 0.72 vs 0.73 | **0.72 vs 0.62** |
+| conclusions ever taught | 0.09 vs 0.00 | 0.36 vs 0.12 | 0.31 vs 0.25 | 0.34 vs 0.31 |
+| gated answers: right overall / never-read given a stored name | 0.47 / 0.02 vs 0.55 / 0.03 | 0.41 / 0.02 vs 0.36 / 0.00 | 0.39 / 0.00 vs 0.42 / 0.01 | **0.50 / 0.02 vs 0.23 / 0.02** |
+| confirmed this visit (right) | 326 (0.82) vs 365 (0.80) | 342 (0.77) vs 353 (0.75) | - | (not yet) |
+| real-text inferences open, TAUGHT right / TAUGHT wrong / HELD BACK right | - | 0.06 / 0.01 / 0.01 vs 0.07 / 0.08 / 0.02 | **0.06 / 0.01 / 0.02 vs 0.10 / 0.09 / 0.02** | (not yet) |
+| rank among 10, TAUGHT right / TAUGHT wrong / HELD BACK right | 0.16 / 0.09 / 0.11 vs 0.15 / 0.19 / 0.12 | 0.26 / 0.19 / 0.13 vs 0.26 / 0.17 / 0.13 | 0.32 / 0.12 / 0.18 vs 0.30 / 0.22 / 0.20 | (not yet) |
+| IN CONTEXT (premises before the question), TAUGHT right / HELD BACK right | 0.21 / 0.20 | 0.29 / 0.17 | 0.32 / 0.20 | (not yet) |
+| held-out bits per byte, domains read | - | 1.9222 vs 1.9078 | 1.8956 vs 1.8797 | (not yet) vs 1.8200 |
+| route J learned composites: precision | - | - | 0.90 (176) vs 0.89 (170) | - |
+- **FALSE MEMORIES DOWN: taught WRONG inferences recalled 0.01 vs 0.09 open (visit 7), 0.12 vs 0.22 rank;** taught right ones 0.06 vs 0.10 open, 0.32 vs 0.30 rank. Right over wrong goes from about 1x to 6x open.
+- **The fact floor holds at visit 8: 0.72 vs 0.62 (n 250), flat over visits 7-8; below the 0.75 target.** Gated answers right overall 0.50 vs 0.23 at visit 8 (kra14 answered only 0.28 of KNOWN questions there).
+- The rated confirmation moves less than offline: +0.02 right, about 5-10% fewer confirmed. It cannot explain the wrong-recall drop alone (101 taught wrong vs 119); the chain-form rows or the floor may. Not separable without kra16 on the GPU.
+- IN CONTEXT shows no learned composition step: held back with the premises in front 0.17-0.20, the same as held back closed book (0.13-0.18). Taught in context = taught closed book. The chain form as taught does not yet make the trunk use premises it is shown.
+- Cost: held-out bits +0.014 / +0.016 at visits 6 / 7 (seed noise on the harness about 0.017; consistent sign). Route J unchanged.
+
+### cg27a_kra17 GPU, visits 8-10 (log to the middle of visit 10; kra14 stopped at visit 9)
+| readout | visit 8 | visit 9 | visit 10 |
+|---|---|---|---|
+| facts ever taught (kra14 at visit 8: 0.62) | 0.72 | 0.63 | 0.56 |
+| facts taught 4+ visits | 0.83 | 0.71 | 0.60 |
+| conclusions ever taught | 0.34 | 0.18 | 0.21 |
+| gated answers: right overall / never-read given a stored name (kra14 v8: 0.23 / 0.02) | 0.50 / 0.02 | 0.41 / 0.02 | 0.17 / 0.01 |
+| name memory: facts / conclusions of 384 entries (fact candidates) | 228 / 156 (1,248) | 192 / 192 (1,333) | - |
+| real-text inferences open, TAUGHT right / wrong vs HELD BACK right / wrong (kra14 v8: 0.13 / 0.08 vs 0.03 / 0.01) | 0.07 / 0.03 vs 0.03 / 0.03 | 0.06 / 0.04 vs 0.02 / 0.03 | (not yet) |
+| rank among 10, TAUGHT right / wrong, HELD BACK right (kra14 v8: 0.45 / 0.19, 0.21) | 0.35 / 0.14, 0.21 | 0.35 / 0.13, 0.19 | (not yet) |
+| IN CONTEXT, TAUGHT right / HELD BACK right | 0.37 / 0.27 | 0.31 / 0.24 | (not yet) |
+| confirmed this visit (right) (kra14 v8: 370 (0.72)) | 354 (0.75) | - | - |
+| held-out bits, domains read (kra14 v8: 1.8200) | 1.8372 | 1.7797 | - |
+| route J precision (composites) | - | 0.89 (240) | - |
+- **False memories stay at the held-back level: taught wrong 0.03-0.04 = held back wrong 0.03 (kra14: 0.08 vs 0.01).** The price: taught right 0.07 vs kra14 0.13 open, 0.35 vs 0.45 rank. Consolidation is weaker but no longer biased toward wrong inferences.
+- **The floor delays the fact fade by about one visit; it does not stop it: 0.72 -> 0.63 -> 0.56, and facts taught 4+ visits 0.83 -> 0.60.** The pool grows (1,232 -> 1,287) on a fixed dose budget, so each fact's share keeps falling.
+- **Gated answers fall 0.50 -> 0.17:** the name memory is capped at 384 entries and conclusions take a growing share (90 -> 192), leaving 192 facts for 1,333 candidates. A capacity limit, separate from the trunk's fade.
+- IN CONTEXT, held back with premises 0.27 / 0.24 vs held back closed book 0.21 / 0.19 at visits 8 / 9: a +0.05 hint of using shown premises (SE about 0.035), not yet a result.
+- Bits +0.017 vs kra14 at visit 8.
+
+### cg27a_kra18 prepared (kra17 + two existing options for kra17's visit 8-10 limits)
+- inf_nm_max 1024 (was 384): conclusions take up to half the name memory; by visit 9 they held 192 of 384 and facts 192 of 1,333 candidates; gated right overall 0.50 -> 0.17.
+- inf_distill_wake_rows 8 (was 4): the question pool grows on a fixed budget; facts taught 4+ visits 0.83 -> 0.60 over visits 8-10 with the 0.125 floor.
+- Local safety run after kra16's (about 17:25-18:45). The stand-in fact-fading test (uniform / floor / rehearse the fading first) follows; if it favours targeted rehearsal over more rows, that goes into kra19.
+
+### cg27a_kra17 GPU, END OF RUN (visit 10 and the headline; run complete, then stopped by the user)
+- **HEADLINE weights only: FORGETTING +0.005 | FINAL BPC 1.793** (fast store on +0.006 / 1.793). The lowest forgetting of the seed-4 GPU runs recorded here (cg27a_replay +0.026 / 1.767, cg27a_rtxw +0.037 / 1.779, cg27a_rtxt +0.077 / 1.807); final BPC 0.026 above cg27a_replay. Per domain: Gutenberg -0.055, Github -0.033, Wikipedia -0.022 (better than after their own visit); USPTO +0.067, StackExchange +0.053, DM Mathematics +0.028 the largest.
+- End of run probe recall from the weights: one-hop 0.78, open one-hop 0.50 (n 134).
+| visit 10 | kra17 |
+|---|---|
+| real-text inferences open: TAUGHT right / wrong vs HELD BACK right / wrong | 0.04 / 0.04 vs 0.01 / 0.02 |
+| rank among 10: TAUGHT right / wrong vs HELD BACK right / wrong | 0.35 / 0.17 vs 0.19 / 0.18 |
+| IN CONTEXT: TAUGHT right vs HELD BACK right | 0.31 vs 0.28 |
+| confirmed this visit (right); all so far | 322 (0.71); 1,344 (0.76) |
+| name memory | 192 facts / 192 conclusions of 384 (1,361 candidates) |
+| route J precision | 0.89 (264 composites) |
+| held-out bits, domains read | 1.7781 |
+- Rank: taught wrong 0.17 = held back wrong 0.18 - no false-memory excess at the end; taught right 0.35 vs 0.19 held back.
+- IN CONTEXT minus closed book, HELD BACK right: +0.06 / +0.05 / +0.09 at visits 8 / 9 / 10 (n 150 each; about 2 SE pooled). The first sign the trunk uses premises put in front of it for inferences it was never taught; the cells are not the same inferences (in context needs both premises on record), so this needs a matched readout before it is a claim.
+- Open recall of taught right inferences fades with age (written at visit 2: 0.10 -> 0.08 over visits 8-10; visit 6: 0.01-0.02): the same pool-growth fade as the facts.
+- kra18 adds a READOUT (no model change): [REAL-TEXT INFERENCE IN CONTEXT, MATCHED] - the same inferences and the same distractors scored closed book, after their OWN premises and after ANOTHER inference's premises, with the paired difference and its SE.
+
+### cg27a_kra16 local safety run (20 Nov 17:20; tools/safety_run.sh)
+- PASS: HEADLINE -0.040 / 2.616 (fast store -0.039 / 2.617) vs kra15 -0.041 / 2.615; no Traceback. Chain dose rows at visit 4: 277 for 420 inferences, beside 861 plain rows. (Superseded on the GPU by kra17, which includes it.)
+
+### cg27a_kra18 GPU, visits 1-4 (started 17:05, before the matched readout was pushed at 17:14: this run does not print it)
+| kra18 vs kra17 | visit 2 | visit 3 | visit 4 |
+|---|---|---|---|
+| held-out bits, domains read | 2.0261 vs 2.0359 | 2.0052 vs 2.0180 | 1.9223 vs 1.9343 |
+| name memory entries (facts) | 305 vs 300 | 495 (469) vs 384 (357) | 634 (594) vs 384 |
+| taught facts right after the visit | - | - | 0.97 vs 0.89 |
+| facts ever taught | - | - | 0.85 vs 0.83 |
+| gated answers right overall / never-read given a stored name | - | 0.41 / 0.01 vs 0.41 / 0.07 | 0.42 / 0.02 vs 0.47 / 0.02 |
+- Eight question rows teach harder (0.97 vs 0.89 just after the visit) at no cost in bits so far (about -0.012 each visit). The test is visits 8-10.
+- READOUT FIX (20 Nov 18:45): the rank readouts score candidates with distill._dw_cand_mc, which cuts text at the model's window (seq_len). A prompt that does not fit leaves every candidate unscored, they tie, and the first - always the true answer - wins. Locally (seq_len 64) every IN CONTEXT prompt overflows: the local IN CONTEXT 1.00 values (kra17 and kra18 safety runs) and the matched readout's local 1.00 / 1.00 are this artifact. On the GPU (seq_len 1024) the premises fit and the GPU readouts stand. Rank, IN CONTEXT and MATCHED now skip any prompt that does not fit.
+
+### cg27a_kra18 local safety run (20 Nov 19:10; tools/safety_run.sh)
+- PASS: HEADLINE -0.041 / 2.612 (fast store -0.040 / 2.614) vs kra17 -0.040 / 2.616; no Traceback. 8 question rows per step; facts ever taught 0.30 vs 0.29 at visit 4. The name memory (70-110 entries locally) never reaches either cap, so that change is GPU-only. Stopped after the headline (end-of-run diagnostics) to free the machine.
+
+### cg27a_kra18 GPU, visits 5-8 (kra17 beside it, same seed)
+| kra18 vs kra17 | visit 5 | visit 6 | visit 7 | visit 8 |
+|---|---|---|---|---|
+| facts ever taught | 0.86 vs 0.85 | 0.81 vs 0.78 | 0.80 vs 0.72 | **0.75 vs 0.72** |
+| gated answers right overall | 0.50 vs 0.44 | 0.30 vs 0.41 | 0.31 vs 0.39 | 0.48 vs 0.50 |
+| name memory: facts / conclusions | 755 / 55 | 921 / 86 | 921 / 103 (cap 1,024 reached) vs 280 / 104 | - |
+| held-out bits | 1.8560 vs 1.8638 | 1.9101 vs 1.9222 | 1.8852 vs 1.8956 | - |
+| inferences open: TAUGHT right / wrong vs HELD BACK right / wrong | - | 0.03 / 0.02 vs 0.00 / 0.00 | 0.04 / 0.01 vs 0.01 / 0.00 | 0.07 / 0.04 vs 0.03 / 0.05 |
+| rank: TAUGHT right vs HELD BACK right | - | 0.20 vs 0.15 | 0.21 vs 0.15 | 0.33 vs 0.22 |
+| IN CONTEXT HELD BACK right (closed book) | - | 0.16 (0.15) | 0.24 (0.15) | 0.31 (0.22) |
+- Facts hold better from visit 6 (+0.03 to +0.08) and reach 0.75 at visit 8; bits stay about 0.01 better. The bigger name memory holds 3x the facts but gated answers do not rise (0.30-0.48): the gate's coverage, not the memory's size, now limits them.
+- False memories stay at the held-back level (taught wrong 0.04 vs held back 0.05). IN CONTEXT minus closed book on held-back right: +0.01 / +0.09 / +0.09 at visits 6-8, as in kra17.
+
+### Fact fading on the stand-in (tools/fact_fade.py; A6 trunk, 150 new facts a visit to 1,200, 250 steps a visit) - INCONCLUSIVE so far
+- FLOOR / DOUBLE / TARGET all fall to near chance by visit 4 (all facts 0.13-0.15; the newest cohort 0.07-0.15): at the floored weight (0.25 x 0.125) 250 steps teach the stand-in almost nothing, whereas the GPU trunk learns its newest facts at 0.97. The regime does not match the GPU; NODECAY (pending) shows whether full weight teaches at all. Not a basis for kra19.
+
+### cg27a_kra19 / kra19b prepared (20 Nov 20:35)
+- kra19 = kra18 + inf_rti_rows 32 (was 16): twice the dose of confirmed real-text inferences (they reach the trunk as recognition and fade with age). Includes the matched in-context readout and the window fix.
+- kra19b = kra19 + inf_distill_wake_decay_min 0.25: the fallback if kra18's facts fade at visits 9-10.
+- Evidence replay (inf_rti_evidence) is NOT used: it replays w['ev'], which only the older rti_write path fills (the code-written inferences have none: it would replay nothing), and it was negative on the stand-in (14 Nov).
+- The stand-in fact-fading test is set aside: even NODECAY fades (0.45 -> 0.19 by visit 6); the A6 trunk cannot hold a growing pool at any schedule, so it says nothing about the GPU trunk.
+
+### Pretrained-base reader test (20 Nov 20:30, Colab GPU; tools/pretrained_reader.py, 20,000 documents, 30,000 held-out pairs, base rate 0.133, 0.86 seen once)
+| reader | label-free (usefulness) AUC all / seen once | TRUE labels (ceiling) AUC all / seen once | ceiling top 5% precision all / seen once |
+|---|---|---|---|
+| word counts (ours) | **0.634 / 0.622** | 0.719 / 0.718 | 0.51 / 0.49 |
+| GPT-2 124M, mid / last | 0.584 / 0.596, 0.572 / 0.576 | 0.781 / 0.771, **0.784 / 0.772** | 0.57 / 0.51, 0.60 / 0.50 |
+| SmolLM2-360M, mid (last: NaN states, failed) | 0.587 / 0.594 | 0.800 / 0.790 | 0.60 / 0.51 |
+| Qwen2.5-0.5B, mid / last | 0.588 / 0.596, 0.577 / 0.576 | **0.806 / 0.797**, 0.788 / 0.776 | 0.62 / 0.55, 0.60 / 0.53 |
+| Qwen2.5-1.5B, mid / last | 0.587 / 0.594, 0.580 / 0.584 | 0.798 / 0.789, 0.778 / 0.765 | 0.58 / 0.49, 0.57 / 0.49 |
+- **Label-free, pretrained states LOSE to word counts (0.58-0.60 vs 0.62-0.63):** the usefulness pseudo-labels (related 0.42 vs 0.11) are too noisy for a rich representation; the teacher, not the representation, limits the label-free reader.
+- **With true labels, pretrained states WIN by +0.06 to +0.09 AUC, on pairs seen once too (0.77-0.80 vs 0.72).** Size barely matters (GPT-2 124M 0.77 seen once, Qwen 1.5B 0.77-0.79), so the gain is mostly READING (relation cues), not KNOWING (a 12x larger model knows far more and gains nothing).
+- Implication: the package's seeded reader (20,000 labelled records, words) sits at the word ceiling (about 0.72); the same labels on a frozen small pretrained model's states would give about 0.78-0.80. A PRETRAINED READER (a component, the trunk unchanged) captures the measured reading gain; swapping the trunk is not needed for it.
+
+### Pretrained reader IN THE PIPELINE (20 Nov 20:45, Colab; tools/confirm_pre.py, 50,000 documents, 20,000 labelled seed records, 2,400 code writes): GPT-2 - NEGATIVE
+| | WORDS (the package's seeded reader) | STATES GPT-2 (layer 6) |
+|---|---|---|
+| held-out AUC (30,000 later records) | 0.757 | 0.770 |
+| written right (2,400) | 0.426 | 0.438 |
+| confirmed right / right kept, all read: >= 1 record | 0.604 / 0.62 | 0.594 / 0.60 |
+| 1 rated record (kra17) | **0.659 / 0.56** | 0.648 / 0.56 |
+| 2 rated records | **0.749 / 0.34** | 0.701 / 0.35 |
+- The package's word reader uses 3 CONTEXT words each side as well as the words between: AUC 0.757, not the 0.718 of words-between alone in tools/pretrained_reader.py. Against it GPT-2's states add +0.013 AUC, +0.012 written right, and confirm WORSE (-0.011 / -0.048). The +0.05-0.08 edge estimated at 20:34 compared against the weaker word reader; it does not exist against the package's own.
+- **Qwen2.5-0.5B (layer 12) in the same test:** held-out AUC 0.793 vs 0.757; written right **0.455 vs 0.426** (1,091 vs 1,023 right of 2,400); confirmed right, all read: >= 1 record 0.611 vs 0.604, **1 rated record 0.661 vs 0.659 (right kept 0.58 vs 0.56; about 629 vs 569 right ones confirmed)**, 2 rated 0.721 vs 0.749. A larger pool of right inferences (+7% written, +10% confirmed) at the SAME precision; confirmation precision does not rise. Below the bar set for kra20 (+0.03 confirmed right); not built. The precision of what is confirmed is limited by the confirmation rule and the evidence on later documents, not by the reader.
+
+### cg27a_kra19 local safety run (20 Nov 22:00; tools/safety_run.sh)
+- PASS: HEADLINE -0.041 / 2.612 (fast store -0.040 / 2.614), the same as kra18's; no Traceback. The dose rows train only at visit 5 here, so the doubled dose is barely exercised locally. The matched readout prints nan (0) locally as intended: with a 64-byte window every in-context prompt is skipped (the window fix).
+- kra19b GPU (started 21:06) to visit 3: bits 2.0340 / 2.0062 vs kra18 2.0261 / 2.0052; gated answers 0.41 = kra18; no errors. The matched readout prints (nan before visit 4, as expected).
+
+### REVIEW (20 Nov 22:30): what the inference and retention readouts actually measure - several earlier readings were wrong
+1. **Almost no confirmed inference reaches the trunk.** inf_kmc_useful 1 (cg27a_kus, 16 Nov) is still on under the kra12+ confirm pipeline: a row of a written inference trains the trunk only if it is judged-kept AND "useful" (the keyed memory saved bits on its later text). [USEFULNESS] in kra17: useful AND judged-kept 6 (visit 6), 14 (visit 8), 25 (visit 10) of 668 / 1,022 / 1,344 confirmed - about 2%. distill._kmc_pending skips every other row, in the pool's rows AND the dose rows (kmc2). Consequences: the dose fires only on steps whose sampled rows include an eligible one (255 -> 28 steps a visit as the rows grow), its loss falls to ~0 because it memorises a handful of inferences, and kra15 (no decay), kra16 (chain dose), kra19 (dose x2) changed the treatment of about 2% of the "taught" group. "Useful" is also the WORSE filter: useful right 0.56-0.62 vs not useful 0.69-0.73; "NOT HARMFUL AND judged-kept" (inf_kmc_useful 2) is right 0.775 on 636-787.
+2. **"Taught vs held back" for real-text inferences is therefore not a teaching contrast.** Both groups are confirmed (both had a relational record read); ~98% of "taught" were never trained. The rank gap (0.33-0.35 vs 0.19-0.22) comes from another path - most likely the source/real-text replay of the pool's entries (to check). The "no false-memory excess" result holds only because almost nothing was taught; it is not yet evidence that taught wrong inferences stay out.
+3. **GATED ANSWERS is the TRUNK alone** (memory off) with a confidence threshold calibrated to keep 75% of the previous sleep's right answers, on 64 new questions a visit: right overall is about 0.75 x the trunk's recall on those questions, SE about 0.06. The name memory never enters it, so kra18's larger memory could not move it; "the gate opens too rarely" was a misreading. It is a noisy view of fact recall, not a separate gap.
+4. **IN CONTEXT is confounded by copying:** the premises 'A r1 B. B r2 C.' contain the answer C, and the chain rows teach 'the answer is the last name of the sentence before'. The matched readout's 'other premises' arm does not remove this (C is absent there). The control needed: the inference's own B-C premise with another inference's A-B premise (C present, the chain broken).
+5. **The two fact readouts disagree:** EVER TAUGHT (ledger sample, test wording) 0.75-0.86 at visits 5-8; the INTERLEAVED probe (32 pool facts, test wording + paraphrase) 0.44-0.65 with never-taught control 0.25-0.29. The 0.75 target is met on one readout only, and the control shows about 0.25-0.29 comes from reading alone.
+6. The dose weight algebra is as intended: the wake weight carries the floored decay, inf_rti_nodecay divides it back out, and rows / rows_ref scales the push (kra19: 4x the reference, about the real-text loss's own weight).
+
+### cg27a_kra20 prepared (20 Nov 22:25; kra19b stopped by the user after the review)
+- kra18 + inf_kmc_useful 2 (confirmed inferences train the trunk unless measured not useful: about 640-790 at right 0.775, against about 2% under 1) + inf_distill_wake_decay_min 0.25. Dose rows stay 16 (kra18).
+- Readouts: [REAL-TEXT INFERENCE TRAINED] - how many 'taught' inferences pass the keep rule, rank recall TRAINED vs NOT TRAINED vs HELD BACK; the matched readout's BROKEN CHAIN arm (another inference's A-B premise + this one's B-C premise: the answer in context, the chain broken) with own - broken and its SE.
+- What it tests for the first time: whether taught confirmed inferences consolidate (TRAINED vs HELD BACK) and whether taught WRONG ones become false memories.
+
+### cg27a_kra20 GPU, visit 4 (the first readout with the keep rule fixed)
+- **[REAL-TEXT INFERENCE TRAINED]: 219 of 219 taught inferences pass the keep rule (right 0.80)** - against 6-25 in kra17. They are first trained during visit 5 (the dose rows are built at this sleep): rank TRAINED right 0.21 / wrong 0.16 vs HELD BACK 0.15 / 0.19 is the pre-training baseline.
+- **MATCHED, BROKEN CHAIN (before any chain training):** HELD BACK right (n 51): closed 0.20 | own premises **0.29** | other premises 0.22 | broken chain (the answer in context, A not linked) **0.22** | own - broken +0.08 (SE 0.04), own - closed +0.10 (SE 0.04). TAUGHT right (n 114): closed 0.22 | own 0.24 | other 0.17 | broken 0.18 | own - broken +0.05 (SE 0.03). Pooled own - broken about +0.06 (about 2.3 SE).
+- Reading: the answer's presence in the context does NOT lift it (broken 0.18-0.22 = other 0.17-0.22 = closed 0.20-0.22); only the LINKED chain does. A first sign that the trunk uses the chain, not copying - one visit, n 165, before chain teaching.
+- Facts ever taught 0.84 (kra18 0.85); gated 0.36 (0.42); bits 1.9243 (kra18 1.9223).
+
+### cg27a_kra20 GPU, visit 5 (after ONE visit of real inference teaching) + local safety run
+| visit 5 | TAUGHT (trained, 219) right / wrong | HELD BACK right / wrong |
+|---|---|---|
+| open recall from the trunk | **0.96 (176) / 0.95 (43)** | 0.05 (91) / 0.06 (16) |
+| rank among 10 | 0.99 / 0.98-1.00 | **0.31-0.34 / 0.06** (visit 4: 0.15 / 0.19) |
+| MATCHED: closed / own premises / other / broken chain | 1.00 / 1.00 / 0.96 / 1.00 | right (n 51): 0.35 / **0.41** / 0.25 / 0.29; own - broken **+0.12 (SE 0.06)** |
+- **CONSOLIDATION WORKS: confirmed inferences taught for one visit are recalled open-ended at 0.96 (held back 0.05).** The ~2% keep rule, not the trunk, was the limit in kra12-kra19.
+- **FALSE MEMORIES, as expected once wrong ones are taught: taught WRONG inferences recalled 0.95 (held back 0.06).** What the trunk learns is now exactly as right as what confirmation passes (0.80 of the 219; 59 wrong of 326 confirmed). Distant labels are incomplete, so 'wrong' is an upper bound on false memories. The next lever is precision before teaching (two rated records: 0.749 offline) and retraction afterwards (inf_rret is on; no inference flagged yet at visit 4).
+- **Held-back RIGHT inferences rise without being taught (rank 0.15 -> 0.31-0.34) while held-back WRONG ones fall (0.19 -> 0.06):** teaching right inferences generalises to other right ones, not to wrong ones. With their own premises in context 0.41 vs broken chain 0.29.
+- No cost: bits 1.8606 (kra18 1.8560); facts ever taught 0.85 (0.86); gated answers 0.52 (0.50); never-read 0.00.
+- kra20 local safety run: HEADLINE -0.031 / 2.621 (fast store -0.029 / 2.623) vs kra18 -0.041 / 2.612: within noise; no Traceback; 28 of 28 taught inferences train locally at visit 4. PASS.

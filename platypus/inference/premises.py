@@ -36,6 +36,7 @@ def _load_distant(cfg):
     if not os.path.exists(p):
         print(f"  [PREMISES AT SCALE] distant set not found at {p}: benchmark documents only (the notebook downloads it)", flush=True); return
     t0 = time.time(); D = json.load(gzip.open(p, 'rt') if p.endswith('.gz') else open(p)); R = []; TY = collections.defaultdict(collections.Counter); LAB = set(); PRD = {}
+    cx9 = {} if int(getattr(cfg, 'inf_premises_seed_ctx', 0)) else None        # 20 Nov kra14: 3 words of context each side, keyed by the record (seeded reader)
     for di in range(len(D)):
         d = D[di]; D[di] = None
         cn = [collections.Counter(m['name'] for m in vs).most_common(1)[0][0] for vs in d['vertexSet']]
@@ -53,7 +54,30 @@ def _load_distant(cfg):
                     sp = ' '.join(toks[a0:b1])
                     if len(sp) > 60: continue
                     mid = toks[a1:b0]; R.append((di, cn[ea], cn[eb], ' '.join(mid).lower(), mid[-1].lower() if mid else '', len(mid), (ea, eb) in lab, sp))
-    _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1, PRD=PRD)
+                    if cx9 is not None: cx9[id(R[-1])] = ' '.join(w.lower() for w in toks[max(0, a0 - 3):a0]) + ' ' + ' '.join(w.lower() for w in toks[b1:b1 + 3])
+        if int(getattr(cfg, 'inf_premises_wide', 0)):                         # 19 Nov kra13 WIDER RECORDS (offline: labelled pairs covered 0.32 -> 0.52): the same sentence
+            S9 = d['sents']; sub9 = None                                       #   13-30 words apart, the next sentence, and pronoun-led sentences (the article's subject);
+            for si, ms in sorted(bys.items()):                                 #   their length field is 13+ so the relational checks (1-8 words) never count them
+                ms = sorted(ms)
+                if si == min(bys) and ms: sub9 = ms[0][2]
+                for x in range(len(ms)):
+                    for y in range(x + 1, len(ms)):
+                        (a0, a1, ea), (b0, b1, eb) = ms[x], ms[y]
+                        if ea == eb or a1 > b0 or cn[ea] == cn[eb] or not (12 < b0 - a1 <= 30): continue
+                        mw = [w.lower() for w in S9[si][a1:a1 + 6]] + ['...'] + [w.lower() for w in S9[si][b0 - 6:b0]]
+                        R.append((di, cn[ea], cn[eb], ' '.join(mw), mw[-1], b0 - a1, (ea, eb) in lab, f"{cn[ea]} ... {cn[eb]}"))
+                if si + 1 in bys:
+                    for (a0, a1, ea) in ms[-3:]:
+                        for (b0, b1, eb) in sorted(bys[si + 1])[:3]:
+                            if ea == eb or cn[ea] == cn[eb] or b0 > 15: continue
+                            mw = [w.lower() for w in S9[si][a1:a1 + 8]] + ['<s>'] + [w.lower() for w in S9[si + 1][:b0]]
+                            R.append((di, cn[ea], cn[eb], ' '.join(mw), mw[-1], 13 + len(mw), (ea, eb) in lab, f"{cn[ea]} <s> {cn[eb]}"))
+                if sub9 is not None and si != min(bys) and S9[si] and S9[si][0].lower() in ('he', 'she', 'it', 'they', 'his', 'her', 'its', 'their'):
+                    for (b0, b1, eb) in ms[:4]:
+                        if eb == sub9 or cn[eb] == cn[sub9] or b0 > 15: continue
+                        mw = ['<pron>'] + [w.lower() for w in S9[si][1:b0]]
+                        R.append((di, cn[sub9], cn[eb], ' '.join(mw), mw[-1], 13 + len(mw), (sub9, eb) in lab, f"{cn[sub9]} <pron> {cn[eb]}"))
+    _PM.update(R=R, TY={n: c.most_common(1)[0][0] for n, c in TY.items()}, LAB=LAB, ND=di + 1, PRD=PRD, CTX=cx9 or {})
     print(f"  [PREMISES AT SCALE] distant set read: {_PM['ND']} documents, {len(R)} records ({time.time() - t0:.0f} s)", flush=True)
 
 
@@ -267,7 +291,42 @@ def premises_readout(model, cfg, S_slot, vis):
             uT = np.array([usew(RD[i], ('d', RD[i][0])) for i in trI]); okT = ~np.isnan(uT)
             if okT.sum() >= 200:
                 hi_, lo_ = np.quantile(uT[okT], 0.8), np.quantile(uT[okT], 0.5); ps9 = [i for i, u in zip(trI, uT) if u >= hi_]; ng9 = [i for i, u in zip(trI, uT) if u <= lo_]
+                kn9 = rv9 = 0
+                if int(getattr(cfg, 'inf_premises_knowledge', 0)):            # 19 Nov kra13: every training record of a CONFIRMED real-text inference is a positive
+                    cfk = {frozenset(k) for k, w in (_PM.get('rti') or {}).items() if w.get('state') == 'confirmed'}   #   (offline: +0.004-0.006 AUC, steady)
+                    kp9 = [i for i in trI if frozenset((RD[i][1], RD[i][2])) in cfk]; kn9 = len(kp9); ngs = set(ng9)
+                    ps9 = sorted(set(ps9) | set(kp9)); ng9 = [i for i in ng9 if i not in set(kp9)]
+                if int(getattr(cfg, 'inf_premises_reverb', 0)):               # 19 Nov kra13: ReVerb relation phrases (verb / verb + preposition / verb + words +
+                    try:                                                       #   preposition, used with 10+ distinct name pairs) as extra positives (offline: phrase
+                        import spacy                                           #   recall 0.111 -> 0.181 at no AUC cost)
+                        nlp8 = _PM.get('nlp_pos') or spacy.load('en_core_web_sm', disable=['parser', 'ner', 'lemmatizer']); _PM['nlp_pos'] = nlp8
+                        phr = [i for i in trI if RD[i][5] >= 2 and not _rret_listlike(RD[i]) and '(' not in RD[i][3]]
+                        pbm = collections.defaultdict(set)
+                        for i in phr: pbm[RD[i][3]].add(frozenset((RD[i][1], RD[i][2])))
+                        cm8 = [m for m, v in pbm.items() if len(v) >= int(getattr(cfg, 'inf_premises_reverb', 10))]; ok8 = set()
+                        for m, dd in zip(cm8, nlp8.pipe(cm8, batch_size=1024)):
+                            tg = [t.pos_ for t in dd]
+                            if tg and tg[0] in ('VERB', 'AUX') and (len(tg) == 1 or (len(tg) == 2 and tg[1] in ('ADP', 'PART')) or (tg[-1] == 'ADP' and all(t in ('NOUN', 'ADJ', 'ADV', 'PRON', 'DET', 'VERB', 'AUX', 'PROPN', 'PART') for t in tg[1:-1]))): ok8.add(m)
+                        ngs = set(ng9); rvp = [i for i in phr if RD[i][3] in ok8 and i not in ngs]; rv9 = len(rvp); ps9 = sorted(set(ps9) | set(rvp))
+                    except Exception as e8: _fail('inference.premises:reverb'); msg.append(f"REVERB unavailable ({type(e8).__name__}: {e8})"[:120])
+                sd9 = int(getattr(cfg, 'inf_premises_seed', 0))
+                if sd9 > 0:                                                    # 20 Nov kra14 SEEDED READER: a small LABELLED seed (records of documents already read, with
+                    CX9 = _PM.get('CTX') or {}                                  #   their own-document labels) replaces the label-free teacher, which only hurt once a
+                    if CX9: txw = lambda r: f"{r[3]} LAST_{r[4] or 'none'} DIST_{min(int(r[5]), 12) // 3} " + ' '.join('C_' + w for w in CX9.get(id(r), '').split())
+                    sdI = [trI[j] for j in np.random.RandomState(int(cfg.seed) + 707 + vis).permutation(len(trI))[:sd9]]   # seed was given (offline, 30k documents: AUC
+                    ps9 = [i for i in sdI if RD[i][6]]; ng9 = [i for i in sdI if not RD[i][6]]   # 0.667 / 0.694 / 0.732 with context at 2k / 5k / 20k labels; label-free 0.63-0.65)
+                    msg.append(f"SEEDED READER: {len(sdI)} labelled records ({len(ps9)} related) from documents already read, context words {'on' if CX9 else 'off'}; label-free teaching off")
                 clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
+                for _ in range(0 if sd9 > 0 else int(getattr(cfg, 'inf_premises_mi', 0))):      # 19 Nov kra13: MULTI-INSTANCE ('at least one'): a positive pair keeps only its mention the reader
+                    sc8 = clf.decision_function(hv.transform([txw(RD[i]) for i in ps9])); bag = {}   #   scores highest (offline: pair AUC 0.654 -> 0.664, phrase recall +1/3)
+                    for i, v8 in zip(ps9, sc8):
+                        k8 = frozenset((RD[i][1], RD[i][2]))
+                        if k8 not in bag or v8 > bag[k8][1]: bag[k8] = (i, v8)
+                    ps9 = sorted(v[0] for v in bag.values()); clf = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced')
+                    clf.fit(hv.transform([txw(RD[i]) for i in ps9 + ng9]), np.r_[np.ones(len(ps9)), np.zeros(len(ng9))])
+                if float(getattr(cfg, 'inf_rcode_reader', 0.0)) > 0:          # the reader's score for every store record (the compressed fact table's graph, kra13)
+                    _PM['rdscore'] = np.concatenate([clf.decision_function(hv.transform([txw(RD[i]) for i in range(j, min(nD, j + 200000))])) for j in range(0, nD, 200000)])
+                if kn9 or rv9: msg.append(f"READER TEACHING: + {kn9} records of confirmed inferences, + {rv9} ReVerb phrase records, multi-instance rounds {int(getattr(cfg, 'inf_premises_mi', 0))}")
                 def ev(L, own_of, yy):
                     sw = clf.decision_function(hv.transform([txw(r) for r in L])); dv_ = -np.array([r[5] for r in L], float)
                     uu = np.array([usew(r, own_of(r)) for r in L]); sn = ~np.isnan(uu); rk3 = lambda x: np.argsort(np.argsort(x, kind='stable'), kind='stable').astype(float)
@@ -742,9 +801,11 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
         ns = sorted(ns)
         if len(ns) > 60: ns = ns[:60]
         CAND.update(frozenset((ns[x], ns[y])) for x in range(len(ns)) for y in range(x + 1, len(ns)))
-    NI = {}; ia, ib = [], []
+    NI = {}; ia, ib = [], []; rq9 = float(getattr(cfg, 'inf_rcode_reader', 0.0)); rds9 = _PM.get('rdscore')   # 19 Nov kra13: the graph from the READER's top share
+    rthr9 = float(np.quantile(rds9, 1 - rq9)) if rq9 > 0 and rds9 is not None and len(rds9) == nD else None       #   (offline: top half sharpens the top 1% 0.17 -> 0.24)
     for i in range(nD):
         if HD[i] or RD[i][1] == RD[i][2] or frozenset((RD[i][1], RD[i][2])) in CAND: continue
+        if rthr9 is not None and rds9[i] < rthr9: continue
         ia.append(NI.setdefault(RD[i][1], len(NI))); ib.append(NI.setdefault(RD[i][2], len(NI)))
     NN = len(NI); G = csr_matrix((np.ones(len(ia), np.float32), (np.array(ia), np.array(ib))), shape=(NN, NN)); G = G + G.T; G.sum_duplicates(); G.data[:] = 1.0
     deg = np.asarray(G.sum(1)).ravel(); Gc = G.tocoo(); tot = float(G.sum())
@@ -820,6 +881,22 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
                 (w_, fw_), _ = TT_[cp_].most_common(1)[0]; th_, tt_ = (hd_, tl_) if fw_ else (tl_, hd_)
                 W[(A_, C_)].update(th=th_, tw=w_, tt=tt_)
         wr.append(bool(yy[j]))
+    if int(getattr(cfg, 'inf_rti_chain', 0)):                                  # 20 Nov kra16 CHAIN FORM (inf_rti_chain): each new inference keeps its premises as
+        new8 = [k for k, w in W.items() if w.get('vis') == vis and w.get('prem')]   #   text ('<A> <wording> <B>. <B> <wording> <C>.', the commonest recorded wording
+        need8 = {frozenset((a, b)) for a, c in new8 for b in W[(a, c)]['prem']} | {frozenset((b, c)) for a, c in new8 for b in W[(a, c)]['prem']}   #   of each pair,
+        pw8 = collections.defaultdict(collections.Counter)                     #   through the first bridge with a record on both sides); the dose rows of a taught
+        for r in RD:                                                           #   inference are then given half the time after its premises (distill.py), so the
+            if 1 <= r[5] <= 8 and not _rret_listlike(r) and any(ch.isalpha() for ch in r[3]):   #   trunk learns the composition step, not only the conclusion
+                f8 = frozenset((r[1], r[2]))                                   #   (the stand-in, tools/chain_scale.py: chain rows lift never-taught chains given
+                if f8 in need8: pw8[f8][(r[1], _rnorm(r[3]), r[2])] += 1       #   in context 0.110 -> 0.135)
+        nch8 = 0
+        for (A_, C_) in new8:
+            for b in W[(A_, C_)]['prem']:
+                c1, c2 = pw8.get(frozenset((A_, b))), pw8.get(frozenset((b, C_)))
+                if c1 and c2:
+                    p1, p2 = c1.most_common(1)[0][0], c2.most_common(1)[0][0]; W[(A_, C_)]['chain'] = f"{p1[0]} {p1[1]} {p1[2]}. {p2[0]} {p2[1]} {p2[2]}."
+                    W[(A_, C_)]['chain_p'] = (f"{p1[0]} {p1[1]} {p1[2]}.", f"{p2[0]} {p2[1]} {p2[2]}."); nch8 += 1; break   # 20 Nov kra20: the two premises apart (the broken-chain control)
+        print(f"  [CHAIN FORM | visit {vis + 1}] {nch8} of {len(new8)} new inferences keep their premises as text (both sides on record)", flush=True)
     if int(getattr(cfg, 'inf_rti_comp', 0)):                                   # 16 Nov TYPED COMPOSITION (inf_rti_comp): the premises' relational wordings (A-B, B-C,
         new9 = [k for k, w in W.items() if w.get('vis') == vis]                #   oriented) at write time; the table learned from kept, confirmed inferences types
         need9 = {frozenset((a, b)) for a, c in new9 for b in W[(a, c)]['prem']} | {frozenset((b, c)) for a, c in new9 for b in W[(a, c)]['prem']}   #   them where it can
@@ -885,11 +962,15 @@ def _rret_judge(cfg, RD, ndv_, vis):
         if not TN:                                                             #   faded pairs are NOT false - 0.33 - so fading removes, never teaches against)
             print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
         want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))
-        for r in RD:
+        rds8 = _PM.get('rdscore'); rt8 = None                                  # 20 Nov kra17 RATED CONFIRMATION (inf_rti_conf_rated): only a record the seeded reader
+        if int(getattr(cfg, 'inf_rti_conf_rated', 0)):                         #   puts in its top half confirms (offline tools/confirm_min.py, 2,400 writes, 30k
+            if rds8 is not None and len(rds8) == len(RD): rt8 = float(np.median(rds8))   # documents read after: right 0.604 -> 0.659, right ones kept 0.62 -> 0.56)
+            else: print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] rated confirmation unavailable (reader scores {None if rds8 is None else len(rds8)} vs {len(RD)} records): any relational record confirms", flush=True)
+        for i8, r in enumerate(RD):
             fk = frozenset((r[1], r[2]))
             if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
                 any9[fk] += 1
-                if 1 <= r[5] <= 8 and not _rret_listlike(r): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
+                if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
         fv = int(getattr(cfg, 'inf_rti_fade', 4)); cf9, fd9, st9 = [], [], []
         for k in TN:
             w = W[k]; fk = frozenset(k)
@@ -1034,13 +1115,17 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
         from platypus.inference.distill import _dw_cand_mc                     #   names (offline: rank 0.74 while exact 0.01); here the answer among itself and
         pool_ = sorted({e['ans'] for e in H_}) or sorted({e['ans'] for e in T_ + H_ + U_})   # distractors: HELD-BACK answers only (never taught), so taught
         rr_ = np.random.RandomState(int(cfg.seed) + 77 + vis)                     #   and held-back facts face the same untaught distractors (chance 0.10)
-        def rk_(L):
-            L = [e for e in L if e['rm'] < vis][:150]; hit = []
+        from platypus.inference.jepa import cfg_seq_
+        sq_ = int(cfg_seq_(model))                                             # 20 Nov: the scorer cuts text at the window; prompts that do not fit are skipped
+        def rk_(L, chain=False):
+            L = [e for e in L if e['rm'] < vis and (not chain or (W.get(rti_wkey(e)) or {}).get('chain'))][:150]; hit = []
             for e in L:
                 alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
                 if len(alts) < 9: continue
                 cs = [e['ans']] + [alts[j] for j in rr_.choice(len(alts), 9, replace=False)]
-                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"It is on record that {e['A']} {e['r']} ", cs) == 0))
+                pre_ = (W[rti_wkey(e)]['chain'] + ' ') if chain else ''          # 20 Nov kra16: IN CONTEXT - the inference's premises before the question
+                if len((pre_ + f"It is on record that {e['A']} {e['r']} ").encode('latin-1', 'replace')) + max(len(c) for c in cs) + 2 > sq_: continue   # 20 Nov: must fit the window (else every candidate ties and the first, the true one, wins)
+                hit.append(int(_dw_cand_mc(model, int(S_slot(e['d'])), f"{pre_}It is on record that {e['A']} {e['r']} ", cs) == 0))
             return f"{np.mean(hit):.2f} ({len(hit)})" if hit else "nan (0)"
         tr_ = lambda L, t: [e for e in L if e['truth'] is t]
         dl_ = (model.__dict__.get('_dtw') or {}).get('rtil') or []
@@ -1048,7 +1133,40 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
               f"{rk_(tr_(T_, True))} / wrong {rk_(tr_(T_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}"
               + (f" | UNPREDICTED right {rk_(tr_(U_, True))} / wrong {rk_(tr_(U_, False))}" if U_ else '')
               + (f" || dose rows last visit: loss {np.mean(dl_[:20]):.3f} (first 20) -> {np.mean(dl_[-20:]):.3f} (last 20), {len(dl_)} steps" if dl_ else ''), flush=True)
-    model.__dict__['_rret_x'] = X_                                            # retracted: the unlikelihood rows are built from these at the pool rebuild
+        from platypus.inference.distill import _kmc_pending                    # 20 Nov kra20 (readout): how many 'taught' inferences ACTUALLY train the trunk -
+        trn_ = lambda e: not _kmc_pending(cfg, [(b'', b'', 0, repr(e['key']))])   #   rows of the others are skipped by the keep rule (inf_kmc / inf_kmc_useful);
+        Ty_ = [e for e in T_ if trn_(e)]; Tn_ = [e for e in T_ if not trn_(e)]  #   kra17: about 2% of the confirmed ones under inf_kmc_useful 1
+        print(f"  [REAL-TEXT INFERENCE TRAINED | visit {vis + 1}] of {len(T_)} taught (question pool), {len(Ty_)} pass the keep rule and train the trunk "
+              f"(right {np.mean([bool(e['truth']) for e in Ty_]) if Ty_ else float('nan'):.2f}), {len(Tn_)} do not | rank among 10, TRAINED right {rk_(tr_(Ty_, True))} / wrong "
+              f"{rk_(tr_(Ty_, False))} | NOT TRAINED right {rk_(tr_(Tn_, True))} / wrong {rk_(tr_(Tn_, False))} | HELD BACK right {rk_(tr_(H_, True))} / wrong {rk_(tr_(H_, False))}", flush=True)
+        if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
+            print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
+                  f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
+                  f"{rk_(tr_(H_, True), True)} / wrong {rk_(tr_(H_, False), True)}", flush=True)
+            rm_ = np.random.RandomState(int(cfg.seed) + 91 + vis)                # 20 Nov kra18 (readout only): MATCHED - the same inferences and the same 9
+            def mt_(L):                                                          #   distractors three ways: closed book, their OWN premises before the question,
+                L = [e for e in L if e['rm'] < vis and (W.get(rti_wkey(e)) or {}).get('chain_p')][:150]   # and ANOTHER inference's premises (any context vs these);
+                if len(L) < 2: return "nan (0)"                                  #   20 Nov kra20: + BROKEN CHAIN - another inference's A-B premise then this one's
+                h = [[], [], [], []]                                             #   own B-C premise: C is in the context but nothing links A to it (copying vs reasoning)
+                for i, e in enumerate(L):
+                    alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                    if len(alts) < 9: continue
+                    cs = [e['ans']] + [alts[j] for j in rm_.choice(len(alts), 9, replace=False)]
+                    q = f"It is on record that {e['A']} {e['r']} "
+                    oth_ = W[rti_wkey(L[(i + 1) % len(L)])]; own_ = W[rti_wkey(e)]
+                    pre4 = ('', own_['chain'] + ' ', oth_['chain'] + ' ', oth_['chain_p'][0] + ' ' + own_['chain_p'][1] + ' ')
+                    if max(len((p + q).encode('latin-1', 'replace')) for p in pre4) + max(len(c) for c in cs) + 2 > sq_: continue
+                    for k, p in enumerate(pre4):
+                        h[k].append(int(_dw_cand_mc(model, int(S_slot(e['d'])), p + q, cs) == 0))
+                if not h[0]: return "nan (0)"
+                d = np.array(h[1]) - np.array(h[0])
+                d2 = np.array(h[1]) - np.array(h[3])
+                return (f"closed {np.mean(h[0]):.2f} | own premises {np.mean(h[1]):.2f} | other premises {np.mean(h[2]):.2f} | BROKEN CHAIN (answer in context, A not linked) {np.mean(h[3]):.2f} | "
+                        f"own - broken {d2.mean():+.2f} (SE {d2.std(ddof=1) / np.sqrt(len(d2)) if len(d2) > 1 else float('nan'):.2f}) | own - closed {d.mean():+.2f} "
+                        f"(SE {d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float('nan'):.2f}) (n {len(d)})")
+            print(f"  [REAL-TEXT INFERENCE IN CONTEXT, MATCHED | visit {vis + 1}] the same inferences and distractors, rank among 10: TAUGHT right {mt_(tr_(T_, True))} || "
+                  f"HELD BACK right {mt_(tr_(H_, True))} || HELD BACK wrong {mt_(tr_(H_, False))}", flush=True)
+    model.__dict__['_rret_x'] = X_                                           # retracted: the unlikelihood rows are built from these at the pool rebuild
     if int(getattr(cfg, 'inf_rret', 0)):                                      # 14 Nov RETRACTION RECALL: retracted vs flagged-but-kept (control) vs unflagged taught
         Kf = [e for e in T_ if e.get('flag')]; Nf = [e for e in T_ if not e.get('flag') and (W.get((e['A'], e['ans'])) or {}).get('judged') is not None]
         rr2 = np.random.RandomState(int(cfg.seed) + 78 + vis); pool2 = sorted({e['ans'] for e in H_})

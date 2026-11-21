@@ -656,6 +656,8 @@ class Config:
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
     inf_rti_rank_recall=0           #     readout: written inferences' answer ranked among 10 written answers (open-ended exact recall cannot see real names)
     inf_rti_rows_ref=0              #     > 0: weight the dose loss by rows / inf_rti_rows_ref, so each row pushes as hard as at that many rows (the loss is a mean over rows)
+    inf_rti_nodecay=0               #   20 Nov kra15: 1 = the real-text inferences' dose rows are exempt from the question rows' visit decay (inf_distill_wake_decay)
+    inf_rti_chain=0                 #   20 Nov kra16 CHAIN FORM (MODEL CHANGE when 1): code-written inferences keep their premises as text; the dose rows are also given after them; readout [REAL-TEXT INFERENCE IN CONTEXT]
     inf_rti_code=0                  #   14 Nov INFERENCE BY COMPRESSING THE FACT TABLE (MODEL CHANGE when on; cg27a_rcode): write the held-out pairs whose low-rank name codes agree most
     inf_rcode_k=128                 #     code dimensions (truncated SVD of the PPMI name x name record graph)
     inf_rcode_sel='code'            #     which pairs to write: 'code' (most similar codes), 'code+aa' (rank sum of the code and Adamic-Adar; cg27a_rcode3) or 'code+ra' (code and resource allocation, shared neighbours weighted 1/degree)
@@ -755,6 +757,15 @@ class Config:
     inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
     inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
+    inf_rti_conf_rated=0            #   20 Nov kra17 (MODEL CHANGE when 1): only a record the seeded reader puts in its top half confirms a tentative inference
+    inf_premises_wide=0             #   19 Nov kra13: wider distant records - same sentence 13-30 words apart, next sentence, pronoun-led sentences (length field 13+)
+    inf_rcode_reader=0.0            #   19 Nov kra13 MODEL CHANGE: the compressed fact table's graph from the wording reader's top share of records (0 = all records)
+    inf_premises_knowledge=0        #   19 Nov kra13: the wording reader also taught by every record of a confirmed real-text inference
+    inf_premises_reverb=0           #   19 Nov kra13: ReVerb relation phrases (used with N+ distinct pairs) as extra reader positives (0 off; needs spaCy)
+    inf_premises_mi=0               #   19 Nov kra13: multi-instance rounds for the wording reader (a positive pair keeps its best-scored mention)
+    inf_premises_seed=0             #   20 Nov kra14: SEEDED READER - n labelled records (own-document labels) of documents read replace the label-free teacher
+    inf_premises_seed_ctx=0         #   20 Nov kra14: the seeded reader also sees 3 words of context each side of the pair
+    inf_distill_gated_conf=0        #   19 Nov kra13 readout: made-up composite answers AFTER the memory's exact-name gate
     inf_premises_e2e=0              #   19 Nov kra11 readout: END-TO-END real text - the reader's kept slice (wording, usefulness, parser) composed A-C through shared names, scored on gold
     inf_premises_parse=0            #   19 Nov kra10 readout: the same reader on spaCy dependency paths (N pseudo-labelled records a class; 0 off; needs en_core_web_sm)
     inf_kmc_rulecomp_decode_e=30    #   route E readout (with route D): composites decoded with the integrated memory's learned values

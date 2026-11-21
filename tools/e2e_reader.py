@@ -3,7 +3,9 @@
 self-trained from usefulness, wording + usefulness) -> COMPOSE A-C through a shared name B (A-B and B-C kept in different documents; hub names
 in more than 200 documents skipped) -> score: premises kept (own-document label), A-C proposals CHECKABLE (A and C named together in some
 document) right by the distant labels, and with 2+ bridges.
-Usage: python3 tools/e2e_reader.py <distant.json.gz>   env E2_DOCS (all)"""
+20 Nov: E2_SEED '2000,20000' adds SEEDED READER policies (n labelled records from the first 80% of documents, weight E2_W 3, alone and with the
+label-free pseudo-labels); the seed's own records are among those kept and scored (a small leak; A-C proposals are judged across documents).
+Usage: python3 tools/e2e_reader.py <distant.json.gz>   env E2_DOCS (all), E2_SEED (''), E2_W (3)"""
 import os, sys, time, types, collections
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +30,11 @@ c = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); c.fit(X[np
 rk = lambda v: np.argsort(np.argsort(v, kind='stable'), kind='stable').astype(float)
 POL = {'random': np.random.RandomState(0).rand(len(R)), 'nearer': -np.array([r[5] for r in R], float) + 1e-3 * np.random.RandomState(1).rand(len(R)),
        'usefulness': np.nan_to_num(U, nan=-9.0), 'WORDING READER': sw, 'WORDING + USEFULNESS': np.where(np.isnan(U), rk(sw) * 0.5, rk(sw) + rk(np.nan_to_num(U, nan=-9.0)))}
+for n_ in [int(v) for v in os.environ.get('E2_SEED', '').split(',') if v.strip()]:   # 20 Nov: SEEDED READERS - n labelled records from training documents
+    sd = np.where(tr)[0][np.random.RandomState(0).permutation(int(tr.sum()))[:n_]]; W_ = float(os.environ.get('E2_W', 3))   # (weight E2_W) + the label-free
+    c2 = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); c2.fit(X[sd], y[sd]); POL[f'SEED {n_} ONLY'] = c2.decision_function(X)   # pseudo-labels
+    c2 = LogisticRegression(C=1.0, max_iter=300, class_weight='balanced'); c2.fit(X[np.r_[sd, ps, ng]], np.r_[y[sd], np.ones(len(ps)), np.zeros(len(ng))],
+                                                                                 sample_weight=np.r_[np.full(len(sd), W_), np.ones(len(ps) + len(ng))]); POL[f'SEED {n_} + LABEL-FREE'] = c2.decision_function(X)
 P(f"{ND} documents, {len(R)} records (premises labelled {y.mean():.3f}); reader trained on {len(ps)} / {len(ng)} pseudo-labels  ({time.time() - T0:.0f}s)")
 for k, s in POL.items():
     row = []

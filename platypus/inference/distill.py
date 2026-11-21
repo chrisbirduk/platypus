@@ -1617,9 +1617,18 @@ def _dw_chain_conf(model, S_slot, T9, H9, vis):
         th = float(np.quantile([x[2] for x in rt], 0.95)); ps = lambda L: [x for x in L if x[2] <= th]
         gt = (f" || CONFIDENCE GATE (bits/byte <= {th:.2f}, keeps 95% of taught): held back answered {len(ps(rh))}/{len(rh)} right {m_(ps(rh), 1)} | "
               f"novel made-up chains passing {np.mean([x[0] and x[2] <= th for x in rn]):.2f}")
+    gq = ''
+    try:                                                                       # 19 Nov kra13 READOUT: composite answers THROUGH THE MEMORY'S EXACT-NAME GATE - the answer is
+        WRg = model.__dict__.get('_rm_written') or {}; ws9 = {(A, r) for (r, A, C) in WRg}   #   given only when (subject, relation) has a written composite; a novel subject
+        gate = lambda e, novel=False: ((e['A'][::-1].title() if novel else e['A']), e['r']) in ws9   #   never has one, so the trunk's made-up chain is never shown
+        nvg = [gate(e, True) for e in (T9 + H9)[:60]]; tg_ = [gate(e) for e in T9[:60]]; hg_ = [gate(e) for e in H9[:60]]
+        gq = (f" || THROUGH THE MEMORY'S EXACT-NAME GATE: novel subjects answered {np.mean(nvg) if nvg else float('nan'):.2f} (made up after the gate: "
+              f"{np.mean([g and x[0] for g, x in zip(nvg, rn)]) if nvg and rn else float('nan'):.2f}) | taught answered {np.mean(tg_) if tg_ else float('nan'):.2f} | held back answered "
+              f"from the memory {np.mean(hg_) if hg_ else float('nan'):.2f} (the written composite; its precision is the writes' precision)")
+    except Exception as e9: gq = f" || GATE readout unavailable ({type(e9).__name__})"
     print(f"  [CHAIN FORM, MADE-UP CHAINS | visit {vis + 1}] the trunk's own answer (store and memory off): TAUGHT {len(rt)} well-formed chain {m_(rt, 0)}, right {m_(rt, 1)} | "
           f"HELD BACK {len(rh)} well-formed {m_(rh, 0)}, right {m_(rh, 1)} | NOVEL subjects (never read) {len(rn)} given a well-formed chain {m_(rn, 0)} (made up) | "
-          f"its confidence separates known from novel AUC {auc:.2f} (synthetic world: 0.93-0.95 made up after chain teaching; AUC 0.83-0.86)" + gt, flush=True)
+          f"its confidence separates known from novel AUC {auc:.2f} (synthetic world: 0.93-0.95 made up after chain teaching; AUC 0.83-0.86)" + gt + gq, flush=True)
 
 
 @torch.no_grad()
@@ -2035,6 +2044,15 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 from platypus.inference.premises import _PM as _PM9, _RTI_R as _RR9
                 kk9 = {repr(('fact', A9, _RR9, C9)) for (A9, C9) in (_PM9.get('rti') or {})}
                 rtir9 = [rw for rw in rows if rw[3] in kk9]
+                if int(getattr(cfg, 'inf_rti_chain', 0)):                      # 20 Nov kra16 CHAIN FORM: every dose row also given after its inference's premises
+                    ch9 = {repr(('fact', A9, _RR9, C9)): w9['chain'] for (A9, C9), w9 in (_PM9.get('rti') or {}).items() if w9.get('chain')}   #   (premises.py), so
+                    chr9 = []                                                  #   about half the dose rows sampled are chains: '<A-B>. <B-C>. <question> <answer>'
+                    for rw in rtir9:
+                        if rw[3] in ch9:
+                            rm9 = L09 - 1 - len(rw[1]) - 1; pb9 = (ch9[rw[3]] + ' ').encode('latin-1', 'replace') + rw[0]
+                            if rm9 >= len(rw[0]) + 8: chr9.append((pb9[-rm9:],) + tuple(rw[1:]))
+                    print(f"  [CHAIN FORM DOSE | visit {vis + 1}] {len(chr9)} chain rows (premises before the question) for {len(ch9)} inferences with premises, "
+                          f"added to {len(rtir9)} plain dose rows", flush=True); rtir9 = rtir9 + chr9
             except Exception: _fail('inference.distill:rti_rows')
             print(f"  [REAL-TEXT INFERENCE DOSE | visit {vis + 1}] next visit: {len(rtir9)} rows of taught real-text inferences, {int(getattr(cfg, 'inf_rti_rows', 0))} of them "
                   f"added to every question-row step (on top of the pool's own rows)", flush=True)
@@ -2184,6 +2202,9 @@ def distill_wake_loss(model, cfg):
                 if c2:                                                         # 14 Nov DOSE SCALING (inf_rti_rows_ref > 0): the loss is a mean over the rows'
                     l2 = t2 / c2; rf2 = int(getattr(cfg, 'inf_rti_rows_ref', 0))   #   answer bytes, so more rows a step would push each row less; weighting
                     w2 = (len(it2) / rf2) if rf2 > 0 else 1.0                      #   by rows / ref keeps each row's push at the ref's (cg27a_rcode4: 16 rows
+                    dc2 = float(getattr(cfg, 'inf_distill_wake_decay', 1.0))       # 20 Nov kra15 (inf_rti_nodecay): the real-text inferences' rows are NOT
+                    if int(getattr(cfg, 'inf_rti_nodecay', 0)) and dc2 < 1.0:      #   scaled down by the visit decay of the question rows (the stand-in: decay
+                        w2 /= max(float(getattr(cfg, 'inf_distill_wake_decay_min', 0.0)), dc2 ** max(0, int(D.get('vis9', 0)) - int(getattr(cfg, 'inf_distill_wake_decay_from', 2))), 1e-6)   #   0.5 a round: taught 0.724 -> 0.316)
                     loss = loss + w2 * l2; D['rtil'].append(float(l2.detach()))    #   at weight 1 halved it - each inference learned more slowly)
             except Exception as e2:
                 _fail('inference.distill:rti_dose')
