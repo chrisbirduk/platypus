@@ -5752,3 +5752,10 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Route B over kra23, held back (all / pure): visit 4 0.17-0.21 / 0.08, 5 0.19-0.20 / 0.00, 6 0.17-0.18 / 0.00, 7 0.11-0.12 / 0.06, 8 0.12 / 0.02. Composition over new subjects at about 0.12-0.20; through new bridges at about chance.
 - Confirmed 639 so far at right 0.82 (kra22 identical). Taught inferences 0.55 open at the even visit. Facts: probe 0.81, ledger 0.75. Gate: never-read calibration 0.58 / never-read 0.07; keep-75% 0.61 / 0.08. Bits on read domains 1.8125 (best yet; kra22 1.8250). No Traceback.
 - **150 countries (CS_NC 150, clean, one taught person per city, 100 taught): never taught, NEW bridge (n 66) B / C 0.95 / 0.92 at 300 steps, 0.94 / 0.94 at 3,000; seen bridge 0.88 / 0.88.** A many-valued second hop is no obstacle. What remains different from the rule world is premise strength (synthetic: the city's country recalled 1.00; rule world: about 0.5-0.7). **kra25 plants the rule world's premises three times as often (inf_rule_world_premk 3).**
+
+### cg27a_kra24 GPU, visits 5-6 (21 Nov 17:25)
+- **Pooled gate (keep-75% over 3 sleeps): right overall 0.64 / 0.62, right when answered 1.00, never-read given a name 0.03 / 0.02** (visit 4: 0.55 / 0.03). One-sleep keep-75% beside it: 0.64 / 0.03 and 0.58 / 0.02.
+- Facts: probe 0.94 / 0.88, ledger 0.89 / 0.89. Taught inferences visit 5: 0.96 vs held back 0.05.
+- Route D (explicit two steps, store off): first step B 0.80, two-step C **0.74**, pure families 0.71 (kra23 at visit 5-6: 0.47-0.60) - the 12 question rows a step raise premise recall. Route J held back: pure families 0.00 (n 25).
+- Bits on read domains 1.8496 at visit 5 (kra22 1.8614). No Traceback.
+- kra25 local check: visits 1-2 run without errors with the premises planted three times (domain 0: 726 rule-world facts in 25,290 planted sentences).
