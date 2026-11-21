@@ -401,6 +401,10 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
             un2 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]   # share gq of the known facts it answered
             kc2 = np.array([c for ok_, c, rf in kr2 if ok_ and not rf])       #   right) and APPLIED to this sleep's new questions: out of sample
             tp = model.__dict__.get('_gate_t'); tn = float(np.quantile(kc2, 1 - gq)) if len(kc2) >= 4 else tp
+            gpl = int(getattr(cfg, 'inf_distill_gate_pool', 0))                # 21 Nov kra24 POOLED CALIBRATION: keep-gq over the known-right confidences of the last
+            if gpl > 0 and len(kc2):                                           #   gpl sleeps together (one sleep has about 40 right answers: t swung 0.85 -> 1.00)
+                pool9 = model.__dict__.setdefault('_gate_pool', []); pool9.append(kc2.copy()); del pool9[:-gpl]
+                cc9 = np.concatenate(pool9); tn = float(np.quantile(cc9, 1 - gq)) if len(cc9) >= 4 else tp
             glk = float(getattr(cfg, 'inf_distill_gate_leak', 0.0))           # 21 Nov kra22 (decision rule): calibrate t on the NEVER-READ questions instead - the
             if glk > 0 and un2:                                                #   lowest t at which at most glk of them still get a stored name (kra21: the 75% rule
                 ts_ = sorted({c for st, c, rf in un2} | {1.01})                #   swung 0.59 -> 0.36 -> 0.61 right overall and let 0.11 of never-read through at t 0.85)

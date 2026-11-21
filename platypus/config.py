@@ -603,6 +603,7 @@ class Config:
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
     inf_distill_false_probe_n=64    #     questions per group (fresh names / missing relations / known facts; 32 before 12 Nov, 23:00); + the ABSTENTION readout
                                     #     (risk-coverage of the trunk's confidence, explicit refusals)
+    inf_distill_gate_pool=0         #     kra24: the gate's keep-gq threshold calibrated on the last N sleeps' right answers together (0 = one sleep)
     inf_distill_gate_leak=0.0       #     kra22: if > 0 the GATED ANSWERS threshold is calibrated so at most this share of never-read questions get a stored name
     inf_distill_gate_q2=0.0         #     kra22: a SECOND calibrated gate printed beside the first (0 = off); kra22 sets q 0.9 and q2 0.75 for continuity
     inf_distill_gate_q=0.75         #     GATED ANSWERS readout: the trunk answers only above the confidence threshold that kept this share of its right answers
