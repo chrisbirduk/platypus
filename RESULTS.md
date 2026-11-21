@@ -5597,3 +5597,26 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - **Taught open recall dips again:** right 0.48 / wrong 0.35 (rank 0.89 / 0.57); written at visit 4: 0.95 -> 0.62; visit 2: 0.75 -> 0.64. Dips at visits 6 and 8 (Github, USPTO), recovery at 7. kra22's [TAUGHT RECALL BREAKDOWN] will split it.
 - **Gated answers:** the keep-75% rule at t 0.85: right overall 0.61, right when answered 0.93, but NEVER-READ given a stored name **0.11** (smoothed 0.56 / 0.09). The rule trades coverage for false answers from sleep to sleep. **kra22 changes the gate to calibrate on never-read questions** (inf_distill_gate_leak 0.02: the lowest threshold at which at most 2% of the previous sleep's never-read questions get a name), the keep-75% rule printed beside it; the keep-90% plan is dropped (it would let more never-read through).
 - Facts: probe 0.81, ledger ever taught 0.82, 4+ visits 0.84, control 0.38. Bits on read domains **1.8292** (best of the run). No Traceback.
+
+### Signals test: teach-gates on the confirmed set (21 Nov 08:55; tools/select_min.py part A, distant_50k, 2,400 code writes from 20k documents, top-quarter confirmation on the next 10k: 306 confirmed, right 0.768, 71 wrong)
+Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
+| teach only if | taught (right) | wrong removed | right lost | right lost per wrong |
+|---|---|---|---|---|
+| all confirmed (kra21) | 306 (0.768) | - | - | - |
+| **2+ documents confirm OR a second look (top-half record in the next 10k)** | 220 (**0.823**) | 0.45 | 0.23 | **1.69** |
+| second look: any relational record again | 190 (0.821) | 0.52 | 0.34 | 2.14 |
+| second look: top-quarter record again | 142 (0.852) | 0.70 | 0.49 | 2.28 |
+| 2+ distinct documents confirm | 159 (0.824) | 0.61 | 0.44 | 2.42 |
+| best record in the top tenth | 139 (0.827) | 0.66 | 0.51 | 2.55 |
+| 2+ records rated top quarter | 81 (0.889) | 0.87 | 0.69 | 2.63 |
+| VERBATIM: a confirming record in the inference's own wording | 57 (0.772) | 0.82 | 0.81 | 3.29 (random) |
+| NOT contradicted later in own wording (another tail) | 161 (0.733) | 0.39 | 0.50 | **4.18 (worse than random)** |
+- **Independent evidence helps; exact wording and contradiction do not.** A second document or a later second look removes wrong inferences about twice as efficiently as random (1.7-2.4 right lost per wrong vs 3.3). The best rule keeps 0.82 precision at 77% of the right inferences.
+- Own-wording ('verbatim') confirmation is random here: the typed wording is the commonest wording of the type pair, rarely the record's own. Contradiction by another tail is WORSE than random: prominent (often right) subjects simply get more records naming other tails. The one-answer filter was degenerate in this run (heads with one record counted as one-answer); fixed, to re-run with part B.
+- No rule loses fewer right than wrong ones: document signals alone cannot make retraction cheap.
+
+### Hand audit of 'wrong' confirmed inferences (21 Nov 09:00; Claude's judgement from general knowledge, NOT gold; 60 labelled wrong, 30 labelled right, sampled from the 306 above)
+- **Labelled WRONG (60): 26 true (43%), 9 ambiguous (15%), 25 false (42%).** True but unlabelled: 'AIR Studios in London', 'British Museum in London', 'Henry VIII of England', 'Memphis in Tennessee', 'Cleveland in Ohio', 'Times Square in New York City', 'Oxford University in England', 'Portland in Oregon', ... Distant labels miss them.
+- **Of the 25 false, 13 have a malformed entity** (a number, a year or a fragment as A or C: '12 in US', 'Telugu in 2015', 'CDP in Washington', '1893 ) was Chicago'); the other 12 are real confusions ('South America in Mexico', 'Namibia in South Africa', 'Northern Ireland in England', 'Shenzhen in Hong Kong').
+- Labelled RIGHT (30): 29 true, 1 questionable.
+- **So the true false-memory rate is about half the labelled one:** GPU confirmed labelled wrong 0.18-0.21 -> truly false about 0.08-0.12 (0.42-0.57 of labelled wrong). Half of those are extraction errors that a name-shape check (no numbers, years or fragments as names) would remove before writing.
