@@ -5780,3 +5780,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - **kra24 meets the facts and gated-answers goals through visit 8** (one seed).
 - **Re-run in the arrow form ('A in B > C.', without P150; 21 Nov 19:00):** premises recalled 1.00. DIRECT never taught 0.050 / 0.075 (C first among 10, steps 1,500 / 3,000; chance 0.10). **BRIDGE never taught: C first 0.175 / 0.150, C exact 0.100 / 0.050, own bridge right 0.250 / 0.175, chain format 0.300 / 0.275** (n 117); taught 0.92-0.98.
 - **A weak positive with a clean reader:** bridge teaching beats direct teaching on chains through bridges never in a taught chain by about +0.10 (about 2-3 SE), but far below the synthetic world (0.73-0.94): the stand-in writes the chain form for under a third of new subjects and often answers in a single hop. Real containment is many-levelled (city in region in country in continent), so 'in' has several right answers.
+
+### cg27a_kra25 GPU, visits 1-5 (21 Nov 19:50; premises planted three times, inf_rule_world_premk 3)
+- **Premise recall rises:** route D premises, first step B 0.59 / 0.63 / 0.69 / **0.86** at visits 2-5 (kra24 at visit 5: 0.80; kra23: 0.50); explicit two steps 0.81, **pure families 0.80** (kra24 0.71, kra23 0.42).
+- **But the trunk's own chain does not use them for new bridges:** pure families, never written: chain format 0.89, **bridge right 0.22**, C right **0.00** (n 9); route J pure held back 0.00 (n 24). Non-pure held back: bridge right 0.54, C right 0.15 (n 13).
+- So premise strength is not the remaining gap: with premises recalled at 0.86 and the two hops answered 0.80 when asked one by one, the chain's FIRST hop is wrong for pure-family leaves (0.22) - asked 'X is a grandchild of ', the trunk does not retrieve X's parent the way it does when asked 'X is a child of '.
+- Cost: bits on read domains 1.8516 at visit 5 (kra24 1.8496); facts probe 0.97, ledger 0.90; gate 0.56 / never-read 0.02. No Traceback.
