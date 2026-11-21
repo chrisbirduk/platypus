@@ -27,6 +27,23 @@ need = {frozenset((a, b)) for (a, c), w in W for b in w['prem']} | {frozenset((b
 PW = collections.defaultdict(collections.Counter)
 for r in RD:
     if 1 <= r[5] <= 8 and frozenset((r[1], r[2])) in need and any(ch.isalpha() for ch in r[3]): PW[frozenset((r[1], r[2]))][(r[1], pm._rnorm(r[3]), r[2])] += 1
+SRC = os.environ.get('BT_SOURCE', 'writes')                                   # 21 Nov route A: 'records' - containment chains straight from the RECORDS read
+CW_ = {'in', 'is in', 'located in', 'is located in', 'part of', 'is part of', 'city in', 'town in', 'village in', 'region of', 'province of', 'capital of', 'state of'}
+if SRC == 'records':
+    HT = collections.defaultdict(collections.Counter); ST = set()
+    for r in RD:
+        if 1 <= r[5] <= 8 and r[1] != r[2]:
+            ST.add(frozenset((r[1], r[2])))
+            w = pm._rnorm(r[3])
+            if w in CW_: HT[r[1]][(w, r[2])] += 1
+    RCL = []
+    for A_, c in HT.items():
+        (w1, B_), _ = c.most_common(1)[0]
+        if B_ not in HT: continue
+        (w2, C_), _ = HT[B_].most_common(1)[0]
+        if C_ in (A_, B_): continue
+        if len(f"Q: {A_} in ? {A_} {w1} {B_}. {B_} {w2} {C_}. So {A_} in {C_}.") >= 124: continue
+        RCL.append((A_, 'in', C_, frozenset((A_, C_)) not in ST, (A_, w1, B_), (B_, w2, C_)))   # 'truth' field: the conclusion was NEVER stated in a record
 del R, RD, pm._PM['R']
 def prem(X, Y):
     c = PW.get(frozenset((X, Y)))
@@ -45,6 +62,7 @@ def wclean(w):                                                                 #
 CONTAIN = {'in', 'is in', 'located in', 'is located in', 'of', 'part of', 'is part of', 'capital of', 'city in', 'town in', 'village in', 'region of', 'province of', 'state of'}
 if FLT == 'clean': CL = [c for c in CL if wclean(c[4][1]) and wclean(c[5][1])]
 elif FLT == 'contain': CL = [c for c in CL if c[4][1] in CONTAIN and c[5][1] in CONTAIN and c[1] in ('in', 'of')]
+if SRC == 'records': CL = RCL
 CL = [CL[j] for j in np.random.RandomState(7).permutation(len(CL))]
 BR = sorted({c[4][2] for c in CL}); rb = np.random.RandomState(5); rb.shuffle(BR); BTEST = set(BR[:int(len(BR) * 0.3)])
 NTR = int(os.environ.get('BT_NTR', 400)); TR = [c for c in CL if c[4][2] not in BTEST][:NTR]; TE = [c for c in CL if c[4][2] in BTEST][:200]
