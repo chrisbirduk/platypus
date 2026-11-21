@@ -1707,13 +1707,15 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
         return out
     was = model.training; model.eval()
     try:
-        pl = run([x for x in W['planted'] if x[2] in ('grand', 'skip')]); hp = [x for x in W['held'] if x[3] in pure]; hn = [x for x in W['held'] if x[3] not in pure]
+        WR9 = model.__dict__.get('_rm_written') or {}; wr9 = {A9 for (r9, A9, C9) in WR9}   # 21 Nov: composites route J WROTE are taught in chain form (unless held
+        pl = run([x for x in W['planted'] if x[2] in ('grand', 'skip')])                     #   back as its control), so they are excluded: NEVER WRITTEN = clean
+        hp = [x for x in W['held'] if x[3] in pure and x[3] not in wr9]; hn = [x for x in W['held'] if x[3] not in pure and x[3] not in wr9]
         rp, rn = run(hp), run(hn)
     finally: model.train(was)
     f = lambda L: (f"{len(L)}: chain format {np.mean([x[0] for x in L]):.2f}, bridge right {np.mean([x[1] for x in L]):.2f}, C right {np.mean([x[2] for x in L]):.2f} "
                    f"(C first, direct {np.mean([x[3] for x in L]):.2f})") if L else "0"
     print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
-          f"{f(pl)} || HELD BACK, NEVER PLANTED {f(rn)} || PURE FAMILIES (no composite planted in the family) {f(rp)}", flush=True)
+          f"{f(pl)} || HELD BACK, NEVER PLANTED, NEVER WRITTEN BY ROUTE J {f(rn)} || PURE FAMILIES, NEVER WRITTEN {f(rp)}", flush=True)
 
 
 def _dw_greedy(model, prompt, sl, n=24):

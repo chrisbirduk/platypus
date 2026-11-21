@@ -5693,3 +5693,14 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Facts: probe **0.68** (newly taught; first time below 0.75), ledger 0.81 (4+ visits 0.86). Bits on read domains 1.8250 (kra21 1.8292). No Traceback.
 - kra23 local check, visits 1-2: no errors; [RULE WORLD, THE TRUNK'S OWN CHAIN] prints (0.00 everywhere at 150 local steps, as expected); the gate floor was skipped when fewer than 4 right answers existed (t 0.09 at visit 2) - now floored at 0.9 then.
 - kra23 local check, visits 3-4 (stopped at visit 4 to free the CPU; the GPU run is under way): no errors; every new readout prints - SELF-SUPPORT JUDGE (first values at visit 4: just confirmed margin AUC 0.660 on n 15, trained 0.550), AUDIT SAMPLE (16 printed), the floored gate, and RULE WORLD, THE TRUNK'S OWN CHAIN (0.00 everywhere at 150 local steps a visit: the local harness does not learn the planted facts).
+
+### cg27a_kra23 GPU, visits 1-4 (21 Nov 13:35): route B - the trunk writes chains for composites never planted; first clean sign of composition
+- Reader fix works: the relational module finds both rules from visit 1, 0 false; 125 of 128 planted rule-world facts recorded at visit 1.
+- **[RULE WORLD, THE TRUNK'S OWN CHAIN]** (greedy, store and memory off, parsed 'B > C'), visits 2 / 3 / 4:
+  - PLANTED (read in chain form): chain format 0.46 / 0.29 / 0.31, C right 0.46 / 0.71 / 0.62 (n 13 / 17 / 26).
+  - HELD BACK, never planted: chain format 0.27 / 0.37 / **0.77**, bridge right 0.09 / 0.16 / 0.37, C right 0.09 / 0.05 / **0.30** (n 11 / 19 / 30; direct 0.00).
+  - PURE FAMILIES: chain format 0.17 / 0.30 / **0.71**, bridge right 0.08 / 0.20 / 0.36, C right 0.00 / 0.00 / **0.29** (n 12 / 20 / 28; direct 0.00).
+  - **CONTAMINATED:** route J also writes never-planted composites (76 by visit 3, 128 by visit 4; 68 taught in chain form), and this readout did not exclude them. Fixed for kra24 (NEVER WRITTEN BY ROUTE J).
+- **The clean number - route J's written composites HELD BACK as its control (never planted, never taught):** recalled from the trunk at visit 4 **0.17-0.21 (n 24)** (edits subtracted 0.17), greedy C right 2 of 24; pure families 0.08 (n 12); taught 0.98-1.00. kra21 / kra22: 0.00 held back at every visit. A first, small sign that the trunk composes from its own chain; n is small and it is one visit.
+- Route D (explicit two steps, store off): two-step C 0.36 / 0.47 vs direct 0.03 / 0.06. Route A (memory) 0.71-0.82.
+- Facts: probe 0.95 / 0.97, ledger 0.88 / 0.92. Gate visit 2 t 0.09 (the floor needs 4 right answers; patched 5a63346 after this run started), visit 3 keep-75% 0.42 / never-read 0.06. Bits 2.0216 / 2.0077 (kra22 2.0357 / 2.0106). No Traceback.
