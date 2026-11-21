@@ -5620,3 +5620,21 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - **Of the 25 false, 13 have a malformed entity** (a number, a year or a fragment as A or C: '12 in US', 'Telugu in 2015', 'CDP in Washington', '1893 ) was Chicago'); the other 12 are real confusions ('South America in Mexico', 'Namibia in South Africa', 'Northern Ireland in England', 'Shenzhen in Hong Kong').
 - Labelled RIGHT (30): 29 true, 1 questionable.
 - **So the true false-memory rate is about half the labelled one:** GPU confirmed labelled wrong 0.18-0.21 -> truly false about 0.08-0.12 (0.42-0.57 of labelled wrong). Half of those are extraction errors that a name-shape check (no numbers, years or fragments as names) would remove before writing.
+
+### Correction test: erase, suppress or replace (21 Nov 09:20; tools/correct_min.py, A6 stand-in, 150 made-up one-answer facts taught WRONG (Z), 150 bystanders right)
+| arm (600 steps) | false Z first, right after (test / new wording) | after 400 steps of other training | true Y first (after / later) | savings: Z re-taught 30 steps, corrected vs fresh |
+|---|---|---|---|---|
+| taught (start) | 0.55 / 0.63 | - | 0.08 | - |
+| NONE (stop teaching) | 0.13 / 0.15 | 0.17 / 0.18 | - | 0.33 vs 0.27 |
+| UNLIKE (kra21) | **0.07 / 0.08** | **0.11 / 0.08** | - | 0.27 vs 0.25 |
+| REPLACE (teach Y) | 0.27 / 0.21 | 0.15 / 0.17 | 0.56 / 0.26 | 0.27 vs 0.25 |
+| NOTREC ('nowhere on record') | 0.23 / 0.25 | 0.15 / 0.16 | - | 0.34 vs 0.29 |
+| REPLACE + UNLIKE | **0.05 / 0.05** | 0.11 / 0.13 | 0.44 / 0.25 | 0.27 vs 0.28 |
+- **Unlikelihood suppresses best** (with or without the replacement); **replacing alone keeps the false answer HIGHER right after** (0.27 vs 0.13 for doing nothing): rehearsing the question keeps both answers active. The misinformation finding (a retraction needs an alternative) does not carry over to this trunk. Savings are small everywhere (+0.00 to +0.06): no strong hidden suppression. Caveat: this stand-in forgets unrehearsed facts fast (NONE 0.55 -> 0.13); Platypus replays, so stopping alone would help less there.
+- Decision: unlikelihood rows stay the correction tool; the open problem is only WHICH inferences to correct.
+
+### kra22 selection rules checked (21 Nov 09:25; tools/select_min.py part A, 307 confirmed at right 0.769)
+- **NAME SHAPE (no digits, brackets or quotes in A or C): wrong removed 0.20, right lost 0.01 - 0.21 right lost per wrong (random 3.3).**
+- 2+ distinct documents (confirm + delay windows): 0.41 / 0.22 (1.76). BOTH: taught 217, right **0.839** (182 right of 236), 1.50 right lost per wrong.
+- One-answer wordings: none of the typed wordings ('in', 'of', ...) has heads with one tail 60%+ of the time (fixed measure), so contradiction cannot be restricted to one-answer relations with these wordings; it stays off.
+- **kra22 takes both: inf_rti_nameshape 1, inf_rti_conf_docs 2** (with retraction off and the never-read-calibrated gate).
