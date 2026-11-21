@@ -29,13 +29,15 @@ for r in RD:
     if 1 <= r[5] <= 8 and frozenset((r[1], r[2])) in need and any(ch.isalpha() for ch in r[3]): PW[frozenset((r[1], r[2]))][(r[1], pm._rnorm(r[3]), r[2])] += 1
 SRC = os.environ.get('BT_SOURCE', 'writes')                                   # 21 Nov route A: 'records' - containment chains straight from the RECORDS read
 CW_ = {'in', 'is in', 'located in', 'is located in', 'part of', 'is part of', 'city in', 'town in', 'village in', 'region of', 'province of', 'capital of', 'state of'}
+ORC = set(x for x in os.environ.get('BT_ORACLE', '').split(',') if x)          # 21 Nov: an ORACLE reader - only records whose pair carries one of these gold relations
+PRD_ = pm._PM.get('PRD') or {}                                                #   (Wikidata ids, e.g. P131,P17,P30): an upper bound for route A with a clean reader
 if SRC == 'records':
     HT = collections.defaultdict(collections.Counter); ST = set()
     for r in RD:
         if 1 <= r[5] <= 8 and r[1] != r[2]:
             ST.add(frozenset((r[1], r[2])))
             w = pm._rnorm(r[3])
-            if w in CW_: HT[r[1]][(w, r[2])] += 1
+            if w in CW_ and (not ORC or (PRD_.get((r[1], r[2])) or set()) & ORC): HT[r[1]][(w, r[2])] += 1
     RCL = []
     for A_, c in HT.items():
         (w1, B_), _ = c.most_common(1)[0]
