@@ -959,22 +959,36 @@ def _rret_judge(cfg, RD, ndv_, vis):
     W = _PM.get('rti') or {}
     if int(getattr(cfg, 'inf_rti_tentative', 0)):                              # 19 Nov kra12 CONFIRM, CONSOLIDATE, FADE (the user's design; offline tools/confirm_reader.py:
         TN = [k for k, w in W.items() if w.get('tent') and w['vis'] < vis and w.get('ndv', ndv_) < ndv_]   #   relationally confirmed pairs right 0.60-0.72 vs 0.33 tentative;
-        if not TN:                                                             #   faded pairs are NOT false - 0.33 - so fading removes, never teaches against)
-            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
-        want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))
+        rcv = int(getattr(cfg, 'inf_rti_reconf', 0))                           # 21 Nov kra21 RE-CONFIRMATION (inf_rti_reconf = R visits; MODEL CHANGE when > 0): a confirmed
+        RC = [k for k, w in W.items() if rcv > 0 and w.get('state') == 'confirmed' and not w.get('ret') and vis - int(w.get('conf', vis)) >= rcv]   #   inference whose pair has
+        if not TN and not RC:                                                  #   NO relational record in the documents read since its confirmation, R visits on, is RETRACTED:
+            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return   # no longer taught + unlikelihood rows
+        want = {frozenset(k): k for k in TN}; rel9 = collections.Counter(); any9 = collections.Counter(); cm9 = int(getattr(cfg, 'inf_rti_conf_min', 1))   #   (inf_rret). Offline
+        wantR = {frozenset(k): k for k in RC}; rec9 = collections.Counter()      #   tools/retract_min.py: removes 0.35-0.38 of the wrong confirmed, 0.19 of the right
         rds8 = _PM.get('rdscore'); rt8 = None                                  # 20 Nov kra17 RATED CONFIRMATION (inf_rti_conf_rated): only a record the seeded reader
         if int(getattr(cfg, 'inf_rti_conf_rated', 0)):                         #   puts in its top half confirms (offline tools/confirm_min.py, 2,400 writes, 30k
-            if rds8 is not None and len(rds8) == len(RD): rt8 = float(np.median(rds8))   # documents read after: right 0.604 -> 0.659, right ones kept 0.62 -> 0.56)
+            if rds8 is not None and len(rds8) == len(RD): rt8 = float(np.quantile(rds8, float(getattr(cfg, 'inf_rti_conf_q', 0.5))))   # documents read after: right 0.604 -> 0.659,
             else: print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] rated confirmation unavailable (reader scores {None if rds8 is None else len(rds8)} vs {len(RD)} records): any relational record confirms", flush=True)
-        for i8, r in enumerate(RD):
+        for i8, r in enumerate(RD):                                            #   right ones kept 0.62 -> 0.56; kra21: inf_rti_conf_q 0.75 = the top quarter, 0.708 -> 0.765)
             fk = frozenset((r[1], r[2]))
             if fk in want and r[0] >= W[want[fk]].get('ndv', 0):
                 any9[fk] += 1
                 if 1 <= r[5] <= 8 and not _rret_listlike(r) and (rt8 is None or rds8[i8] >= rt8): rel9[fk] += 1   #   a RELATIONAL record of the pair in a document read since the write
+            if fk in wantR and r[0] >= W[wantR[fk]].get('ndc', ndv_) and 1 <= r[5] <= 8 and not _rret_listlike(r): rec9[fk] += 1   # since its confirmation (any rating)
+        rt9 = []
+        for k in RC:
+            if rec9[frozenset(k)] == 0: W[k].update(state='retracted', flag=True, ret=True, retv=vis); rt9.append(W[k]['truth'])
+        if rcv > 0:
+            print(f"  [RE-CONFIRMATION | visit {vis + 1}] MODEL CHANGE: {len(RC)} inferences confirmed {rcv}+ visits ago checked for a relational record of the pair since: "
+                  f"RETRACTED (none) {len(rt9)} (right {np.mean([bool(x) for x in rt9]) if rt9 else float('nan'):.2f}) | re-confirmed {len(RC) - len(rt9)} "
+                  f"(right {np.mean([bool(W[k]['truth']) for k in RC if not W[k].get('ret')]) if len(RC) > len(rt9) else float('nan'):.2f}) || all retracted so far "
+                  f"{sum(1 for w in W.values() if w.get('state') == 'retracted')}", flush=True)
+        if not TN:
+            print(f"  [CONFIRM AND CONSOLIDATE | visit {vis + 1}] nothing tentative to judge ({len(W)} written)", flush=True); return
         fv = int(getattr(cfg, 'inf_rti_fade', 4)); cf9, fd9, st9 = [], [], []
         for k in TN:
             w = W[k]; fk = frozenset(k)
-            if rel9[fk] >= cm9: w.update(tent=False, conf=vis, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
+            if rel9[fk] >= cm9: w.update(tent=False, conf=vis, ndc=ndv_, state='confirmed', judged=vis, flag=False, ret=False); cf9.append(w['truth'])
             elif vis - w['vis'] >= fv: w.update(tent=False, faded=vis, state='faded', judged=vis, flag=True, ret=False); fd9.append(w['truth'])
             else: st9.append(w['truth'])
         rr = lambda L: f"{len(L)} (right {np.mean([bool(x) for x in L]):.2f})" if L else "0"

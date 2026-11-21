@@ -5495,3 +5495,23 @@ HOW MANY LABELS (20k documents, about k labelled coded VAL candidates): logistic
 - Visit 6 so far: facts just taught 0.94 (control 0.29), ever taught 0.83 (kra18 0.81); gated answers 0.44 (kra18 0.30), never-read 0.01. [RETRACTION] 0 retracted, 0 unlikelihood rows at every visit; FLAGGED, KEPT none.
 - Code: with inf_rti_tentative on, premises' judge returns after the confirm/fade block, before the retraction trigger (the docs / rel / typed-confirmation score and W[k]['ret']). A confirmed inference is never re-judged: once taught it stays, right or wrong. Faded ones are flagged but were never taught. So the unlikelihood rows (inf_rret) have nothing to act on, and kra20's taught wrong inferences (recalled 0.95) have no path out.
 - For kra21: a retraction path for CONFIRMED inferences (e.g. the existing typed-confirmation score _cc9: head-first records since the write naming another tail are contradictions; contradictions > confirmations -> flag and retract with the unlikelihood rows), alongside a stricter confirmation.
+
+### Confirm, teach, retract - offline (21 Nov 00:40; tools/retract_min.py, distant_50k, 2,400 code writes from 40% of the documents, confirmation on the next 20%, retraction on the rest)
+| confirmation rule | confirmed | right | right writes kept |
+|---|---|---|---|
+| any relational record (kra14) | 602 | 0.654 | 0.39 |
+| 1 record rated top half (kra17-kra20) | 473 | 0.708 | 0.33 |
+| **1 record rated top quarter** | 307 | **0.766** | 0.23 |
+| 1 record rated top tenth | 139 | 0.827 | 0.11 |
+| 2 records rated top half | 166 | 0.771 | 0.13 |
+| RETRACTION of confirmed inferences (on top of top-half / top-quarter confirmation) | wrong removed | right lost | kept right |
+| NO relational record of the pair in the later 40% | 0.38 / 0.35 | 0.19 / 0.19 | 0.759 / 0.803 |
+| ... in the later 30% | 0.42 / 0.39 | 0.26 / 0.25 | 0.756 / 0.800 |
+| **... in the later 20% (about 2 visits)** | 0.55 / **0.53** | 0.36 / **0.34** | 0.773 / **0.821** |
+| contradiction, own typed wording (1, > 2x confirmations) | 0.19 / 0.19 | 0.09 / 0.09 | 0.728 / 0.786 |
+| contradiction, any wording | 0.67-0.95 | 0.55-0.87 | near random |
+- RE-CONFIRMATION (the pair recurs relationally after confirmation) is the useful retraction signal; contradiction by another tail is near random in any wording and small in the typed wording. Top-quarter confirmation + re-confirmation within about 2 visits: kept right 0.708 -> 0.821 offline, at about half the right inferences.
+
+### cg27a_kra21 prepared (21 Nov 00:50)
+- kra20 + inf_rti_conf_q 0.75 + inf_rti_reconf 2 (new option: [RE-CONFIRMATION] retracts confirmed inferences with no relational record of the pair since confirmation, 2 visits on; retracted ones leave the pool and get unlikelihood rows, inf_rret 1). Unit test: the unrecorded pair retracted, the recorded one kept, the top-quarter record confirms.
+- Expected on the GPU: confirmed right about 0.80-0.82 -> about 0.88-0.90 by visit 8; taught WRONG recalled falls after retraction at visits 6 / 8 / 10 ([RETRACTION RECALL]); about half as many right inferences taught.

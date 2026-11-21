@@ -758,6 +758,9 @@ class Config:
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
     inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm
     inf_rti_conf_rated=0            #   20 Nov kra17 (MODEL CHANGE when 1): only a record the seeded reader puts in its top half confirms a tentative inference
+    inf_rti_conf_q=0.5              #   21 Nov kra21: the reader-score quantile a confirming record must reach (0.5 = top half, kra17; 0.75 = top quarter: offline right 0.708 -> 0.765, right kept 0.33 -> 0.23 of the right writes)
+    inf_rti_reconf=0                #   21 Nov kra21 RE-CONFIRMATION (MODEL CHANGE when > 0): a confirmed inference with no relational record of its pair in the documents read since its
+                                    #     confirmation, this many visits on, is RETRACTED (no longer taught; unlikelihood rows with inf_rret). Offline tools/retract_min.py: removes 0.35-0.38 of the wrong, 0.19 of the right
     inf_premises_wide=0             #   19 Nov kra13: wider distant records - same sentence 13-30 words apart, next sentence, pronoun-led sentences (length field 13+)
     inf_rcode_reader=0.0            #   19 Nov kra13 MODEL CHANGE: the compressed fact table's graph from the wording reader's top share of records (0 = all records)
     inf_premises_knowledge=0        #   19 Nov kra13: the wording reader also taught by every record of a confirmed real-text inference
