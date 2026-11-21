@@ -406,6 +406,21 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
             if tn is not None: model.__dict__['_gate_t'] = tn; model.__dict__['_gate_te'] = tn if te is None else 0.5 * te + 0.5 * tn
         except Exception as e9:
             _fail('inference.distill:gate'); print(f"  [DISTILLATION, GATED ANSWERS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
+        try:                                                                  # 21 Nov kra22: a SECOND RULE beside the first (inf_distill_gate_q2) - kra21 kept 75% and
+            gq2 = float(getattr(cfg, 'inf_distill_gate_q2', 0.0))              #   answered 0.44 (in sample, keeping 90% answered 0.13-0.19 more at 0.95-1.00 accuracy);
+            if gq2 > 0:                                                       #   kra22 raises the main rule to 0.9 and prints the old 0.75 here for continuity
+                kr3 = [(ok_, c, ref(a)) for (ok_, c), a in zip(K_, Ka)]
+                un3 = [(st, c, ref(a)) for (st, c), a in zip(A_, Aa)] + [(x[0], x[2], ref(a)) for x, a in zip(B_, Ba)]
+                kc3 = np.array([c for ok_, c, rf in kr3 if ok_ and not rf])
+                tp3 = model.__dict__.get('_gate_t2'); tn3 = float(np.quantile(kc3, 1 - gq2)) if len(kc3) >= 4 else tp3
+                if tp3 is not None and kr3 and un3:
+                    ak = [(ok_, c) for ok_, c, rf in kr3 if not rf and c >= tp3]; ru = [bool(st) for st, c, rf in un3 if not rf and c >= tp3]
+                    print(f"  [DISTILLATION, GATED ANSWERS, SECOND RULE | visit {vis + 1}] keep {gq2:.0%} of right answers, t = {tp3:.2f} (previous sleep): KNOWN ({len(kr3)}) answered "
+                          f"{len(ak) / len(kr3):.2f}, right when answered {np.mean([ok_ for ok_, c in ak]) if ak else float('nan'):.2f}, right overall {sum(ok_ for ok_, c in ak) / len(kr3):.2f} | "
+                          f"NEVER READ ({len(un3)}) given a stored name {sum(ru) / len(un3):.2f}", flush=True)
+                if tn3 is not None: model.__dict__['_gate_t2'] = tn3
+        except Exception as e9:
+            print(f"  [DISTILLATION, GATED ANSWERS, SECOND RULE] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
 
 
 def _dt_items(ents, rs, n):

@@ -602,6 +602,7 @@ class Config:
     inf_distill_false_probe=1       #   12 Nov READOUT: FALSE MEMORY PROBE - questions about facts never read (fresh names; known subjects with a relation they lack)
     inf_distill_false_probe_n=64    #     questions per group (fresh names / missing relations / known facts; 32 before 12 Nov, 23:00); + the ABSTENTION readout
                                     #     (risk-coverage of the trunk's confidence, explicit refusals)
+    inf_distill_gate_q2=0.0         #     kra22: a SECOND calibrated gate printed beside the first (0 = off); kra22 sets q 0.9 and q2 0.75 for continuity
     inf_distill_gate_q=0.75         #     GATED ANSWERS readout: the trunk answers only above the confidence threshold that kept this share of its right answers
                                     #     at the PREVIOUS sleep (calibrated there, applied to the new questions: out of sample); a decision rule, no training change
     inf_compress_gain=2             #   12 Nov READOUT: COMPRESSION GAIN (inference.compress) every N visits (default 2 from 12 Nov, 23:00; 0 = off): does the trunk compress text better once a
@@ -654,6 +655,7 @@ class Config:
     bl_adapter=0                    #   > 0: per-episode adapters of this rank, the trunk frozen after the first visit
     bl_ad_lr=0.003
     inf_rti_rows=0                  #   14 Nov RTI DOSE (MODEL CHANGE when > 0; cg27a_rcode2): this many rows of taught real-text inferences added to every question-row step
+    inf_rti_src=0                   #     readout (kra22): TRANSFER SOURCE - the prior control split by what a held-back inference shares with the trained ones
     inf_rti_rank_recall=0           #     readout: written inferences' answer ranked among 10 written answers (open-ended exact recall cannot see real names)
     inf_rti_rows_ref=0              #     > 0: weight the dose loss by rows / inf_rti_rows_ref, so each row pushes as hard as at that many rows (the loss is a mean over rows)
     inf_rti_nodecay=0               #   20 Nov kra15: 1 = the real-text inferences' dose rows are exempt from the question rows' visit decay (inf_distill_wake_decay)

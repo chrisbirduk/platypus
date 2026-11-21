@@ -1172,6 +1172,36 @@ def rti_write(model, cfg, S_slot, ents, held, ctl, vis):
             print(f"  [REAL-TEXT INFERENCE PRIOR CONTROL | visit {vis + 1}] rank among 10, the question's subject vs another inference's subject (same candidates; knowledge of A "
                   f"if own > swapped): TRAINED right {sw_(tr_(Ty_, True))} || TRAINED wrong {sw_(tr_(Ty_, False))} || HELD BACK right {sw_(tr_(H_, True))} || HELD BACK wrong {sw_(tr_(H_, False))}", flush=True)
         except Exception as e9: print(f"  [REAL-TEXT INFERENCE PRIOR CONTROL | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
+        if int(getattr(cfg, 'inf_rti_src', 0)):                               # 21 Nov kra22 (readout): TRANSFER SOURCE - kra21 visit 5: held-back RIGHT own - swapped
+            try:                                                               #   +0.15 (SE 0.05), so teaching lifts other right answers for their own subject. Where
+                rs_ = np.random.RandomState(int(cfg.seed) + 97 + vis)          #   from? Split the held-back inferences by what they share with the TRAINED ones: a
+                nm_ = set(); an_ = set(); br_ = set()                          #   name (either side of a taught pair), the answer, a bridge (premise middle name),
+                for e in Ty_:                                                  #   or NOTHING. A lift with nothing shared is the strongest evidence of a learned step
+                    k_ = rti_wkey(e); nm_.update(k_); an_.add(e['ans']); br_.update((W.get(k_) or {}).get('prem') or [])
+                def pr_(L):
+                    out = []
+                    for i, e in enumerate([e for e in L if e['rm'] < vis][:150]):
+                        alts = [x for x in pool_ if x not in (e['ans'], e['A'])]
+                        if len(alts) < 9 or len(L) < 2: continue
+                        cs = [e['ans']] + [alts[j] for j in rs_.choice(len(alts), 9, replace=False)]; oA = L[(i + 1) % len(L)]['A']
+                        q0, q1 = f"It is on record that {e['A']} {e['r']} ", f"It is on record that {oA} {e['r']} "
+                        if max(len(q0.encode('latin-1', 'replace')), len(q1.encode('latin-1', 'replace'))) + max(len(c) for c in cs) + 2 > sq_: continue
+                        out.append((e, int(_dw_cand_mc(model, int(S_slot(e['d'])), q0, cs) == 0) - int(_dw_cand_mc(model, int(S_slot(e['d'])), q1, cs) == 0)))
+                    return out
+                def gs_(P, f):
+                    d = np.array([x for e, x in P if f(e)], dtype=float)
+                    return f"{d.mean():+.2f} (SE {d.std(ddof=1) / np.sqrt(len(d)):.2f}, n {len(d)})" if len(d) > 1 else f"nan (n {len(d)})"
+                sA = lambda e: e['A'] in nm_; sC = lambda e: e['ans'] in an_
+                sB = lambda e: bool(set((W.get(rti_wkey(e)) or {}).get('prem') or []) & br_); sN = lambda e: not (e['A'] in nm_ or e['ans'] in nm_ or sB(e))
+                parts9 = []
+                for lab_, L_ in (('HELD BACK right', tr_(H_, True)), ('HELD BACK wrong', tr_(H_, False))):
+                    P_ = pr_(L_)
+                    parts9.append(f"{lab_} (n {len(P_)}): all {gs_(P_, lambda e: True)} | subject is a taught name {gs_(P_, sA)} / not {gs_(P_, lambda e: not sA(e))} | "
+                                  f"answer is a taught answer {gs_(P_, sC)} / not {gs_(P_, lambda e: not sC(e))} | shares a bridge {gs_(P_, sB)} / not {gs_(P_, lambda e: not sB(e))} | "
+                                  f"NOTHING SHARED {gs_(P_, sN)}")
+                print(f"  [REAL-TEXT INFERENCE TRANSFER SOURCE | visit {vis + 1}] own - swapped subject (rank among 10, as PRIOR CONTROL), held-back inferences split by what "
+                      f"they share with the {len(Ty_)} TRAINED ones ({len(nm_)} names, {len(an_)} answers, {len(br_)} bridges): " + " || ".join(parts9), flush=True)
+            except Exception as e9: print(f"  [REAL-TEXT INFERENCE TRANSFER SOURCE | visit {vis + 1}] unavailable ({type(e9).__name__}: {e9})"[:200], flush=True)
         if int(getattr(cfg, 'inf_rti_chain', 0)):                             # 20 Nov kra16: the same with the premises IN CONTEXT; HELD BACK = never taught, so above
             print(f"  [REAL-TEXT INFERENCE IN CONTEXT | visit {vis + 1}] premises before the question (inferences with both premises on record), rank among 10: TAUGHT right "
                   f"{rk_(tr_(T_, True), True)} / wrong {rk_(tr_(T_, False), True)} | HELD BACK (never taught: a learned composition step if above the line above) right "
