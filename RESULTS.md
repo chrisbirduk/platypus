@@ -5684,3 +5684,11 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - MATCHED held-back right own - broken +0.09 (SE 0.05), own - closed +0.21 (SE 0.05).
 - Gate (never-read calibration): right overall 0.52, right when answered 0.92, never-read 0.01; keep-75%: 0.47 / 0.00.
 - Facts: probe 0.88, ledger 0.82 (taught 1 visit 0.65, 4+ visits 0.84), control 0.24-0.31. Bits on read domains 1.8832 (kra21 1.8856). No Traceback.
+
+### cg27a_kra22 GPU, visit 8 (21 Nov 12:40; stopped here to start kra23)
+- TRANSFER SOURCE: held-back right +0.12 (SE 0.04, n 150); answer a taught answer +0.16 (SE 0.05, n 93) vs not +0.05 (SE 0.04, n 57); nothing shared -0.07 (n 15). Held-back WRONG now also +0.13 (SE 0.06, n 30). Four visits: the lift follows taught answers; nothing shared never lifts.
+- Taught inferences dip again at the even visit: open right 0.54 / wrong 0.55, rank 0.92 / 0.63; CONFLICT 0.64-0.74 vs none 0.93-0.97 (n 76 / 120) - conflicts grow with the pool (39 at visit 6, 76 now).
+- Confirmed 639 so far at right 0.82 (kra21 at visit 8: 733 at 0.79); faded 662 (0.65).
+- Gate: both rules t 0.91-0.93, right overall 0.48, never-read given a name **0.07** - neither rule holds 2% out of sample at visit 8.
+- Facts: probe **0.68** (newly taught; first time below 0.75), ledger 0.81 (4+ visits 0.86). Bits on read domains 1.8250 (kra21 1.8292). No Traceback.
+- kra23 local check, visits 1-2: no errors; [RULE WORLD, THE TRUNK'S OWN CHAIN] prints (0.00 everywhere at 150 local steps, as expected); the gate floor was skipped when fewer than 4 right answers existed (t 0.09 at visit 2) - now floored at 0.9 then.

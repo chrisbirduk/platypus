@@ -406,7 +406,7 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
                 ts_ = sorted({c for st, c, rf in un2} | {1.01})                #   swung 0.59 -> 0.36 -> 0.61 right overall and let 0.11 of never-read through at t 0.85)
                 ok_t = [t_ for t_ in ts_ if np.mean([bool(st) and not rf and c >= t_ for st, c, rf in un2]) <= glk]
                 tn = float(min(ok_t)) if ok_t else tp
-                if tn is not None and len(kc2) >= 4: tn = max(tn, float(np.quantile(kc2, 0.1)))   # floor: never below the keep-90%-of-right threshold (local kra22: with few
+                if tn is not None: tn = max(tn, float(np.quantile(kc2, 0.1)) if len(kc2) >= 4 else 0.9)   # floor: never below the keep-90%-of-right threshold (local kra22: with few
                                                                                #   stored names every t passes, min t was 0.10, and 0.33 of the next sleep's never-read got a name)
             if tp is not None and kr2 and un2:
                 ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
