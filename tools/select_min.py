@@ -80,6 +80,11 @@ OW = lambda k: pm._rnorm(W[k].get('tw') or '')                              # fu
 rep('VERBATIM: a confirming record in the inference own wording', lambda k: OW(k) in EW.get(k, []))
 rep('VERBATIM: own wording in the confirming OR the delay window', lambda k: OW(k) in EW.get(k, []) + EWD.get(k, []))
 rep('VERBATIM or 2+ distinct documents', lambda k: OW(k) in EW.get(k, []) or len({d for d, s in EV(k)}) >= 2)
+NS = lambda k: not any(any(ch.isdigit() or ch in '()"' for ch in n_) for n_ in k)   # kra22 inf_rti_nameshape
+D2 = lambda k: len({d for d, s in EV(k) + DL(k)}) >= 2                         # kra22 inf_rti_conf_docs 2 (records since the write, confirm + delay windows)
+rep('NAME SHAPE (kra22 inf_rti_nameshape: no digits, brackets, quotes)', NS)
+rep('kra22 inf_rti_conf_docs 2: 2+ distinct documents (confirm + delay)', D2)
+rep('kra22 BOTH: name shape AND 2+ distinct documents', lambda k: NS(k) and D2(k))
 def fun(w):                                                                    # one-answer wording: of heads with 2+ records before the write, the share with ONE distinct tail
     hs = [len(set(t)) for h, t in FT.get(pm._rnorm(w or ''), {}).items() if len(t) >= 2]; return (np.mean([x == 1 for x in hs]) if len(hs) >= 5 else 0.0), len(hs)
 FN = {k: fun(W[k].get('tw')) for k in CS}
