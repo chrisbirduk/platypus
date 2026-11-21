@@ -292,8 +292,9 @@ def _inf_plant_probes(raw,cfg,d,p):
             for dd_,s_ in u_['new']:
                 if dd_==int(d): (fs_ if u_['type']=='true' else once_).append(s_)
     nrw_ = 0
-    for dd_, s_, *_ in inf_rule_world(cfg)['planted']:                        # RULE WORLD facts of this domain, planted like probe facts
-        if dd_ == int(d): fs_.append(s_); nrw_ += 1
+    pk_ = max(1, int(getattr(cfg, 'inf_rule_world_premk', 1)))                # 21 Nov kra25: the PREMISES (child of / supervised by) planted pk_ times as often - the
+    for dd_, s_, rr_, *_ in inf_rule_world(cfg)['planted']:                   #   synthetic world composes through new bridges with premises known at 1.00; the rule
+        if dd_ == int(d): k_ = pk_ if rr_ in ('parent', 'mgr') else 1; fs_.extend([s_] * k_); nrw_ += k_   #   world's second-hop premise is recalled about 0.5-0.7
     for l_, mv_ in (inf_rule_world(cfg).get('moves') or {}).items():          # 19 Nov kra9: the MOVED leaves' new premise, planted in its own domain
         if mv_['d2'] == int(d): fs_.append(mv_['sent']); nrw_ += 1
     if not fs_ and not once_: return raw
