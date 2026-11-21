@@ -5667,3 +5667,13 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - **BRIDGE ('Q: A tw ? A w1 B. B w2 C. So A tw C.'), the model writing its own chain (greedy): taught C first 0.18 / 0.33 (exact 0.12 / 0.27), first hop written exactly 0.31 / 0.51; NEVER TAUGHT C first 0.015 / 0.010, first hop 0.005 / 0.005, chain format written 0.08 / 0.105.** No composition: it memorises (slowly) the taught chains and cannot even write the format for new subjects.
 - The samples show why: real-text premises are mostly list fragments ('Bergen , norway and Iceland', 'Belize , guatemala , Nicaragua', 'Frankfurt , sweden ...'), not relations - there is no consistent first hop to learn, unlike the synthetic world's one rule. (A first run scored 0.000 everywhere because greedy decoding fed unshifted input; fixed, 4672a46.)
 - Next (route A): the same restricted to clean relation families (containment wordings; word-only relational wordings).
+
+### Route B dose test: how many taught chains make a trunk compose (21 Nov 12:05; tools/compose_synth.py CS_COTLATE 1, CHAIN arm, pretrained cs_impl0_s0, seed 0)
+| taught people (chain form 'A is a citizen of B > C.') | never taught B / C at 300 steps | 750 | 1,500 |
+|---|---|---|---|
+| 10 | 0.19 / 0.19 | 0.12 / 0.15 | 0.35 / 0.30 |
+| 30 | 0.47 / 0.46 | 0.51 / 0.52 | 0.61 / 0.62 |
+| **100** | 0.70 / 0.74 | 0.87 / 0.86 | **0.88 / 0.87** |
+| 300 (19 Nov) | 0.85 / 0.83 | - | 0.87 / 0.85 (3,000) |
+- Taught C 1.00 in every arm. The decomposition is learned from about 100 worked chains; 30 give 0.62.
+- On the GPU the rule world's planted composites are DIRECT ('X is a grandchild of Z'), which never composes, and route J's chain-form writes are a few dozen: held-back composites 0.00. **kra23 plants the composites with their bridge (inf_rule_world_chainplant 1) and doubles the rule world (96: about 118 chain composites per rule)** - the first GPU test of trunk-level inference on the rule world.
