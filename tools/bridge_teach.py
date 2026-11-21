@@ -92,11 +92,13 @@ def rank_at(m, pref, cands):
     X, Xi = tens(bl); lp = F.log_softmax(m(Xi), -1); n0 = len(pb)
     return int(np.argmax([float(lp[i, n0:len(b)].gather(-1, X[i, n0:len(b), None]).mean()) if len(b) > n0 else -1e9 for i, b in enumerate(bl)]) == 0)
 @torch.no_grad()
-def greedy(m, prompts, n=110):
+def greedy(m, prompts, n=110):                                                # the model reads [PAD] + bytes (as in training) and predicts the next byte
     out = [enc(p) for p in prompts]
     for _ in range(n):
-        X, _ = tens(out); lg = m(X); nx = [int(lg[i, len(b) - 1].argmax()) for i, b in enumerate(out)]
-        out = [(b + bytes([t]))[:L_] if t < 256 and len(b) < L_ else b for b, t in zip(out, nx)]
+        Tn = max(len(b) for b in out) + 1; X = torch.full((len(out), min(Tn, L_)), PAD, dtype=torch.long)
+        for i, b in enumerate(out): X[i, 1:len(b) + 1] = torch.tensor(list(b[:L_ - 1]))
+        lg = m(X); nx = [int(lg[i, min(len(b), L_ - 1)].argmax()) for i, b in enumerate(out)]
+        out = [(b + bytes([t])) if t < 256 and len(b) < L_ - 1 else b for b, t in zip(out, nx)]
     return [b.decode('latin-1') for b in out]
 def ev(m, arm, cl):
     if arm == 'DIRECT':
@@ -113,6 +115,7 @@ d0 = dbits(base)
 start = copy.deepcopy(base); rs = np.random.RandomState(10); op = torch.optim.Adam(start.parameters(), lr=LR); start.train()
 for st in range(PRE): step(start, op, rs, [PREM[i] for i in rs.randint(0, len(PREM), 8)])
 start.eval()
+if os.environ.get('BT_SAVE'): torch.save(start.state_dict(), os.environ['BT_SAVE'])
 p1 = np.mean([rank_at(start, f"{c[4][0]} {c[4][1]} ", [c[4][2]] + [x for x in CAND[c] if x != c[4][2]][:9]) for c in TE[:100]])
 P(f"PREMISES FIRST, {PRE} steps: first-hop B recalled (rank among 10, TEST chains) {p1:.2f} | forgetting {dbits(start) - d0:+.4f}  ({time.time() - T0:.0f}s)")
 for arm in os.environ.get('BT_ARMS', 'DIRECT,BRIDGE').split(','):
