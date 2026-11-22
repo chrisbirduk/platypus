@@ -2162,7 +2162,19 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
             except Exception: _fail('inference.distill:rwal')
             print(f"  [JEPA STEP-2 ALIGNMENT | visit {vis + 1}] next visit: {sum(len(v) for v in rwal9.values())} planted chains: the state where 'A r2 B > ' predicts the root "
                   f"pulled to the state of the bridge's premise 'B r1 ' (stop-gradient){' + STEP 1: A r2 ~ A r1' if int(getattr(cfg, 'inf_rule_world_align_step', 2)) == 3 else ''}, weight {float(getattr(cfg, 'inf_rule_world_align', 0.0)):g}, 8 a step", flush=True)
-        model.__dict__['_dtw'] = dict(rwal=rwal9, rwa=[], vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        rch9 = None                                                            # 22 Nov REAL-TEXT CHAINS (inf_rchain; realchain.py): readout of the last visit's
+        if int(getattr(cfg, 'inf_rchain', 0)):                                 #   chains, then the next visit's premise / chain / alignment rows
+            try:
+                from platypus.inference.realchain import rchain_readout, rchain_rows
+                sn9 = sorted(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()) or [0]; rsl9 = int(S_slot(1 if 1 in sn9 else sn9[-1]))
+                rchain_readout(model, cfg, vis, rsl9, model.__dict__.get('_dtw'))
+                rch9 = rchain_rows(cfg, vis, rsl9)
+                print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] next visit: {len(rch9['prem'])} premise rows ({int(getattr(cfg, 'inf_rchain_frames', 2))} wordings), "
+                      f"{len(rch9['chain'])} chain rows, {len(rch9['align'])} alignment pairs (weight {float(getattr(cfg, 'inf_rchain_align', 0.0)):g}); "
+                      f"{int(getattr(cfg, 'inf_rchain_rows', 8))} rows a step", flush=True)
+            except Exception as e9:
+                _fail('inference.distill:rchain'); print(f"  [REAL-TEXT CHAINS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True); rch9 = None
+        model.__dict__['_dtw'] = dict(rch=rch9, rchl=[], rcha=[], rwal=rwal9, rwa=[], vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -2308,6 +2320,16 @@ def distill_wake_loss(model, cfg):
             except Exception as e2:
                 _fail('inference.distill:rti_dose')
                 if not D.get('err2'): D['err2'] = 1; print(f"  [REAL-TEXT INFERENCE DOSE] a step failed ({type(e2).__name__}: {e2})"[:300], flush=True)
+        if D.get('rch'):                                                       # 22 Nov REAL-TEXT CHAINS (realchain.py; its own guard)
+            try:
+                from platypus.inference.realchain import rchain_loss
+                l5, ce5, al5 = rchain_loss(model, cfg, D['rch'], rs)
+                if l5 is not None:
+                    loss = loss + float(getattr(cfg, 'inf_rchain_w', 1.0)) * l5; D['rchl'].append(ce5)
+                    if al5 is not None: D['rcha'].append(al5)
+            except Exception as e5:
+                _fail('inference.distill:rchain_loss')
+                if not D.get('err5'): D['err5'] = 1; print(f"  [REAL-TEXT CHAINS] a step failed ({type(e5).__name__}: {e5})"[:300], flush=True)
         rk3 = int(getattr(cfg, 'inf_rret_rows', 8)); rp3 = D.get('rret')
         if int(getattr(cfg, 'inf_rret', 0)) and rk3 > 0 and rp3:              # 14 Nov RETRACTION: unlikelihood on retracted inferences' answer bytes
             try:                                                               #   -log(1 - p(byte)), weight inf_rret_w (offline 0.1: unlearns, no bystander harm)

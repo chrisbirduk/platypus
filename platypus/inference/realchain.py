@@ -1,0 +1,149 @@
+"""22 Nov REAL-TEXT CHAINS (inf_rchain): the rule world's composition test moved to real text.
+
+Containment chains are built from the records the separate record store reads in DocRED's distant set (premises.py: 'A <in-wording> B',
+'B <in-wording> C', the most frequent wording and partner of each head; optionally only pairs carrying given gold relations - an oracle reader).
+The trunk never reads the distant documents, so it knows only what is taught here, by the interleaved question rows:
+  - PREMISES of every chain (train and test), each in inf_rchain_frames wordings ('A in B', 'Records show that A in B'): the overnight
+    synthetic finding - a premise learned in one wording is keyed on that wording and is not retrieved inside a chain; two wordings suffice;
+  - CHAINS of the train split only, in the arrow form 'A in B > C.' (the form that composes through new bridges; the spelled form does not);
+  - optional JEPA STEP-2 ALIGNMENT (inf_rchain_align): the state where 'A in B > ' predicts C pulled to the state of 'B <w2> ' (stop-gradient).
+Split by BRIDGE: chains whose bridge hashes into the test share, and that never appears in any taught chain, are never taught as chains.
+READOUT [REAL-TEXT CHAINS, THE TRUNK'S OWN]: greedy 'A in ' (store and memory off) parsed 'B > C' - chain format, bridge right, C right - for
+taught chains and for TEST chains (composition through bridges never in a taught chain), the direct answer ('A in ' starting with C), and the
+premises asked alone (first and second hop)."""
+import collections, zlib
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+_RC = {}
+_CW = {'in', 'is in', 'located in', 'is located in', 'part of', 'is part of', 'city in', 'town in', 'village in', 'region of', 'province of',
+       'capital of', 'state of'}
+
+
+def _hash(s, salt):
+    return zlib.crc32((s + '|' + salt).encode('utf-8', 'replace')) % 1000
+
+
+def rchain_build(cfg, vis):
+    """chains from the records of the distant documents read so far -> (train, test); cached per visit"""
+    if _RC.get('vis') == vis: return _RC['train'], _RC['test']
+    from platypus.inference.premises import _PM, _load_distant, _rnorm
+    _load_distant(cfg); R = _PM.get('R') or []; ND = int(_PM.get('ND', 0)); PRD = _PM.get('PRD') or {}
+    nv = max(1, int(getattr(cfg, 'inf_premises_visits', 10))); ndv = int(round(ND * min(1.0, (vis + 1) / nv)))
+    orc = set(x for x in str(getattr(cfg, 'inf_rchain_oracle', '') or '').split(',') if x)
+    HT = collections.defaultdict(collections.Counter)
+    for r in R:
+        if r[0] >= ndv or not (1 <= r[5] <= 8) or r[1] == r[2]: continue
+        w = _rnorm(r[3])
+        if w in _CW and (not orc or (PRD.get((r[1], r[2])) or set()) & orc): HT[r[1]][(w, r[2])] += 1
+    CL = []
+    for A_, c in HT.items():
+        (w1, B_), _ = c.most_common(1)[0]
+        if B_ not in HT: continue
+        (w2, C_), _ = HT[B_].most_common(1)[0]
+        if C_ in (A_, B_) or len(f"Records show that {A_} {w1} {B_} > {C_}.") > 110: continue
+        CL.append((A_, w1, B_, w2, C_))
+    tq = float(getattr(cfg, 'inf_rchain_testq', 0.3))
+    BT = {c[2] for c in CL if _hash(c[2], 'rcb') < tq * 1000}
+    trn = sorted([c for c in CL if c[2] not in BT], key=lambda c: _hash(c[0], 'rct'))[:int(getattr(cfg, 'inf_rchain_ntr', 400))]
+    inch = {x for c in trn for x in (c[0], c[2], c[4])}
+    tst = sorted([c for c in CL if c[2] in BT and c[2] not in inch], key=lambda c: _hash(c[0], 'rce'))[:int(getattr(cfg, 'inf_rchain_test', 150))]
+    _RC.update(vis=vis, train=trn, test=tst)
+    print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] {ndv} distant documents read: {len(CL)} containment chains{' (oracle ' + ','.join(sorted(orc)) + ')' if orc else ''} "
+          f"-> TAUGHT {len(trn)} (arrow form) | TEST {len(tst)} (bridge never in a taught chain; premises taught, chain never) "
+          f"e.g. '{trn[0][0]} in {trn[0][2]} > {trn[0][4]}.'" if trn else f"  [REAL-TEXT CHAINS | visit {vis + 1}] {len(CL)} chains, none taught yet", flush=True)
+    return trn, tst
+
+
+def _frames(A, w, B, k):
+    fs = [f"{A} {w} ", f"Records show that {A} {w} ", f"It is known that {A} {w} "][:max(1, k)]
+    return [(f.encode('latin-1', 'replace'), (B + '.').encode('latin-1', 'replace')) for f in fs]
+
+
+def rchain_rows(cfg, vis, sl):
+    """question rows for the next visit: premise rows (all chains, several wordings), chain rows (train), alignment pairs (train)"""
+    trn, tst = rchain_build(cfg, vis); k = int(getattr(cfg, 'inf_rchain_frames', 2)); P, C, A = [], [], []
+    seen = set()
+    for (A_, w1, B_, w2, C_) in trn + tst:
+        for (h, w, t) in ((A_, w1, B_), (B_, w2, C_)):
+            if (h, w, t) in seen: continue
+            seen.add((h, w, t)); P.extend((p, a, sl) for p, a in _frames(h, w, t, k))
+    for (A_, w1, B_, w2, C_) in trn:
+        C.append((f"{A_} in ".encode('latin-1', 'replace'), f"{B_} > {C_}.".encode('latin-1', 'replace'), sl))
+        A.append((f"{A_} in {B_} > ".encode('latin-1', 'replace'), f"{B_} {w2} ".encode('latin-1', 'replace')))
+    return dict(prem=P, chain=C, align=A, sl=sl)
+
+
+def rchain_loss(model, cfg, R, rs):
+    """this step's rows: half premise rows, half chain rows; plus the alignment term. Returns (loss or None, ce, align)"""
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    from platypus.inference.distill import _ws_hidden
+    n = int(getattr(cfg, 'inf_rchain_rows', 8)); P, C = R.get('prem') or [], R.get('chain') or []
+    if not P: return None, None, None
+    it = [P[int(i)] for i in rs.choice(len(P), min(n - n // 2 if C else n, len(P)), replace=False)]
+    if C: it += [C[int(i)] for i in rs.choice(len(C), min(n // 2, len(C)), replace=False)]
+    sl = int(R['sl']); X, _ = _ws_batch(model, [p + a for p, a, _s in it]); lg = _ws_run(model, X, sl, grad_=True); t, c = 0.0, 0
+    for j, (p, a, _s) in enumerate(it):
+        p0 = len(p) - 1; n_ = min(len(a), lg.shape[1] - p0)
+        if n_ > 0: t = t + F.cross_entropy(lg[j, p0:p0 + n_].float(), X[j, p0 + 1:p0 + 1 + n_], reduction='sum'); c += n_
+    if not c: return None, None, None
+    loss = t / c; ce = float(loss.detach()); al = None
+    aw = float(getattr(cfg, 'inf_rchain_align', 0.0)); AL = R.get('align') or []
+    if aw > 0 and AL:
+        vv = [AL[int(i)] for i in rs.choice(len(AL), min(8, len(AL)), replace=False)]
+        Xc, _ = _ws_batch(model, [q for q, p in vv]); Xp, _ = _ws_batch(model, [p for q, p in vv])
+        _, Hc = _ws_hidden(model, lambda: _ws_run(model, Xc, sl, grad_=True))
+        with torch.no_grad(): _, Hp = _ws_hidden(model, lambda: _ws_run(model, Xp, sl))
+        ok = [j for j, (q, p) in enumerate(vv) if Hc is not None and Hp is not None and len(q) - 1 < Hc.shape[1] and len(p) - 1 < Hp.shape[1]]
+        if ok:
+            hc = torch.stack([Hc[j, len(vv[j][0]) - 1] for j in ok]).float(); hp = torch.stack([Hp[j, len(vv[j][1]) - 1] for j in ok]).float()
+            a_ = (1 - F.cosine_similarity(hc, hp, dim=-1)).mean(); loss = loss + aw * a_; al = float(a_.detach())
+    return loss, ce, al
+
+
+def _greedy_batch(model, prompts, sl, n=60):
+    from platypus.inference.closed_form import _ws_batch, _ws_run
+    bs = [bytearray(p) for p in prompts]; done = [False] * len(bs)
+    for _ in range(n):
+        live = [j for j in range(len(bs)) if not done[j]]
+        if not live: break
+        X, _m = _ws_batch(model, [bytes(bs[j]) + b' ' for j in live])
+        with torch.no_grad(): lg = _ws_run(model, X, sl)
+        for r, j in enumerate(live):
+            p = len(bs[j]) - 1
+            if p >= lg.shape[1]: done[j] = True; continue
+            ch = int(lg[r, p].argmax())
+            if ch in (46, 10): done[j] = True
+            else: bs[j].append(ch)
+    return [bytes(b[len(p):]).decode('latin-1', 'replace').strip() for b, p in zip(bs, prompts)]
+
+
+def rchain_readout(model, cfg, vis, sl, D=None):
+    """the trunk's own chain on taught and TEST real-text chains (store and memory off)"""
+    trn, tst = _RC.get('train') or [], _RC.get('test') or []
+    if not (trn or tst): return
+    was = model.training; model.eval()
+    try:
+        def score(L):
+            if not L: return "0", []
+            g = _greedy_batch(model, [f"{c[0]} in ".encode('latin-1', 'replace') for c in L], sl, 70)
+            fm, br, cr, dr = [], [], [], []
+            for x, c in zip(g, L):
+                pt = [s.strip() for s in x.split(' > ')]
+                fm.append(len(pt) == 2 and all(pt)); br.append(len(pt) == 2 and pt[0] == c[2]); cr.append(len(pt) == 2 and pt[1] == c[4]); dr.append(x.startswith(c[4]))
+            h1 = _greedy_batch(model, [f"{c[0]} {c[1]} ".encode('latin-1', 'replace') for c in L], sl, 40)
+            h2 = _greedy_batch(model, [f"{c[2]} {c[3]} ".encode('latin-1', 'replace') for c in L], sl, 40)
+            p1 = np.mean([x.split(' > ')[0].strip() == c[2] for x, c in zip(h1, L)]); p2 = np.mean([x.split(' > ')[0].strip() == c[4] for x, c in zip(h2, L)])
+            return (f"{len(L)}: chain format {np.mean(fm):.2f}, bridge right {np.mean(br):.2f}, C right {np.mean(cr):.2f} (C first, direct {np.mean(dr):.2f}) | "
+                    f"premises asked alone: first hop {p1:.2f}, second hop {p2:.2f}"), g
+        st, _g1 = score(trn[:80]); se, g2 = score(tst[:150])
+        ex = " | ".join(f"{c[0]} -> {x[:60]} [{c[2]} > {c[4]}]" for c, x in list(zip(tst, g2))[:4])
+        cel = (D or {}).get('rchl') or []; all_ = (D or {}).get('rcha') or []
+        print(f"  [REAL-TEXT CHAINS, THE TRUNK'S OWN | visit {vis + 1}] greedy 'A in ' (store and memory off), parsed 'B > C': TAUGHT {st} || "
+              f"TEST, bridge never in a taught chain {se}"
+              + (f" || rows this visit: loss {np.mean(cel[:max(1, len(cel) // 10)]):.3f} -> {np.mean(cel[-max(1, len(cel) // 10):]):.3f} ({len(cel)} steps)" if cel else "")
+              + (f", JEPA alignment 1 - cos {np.mean(all_[:max(1, len(all_) // 10)]):.3f} -> {np.mean(all_[-max(1, len(all_) // 10):]):.3f}" if all_ else ""), flush=True)
+        print(f"      TEST e.g. {ex}", flush=True)
+    finally:
+        model.train(was)

@@ -573,6 +573,17 @@ class Config:
     inf_rule_world_premk=1          #   21 Nov kra25 (MODEL CHANGE when > 1): rule-world premises (child of / supervised by) planted this many times as often
     inf_rule_world_chainplant=0     #   21 Nov kra23 ROUTE B (MODEL CHANGE when 1): planted rule-world composites written with their bridge, 'X is a grandchild of M > Z.' 2 (kra26): both steps spelled, 'X is a grandchild of: X is a child of M; M is a child of Z.' 3 (kra27): step 1 without the subject restated
     inf_rule_world_align=0.0        #   22 Nov kra30 (MODEL CHANGE when > 0): JEPA step-2 alignment on planted arrow chains, in the question-row step (distill.distill_wake_loss)
+    inf_rchain=0                    #   22 Nov (MODEL CHANGE when 1) REAL-TEXT CHAINS (inference/realchain.py): containment chains from the distant records; premises of all
+                                    #     chains taught as question rows in inf_rchain_frames wordings, train chains in the arrow form 'A in B > C.'; readout on chains
+                                    #     whose bridge was never in a taught chain [REAL-TEXT CHAINS, THE TRUNK'S OWN]
+    inf_rchain_oracle=''            #     only records whose pair carries one of these gold relations (e.g. 'P131,P17,P30,P361'; an oracle reader); empty = the reader as is
+    inf_rchain_ntr=400              #     taught chains (at most)
+    inf_rchain_test=150             #     test chains (at most)
+    inf_rchain_testq=0.3            #     share of bridges held out
+    inf_rchain_frames=2             #     premise wordings (1-3)
+    inf_rchain_rows=8               #     rows a question-row step (half premises, half chains)
+    inf_rchain_w=1.0                #     weight of their loss
+    inf_rchain_align=0.0            #     JEPA step-2 alignment weight ('A in B > ' ~ 'B <w2> ')
     inf_rule_world_align_step=2     #   22 Nov kra31: 3 = align STEP 1 too ('A r2 ' ~ 'A r1 '); synthetic, one wording: 0.15-0.19 -> 0.50-0.68
     inf_rule_world_premw=0          #   21 Nov kra28 (MODEL CHANGE when > 1): rule-world premises planted in this many wordings (knowledge augmentation; probes._RW_PREMW)
     inf_rule_world_pure=0.0         #   18 Nov: share of rule-world families / charts with NO composite planted (pure test families; readout RELATIONAL MODULE WRITES, PURE FAMILIES)
