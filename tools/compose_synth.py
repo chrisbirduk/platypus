@@ -311,9 +311,14 @@ if COTLATE:                                                                    #
                 from sklearn.metrics import roc_auc_score
                 nv = [glp(m_, a) for a in NOV]; kn = [glp(m_, a) for a, bi in HELDP[:200]]
                 auc = roc_auc_score([1] * len(kn) + [0] * len(nv), [-x[1] for x in kn] + [-x[1] for x in nv])
+                kr_ = [x[0].split('>')[-1].strip() == CN[OLD[bi][1]] for x, (a, bi) in zip(kn, HELDP[:200])]   # 22 Nov GATED CHAINS: answer only when the chain's
+                rn_ = [x[1] for x, r_ in zip(kn, kr_) if r_]                                                        #   mean byte loss <= t, t keeping 75% of the known-right
+                t_ = float(np.quantile(rn_, 0.75)) if len(rn_) >= 4 else -1.0                                     #   chains (the GPU gate's rule)
+                gate_ = (f" | GATED (t keeps 75% of right known chains): novel names given a chain {np.mean([x[2] and x[1] <= t_ for x in nv]):.2f}, known answered "
+                         f"{np.mean([x[1] <= t_ for x in kn]):.2f}, right when answered {np.mean([r_ for x, r_ in zip(kn, kr_) if x[1] <= t_]) if any(x[1] <= t_ for x in kn) else float('nan'):.2f}")
                 return (f"{tagx}: NOVEL names given a well-formed chain to a known city and country {np.mean([x[2] for x in nv]):.2f} (held-out known people {np.mean([x[2] for x in kn]):.2f}) | "
                         f"answer '?' (abstains): novel {np.mean([x[0].startswith('?') for x in nv]):.2f}, known {np.mean([x[0].startswith('?') for x in kn]):.2f} | "
-                        f"confidence (mean byte log-prob of its own chain) separates known from novel AUC {auc:.2f} | e.g. '{NOV[0]} is a citizen of {nv[0][0]}'")
+                        f"confidence (mean byte log-prob of its own chain) separates known from novel AUC {auc:.2f}{gate_} | e.g. '{NOV[0]} is a citizen of {nv[0][0]}'")
             m0 = LM(); m0.load_state_dict(st0); b0 = bpb(m0); f0 = fm(m0, 'BEFORE'); del m0
         mm = LM(); mm.load_state_dict(st0); mm.train(); op2 = torch.optim.AdamW(mm.parameters(), lr=3e-4, weight_decay=0.01); r2 = np.random.RandomState(SEED + 31); out = []
         for s_ in range(1, int(os.environ.get('CS_COTLATE_STEPS', 1500)) + 1):
