@@ -129,9 +129,19 @@ def tens(seqs):
     X = torch.full((len(seqs), L), PAD, dtype=torch.long)
     for k, q in enumerate(seqs): X[k, :len(q[:L])] = torch.tensor(list(q[:L]))
     return X
-def step(m, op, seqs, sch=None):
-    X = tens(seqs); Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1); lo = m(Xi).reshape(-1, V); tg = X.reshape(-1)
-    l = F.cross_entropy(lo[tg != PAD], tg[tg != PAD]); op.zero_grad(); l.backward(); op.step()
+SLOWW = float(os.environ.get('CS_SLOW', 0)); SLOWK = int(os.environ.get('CS_SLOWK', 32))   # 22 Nov SLOW CHANNELS (after Ren, Wang, Hoang, Kuang & LeCun, Slow SVReg):
+def step(m, op, seqs, sch=None):                                               #   a slowness term on the first SLOWK channels of the top state between consecutive
+    X = tens(seqs); Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1)   #   bytes of the same sentence, normalised by their variance, plus a variance floor
+    if SLOWW > 0:                                                              #   on random projections (SVReg) so the slow channels cannot collapse
+        H = m.hid(Xi); lo = m.o(H).reshape(-1, V)
+        b = H[:, :, :SLOWK]; sid = torch.cumsum((Xi == 46).long(), 1); ok = ((sid[:, 1:] == sid[:, :-1]) & (Xi[:, 1:] != PAD) & (Xi[:, :-1] != PAD)).float()
+        dv = ((b[:, 1:] - b[:, :-1]) ** 2).sum(-1); bv = b[Xi != PAD]; var = bv.var(0).sum().clamp(min=1e-6)
+        rs_ = (dv * ok).sum() / ok.sum().clamp(min=1) / (2 * var)
+        u = F.normalize(torch.randn(SLOWK, 16), dim=0); sv = F.relu(1 - (bv @ u).std(0)).pow(2).mean()
+        extra = SLOWW * (rs_ + sv)
+    else: lo = m(Xi).reshape(-1, V); extra = 0.0
+    tg = X.reshape(-1)
+    l = F.cross_entropy(lo[tg != PAD], tg[tg != PAD]); op.zero_grad(); (l + extra).backward(); op.step()
     if sch: sch.step()
     return float(l)
 @torch.no_grad()
