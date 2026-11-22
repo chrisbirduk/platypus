@@ -6122,3 +6122,8 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra42 local check (22 Nov 21:45): PASS
 - No Traceback (four visits within the 50-minute limit); premise rows with the paraphrases and the arrow rows x4 (visit 1: 183 vs kra41's 64); the STEP BY STEP readout prints on the full system (stand-in, visit 3 taught: hop 1 right 0.43, C 0.13, gated answered 0.58, right 0.23) - readout only. Ran with 400 taught chains (preset loaded before the 800 change; a count only).
+
+### THREE HOPS WITH TWICE THE TAUGHT CHAINS (offline, synthetic; 22 Nov 22:05; tools/latent_search.py LS_NT 200)
+- TRUNK, 3-hop arrow chains taught for 199 people (was 100): taught 1.00; **NEVER TAUGHT (68, cities in no taught chain): bridge 0.15-0.22, region 0.00-0.01, country 0.01-0.03** (100 taught: 0.08-0.10 / 0.00-0.01 / 0.01-0.03); never-read names given a well-formed chain 0.80. Premises recalled 1.00.
+- **More chains do not help at three hops; the first hop fails inside the chain (0.15-0.22) although the premise is recalled perfectly** - the real-text step-1 failure in the synthetic world. kra41's step-1 frame fixed exactly that on real text (bridge 0.29 -> 0.66): the next local test teaches the premises in the chain's own frames at every step ('A is a citizen of ' -> 'B >', 'B > ' -> 'R >', 'R > ' -> 'K.').
+- LATENT ARM (route J search) again: 3 hops held-out 1.00, gated 0.63 answered right 1.00, never-read 0.00; 4 hops 1.00.
