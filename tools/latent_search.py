@@ -131,8 +131,12 @@ def trunk_eval(ppl):
     return ' '.join(f"{k} {np.mean(v):.2f}" for k, v in res.items())
 P(f"TRUNK ARM (3-hop chains taught in the arrow form for {len(TPOOL)} people; never-taught people in cities in no taught chain, {len(HN)}):")
 TE = int(os.environ.get('LS_TEACH', 1500))
+FRM = int(os.environ.get('LS_FRAMES', 0))                                      # 22 Nov STEP FRAMES (kra41's step-1 frame, every step): each premise also
+FR = ([f"{a} is a citizen of {CIT[ci][0]} >" for a, ci in TRP + HEP] + [f"{c} > {REG[r][0]} >" for c, r in CIT] + [f"{r} > {CTY[k][0]}." for r, k in REG]) if FRM else []   #   in the chain's own
+if FRM: P(f"   STEP FRAMES on: {len(FR)} premise rows in the chain's own frames ('A is a citizen of B >', 'B > R >', 'R > K.'), 8 a step")   # context at its step; C never shown
 for st in range(1, TE + 1):
-    step(m, op2, [rows[i].encode('latin-1') for i in rs.randint(0, len(rows), 8)] + [PRE[i].encode('latin-1') for i in rs.randint(0, len(PRE), 24)])
+    fr_ = [FR[i].encode('latin-1') for i in rs.randint(0, len(FR), 8)] if FR else []
+    step(m, op2, [rows[i].encode('latin-1') for i in rs.randint(0, len(rows), 8)] + fr_ + [PRE[i].encode('latin-1') for i in rs.randint(0, len(PRE), 24 - len(fr_))])
     if st in (300, 750, 1500) or st == TE: P(f"   step {st}: TAUGHT {trunk_eval(TPOOL[:60])} || NEVER TAUGHT {trunk_eval(HN)}  ({time.time() - T0:.0f}s)")
 P(f"   never-read names, the trunk's chain: well-formed 3-hop chains given {np.mean([len(gen(m, f'{a} is a citizen of ').split('>')) == 3 for a in NOV[:30]]):.2f}")
 P(f"DONE ({time.time() - T0:.0f}s)")
