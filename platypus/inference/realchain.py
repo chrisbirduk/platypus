@@ -35,7 +35,7 @@ def rchain_build(cfg, vis):
     HT = collections.defaultdict(collections.Counter); TY0 = _PM.get('TY') or {}; loc0 = int(getattr(cfg, 'inf_rchain_loc', 1))
     for r in R:
         if r[0] >= ndv or not (1 <= r[5] <= 8) or r[1] == r[2]: continue
-        if loc0 and TY0.get(r[2]) != 'LOC': continue                           # the partner must be a place (before choosing each head's most frequent one)
+        if loc0 and (TY0.get(r[2]) != 'LOC' or TY0.get(r[1]) in ('TIME', 'NUM', 'PER')): continue   # the partner a place, the head not a date, number or person
         w = _rnorm(r[3])
         if w in _CW and (not orc or (PRD.get((r[1], r[2])) or set()) & orc): HT[r[1]][(w, r[2])] += 1
     CL = []; TY = _PM.get('TY') or {}; loc = int(getattr(cfg, 'inf_rchain_loc', 1))   # bridge and end must be places (the record names' automatic type):
@@ -139,7 +139,10 @@ def rchain_readout(model, cfg, vis, sl, D=None):
             h1 = _greedy_batch(model, [f"{c[0]} {c[1]} ".encode('latin-1', 'replace') for c in L], sl, 40)
             h2 = _greedy_batch(model, [f"{c[2]} {c[3]} ".encode('latin-1', 'replace') for c in L], sl, 40)
             p1 = np.mean([x.split(' > ')[0].strip() == c[2] for x, c in zip(h1, L)]); p2 = np.mean([x.split(' > ')[0].strip() == c[4] for x, c in zip(h2, L)])
-            return (f"{len(L)}: chain format {np.mean(fm):.2f}, bridge right {np.mean(br):.2f}, C right {np.mean(cr):.2f} (C first, direct {np.mean(dr):.2f}) | "
+            mc = collections.Counter(c[4] for c in (_RC.get('train') or [])).most_common(1); mcv = np.mean([c[4] == mc[0][0] for c in L]) if mc else float('nan')
+            cb = [y for y, b_ in zip(cr, br) if b_]
+            return (f"{len(L)}: chain format {np.mean(fm):.2f}, bridge right {np.mean(br):.2f}, C right {np.mean(cr):.2f} (given the right bridge {np.mean(cb) if cb else float('nan'):.2f}; "
+                    f"guessing the commonest taught C {mcv:.2f}; C first, direct {np.mean(dr):.2f}) | "
                     f"premises asked alone: first hop {p1:.2f}, second hop {p2:.2f}"), g
         st, _g1 = score(trn[:80]); se, g2 = score(tst[:150])
         ex = " | ".join(f"{c[0]} -> {x[:60]} [{c[2]} > {c[4]}]" for c, x in list(zip(tst, g2))[:4])
