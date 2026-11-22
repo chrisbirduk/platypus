@@ -32,17 +32,19 @@ def rchain_build(cfg, vis):
     _load_distant(cfg); R = _PM.get('R') or []; ND = int(_PM.get('ND', 0)); PRD = _PM.get('PRD') or {}
     nv = max(1, int(getattr(cfg, 'inf_premises_visits', 10))); ndv = int(round(ND * min(1.0, (vis + 1) / nv)))
     orc = set(x for x in str(getattr(cfg, 'inf_rchain_oracle', '') or '').split(',') if x)
-    HT = collections.defaultdict(collections.Counter)
+    HT = collections.defaultdict(collections.Counter); TY0 = _PM.get('TY') or {}; loc0 = int(getattr(cfg, 'inf_rchain_loc', 1))
     for r in R:
         if r[0] >= ndv or not (1 <= r[5] <= 8) or r[1] == r[2]: continue
+        if loc0 and TY0.get(r[2]) != 'LOC': continue                           # the partner must be a place (before choosing each head's most frequent one)
         w = _rnorm(r[3])
         if w in _CW and (not orc or (PRD.get((r[1], r[2])) or set()) & orc): HT[r[1]][(w, r[2])] += 1
-    CL = []
+    CL = []; TY = _PM.get('TY') or {}; loc = int(getattr(cfg, 'inf_rchain_loc', 1))   # bridge and end must be places (the record names' automatic type):
     for A_, c in HT.items():
         (w1, B_), _ = c.most_common(1)[0]
         if B_ not in HT: continue
         (w2, C_), _ = HT[B_].most_common(1)[0]
         if C_ in (A_, B_) or len(f"Records show that {A_} {w1} {B_} > {C_}.") > 110: continue
+        if loc and not (TY.get(B_) == 'LOC' and TY.get(C_) == 'LOC'): continue
         CL.append((A_, w1, B_, w2, C_))
     tq = float(getattr(cfg, 'inf_rchain_testq', 0.3))
     BT = {c[2] for c in CL if _hash(c[2], 'rcb') < tq * 1000}
@@ -50,9 +52,11 @@ def rchain_build(cfg, vis):
     inch = {x for c in trn for x in (c[0], c[2], c[4])}
     tst = sorted([c for c in CL if c[2] in BT and c[2] not in inch], key=lambda c: _hash(c[0], 'rce'))[:int(getattr(cfg, 'inf_rchain_test', 150))]
     _RC.update(vis=vis, train=trn, test=tst)
+    gl = [bool((PRD.get((c[0], c[2])) or set()) & {'P131', 'P17', 'P30', 'P361', 'P276', 'P150'}) and bool((PRD.get((c[2], c[4])) or set()) & {'P131', 'P17', 'P30', 'P361', 'P276', 'P150'}) for c in tst]
     print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] {ndv} distant documents read: {len(CL)} containment chains{' (oracle ' + ','.join(sorted(orc)) + ')' if orc else ''} "
           f"-> TAUGHT {len(trn)} (arrow form) | TEST {len(tst)} (bridge never in a taught chain; premises taught, chain never) "
-          f"e.g. '{trn[0][0]} in {trn[0][2]} > {trn[0][4]}.'" if trn else f"  [REAL-TEXT CHAINS | visit {vis + 1}] {len(CL)} chains, none taught yet", flush=True)
+          f"({np.mean(gl) if gl else float('nan'):.2f} of test chains have both premises gold-labelled as containment; evaluation only) "
+          f"e.g. '{trn[0][0]} in {trn[0][2]} > {trn[0][4]}.', '{trn[1][0]} in {trn[1][2]} > {trn[1][4]}.', '{trn[2][0]} in {trn[2][2]} > {trn[2][4]}.'" if len(trn) > 2 else f"  [REAL-TEXT CHAINS | visit {vis + 1}] {len(CL)} chains, none taught yet", flush=True)
     return trn, tst
 
 

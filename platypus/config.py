@@ -576,6 +576,7 @@ class Config:
     inf_rchain=0                    #   22 Nov (MODEL CHANGE when 1) REAL-TEXT CHAINS (inference/realchain.py): containment chains from the distant records; premises of all
                                     #     chains taught as question rows in inf_rchain_frames wordings, train chains in the arrow form 'A in B > C.'; readout on chains
                                     #     whose bridge was never in a taught chain [REAL-TEXT CHAINS, THE TRUNK'S OWN]
+    inf_rchain_loc=1                #     bridge and end must be places (automatic type LOC): 'in' also catches dates ('Paris in 1771')
     inf_rchain_oracle=''            #     only records whose pair carries one of these gold relations (e.g. 'P131,P17,P30,P361'; an oracle reader); empty = the reader as is
     inf_rchain_ntr=400              #     taught chains (at most)
     inf_rchain_test=150             #     test chains (at most)
