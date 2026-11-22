@@ -5960,3 +5960,12 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 ### kra34 VISIT 4 (GPU, seed 4 restart; 22 Nov 13:51)
 - RULE WORLD, THE TRUNK'S OWN CHAIN: **HELD BACK (never planted, never written by route J) C right 0.44 (n 18), bridge 0.44, direct 0.00; PURE FAMILIES C right 0.14 (n 14), bridge 0.29, direct 0.00.** Same visit on seed 5 (kra35): held back 0.14 (n 14), pure 0.10 (n 20). Seed 4 is ahead of seed 5 at visit 4 - the composition through bridges never in a chain is appearing on a second seed; the verdict needs visits 5-6 (n is small).
 - Route D pure families two-step 0.83 (n 54) vs direct 0.00. Gate: never-read given a stored name 0.06 (ungated 0.68).
+
+### JEPA STEP-2 ALIGNMENT FORMS (synthetic, 22 Nov 13:55; 150 countries, same checkpoint, alignment 0.3, step 2, 100 taught arrow chains; new bridge n 77, root seen 34 / never an answer 43)
+| form | NEW bridge C at 300 / 750 / 1,500 | root never an answer | taught C |
+|---|---|---|---|
+| none | 0.49 / 0.47 / 0.52 | 0.44 / 0.44 / 0.49 | - |
+| cosine (current GPU builds) | 0.61 / 0.69 / 0.53 | 0.56 / 0.74 / 0.58 | 0.96-0.97 |
+| **contrastive (InfoNCE over the batch)** | **0.68 / 0.77 / 0.64** | **0.79 / 0.77 / 0.65** | 1.00 |
+| answer-space KL | 0.55 / 0.35 / 0.60 | 0.58 / 0.37 / 0.58 | 0.63-0.79 (damaged) |
+- **Contrastive alignment is best at every step count: +0.12 to +0.30 over none, +0.07 to +0.11 over cosine; for roots never an answer +0.16 to +0.35 over none.** Fits the maths note: cosine on raw states is dominated by shared directions; the negatives force the step-2 state to carry the bridge's identity. Answer-space KL harms the taught chains. Residual mode and alignment on top of the arrow frame queued.
