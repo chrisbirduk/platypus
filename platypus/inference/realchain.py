@@ -147,8 +147,12 @@ def rchain_readout(model, cfg, vis, sl, D=None):
             p1 = np.mean([x.split(' > ')[0].strip() == c[2] for x, c in zip(h1, L)]); p2 = np.mean([x.split(' > ')[0].strip() == c[4] for x, c in zip(h2, L)])
             mc = collections.Counter(c[4] for c in (_RC.get('train') or [])).most_common(1); mcv = np.mean([c[4] == mc[0][0] for c in L]) if mc else float('nan')
             cb = [y for y, b_ in zip(cr, br) if b_]
+            from platypus.inference.premises import _PM as _PM8                # 22 Nov GOLD: chains whose conclusion A -> C is a gold containment relation (Wikidata labels
+            PRD8 = _PM8.get('PRD') or {}; GC8 = {'P131', 'P17', 'P30', 'P361', 'P276', 'P150', 'P706'}   #   in DocRED; evaluation only): right answers that are TRUE
+            gt = [bool((PRD8.get((c[0], c[4])) or set()) & GC8) for c in L]; gcr = [y for y, g_ in zip(cr, gt) if g_]
+            gold_ = f"; GOLD-TRUE conclusions {len(gcr)}: C right {np.mean(gcr):.2f}" if gcr else "; GOLD-TRUE conclusions 0"
             return (f"{len(L)}: chain format {np.mean(fm):.2f}, bridge right {np.mean(br):.2f}, C right {np.mean(cr):.2f} (given the right bridge {np.mean(cb) if cb else float('nan'):.2f}; "
-                    f"guessing the commonest taught C {mcv:.2f}; C first, direct {np.mean(dr):.2f}) | "
+                    f"guessing the commonest taught C {mcv:.2f}; C first, direct {np.mean(dr):.2f}{gold_}) | "
                     f"premises asked alone: first hop {p1:.2f}, second hop {p2:.2f}"), g
         st, _g1 = score(trn[:80]); se, g2 = score(tst[:150])
         ex = " | ".join(f"{c[0]} -> {x[:60]} [{c[2]} > {c[4]}]" for c, x in list(zip(tst, g2))[:4])
