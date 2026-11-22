@@ -111,9 +111,22 @@ def rchain_loss(model, cfg, R, rs):
         ok = [j for j, (q, p) in enumerate(vv) if Hc is not None and Hp is not None and len(q) - 1 < Hc.shape[1] and len(p) - 1 < Hp.shape[1]]
         if ok:
             hc = torch.stack([Hc[j, len(vv[j][0]) - 1] for j in ok]).float(); hp = torch.stack([Hp[j, len(vv[j][1]) - 1] for j in ok]).float()
-            a_ = (1 - F.cosine_similarity(hc, hp, dim=-1)).mean(); loss = loss + aw * a_; al = float(a_.detach())
+            a_ = align_loss(hc, hp, cfg); loss = loss + aw * a_; al = float(a_.detach())
     return loss, ce, al
 
+
+def align_loss(hc, hp, cfg):
+    """22 Nov JEPA step-2 alignment loss between chain states hc (grad) and premise states hp (stop-gradient), by inf_align_mode:
+    cos - 1 - cosine (as before); nce - contrastive (InfoNCE over the batch, temperature 0.1): each chain state must pick ITS premise's
+    state among the batch's, so the identity directions are matched rather than the shared high-variance ones (synthetic, 150 countries:
+    new bridge 0.68 / 0.77 / 0.64 vs cosine 0.61 / 0.69 / 0.53); res - residual: both views centred on their batch mean first"""
+    m = str(getattr(cfg, 'inf_align_mode', 'cos'))
+    if m == 'nce' and len(hc) > 1:
+        sim = F.normalize(hc, dim=-1) @ F.normalize(hp, dim=-1).T / 0.1
+        return F.cross_entropy(sim, torch.arange(len(hc), device=hc.device))
+    if m == 'res' and len(hc) > 1:
+        hc = hc - hc.mean(0, keepdim=True); hp = hp - hp.mean(0, keepdim=True)
+    return (1 - F.cosine_similarity(hc, hp, dim=-1)).mean()
 
 def _greedy_batch(model, prompts, sl, n=60):
     from platypus.inference.closed_form import _ws_batch, _ws_run

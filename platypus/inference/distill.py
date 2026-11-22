@@ -1730,7 +1730,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                    f"(C first, direct {np.mean([x[3] for x in L]):.2f}; subject copied {np.mean([x[4] for x in L]):.2f}, another subject written with ITS true bridge "
                    f"{np.mean([x[5] for x in L]):.2f})") if L else "0"
     ra9 = (model.__dict__.get('_dtw') or {}).get('rwa') or []
-    if ra9: print(f"  [JEPA STEP-2 ALIGNMENT | visit {vis + 1}] during this visit: mean 1 - cosine {np.mean(ra9[:max(1, len(ra9) // 10)]):.3f} (first tenth of the steps) -> {np.mean(ra9[-max(1, len(ra9) // 10):]):.3f} (last tenth), {len(ra9)} steps", flush=True)
+    if ra9: print(f"  [JEPA STEP-2 ALIGNMENT | visit {vis + 1}] during this visit: mean alignment loss ({getattr(cfg, 'inf_align_mode', 'cos')}; cos = 1 - cosine) {np.mean(ra9[:max(1, len(ra9) // 10)]):.3f} (first tenth of the steps) -> {np.mean(ra9[-max(1, len(ra9) // 10):]):.3f} (last tenth), {len(ra9)} steps", flush=True)
     print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
           f"{f(pl)} || HELD BACK, NEVER PLANTED, NEVER WRITTEN BY ROUTE J {f(rn)} || PURE FAMILIES, NEVER WRITTEN {f(rp)}", flush=True)
     if rp: print("      PURE FAMILIES, e.g. " + " | ".join(x[6] for x in rp[:4]), flush=True)
@@ -2368,7 +2368,8 @@ def distill_wake_loss(model, cfg):
             ok9 = [j for j, (c, p_) in enumerate(vv9) if Hc9 is not None and Hp9 is not None and len(c) - 1 < Hc9.shape[1] and len(p_) - 1 < Hp9.shape[1]]
             if ok9:
                 hc9 = torch.stack([Hc9[j, len(vv9[j][0]) - 1] for j in ok9]).float(); hp9 = torch.stack([Hp9[j, len(vv9[j][1]) - 1] for j in ok9]).float()
-                a9 = (1 - F.cosine_similarity(hc9, hp9, dim=-1)).mean(); loss = loss + rwa9 * a9; D.setdefault('rwa', []).append(float(a9.detach()))
+                from platypus.inference.realchain import align_loss as _alr9
+                a9 = _alr9(hc9, hp9, cfg); loss = loss + rwa9 * a9; D.setdefault('rwa', []).append(float(a9.detach()))
         for pk_, lk_ in (('lf', 'al_lf'), ('para', 'al_pa')):                 # LABEL-FREE ALIGNMENT (never-asked facts) and PARAPHRASE ALIGNMENT (taught facts asked
             lfp_ = (D.get(pk_) or {}).get(sl) if aw > 0 else None             #   with a merged paraphrase of their relation): questions with no answer bytes and
             if not lfp_: continue                                              #   no cross-entropy -> the stored declaration's state
