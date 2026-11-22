@@ -121,13 +121,17 @@ def rules(rel_of):
     return nm, ab
 P(f"1. RAW WORDINGS ({len(W)}): route J HELD-OUT one-hop {h0[0]:.4f} | heads with other training facts ({h0[2]}) {h0[1]:.4f} | gold purity (each wording alone) {purity([[i] for i in range(len(W))]):.3f}")
 nm0, ab0 = rules({w: WI[w] for w in W}); P(f"   RULES above the shuffled null ({nm0:.3f}): {len(ab0)}")
-for th in (TH, TH - 0.15):
-    ncl = len(cluster(AG, th))
-    for nam, S in (('JEPA OPERATOR AGREEMENT', AG), ('SYMBOLIC (Jaccard of pairs), same number of relations', JA)):
-        cl = cluster(S, th) if nam.startswith('JEPA') else cluster(S, n=ncl); th_ = th; rel_of = {W[i]: k for k, c in enumerate(cl) for i in c}
+iu = np.triu_indices(len(W), 1)
+for nam, S in (('JEPA operator agreement', AG), ('symbolic Jaccard', JA)):
+    o = np.argsort(-S[iu])[:10]
+    P(f"   most similar wording pairs by {nam}: " + '; '.join(f"{W[iu[0][k]]} ~ {W[iu[1][k]]} {S[iu][k]:.3f}" for k in o))
+NCL = [int(x) for x in os.environ.get('RM_NCL', '20,10').split(',')]   # 22 Nov v2: merge to fixed numbers of relations (v1's thresholds merged nothing)
+for ncl in NCL:
+    for nam, S in (('JEPA OPERATOR AGREEMENT', AG), ('SYMBOLIC (Jaccard of pairs)', JA)):
+        cl = cluster(S, n=ncl); th_ = ncl; rel_of = {W[i]: k for k, c in enumerate(cl) for i in c}
         big = sorted(cl, key=lambda c: -sum(wc[W[i]] for i in c))[:4]
         E1, OPS1 = fit(rel_of, TR, STEPS); h1 = heldout(E1, OPS1, rel_of); nm1, ab1 = rules(rel_of)
-        P(f"2. MERGED by {nam}, JEPA threshold {th_:.2f}: {len(cl)} relations | gold purity {purity(cl):.3f} | route J HELD-OUT {h1[0]:.4f}, heads with other facts {h1[1]:.4f} | "
+        P(f"2. MERGED by {nam} to {th_} relations: {len(cl)} relations | gold purity {purity(cl):.3f} | route J HELD-OUT {h1[0]:.4f}, heads with other facts {h1[1]:.4f} | "
           f"RULES above the null ({nm1:.3f}) {len(ab1)} | largest: " + ' ; '.join('{' + ', '.join(W[i] for i in c[:6]) + '}' for c in big) + f"  ({time.time() - T0:.0f}s)")
         for c_, s_, d_, r1, r2, r3 in ab1[:3]:
             nmr = lambda r: '/'.join(W[i] for i in cl[r][:3])
