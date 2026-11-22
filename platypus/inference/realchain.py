@@ -73,9 +73,11 @@ def rchain_rows(cfg, vis, sl):
         for (h, w, t) in ((A_, w1, B_), (B_, w2, C_)):
             if (h, w, t) in seen: continue
             seen.add((h, w, t)); P.extend((p, a, sl) for p, a in _frames(h, w, t, k))
-    for (A_, w1, B_, w2, C_) in trn:
-        C.append((f"{A_} in ".encode('latin-1', 'replace'), f"{B_} > {C_}.".encode('latin-1', 'replace'), sl))
-        A.append((f"{A_} in {B_} > ".encode('latin-1', 'replace'), f"{B_} {w2} ".encode('latin-1', 'replace')))
+    own = int(getattr(cfg, 'inf_rchain_ownw', 0))                             # 22 Nov kra32 visit 3: TEST first hop 0.55 asked in its own wording, 0.03 inside 'A in ':
+    for (A_, w1, B_, w2, C_) in trn:                                           #   with inf_rchain_ownw the chain starts with the first premise's own wording ('A region of B > C')
+        r1 = w1 if own else 'in'
+        C.append((f"{A_} {r1} ".encode('latin-1', 'replace'), f"{B_} > {C_}.".encode('latin-1', 'replace'), sl))
+        A.append((f"{A_} {r1} {B_} > ".encode('latin-1', 'replace'), f"{B_} {w2} ".encode('latin-1', 'replace')))
     return dict(prem=P, chain=C, align=A, sl=sl)
 
 
@@ -131,7 +133,7 @@ def rchain_readout(model, cfg, vis, sl, D=None):
     try:
         def score(L):
             if not L: return "0", []
-            g = _greedy_batch(model, [f"{c[0]} in ".encode('latin-1', 'replace') for c in L], sl, 70)
+            g = _greedy_batch(model, [(f"{c[0]} {c[1]} " if int(getattr(cfg, 'inf_rchain_ownw', 0)) else f"{c[0]} in ").encode('latin-1', 'replace') for c in L], sl, 70)
             fm, br, cr, dr = [], [], [], []
             for x, c in zip(g, L):
                 pt = [s.strip() for s in x.split(' > ')]
