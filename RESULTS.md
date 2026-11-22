@@ -6090,3 +6090,19 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 ### New readout (22 Nov 20:40): STEP BY STEP on real text (route D for real-text chains; the combined design's test)
 - In [REAL-TEXT CHAINS, THE TRUNK'S OWN], for taught and TEST chains: the trunk answers hop 1 ALONE in its premise wording ('A in '), then hop 2 on its OWN hop-1 answer ('B' lies in ' -> C'); hop 1 right, C right, valid chain (both links recorded), gold-true written conclusions; GATED by the weaker hop's mean byte log-probability, the threshold keeping 75% of the right TAUGHT step-by-step answers: answered, right when answered. Compares the trunk's one-chain answer (bridge 0.21-0.32 inside the chain vs the premise alone 0.51-0.79) with the plan-then-answer-each-step design. Readout only, guarded; in every build from commit below (kra42 onwards if started after it).
 - kra40 VISIT 4 (20:36): REAL-TEXT TEST bridge 0.32, C 0.07 (baseline 0.05), C given the right bridge 0.21 (kra36 visit 4, seed 4: 0.29 / 0.15 / 0.50; kra35 visit 4, seed 5 without frames: 0.34 / 0.04 / 0.10); premises alone 0.74 / 0.71. Rule world: held back 0.23 (13), **pure families 0.11 (18), bridge 0.44**, direct 0.00 (kra35 same visit 0.10). On seed 5 the arrow frame's step-2 gain is smaller so far (0.13-0.21 vs 0.10-0.29 without it at visits 3-4).
+
+### RETRACTION IN A DENSE WORLD (offline, synthetic; 22 Nov 20:53; tools/retract_dense.py; five-level world, 500 people, wrong facts planted in 'lives' (person -> wrong city) and 'city_in' (city -> wrong region), a redundant recorded country for 0 / 50 / 100% of people; route J 4-fold x 2 seeds)
+| signal (AUC; precision at the error count) | 0% redundant | 50% | 100% |
+|---|---|---|---|
+| 'lives' S1 surprise (leave-fold-out) | 0.54 | 0.41 | 0.51 |
+| 'lives' S4 confident contradiction | 0.46 | 0.48 | 0.42 |
+| **'lives' S5 path contradiction, symbolic** (recorded city -> region -> country vs the recorded country) | - | **0.94; 0.60** | **0.95; 0.69** |
+| 'lives' S5 path contradiction, latent (route J composite) | - | 0.84; 0.10 | 0.83; 0.34 |
+| 'city_in' S1 surprise | 0.53 | 0.57 | 0.55 |
+| **'city_in' S5 path contradiction** (share of the city's residents whose recorded country disagrees) | - | **0.82; 0.67** | **0.998; 0.90** |
+- BLAME (which link of a contradicted chain is planted, by surprise): 0.35-0.49 vs chance 0.33 - surprise does not localise.
+- **Retraction works by CONSISTENCY BETWEEN REDUNDANT VIEWS, not by surprise.** Leave-one-out surprise and confident contradiction stay at chance even in a dense world (a held-out fact's subject has nothing else that predicts it). A chain that contradicts an independent record finds wrong facts at AUC 0.94-0.998 - but only where that redundant record exists (0% redundancy: no signal possible). A fact contradicted by MANY independent chains (a wrong city_in, contradicted by its residents) is found and localised at 0.90 precision; a single contradicted chain flags all its links (lives precision 0.60-0.69).
+- For real text (one fact per name, no redundancy): retraction needs redundant views - the same fact reached by two routes (another relation, another document, a composite) - which relation merging and the trunk filling in facts (the combined design) would supply; and aggregation over many contradicting chains to localise the culprit.
+
+### kra41 local check (22 Nov 20:50): PASS
+- No Traceback; the step-1 frame adds one premise row per chain (visit 1 64 vs kra36's 51; visit 2 318 vs 249; visit 3 587 vs 459); ANY VALID CHAIN prints; taught real-text chains at visit 3 as kra36 (format 0.96, C given the bridge 0.92).
