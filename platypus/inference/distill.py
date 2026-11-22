@@ -412,6 +412,8 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
                 tn = float(min(ok_t)) if ok_t else tp
                 if tn is not None: tn = max(tn, float(np.quantile(kc2, 0.1)) if len(kc2) >= 4 else 0.9)   # floor: never below the keep-90%-of-right threshold (local kra22: with few
                                                                                #   stored names every t passes, min t was 0.10, and 0.33 of the next sleep's never-read got a name)
+            gmn = float(getattr(cfg, 'inf_distill_gate_min', 0.0))           # 22 Nov START-UP FLOOR: the first calibration (visit 1, facts barely learned) gave t 0.12-0.13
+            if gmn > 0 and tn is not None: tn = max(tn, gmn)                   #   and let 0.40-0.51 of never-read questions through at visit 2 (kra29, kra33); later t 0.84-0.92
             if tp is not None and kr2 and un2:
                 ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
                 gl_ = float(getattr(cfg, 'inf_distill_gate_leak', 0.0)); lab_ = (f"at most {gl_:.0%} of never-read questions answered, never below keep-90% of right" if gl_ > 0 else f"keep {gq:.0%} of its right answers")
