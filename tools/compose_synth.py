@@ -321,7 +321,13 @@ if COTLATE:                                                                    #
                     return torch.stack([H[k, min(len(q), L - 1)] for k, q in enumerate(qs)])
                 h1 = hlast(q1)
                 with torch.no_grad(): h2 = hlast(q2)
-                la_ = AW_ * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean(); op2.zero_grad(); la_.backward(); op2.step()
+                la_ = AW_ * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean()
+                if int(os.environ.get('CS_ALIGN_STEP', 1)) == 3 and not SPELL:     #   CS_ALIGN_STEP 3: BOTH steps - step 1 ('A is a citizen of ' ~ 'A lives in ') and step 2
+                    q3 = [f"{a} is a citizen of {OLD[bi][0]} > ".encode('latin-1') for a, bi in ap_]; q4 = [f"{OLD[bi][0]} lies in ".encode('latin-1') for a, bi in ap_]
+                    h3 = hlast(q3)
+                    with torch.no_grad(): h4 = hlast(q4)
+                    la_ = la_ + AW_ * (1 - F.cosine_similarity(h3, h4, dim=-1)).mean()
+                op2.zero_grad(); la_.backward(); op2.step()
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
                 if tag == 'CHAIN' and NB_: s1 = chain(mm, HS_, OLD) if HS_ else (float('nan'),) * 2; s2 = chain(mm, HN_, OLD) if HN_ else (float('nan'),) * 2; out[-1] += f" [SEEN bridge (n {len(HS_)}) B {s1[0]:.2f} C {s1[1]:.2f} | NEW bridge (n {len(HN_)}) B {s2[0]:.2f} C {s2[1]:.2f}; taught cities {len(TPC_)}]"
