@@ -187,7 +187,12 @@ for arm in os.environ.get('BT_ARMS', 'DIRECT,BRIDGE').split(','):
                 bl = [enc(p_) for p_ in ps]; X, Xi = tens([b_ + b'.' for b_ in bl]); H = m.hid(Xi); return torch.stack([H[k, min(len(b_), H.shape[1] - 1)] for k, b_ in enumerate(bl)])
             h1 = hl([f"{c[0]} {R_(c)} {c[4][2]} > " for c in cc])
             with torch.no_grad(): h2 = hl([f"{c[5][0]} {c[5][1]} " for c in cc])
-            la = AW * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean(); op.zero_grad(); la.backward(); op.step()
+            la = AW * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean()
+            if int(os.environ.get('BT_ALIGN_STEP', 2)) == 3:                   # 22 Nov: STEP 1 too - 'A <composite> ' (predicts the bridge) ~ 'A <w1> ' (its premise)
+                h3 = hl([f"{c[0]} {R_(c)} " for c in cc])
+                with torch.no_grad(): h4 = hl([f"{c[4][0]} {c[4][1]} " for c in cc])
+                la = la + AW * (1 - F.cosine_similarity(h3, h4, dim=-1)).mean()
+            op.zero_grad(); la.backward(); op.step()
         if (st + 1) % (STEPS // 2) == 0:
             m.eval()
             P(f"   {arm:7s} step {st + 1}: TRAIN (taught) {ev(m, arm, TR[:100])} || TEST (never taught) {ev(m, arm, TE)} || forgetting {dbits(m) - d0:+.4f}  ({time.time() - T0:.0f}s)")

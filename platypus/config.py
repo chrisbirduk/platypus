@@ -586,6 +586,7 @@ class Config:
     inf_rchain_frames=2             #     premise wordings (1-3)
     inf_rchain_rows=8               #     rows a question-row step (half premises, half chains)
     inf_rchain_w=1.0                #     weight of their loss
+    inf_rchain_align_step=2         #     3 = align step 1 too ('A is within ' ~ 'A <w1> ')
     inf_rchain_align=0.0            #     JEPA step-2 alignment weight ('A in B > ' ~ 'B <w2> ')
     inf_rule_world_align_step=2     #   22 Nov kra31: 3 = align STEP 1 too ('A r2 ' ~ 'A r1 '); synthetic, one wording: 0.15-0.19 -> 0.50-0.68
     inf_rule_world_premw=0          #   21 Nov kra28 (MODEL CHANGE when > 1): rule-world premises planted in this many wordings (knowledge augmentation; probes._RW_PREMW)

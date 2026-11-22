@@ -82,6 +82,8 @@ def rchain_rows(cfg, vis, sl):
                                                                                #   the composite gets its own relation (inf_rchain_crel, e.g. 'is within'), as the rule world's
         C.append((f"{A_} {r1} ".encode('latin-1', 'replace'), f"{B_} > {C_}.".encode('latin-1', 'replace'), sl))
         A.append((f"{A_} {r1} {B_} > ".encode('latin-1', 'replace'), f"{B_} {w2} ".encode('latin-1', 'replace')))
+        if int(getattr(cfg, 'inf_rchain_align_step', 2)) == 3:                # 22 Nov: STEP 1 too - 'A is within ' (predicts B) ~ 'A <w1> ' (its premise)
+            A.append((f"{A_} {r1} ".encode('latin-1', 'replace'), f"{A_} {w1} ".encode('latin-1', 'replace')))
     return dict(prem=P, chain=C, align=A, sl=sl)
 
 
