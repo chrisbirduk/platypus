@@ -6119,3 +6119,6 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **The step-1 frame closes the step-1 gap: the bridge inside the chain 0.66 against the premise alone 0.77 (kra36: 0.29 vs 0.69).** The C answer at visit 4 is 0.16, three times the baseline (0.05), the best real-text visit-4 figure so far; ANY VALID CHAIN agrees (149 well-formed).
 - Step 2 is now the weaker step (0.07-0.23 vs kra36's 0.37-0.50), and the second premise asked alone is lower (0.21-0.49). kra42 (step-1 frame + arrow rows x4 + paraphrases + 800 taught chains) adds weight to step 2 - the right combination on paper.
 - Rule world: held back 0.29 / 0.50 (n 14 each), pure families 0.00 (12) / 0.12 (8), direct 0.00-0.07.
+
+### kra42 local check (22 Nov 21:45): PASS
+- No Traceback (four visits within the 50-minute limit); premise rows with the paraphrases and the arrow rows x4 (visit 1: 183 vs kra41's 64); the STEP BY STEP readout prints on the full system (stand-in, visit 3 taught: hop 1 right 0.43, C 0.13, gated answered 0.58, right 0.23) - readout only. Ran with 400 taught chains (preset loaded before the 800 change; a count only).
