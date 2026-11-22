@@ -232,7 +232,7 @@
  "inf_kmc_rulej_snap": 1,
  "inf_kmc_rulej_thr": -1.0,
  "inf_kmc_rulej_mlp_steps": 1500,
- "inf_distill_chainform": 0,
+ "inf_distill_chainform": 1,
  "_inf_distill_chainform": "kra26: route J writes taught directly (one chain form in the trunk's training)",
  "inf_premises_subst": 2,
  "inf_distill_chain_conf": 1,
