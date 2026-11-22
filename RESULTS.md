@@ -5944,3 +5944,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - NEW bridge B / C at 300 / 750 / 1,500: **0.84 / 0.73, 0.77 / 0.73, 0.81 / 0.81** (without the frame, same world: 0.88 / 0.49, 0.79 / 0.47, 0.77 / 0.52). Root NEVER an answer: **0.65 / 0.70 / 0.77** (without: 0.44 / 0.44 / 0.49); root seen 0.82 / 0.76 / 0.85. Taught 1.00.
 - **The premise written in the chain's own step-2 context ('B > C') lifts step 2 by about 0.25-0.30** - for roots never an answer most of all. Not the root-vocabulary hypothesis (which failed), but the same lesson as the wordings: a premise is retrieved in the contexts it was learned in.
 - **kra36 = kra35 + arrow premise frames (rule world 'M > Z.' x2, inf_rule_world_premarrow 2; real text 'B > C.', inf_rchain_arrowprem 1), seed 4.**
+
+### GATED CHAINS (synthetic, 22 Nov 13:30; 20 countries, CS_COTLATE_X, step-2 alignment 0.3, 100 taught chains)
+- Chains: new bridge C 0.63 / 0.78 / 0.76 at 300 / 750 / 1,500 steps; taught 0.92-1.00.
+- FALSE MEMORY on made-up chains: after chain teaching, NOVEL (never read) names given a well-formed chain to a known city and country **0.90** (held-out known people 0.93) - chain teaching makes the trunk invent chains. Confidence (mean byte log-prob of its own chain) separates known from novel AUC 0.81 (0.54 before teaching). **GATED (t keeps 75% of right known chains): novel names given a chain 0.11, known answered 0.58, right when answered 1.00.**
+- Premises only read (never taught or asked): chain C 0.04 / 0.08 / 0.07 / 0.16 at 1 / 2 / 4 / 8 reads - reading alone does not build chains. Forgetting 0.435 -> 0.463 bits/byte.
+- **The confidence gate that fixed false memory for single facts also works for chains: invention falls from 0.90 to 0.11 while every answered chain is right.**
