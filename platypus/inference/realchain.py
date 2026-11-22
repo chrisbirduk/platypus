@@ -64,6 +64,11 @@ def _crel(cfg):
     return str(getattr(cfg, 'inf_rchain_crel', '') or 'in')                   # the composite's relation ('in' = kra32)
 
 
+_PARAW = ['is located in', 'lies in', 'is part of', 'is situated in', 'is a place in', 'belongs to']   # 22 Nov kra38: containment paraphrases for premise rows
+# (kra36 visits 3-5: inside the chain 'A is within ' the bridge is right 0.26-0.29 while the first premise asked alone is right 0.60-0.69 -
+#  the premise is retrieved only in the wordings it was learned in; never 'is within' itself, the composite relation's own words)
+
+
 def _frames(A, w, B, k):
     fs = [f"{A} {w} ", f"Records show that {A} {w} ", f"It is known that {A} {w} "][:max(1, k)]
     return [(f.encode('latin-1', 'replace'), (B + '.').encode('latin-1', 'replace')) for f in fs]
@@ -78,6 +83,8 @@ def rchain_rows(cfg, vis, sl):
             if (h, w, t) in seen: continue
             seen.add((h, w, t)); P.extend((p, a, sl) for p, a in _frames(h, w, t, k))
             P.extend([(f"{h} > ".encode('latin-1', 'replace'), (t + '.').encode('latin-1', 'replace'), sl)] * int(getattr(cfg, 'inf_rchain_arrowprem', 0)))   # 22 Nov arrow premise frame
+            for pw in [x for x in _PARAW if x != _crel(cfg).strip()][:int(getattr(cfg, 'inf_rchain_paraw', 0))]:   # 22 Nov kra38 PARAPHRASED CONTAINMENT WORDINGS
+                P.append((f"{h} {pw} ".encode('latin-1', 'replace'), (t + '.').encode('latin-1', 'replace'), sl))   #   (the rule world's premw: 1 wording 0.15-0.19, 4 -> 0.55-0.67)
     for (A_, w1, B_, w2, C_) in trn:                                           # 22 Nov kra32 visits 4-5: with the chain asked as 'A in ' - the SAME prompt as a first premise
         r1 = _crel(cfg)                                                        #   worded 'in' - test heads answer their premise ('A in B.', format 0.20) and never chain;
                                                                                #   the composite gets its own relation (inf_rchain_crel, e.g. 'is within'), as the rule world's

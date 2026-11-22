@@ -591,6 +591,7 @@ class Config:
     inf_rchain_align_step=2         #     3 = align step 1 too ('A is within ' ~ 'A <w1> ')
     inf_rchain_align=0.0            #     JEPA step-2 alignment weight ('A in B > ' ~ 'B <w2> ')
     inf_align_mode='cos'            #     22 Nov: JEPA step-2 alignment loss for the rule world and real-text chains: cos | nce (contrastive, best in synthetic) | res (centred)
+    inf_rchain_paraw=0              #     22 Nov kra38: real-text premises also taught in N paraphrased containment wordings ('A is located in B.', ...; never the composite's)
     inf_rule_world_align_step=2     #   22 Nov kra31: 3 = align STEP 1 too ('A r2 ' ~ 'A r1 '); synthetic, one wording: 0.15-0.19 -> 0.50-0.68
     inf_rule_world_premarrow=0      #   22 Nov (MODEL CHANGE when > 0): each rule-world premise also planted this many times as 'M > Z.' (the chain's step-2 context)
     inf_rule_world_premw=0          #   21 Nov kra28 (MODEL CHANGE when > 1): rule-world premises planted in this many wordings (knowledge augmentation; probes._RW_PREMW)
