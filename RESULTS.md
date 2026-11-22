@@ -5832,3 +5832,12 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - [RULE WORLD, THE TRUNK'S OWN CHAIN]: PLANTED bridge 0.88, C 0.59 (n 17); HELD BACK never written bridge 0.27, C 0.00 (n 11); **PURE FAMILIES never written: format 0.83, bridge right 0.33, C right 0.00 (n 12)** (kra27 visit 3: 0.10 / 0.00; kra26: 0.00 / 0.00).
 - Examples: step 2 is now mostly a real second statement with a NEW name ('Quibrisal -> is a child of Quibelris; Quibelris is a child of Quibelor'; 'Quirasal -> ... Quiratev is a child of Quiedzo; Quiedzo is a c...' - a third step), not kra27's 'M is a child of M'; but the root is wrong (C 0.00), often a name sharing the bridge's first letters. One restates the subject ('Tozomon -> is a child of Ratozo; Tozomon is a child of Ratozo').
 - Route D (premises asked directly): first step 0.70, two-step 0.62, **pure 0.58** (kra27 0.62 / 0.53 / 0.49) - six wordings raise premise recall in the canonical wording too. Facts taught 0.90; gate right when answered 1.00; bits on read domains 2.0152 (kra27 1.9977). No Traceback.
+
+### THE SPELLED FORM DOES NOT COMPOSE THROUGH NEW BRIDGES; THE ARROW FORM DOES (synthetic, 22 Nov 00:10; compose_synth CS_SPELL 1 - 'A is a citizen of: lives in B; B lies in C.', kra27 / kra28's form - premises in 4 / 3 wordings, checkpoint of the clean run, 100 taught)
+| form (varied premises) | NEW bridge B / C at 300 / 750 / 1,500 steps (n 78) | SEEN bridge C |
+|---|---|---|
+| arrow 'A is a citizen of B > C.' (clean run) | 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67 | 0.68-0.91 |
+| **spelled (kra27 / kra28)** | **0.77 / 0.12, 0.86 / 0.14, 0.86 / 0.12** | 0.55-0.86 |
+| spelled + JEPA alignment of STEP 1's state to the premise's (weight 1.0) | 0.24 / 0.06, 0.44 / 0.08, 0.47 / 0.12 (taught C 0.45-0.89) | 0.23-0.41 |
+- In the spelled form the FIRST step works for new bridges (B 0.86) and the SECOND fails (C 0.12-0.14): 'B lies in' inside the chain is answered only for bridges seen in taught chains - **exactly kra28 at visit 3** (pure bridge 0.33, C 0.00; step 2 a real statement with the wrong root). Aligning step 1 (which was not the problem) hurts.
+- **kra29: the arrow form back (inf_rule_world_chainplant 1) with the six premise wordings** - the combination that composes in the synthetic world. Queued locally: JEPA alignment of the SECOND step's state (spelled and arrow, weight 0.3), alignment with one wording, two wordings.

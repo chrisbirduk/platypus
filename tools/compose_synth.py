@@ -313,6 +313,9 @@ if COTLATE:                                                                    #
                 ap_ = [TP[r2.randint(len(TP))] for _ in range(8)]              #   state in the premise's own sentence ('A lives in '; stop-gradient target), on taught
                 q1 = [(f"{a} is a citizen of: lives in " if SPELL else f"{a} is a citizen of ").encode('latin-1') for a, bi in ap_]   #   people only
                 q2 = [f"{a} lives in ".encode('latin-1') for a, bi in ap_]
+                if int(os.environ.get('CS_ALIGN_STEP', 1)) == 2:               #   CS_ALIGN_STEP 2: the SECOND step - the state where the chain predicts the root
+                    q1 = [(f"{a} is a citizen of: lives in {OLD[bi][0]}; {OLD[bi][0]} lies in " if SPELL else f"{a} is a citizen of {OLD[bi][0]} > ").encode('latin-1') for a, bi in ap_]
+                    q2 = [f"{OLD[bi][0]} lies in ".encode('latin-1') for a, bi in ap_]   #   pulled to the state in the bridge's own premise 'B lies in '
                 def hlast(qs):
                     X = tens(qs); Xi = torch.cat([torch.full((len(qs), 1), PAD), X[:, :-1]], 1); H = mm.hid(Xi)
                     return torch.stack([H[k, min(len(q), L - 1)] for k, q in enumerate(qs)])
