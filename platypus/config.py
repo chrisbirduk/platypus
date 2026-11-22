@@ -578,7 +578,7 @@ class Config:
                                     #     chains taught as question rows in inf_rchain_frames wordings, train chains in the arrow form 'A in B > C.'; readout on chains
                                     #     whose bridge was never in a taught chain [REAL-TEXT CHAINS, THE TRUNK'S OWN]
     inf_rchain_loc=1                #     bridge and end must be places (automatic type LOC): 'in' also catches dates ('Paris in 1771')
-    inf_rchain_ownw=0               #     22 Nov: chains start with the first premise's own wording ('A region of B > C') instead of 'A in '
+    inf_rchain_crel=''              #     22 Nov: the composite's own relation ('is within'); empty = 'in', the same prompt as first premises worded 'in' (kra32: test heads never chain)
     inf_rchain_oracle=''            #     only records whose pair carries one of these gold relations (e.g. 'P131,P17,P30,P361'; an oracle reader); empty = the reader as is
     inf_rchain_ntr=400              #     taught chains (at most)
     inf_rchain_test=150             #     test chains (at most)

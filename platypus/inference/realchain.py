@@ -8,7 +8,7 @@ The trunk never reads the distant documents, so it knows only what is taught her
   - CHAINS of the train split only, in the arrow form 'A in B > C.' (the form that composes through new bridges; the spelled form does not);
   - optional JEPA STEP-2 ALIGNMENT (inf_rchain_align): the state where 'A in B > ' predicts C pulled to the state of 'B <w2> ' (stop-gradient).
 Split by BRIDGE: chains whose bridge hashes into the test share, and that never appears in any taught chain, are never taught as chains.
-READOUT [REAL-TEXT CHAINS, THE TRUNK'S OWN]: greedy 'A in ' (store and memory off) parsed 'B > C' - chain format, bridge right, C right - for
+READOUT [REAL-TEXT CHAINS, THE TRUNK'S OWN]: greedy 'A <composite relation> ' (store and memory off) parsed 'B > C' - chain format, bridge right, C right - for
 taught chains and for TEST chains (composition through bridges never in a taught chain), the direct answer ('A in ' starting with C), and the
 premises asked alone (first and second hop)."""
 import collections, zlib
@@ -60,6 +60,10 @@ def rchain_build(cfg, vis):
     return trn, tst
 
 
+def _crel(cfg):
+    return str(getattr(cfg, 'inf_rchain_crel', '') or 'in')                   # the composite's relation ('in' = kra32)
+
+
 def _frames(A, w, B, k):
     fs = [f"{A} {w} ", f"Records show that {A} {w} ", f"It is known that {A} {w} "][:max(1, k)]
     return [(f.encode('latin-1', 'replace'), (B + '.').encode('latin-1', 'replace')) for f in fs]
@@ -73,9 +77,9 @@ def rchain_rows(cfg, vis, sl):
         for (h, w, t) in ((A_, w1, B_), (B_, w2, C_)):
             if (h, w, t) in seen: continue
             seen.add((h, w, t)); P.extend((p, a, sl) for p, a in _frames(h, w, t, k))
-    own = int(getattr(cfg, 'inf_rchain_ownw', 0))                             # 22 Nov kra32 visit 3: TEST first hop 0.55 asked in its own wording, 0.03 inside 'A in ':
-    for (A_, w1, B_, w2, C_) in trn:                                           #   with inf_rchain_ownw the chain starts with the first premise's own wording ('A region of B > C')
-        r1 = w1 if own else 'in'
+    for (A_, w1, B_, w2, C_) in trn:                                           # 22 Nov kra32 visits 4-5: with the chain asked as 'A in ' - the SAME prompt as a first premise
+        r1 = _crel(cfg)                                                        #   worded 'in' - test heads answer their premise ('A in B.', format 0.20) and never chain;
+                                                                               #   the composite gets its own relation (inf_rchain_crel, e.g. 'is within'), as the rule world's
         C.append((f"{A_} {r1} ".encode('latin-1', 'replace'), f"{B_} > {C_}.".encode('latin-1', 'replace'), sl))
         A.append((f"{A_} {r1} {B_} > ".encode('latin-1', 'replace'), f"{B_} {w2} ".encode('latin-1', 'replace')))
     return dict(prem=P, chain=C, align=A, sl=sl)
@@ -133,7 +137,7 @@ def rchain_readout(model, cfg, vis, sl, D=None):
     try:
         def score(L):
             if not L: return "0", []
-            g = _greedy_batch(model, [(f"{c[0]} {c[1]} " if int(getattr(cfg, 'inf_rchain_ownw', 0)) else f"{c[0]} in ").encode('latin-1', 'replace') for c in L], sl, 70)
+            g = _greedy_batch(model, [f"{c[0]} {_crel(cfg)} ".encode('latin-1', 'replace') for c in L], sl, 70)
             fm, br, cr, dr = [], [], [], []
             for x, c in zip(g, L):
                 pt = [s.strip() for s in x.split(' > ')]
@@ -149,7 +153,7 @@ def rchain_readout(model, cfg, vis, sl, D=None):
         st, _g1 = score(trn[:80]); se, g2 = score(tst[:150])
         ex = " | ".join(f"{c[0]} -> {x[:60]} [{c[2]} > {c[4]}]" for c, x in list(zip(tst, g2))[:4])
         cel = (D or {}).get('rchl') or []; all_ = (D or {}).get('rcha') or []
-        print(f"  [REAL-TEXT CHAINS, THE TRUNK'S OWN | visit {vis + 1}] greedy 'A in ' (store and memory off), parsed 'B > C': TAUGHT {st} || "
+        print(f"  [REAL-TEXT CHAINS, THE TRUNK'S OWN | visit {vis + 1}] greedy 'A {_crel(cfg)} ' (store and memory off), parsed 'B > C': TAUGHT {st} || "
               f"TEST, bridge never in a taught chain {se}"
               + (f" || rows this visit: loss {np.mean(cel[:max(1, len(cel) // 10)]):.3f} -> {np.mean(cel[-max(1, len(cel) // 10):]):.3f} ({len(cel)} steps)" if cel else "")
               + (f", JEPA alignment 1 - cos {np.mean(all_[:max(1, len(all_) // 10)]):.3f} -> {np.mean(all_[-max(1, len(all_) // 10):]):.3f}" if all_ else ""), flush=True)
