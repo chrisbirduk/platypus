@@ -227,7 +227,7 @@ def run(cfg):
         _ckp=_ckpt.ck_load(cfg,model,_ck_id)
         if _ckp is not None:
             _ckpt.ck_restore(_ckp,cfg,model)
-            for k_ in list(_ckp['loaders'].get('trp',{}))+list(_ckp['loaders'].get('ftr',{})): train_of(*k_)   # rebuild the saved loaders' text
+            for k_ in _ckp['loaders'].get('trp',{}): train_of(*k_)   # rebuild the saved loaders' text
             _ckpt.ck_restore(_ckp,cfg,model)                   # again: rebuilding a loader may draw random numbers or touch module state
             L_=_ckp['locals']
             opt=L_['opt']; meta=L_['meta']; meta_opt=L_['meta_opt']; kl_log=L_['kl_log']; dream_log=L_['dream_log']; fd_log=L_['fd_log']
@@ -240,7 +240,6 @@ def run(cfg):
             for f_,s_ in zip(vals,LS_['vals']): _ckpt.ck_set_loader_state(f_,s_)
             for k_,s_ in LS_.get('trp',{}).items(): _ckpt.ck_set_loader_state(trp_[k_],s_)
             for f_,s_ in zip(trains or [],LS_.get('trains',[])): _ckpt.ck_set_loader_state(f_,s_)
-            for k_,s_ in LS_.get('ftr',{}).items(): _ckpt.ck_set_loader_state(ftr_[k_],s_)
             _t2s=model.__dict__.setdefault('_t2s',{}); _t_run=time.perf_counter()-_ckp['wall_run']; _ck_from=_ckp['visit']
             print(f"  [checkpoint] resumed after visit {_ck_from} of {len(schedule)} from {_ckp['path']} ({_ckp.get('ids_remapped',0)} containers with id() keys remapped)",flush=True)
             del _ckp,L_,LS_
@@ -507,7 +506,6 @@ def run(cfg):
             if trains is None: ldr_['trp']={k_:_ckpt.ck_loader_state(f_) for k_,f_ in trp_.items()}
             else:
                 ldr_['trains']=[_ckpt.ck_loader_state(f_) for f_ in trains]
-                if cfg.fact_spec: ldr_['ftr']={k_:_ckpt.ck_loader_state(f_) for k_,f_ in ftr_.items()}
             try:
                 sz_,sec_=_ckpt.ck_save(vi,len(schedule),cfg,model,{k_:_lv[k_] for k_ in CK_LOCALS if k_ in _lv},ldr_,time.perf_counter()-_t_run,_ck_id)
                 print(f"  [checkpoint] saved after visit {vi} of {len(schedule)}: {sz_/2**20:.0f} MB in {sec_:.1f}s",flush=True)
