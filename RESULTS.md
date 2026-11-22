@@ -6009,3 +6009,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - RULES on raw wordings: only one above the shuffled null ('on' o 'and in' => 'and in' 0.135, 5 / 37; null best 0.111). **Raw connecting words ('in', 'on', 'of', 'by', 'until') are too ambiguous to compose symbolically** - the real-text chains work because they are filtered to LOC containment first.
 - ROUTE J on real records: one-hop TRAIN 0.81, HELD-OUT (never trained) 0.010 (chance 0.00003). **Real records are about one fact per name (31k facts, 32k names): route J memorises but has almost no neighbours to generalise from.** Composites mostly noise (e.g. 'Gwadar Port -> Spain'), gold containment 0.73 among the 52 pairs that have any gold relation (selection).
 - RETRACTION proxy (gold-labelled vs unlabelled held-out records): rest-of-knowledge log p AUC 0.538, documents 0.522 - near chance; the proxy is weak (unlabelled is not wrong). The planted-error test (tools/retract_jepa.py, running) gives a clean ground truth and reports facts whose head has other facts separately.
+
+### kra38 VISITS 2-3 (GPU, seed 4; 22 Nov 17:16) - EARLY WARNING
+- Contrastive alignment converges (1.02 -> 0.07 at visit 2; 0.26 -> 0.15 at visit 3); paraphrased premise rows in (4,123 -> 5,117).
+- REAL-TEXT TEST visit 3: bridge 0.17 (kra36 0.13), C 0.03 (kra36 0.06), **C given the right bridge 0.04 (kra36 0.37)**; premises asked alone 0.53 / 0.37 (kra36 0.60 / 0.43). Taught 0.90.
+- RULE WORLD own chain visit 3: chain format 0.08 held back / 0.08 pure (kra36 same seed 0.46 / 0.88; kra34 0.42 / 0.25).
+- Step 2 lost on real text and the chain format slower in the rule world. Suspect: the contrastive loss at 0.3 is about 15x the cosine term's gradient scale (InfoNCE ~1 vs 1 - cos ~0.04) in a loss shared with many other rows. Visits 4-5 decide. Contingency built: **kra39 = kra36 + paraphrased wordings, cosine alignment** (separates the two changes).
