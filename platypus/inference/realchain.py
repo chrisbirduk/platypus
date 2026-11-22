@@ -78,7 +78,13 @@ def rchain_rows(cfg, vis, sl):
     """question rows for the next visit: premise rows (all chains, several wordings), chain rows (train), alignment pairs (train)"""
     trn, tst = rchain_build(cfg, vis); k = int(getattr(cfg, 'inf_rchain_frames', 2)); P, C, A = [], [], []
     seen = set()
+    s1 = int(getattr(cfg, 'inf_rchain_s1frame', 0)); cr1 = _crel(cfg)
     for (A_, w1, B_, w2, C_) in trn + tst:
+        if s1 and (A_, B_) not in seen:                                        # 22 Nov kra41 STEP-1 FRAME: the first premise also taught in the chain's own
+            seen.add((A_, B_))                                                 #   step-1 context, ending in the arrow ('A is within ' -> 'B >'): the bridge
+            P.extend([(f"{A_} {cr1} ".encode('latin-1', 'replace'), f"{B_} >".encode('latin-1', 'replace'), sl)] * s1)   #   retrieved where the chain needs it,
+                                                                               #   the chain format kept (kra32's clash ended in '.'), C never shown (kra36:
+                                                                               #   bridge in the chain 0.26-0.32 vs the premise alone 0.60-0.78)
         for (h, w, t) in ((A_, w1, B_), (B_, w2, C_)):
             if (h, w, t) in seen: continue
             seen.add((h, w, t)); P.extend((p, a, sl) for p, a in _frames(h, w, t, k))
