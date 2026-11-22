@@ -6048,3 +6048,6 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Rule world own chain visit 3: held back 0.00 (n 11), pure families 0.00 (n 10), format 0.73 / 0.50 (kra36 same visit 0.15 / 0.00).
 - kra39 VISIT 4 (19:51): REAL-TEXT TEST bridge **0.42** (kra38 0.36, kra36 0.29), C 0.09 (kra36 0.15; baseline 0.05), C given the right bridge 0.21 (kra38 0.11, kra36 0.50); premises alone first hop 0.79 (kra36 0.69). Rule world held back 0.37 (19), pure families 0.08 (12).
 - **Revised reading: the paraphrases DO lift step 1 (bridge at visit 4: 0.36-0.42 with them vs 0.29 without) but dilute the arrow rows and cost step 2.** A trade-off, not a failure: paraphrases with the arrow rows scaled up to keep their share (e.g. inf_rchain_arrowprem 3-4) should keep both. Candidate after kra41.
+
+### RELATION MERGING v1 (offline, real records; 22 Nov 20:05; 32,014 facts, 40 raw wordings, 33,038 names)
+- Raw wordings: route J held-out one-hop 0.0097 (heads with other facts 0.0041); rules above the shuffled null 0. **The merge thresholds (JEPA operator agreement 0.50 and 0.35) merged nothing** - every pair of wordings agrees below 0.35 (operators fitted on about one fact per name rarely see the same heads) - so v1 is uninformative. v2 merges to fixed numbers of relations (20, 10) and prints the most similar pairs.
