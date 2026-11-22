@@ -343,8 +343,17 @@ if COTLATE:                                                                    #
                 if AM_ == 'nce':                                               #   the batch's (identity directions, not the shared high-variance ones) | kl - the premise's
                     sim_ = F.normalize(h1, dim=-1) @ F.normalize(h2, dim=-1).T / 0.1   #   ANSWER distribution distilled into the chain slot (output space: names never
                     la_ = AW_ * F.cross_entropy(sim_, torch.arange(len(h1)))   #   seen after '>' become reachable)
-                elif AM_ == 'kl':
-                    la_ = AW_ * F.kl_div(F.log_softmax(mm.o(h1), -1), F.softmax(mm.o(h2), -1), reduction='batchmean')
+                elif AM_ == 'kl':                                              #   (every answer byte, teacher-forced on the true root: the chain slot's distribution
+                    cs_ = [(CN[OLD[bi][1]] + '.').encode('latin-1') for a, bi in ap_]   #   matched to the premise's at each byte)
+                    def lg_(qs):
+                        X = tens([q + c for q, c in zip(qs, cs_)]); Xi = torch.cat([torch.full((len(qs), 1), PAD), X[:, :-1]], 1); return mm(Xi)
+                    G1 = lg_(q1)
+                    with torch.no_grad(): G2 = lg_(q2)
+                    kl_ = []
+                    for k_, (qa, qb, c) in enumerate(zip(q1, q2, cs_)):
+                        n_ = min(len(c), L - 1 - len(qa), L - 1 - len(qb))
+                        if n_ > 0: kl_.append(F.kl_div(F.log_softmax(G1[k_, len(qa):len(qa) + n_], -1), F.softmax(G2[k_, len(qb):len(qb) + n_], -1), reduction='batchmean'))
+                    la_ = AW_ * torch.stack(kl_).mean() if kl_ else torch.zeros((), requires_grad=True)
                 else: la_ = AW_ * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean()
                 if int(os.environ.get('CS_ALIGN_STEP', 1)) == 3 and not SPELL:     #   CS_ALIGN_STEP 3: BOTH steps - step 1 ('A is a citizen of ' ~ 'A lives in ') and step 2
                     q3 = [f"{a} is a citizen of {OLD[bi][0]} > ".encode('latin-1') for a, bi in ap_]; q4 = [f"{OLD[bi][0]} lies in ".encode('latin-1') for a, bi in ap_]
