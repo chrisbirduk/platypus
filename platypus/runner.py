@@ -106,7 +106,7 @@ from platypus.losses import (
 #   that a later visit (or the end of the run) reads must be added here, or a resumed run will not see it.
 CK_LOCALS=('opt','meta','meta_opt','kl_log','dream_log','fd_log','fd_snaps','battr_log','topic_log','prior_buffer','fz_tok','bpc_m','post',
            'last_visit','post_hist','pre_visit','pass_log','locality_log','prior_imp','orth_log','alt_m','pre_lock','post_lock','zeroshot',
-           '_pend','_seen_true','_init_sd')
+           '_pend','_seen_true','_init_sd','post_w')
 
 def run(cfg):
     for k in ('theta_low','theta_high','theta_dist','theta_sigma','theta_reserve','drive_ema','drive_slow','peak_decay','route_width','hebb_rate'): setattr(Config,k,getattr(cfg,k))  # buffers read class attrs
@@ -234,7 +234,7 @@ def run(cfg):
             fd_snaps=L_['fd_snaps']; battr_log=L_['battr_log']; prior_buffer=L_['prior_buffer']; fz_tok=L_['fz_tok']; bpc_m=L_['bpc_m']
             post=L_['post']; last_visit=L_['last_visit']; post_hist=L_['post_hist']; pre_visit=L_['pre_visit']; pass_log=L_['pass_log']
             locality_log=L_['locality_log']; prior_imp=L_['prior_imp']; orth_log=L_['orth_log']; alt_m=L_['alt_m']; pre_lock=L_['pre_lock']
-            post_lock=L_['post_lock']; zeroshot=L_['zeroshot']; _pend=L_['_pend']; _seen_true=L_['_seen_true']; _init_sd=L_['_init_sd']
+            post_lock=L_['post_lock']; zeroshot=L_['zeroshot']; _pend=L_['_pend']; _seen_true=L_['_seen_true']; _init_sd=L_['_init_sd']; post_w=L_['post_w']
             if 'topic_log' in L_: topic_log=L_['topic_log']
             LS_=_ckp['loaders']
             for f_,s_ in zip(vals,LS_['vals']): _ckpt.ck_set_loader_state(f_,s_)

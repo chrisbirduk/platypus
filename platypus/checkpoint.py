@@ -10,7 +10,10 @@ What a checkpoint holds, in one pickle (so objects shared between them stay shar
   - the run() locals that carry from one visit to the next (runner.CK_LOCALS) and the read positions of
     the data loaders (their text is not saved: the resumed run reads it again from the Pile cache);
   - the contents of every package module's module-level state (the dicts, lists and sets, the other
-    rebound names, function attributes such as train_domain._avg_difficulty, class attributes);
+    rebound names, function attributes such as train_domain._avg_difficulty, class attributes), also of the
+    modules imported on demand (inference.premises, ...), which the resumed run imports when it loads them;
+    caches and setup products are skipped by module and name (_KEEP_LIVE), and the CUDA graphs, their memory
+    pools and static buffers in conduit._CDG and conduit._CG5 are not saved (_KEEP_KEYS): they are recorded again;
   - the torch (CPU and CUDA), numpy and Python random states.
 
 Nested functions, lambdas and closure cells (forward hooks, loader closures) are pickled by value with
@@ -25,6 +28,7 @@ or the options changed).
 """
 import collections
 import hashlib
+import importlib
 import json
 import marshal
 import os
@@ -39,10 +43,20 @@ import numpy as np
 import torch
 
 _TAG = 'platypus-ckpt'
-CK_FORMAT = 1
-# module-level names that are caches or setup products, not run state: kept as the resumed run built them
-_KEEP_LIVE = {'_BYTES_CACHE', '_COMPILED', '_FLA', '_PKG_MODULES', '_PKG_ORDER', '_LATE', '_CONFIG_DEFAULTS', 'MODULES',
-              '_REFS', '_PM', '_ckpt', '_KEEP_LIVE', '_TIME_ORIGINS', '_CONTAINERS', '_LOADER_SKIP'}   # (the last: this module, in the single-file export)
+CK_FORMAT = 2                                     # 2: module-qualified skips, partial containers, lazily imported modules
+# module-level names that are caches or setup products, not run state: kept as the resumed run built them. Keyed by
+#   module (the name after 'platypus.'), so a name that is a cache in one module is still saved in another ('*': every module).
+_KEEP_LIVE = {'*': {'_LATE'},
+              'common': {'_PKG_MODULES', '_PKG_ORDER'}, 'config': {'_CONFIG_DEFAULTS'}, 'data': {'_BYTES_CACHE'},
+              'ngrams': {'_COMPILED'}, 'layers': {'_FLA'},
+              'checkpoint': {'_REFS', '_CK_PICKLE', '_ckpt', '_KEEP_LIVE', '_KEEP_KEYS', '_TIME_ORIGINS', '_CONTAINERS',
+                             '_LOADER_SKIP', '_NOT_STATE'}}   # (this module: only scanned in the single-file export)
+# dict entries that hold CUDA graphs, graph memory pools and the graphs' static buffers: they cannot be pickled and mean
+#   nothing in a new process. The rest of the dict (counters, the 'off' switch) is saved; these keys keep the resumed
+#   run's own (empty) values, so the graphs are recorded again after a resume.
+_KEEP_KEYS = {('conduit', '_CDG'): {'g', 'pool'},
+              ('conduit', '_CG5'): {'g', 'pool', 'B', 'Y', 'LG', 'key', 'cap'}}
+_NOT_STATE = {'_order', 'presets', '__main__'}    # package modules with no run state (import lists, preset text)
 _TIME_ORIGINS = {'_RUN_T0'}                       # wall-clock origins: shifted on resume so elapsed times continue
 _CONTAINERS = (dict, list, set, bytearray, collections.defaultdict, collections.OrderedDict, collections.deque, collections.Counter)
 
@@ -140,8 +154,11 @@ class _Unpickler(pickle.Unpickler):
             torch_pl, live = value, _REFS['load']
             def value(pid):
                 if isinstance(pid, tuple) and pid and pid[0] == _TAG:
-                    if pid[1] == 'module': return sys.modules[pid[2]]
-                    return live[pid[1:]]
+                    if pid[1] == 'module': return importlib.import_module(pid[2])
+                    k_ = pid[1:]
+                    if k_ not in live and k_[0] == 'g':                   # a module the saving run imported on demand and this one not yet
+                        live[k_] = getattr(importlib.import_module(k_[1]), k_[2])
+                    return live[k_]
                 return torch_pl(pid)
         super().__setattr__(name, value)
 
@@ -227,18 +244,42 @@ def _remap_ids(root, remap, skip):
     return n_
 
 
-_PM = types.ModuleType('platypus_ckpt_pickle')
-_PM.Pickler, _PM.Unpickler = _Pickler, _Unpickler
-_PM.load, _PM.dump = pickle.load, pickle.dump
+_CK_PICKLE = types.ModuleType('platypus_ckpt_pickle')   # the pickle_module for torch.save / torch.load
+_CK_PICKLE.Pickler, _CK_PICKLE.Unpickler = _Pickler, _Unpickler
+_CK_PICKLE.load, _CK_PICKLE.dump = pickle.load, pickle.dump
 
 
 # ---------------- module-level state ----------------
+def _short(mn_):
+    return mn_[len('platypus.'):] if mn_.startswith('platypus.') else mn_
+
+
 def _ck_modules():
-    """the package modules (this one aside); in the single-file export, the one module that holds everything"""
+    """the package modules (this one aside): those in MODULES, then those imported on demand (inference.premises,
+    inference.kmem, ...); in the single-file export, the one module that holds everything"""
     try: from platypus.common import _PKG_MODULES
     except ImportError: _PKG_MODULES = []
     me = sys.modules[__name__]
-    return [m_ for m_ in _PKG_MODULES if m_ is not me] or [me]
+    if not _PKG_MODULES: return [me]
+    out = [m_ for m_ in _PKG_MODULES if m_ is not me]
+    have = {id(m_) for m_ in out} | {id(me)}
+    for n_, m_ in sorted(sys.modules.items()):
+        if n_.startswith('platypus.') and isinstance(m_, types.ModuleType) and id(m_) not in have and _short(n_) not in _NOT_STATE:
+            out.append(m_); have.add(id(m_))
+    return out
+
+
+def _keep_live(mn_, n_):
+    """n_ in module mn_ is a cache or setup product. (mn_ is this module only in the single-file export, where every list applies.)"""
+    if n_.startswith('__') or n_ in _KEEP_LIVE['*']: return True
+    if mn_ == __name__: return any(n_ in s_ for s_ in _KEEP_LIVE.values())
+    return n_ in _KEEP_LIVE.get(_short(mn_), ())
+
+
+def _keep_keys(mn_, n_):
+    """the keys of dict n_ in module mn_ that keep their live values (CUDA graph state)"""
+    if mn_ == __name__: return set().union(*[k_ for (_, nn_), k_ in _KEEP_KEYS.items() if nn_ == n_])
+    return _KEEP_KEYS.get((_short(mn_), n_), set())
 
 
 def _is_value(v):
@@ -248,11 +289,12 @@ def _is_value(v):
     return True
 
 
-def _ck_snap(c_):
+def _ck_snap(c_, keep=()):
     if type(c_) is collections.defaultdict: return ('defaultdict', c_.default_factory, dict(c_))
     if type(c_) is collections.deque: return ('deque', c_.maxlen, list(c_))
     if type(c_) is collections.OrderedDict: return ('ordered', list(c_.items()))
     if type(c_) is collections.Counter: return ('counter', dict(c_))
+    if type(c_) is dict and keep: return ('dict', {k_: v_ for k_, v_ in c_.items() if k_ not in keep}, tuple(keep))
     return (type(c_).__name__, type(c_)(c_))
 
 
@@ -261,6 +303,8 @@ def _ck_fill(c_, s_):
     if kind == 'defaultdict': c_.default_factory = s_[1]; c_.clear(); c_.update(s_[2])
     elif kind == 'deque': c_.clear(); c_.extend(s_[2])
     elif kind == 'ordered': c_.clear(); c_.update(s_[1])
+    elif kind == 'dict' and len(s_) > 2:                                 # a partly saved dict: the kept keys stay as the live run has them
+        kept = {k_: c_[k_] for k_ in s_[2] if k_ in c_}; c_.clear(); c_.update(s_[1]); c_.update(kept)
     elif kind in ('dict', 'counter', 'set'): c_.clear(); c_.update(s_[1])
     else: c_[:] = s_[1]                                                 # list, bytearray
 
@@ -282,9 +326,9 @@ def _module_state():
     seen = set()
     for m_ in _ck_modules():
         for n_, v_ in vars(m_).items():
-            if n_.startswith('__') or n_ in _KEEP_LIVE: continue
+            if _keep_live(m_.__name__, n_): continue
             if type(v_) in _CONTAINERS:
-                if id(v_) not in seen: seen.add(id(v_)); cont[('g', m_.__name__, n_)] = _ck_snap(v_)
+                if id(v_) not in seen: seen.add(id(v_)); cont[('g', m_.__name__, n_)] = _ck_snap(v_, _keep_keys(m_.__name__, n_))
             elif isinstance(v_, types.FunctionType):
                 if getattr(v_, '__module__', None) == m_.__name__:
                     d_ = {a_: b_ for a_, b_ in vars(v_).items() if not a_.startswith('__')}
@@ -347,7 +391,7 @@ def ck_build_id(cfg):
 def _ck_nbytes(obj):
     import io
     b_ = io.BytesIO()
-    try: torch.save(obj, b_, pickle_module=_PM, pickle_protocol=4)
+    try: torch.save(obj, b_, pickle_module=_CK_PICKLE, pickle_protocol=4)
     except Exception as e: return -1
     return b_.tell()
 
@@ -378,7 +422,7 @@ def ck_save(vi, n_visits, cfg, model, run_locals, loaders, wall_run, ident):
     if os.environ.get('PLATYPUS_CKPT_SIZES', '0') == '1': _report_sizes(payload)
     tmp = os.path.join(d_, 'ckpt.pt.tmp'); cur = os.path.join(d_, 'ckpt.pt'); prev = os.path.join(d_, 'ckpt.prev.pt')
     try:
-        torch.save(payload, tmp, pickle_module=_PM, pickle_protocol=4)
+        torch.save(payload, tmp, pickle_module=_CK_PICKLE, pickle_protocol=4)
     finally:
         _REFS['save'] = None
     if os.path.exists(cur): os.replace(cur, prev)
@@ -400,7 +444,7 @@ def ck_load(cfg, model, ident):
         _, live = _collect_refs({'cfg': cfg, 'model': model})
         _REFS['load'] = live
         try:
-            payload = torch.load(p_, map_location=None, pickle_module=_PM, weights_only=False)
+            payload = torch.load(p_, map_location=None, pickle_module=_CK_PICKLE, weights_only=False)
         except Exception as e:
             print(f"  [checkpoint] {p_} could not be read ({repr(e)[:200]}); trying the previous one", flush=True)
             continue
@@ -421,6 +465,9 @@ def ck_load(cfg, model, ident):
 
 def ck_restore(payload, cfg, model):
     """put the saved module state, configuration, model attributes and random states back (in place)"""
+    names = {k_[1] for k_ in payload['containers']} | {k_[0] for p_ in ('values', 'fattrs', 'classes') for k_ in payload[p_]}
+    for mn_ in sorted(names):                                            # modules the saving run had imported on demand
+        if mn_.startswith('platypus.') and mn_ not in sys.modules: importlib.import_module(mn_)
     _, live = _collect_refs({'cfg': cfg, 'model': model})
     for k_, s_ in payload['containers'].items():
         if k_ in live: _ck_fill(live[k_], s_)

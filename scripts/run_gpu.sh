@@ -18,7 +18,8 @@
 # and finishes with a secret scan of the run folder.
 #
 # --resume reads the build, preset, seed and controls from RUN_DIR/manifest.json,
-# appends to run.log and records the resume in the manifest. The build refuses a
+# appends to run.log and records the resume in the manifest. It refuses to start
+# unless the checkout is at the manifest's git commit, and the build refuses a
 # checkpoint written by different code or options.
 #
 set -euo pipefail
@@ -30,6 +31,15 @@ if [ "${1:-}" = "--resume" ]; then
   [ -f "$RESUME/manifest.json" ] || { echo "no manifest.json in $RESUME" >&2; exit 1; }
   mapfile -t _args < <(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m.get("build_path") or m["build"]); print(m["preset"]); print(m["seed"]); [print(c["file"]) for c in m["controls"]]' "$RESUME/manifest.json")
   set -- "${_args[@]}"
+  # The checkpoint only fits the code that wrote it: resume from the commit the run started at.
+  want="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("git_commit") or "")' "$RESUME/manifest.json")"
+  have="$(git rev-parse HEAD 2>/dev/null || true)"
+  if [ -n "$want" ] && [ "$want" != "$have" ] && [ "${PLATYPUS_CKPT_FORCE:-0}" != 1 ]; then
+    echo "this run started at commit $want, the checkout is at ${have:-no commit}." >&2
+    echo "check out the run's commit first (git fetch origin $want && git checkout --detach $want; the notebook does this when RESUME is set)," >&2
+    echo "or set PLATYPUS_CKPT_FORCE=1 to resume with this code anyway" >&2
+    exit 1
+  fi
 fi
 BUILD="${1:?usage: run_gpu.sh BUILD PRESET.env [SEED] [CONTROL.env ...]}"; BUILD="${BUILD%/}"
 PRESET="${2:?usage: run_gpu.sh BUILD PRESET.env [SEED] [CONTROL.env ...]}"
