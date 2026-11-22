@@ -5890,3 +5890,12 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 ### kra32 local check (real-text chains; 22 Nov 08:30; two visits, inf_premises_visits 2 locally)
 - No Traceback. Chains built from the record store's reading: visit 1 276 (TAUGHT 227, TEST 22), visit 2 832 (TAUGHT 400, TEST 75; 0.17 of test chains have both premises gold-labelled as containment), places only ('1 Carlton Gardens in London > UK.', 'Talyllyn Railway in Wales > United Kingdom.'). Rows: 588 / 1,164 premise rows (two wordings), 227 / 400 chain rows; the rows' loss falls 1.785 -> 0.712 over visit 2's 149 steps.
 - [REAL-TEXT CHAINS, THE TRUNK'S OWN | visit 2] prints: 0.00 everywhere locally (the 150-step stand-in recalls neither premises nor chains; guessing the commonest taught C 0.34 on taught, 0.05 on test). **kra32 clear to run** (the GPU is the test).
+
+### cg27a_kra33 GPU, visit 3 (22 Nov 08:47): chain-form teaching starts
+- [RELATIONAL MODULE WRITES | visit 3] 93 written (precision 0.99) -> 59 taught, 34 held back; CHAIN FORM 93.
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 3 (kra29 visit 3): PLANTED format 0.59 (0.29), bridge 0.29, C 0.47; HELD BACK never written format **0.64** (0.18), bridge 0.18 (0.00), C 0.00; **PURE FAMILIES format 0.42 (0.20), bridge 0.08, C 0.00 (n 12)**. Examples now in the arrow form: 'Tozomon -> Tozodra > Quizotev', 'Pelsenzo -> Ratozo > Ratozo'. Format taken up; the bridge and root not yet (one visit of chain teaching).
+- Route D: first step 0.62, two-step 0.48, pure 0.46. Gate never-read 0.40 (visit 2), **0.16 (visit 3; kra29 0.03)**. No Traceback.
+
+### SLOW CHANNELS, ONE WORDING (synthetic, 22 Nov 08:50; CS_SLOW 0.1, 32 channels, slowness within a sentence + SVReg variance floor, during pretraining and teaching; after Ren, Wang, Hoang, Kuang & LeCun 2026)
+- Pretraining unchanged: 0.429 bits per byte at step 6,000 (one wording without: 0.428); premises 1.00.
+- **NEW bridge B / C at 300 / 750 / 1,500: 0.29 / 0.22, 0.35 / 0.29, 0.32 / 0.32** (n 78) vs one wording alone 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18; two wordings 0.83 / 0.74, 0.71 / 0.62, 0.79 / 0.77. **A partial rescue at no cost: +0.07 to +0.14 on C, the first step roughly doubled.** Weight 0.3 running.
