@@ -4,6 +4,8 @@ Results go here as they come, with the conditions that limit them; negatives sta
 without an explicit seed are seed 0; local recall differences under about 0.15 are seed noise). GPU = Colab, 130 probes, pass 1 (10 visits).
 "Shadow" = a readout that fits a variant on one sleep's conclusions alone, applies it to the pre-edit weights, measures and removes it.
 
+**Latest summary:** "Summary, 20-22 November" at the end of this file (earlier: "Summary, 18-19 November"). The log below is in date order.
+
 ## Words used carefully
 
 - **From the weights**: the trunk's own parameters, fast store off. A closed-form edit to a trunk matrix counts as the weights.
@@ -6051,3 +6053,31 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 
 ### RELATION MERGING v1 (offline, real records; 22 Nov 20:05; 32,014 facts, 40 raw wordings, 33,038 names)
 - Raw wordings: route J held-out one-hop 0.0097 (heads with other facts 0.0041); rules above the shuffled null 0. **The merge thresholds (JEPA operator agreement 0.50 and 0.35) merged nothing** - every pair of wordings agrees below 0.35 (operators fitted on about one fact per name rarely see the same heads) - so v1 is uninformative. v2 merges to fixed numbers of relations (20, 10) and prints the most similar pairs.
+
+## Summary, 20-22 November
+
+Every figure below is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named. Synthetic = tools/compose_synth.py and the other offline worlds; rule world = the planted families and org charts inside the GPU build.
+
+**Composition by the trunk itself (criterion 2).**
+- The trunk composes by writing its own intermediate step ('A is a grandchild of B > C'), taught on route J's written composites in that arrow form (kra23 onwards). First for new subjects (kra23, held back 0.19-0.30), then through bridges never in any chain ('pure families'): kra35, seed 5, visits 5-8 pooled **0.35 (n 134)**; kra34, seed 4, visits 4-5 pooled 0.35 (9 / 26; visit 5 0.58); **the direct one-step answer 0.00 throughout**. Prompted step by step, pure families 0.78-0.98.
+- What made it work, each found in the synthetic world first and then on the GPU: premises in at least **two wordings** (one wording: new-bridge composition 0.12-0.19; two or more: 0.62-0.77 - a premise learned in one context is not retrieved inside a chain); the **arrow form**, not the spelled form (spelled 0.12-0.14); enough **taught chains**; and **JEPA alignment of the second step** (synthetic 0.67 -> 0.78; on the GPU kra33 without it: bridge 0.67, root 0.00).
+- Alignment forms (synthetic, 150 countries): contrastive 0.64-0.77 > residual 0.57-0.71 > cosine 0.53-0.69 > none 0.47-0.52; answer-space KL damages taught chains. On top of the arrow premise frame the gains do not stack.
+- The arrow premise frame ('B > C.' as an extra premise wording) adds about 0.25-0.30 for new bridges (synthetic 0.73-0.81 vs 0.47-0.52).
+
+**False memories.**
+- The trunk's confidence gate with a start-up floor (inf_distill_gate_min 0.8): never-read questions given a stored name **0.01-0.07** (ungated 0.55-0.69), right when answered 0.93-1.00, on seeds 4 and 5.
+- Chains: teaching chains makes a synthetic trunk invent chains for 90% of unknown names; the same gate cuts that to 11% with every answered chain right.
+
+**Real text.**
+- Containment chains from the distant Wikipedia records ('A is within B > C'; LOC filter, composite relation of its own after kra32's prompt clash): taught chains learned 0.86-0.94.
+- Through bridges never in a taught chain: kra35 C 0.03-0.19 (baseline 0.07-0.15); **kra36 (arrow premise frames) doubled step 2** (C given the right bridge 0.31-0.50 vs 0.10-0.29 at the same visits), C 0.06-0.15 vs baseline 0.05-0.15 - above baseline, not yet clearly. **Step 1 is the bottleneck**: the bridge inside the chain 0.25-0.36 while the first premise asked alone is 0.60-0.79.
+- Paraphrased premise wordings (kra38, kra39) lift step 1 (bridge 0.36-0.42 at visit 4) but dilute the arrow rows and cost step 2; contrastive alignment did not help on the GPU (kra38). Next: the step-1 frame ('A is within ' -> 'B >', kra41), kra36 on seed 5 with an ANY VALID CHAIN readout (kra40) - test examples show valid alternative bridges scored wrong and noisy records ('Southampton > Suffolk County').
+
+**Latent reasoning and the JEPA (offline, synthetic).**
+- Inference as search over route J's operators (latent_search.py): finds the 3-hop and a never-taught 4-hop relation from endpoints alone, held-out 1.00, abstains on unknown names; the trunk's written 3-hop chains reach 0.01 on people never taught (100 taught chains).
+- Route J works as well on random name codes: its operators are the fact table. A JEPA trained only by latent prediction stores few facts (recall 0.11 vs 1.00 for the next-byte trunk): the language model stores, the JEPA side reasons.
+- Slow channels (Slow SVReg): no dose-response; dropped. SVReg as the dream selector's regulariser: harmless, inconclusive locally.
+
+**Retraction (open).**
+- Offline: re-confirmation removed 0.53 of wrong confirmed inferences and 0.34 of right ones; on the GPU (kra21) it was not selective (retracted right 0.82 vs kept 0.84) because almost every pair recurs; unlearning itself works (retracted inferences 0.92-1.00 -> 0.00-0.03 in one visit).
+- JEPA surprise on real records with planted errors: AUC 0.44-0.51 for every signal (surprise, normalised, path consistency, confident contradiction) - real records hold about one fact per name, so nothing contradicts a wrong one (route J held-out one-hop 0.01; rules over raw wordings: none above a shuffled null). A dense-world test (redundant facts) and relation merging by JEPA operator agreement are running.
