@@ -6107,3 +6107,15 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 ### kra41 local check (22 Nov 20:50): PASS
 - No Traceback; the step-1 frame adds one premise row per chain (visit 1 64 vs kra36's 51; visit 2 318 vs 249; visit 3 587 vs 459); ANY VALID CHAIN prints; taught real-text chains at visit 3 as kra36 (format 0.96, C given the bridge 0.92).
 - kra40 VISIT 5 and END (21:05; stopped by the user after visit 5): REAL-TEXT TEST bridge 0.22, **C 0.10 (baseline 0.07), C given the right bridge 0.42**; premises alone 0.70 / 0.69. Visits 3-5 on seed 5: C given the bridge 0.13 / 0.21 / 0.42 (kra35, same seed, no frames: 0.29 / 0.10 / 0.13) - **the arrow frame's step-2 gain replicates on seed 5 by visit 5**; C stays close to baseline because step 1 (bridge 0.21-0.32) is the bottleneck on both seeds. Rule world: held back **0.48 (n 23)**, pure families 0.11 (n 9) (visits 4-5 pooled 0.11, n 27), direct 0.00; route D pure families 0.88 vs direct 0.00. Gate: never-read given a stored name 0.03 (ungated 0.57).
+
+### kra41 VISITS 3-5 (GPU, seed 4; kra36 + the STEP-1 FRAME 'A is within ' -> 'B >'; 22 Nov 21:40) - STEP 1 FIXED
+| REAL-TEXT TEST (n 150) | kra41 visit 3 | kra41 visit 4 | kra36 (same seed) visit 3 / 4 | kra39 (paraphrases) visit 3 / 4 |
+|---|---|---|---|---|
+| **bridge right (step 1)** | **0.40** | **0.66** | 0.13 / 0.29 | 0.18 / 0.42 |
+| C right | 0.04 | **0.16** | 0.06 / 0.15 | 0.02 / 0.09 |
+| C given the right bridge (step 2) | 0.07 | 0.23 | 0.37 / 0.50 | 0.04 / 0.21 |
+| baseline (commonest C) | 0.07 | 0.05 | 0.07 / 0.05 | 0.07 / 0.05 |
+| premises alone, hop 1 / hop 2 | 0.53 / 0.21 | 0.77 / 0.49 | 0.57-0.69 / 0.37-0.62 | 0.57 / 0.37, 0.79 / 0.66 |
+- **The step-1 frame closes the step-1 gap: the bridge inside the chain 0.66 against the premise alone 0.77 (kra36: 0.29 vs 0.69).** The C answer at visit 4 is 0.16, three times the baseline (0.05), the best real-text visit-4 figure so far; ANY VALID CHAIN agrees (149 well-formed).
+- Step 2 is now the weaker step (0.07-0.23 vs kra36's 0.37-0.50), and the second premise asked alone is lower (0.21-0.49). kra42 (step-1 frame + arrow rows x4 + paraphrases + 800 taught chains) adds weight to step 2 - the right combination on paper.
+- Rule world: held back 0.29 / 0.50 (n 14 each), pure families 0.00 (12) / 0.12 (8), direct 0.00-0.07.
