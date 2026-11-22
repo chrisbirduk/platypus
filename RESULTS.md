@@ -5860,3 +5860,8 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 
 ### kra30 local check (22 Nov 02:05; three visits, 150 steps a task)
 - No Traceback through visit 3. [JEPA STEP-2 ALIGNMENT] prints each visit: 38 / 82 / 108 planted chains; 149 alignment steps a visit; mean 1 - cosine 0.028 -> 0.009 (visit 2), 0.018 -> 0.011 (visit 3) - the term trains. Trunk's own chain 0.00-0.02 locally (as every build at this scale). Relational module 2 relations, 0 rules locally (as kra25-kra28 locally; the GPU finds them). **kra30 clear to run.**
+
+### Overnight synthetic tests, part 2 (22 Nov 02:51-03:20; arrow form; NEW bridge B / C at 300 / 750 / 1,500 steps)
+- **JEPA ALIGNMENT OF BOTH STEPS rescues ONE-wording premises (CS_ALIGN 0.3, CS_ALIGN_STEP 3; step 1 'A is a citizen of ' ~ 'A lives in ', step 2 'A is a citizen of B > ' ~ 'B lies in '):** 0.55 / **0.50**, 0.72 / **0.68**, 0.64 / **0.55** (n 78) vs no alignment 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18 and step 2 only 0.14 / 0.21, 0.26 / 0.28, 0.17 / 0.22. Taught C 0.96 / 0.99 / 0.85 (a dip at 1,500). **Aligning the chain's steps to their premises' own states does what varied wordings do** - a label-free, general mechanism (no generated wordings needed), close to two wordings (0.62-0.77).
+- **FEWER TAUGHT CHAINS (30, the GPU's dose), four wordings:** no alignment 0.66 / 0.34, 0.60 / 0.43, 0.63 / 0.30; **step-2 alignment 0.54 / 0.48, 0.58 / 0.52, 0.65 / 0.65** (n 91). With few chains alignment roughly doubles composition at 1,500 steps - it matters most at the rule world's dose (13-26 planted chains by visit 4).
+- Chain teaching + step-2 alignment, 100 taught (CS_COTLATE_X run): 0.67 / 0.63, 0.81 / 0.78, 0.76 / 0.76 - false-memory and forgetting lines pending.
