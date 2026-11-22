@@ -5846,3 +5846,12 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - [RULE WORLD, THE TRUNK'S OWN CHAIN]: PLANTED bridge 0.77, C 0.50 (n 26); **HELD BACK never written (new subjects): bridge 0.65, C 0.35 (n 20)**; **PURE FAMILIES never written: bridge right 0.56, C right 0.00 (n 18)** (kra26 visit 4: 0.17 / 0.08; kra27 visit 3: 0.10 / 0.00).
 - **Six wordings fixed the FIRST step for new bridges (0.00-0.17 -> 0.56) and the premises (route D first step 0.91, two-step 0.84, pure 0.78; kra26 visit 4: 0.69 / 0.66 / 0.57); the spelled form's SECOND step fails** - examples 'Tozosen -> is a child of Risquiris; Loquiris is a child of Quihunis', 'Quimontar -> is a child of Riszohun' (step 2 dropped): step 2 does not even restate the bridge. The synthetic world's spelled form: B 0.86, C 0.12-0.14. kra29 (arrow form + six wordings) replaces it.
 - Gate never-read 0.02; bits on read domains 1.9199 (kra26 visit 4 1.9202). No Traceback.
+
+### JEPA ALIGNMENT OF THE SECOND STEP (synthetic, 22 Nov 00:30; CS_ALIGN 0.3, CS_ALIGN_STEP 2: the state where the chain predicts the root ('A is a citizen of B > ' / '...; B lies in ') pulled to the state in the bridge's own premise 'B lies in ' (stop-gradient), taught people only; premises in 4 / 3 wordings, same checkpoint)
+| form | NEW bridge B / C at 300 / 750 / 1,500 steps (n 78) | taught C |
+|---|---|---|
+| arrow, no alignment | 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67 | 1.00 |
+| **arrow + step-2 alignment** | 0.67 / **0.62**, 0.82 / **0.85**, 0.82 / **0.78** | 0.93-1.00 |
+| spelled, no alignment | 0.77 / 0.12, 0.86 / 0.14, 0.86 / 0.12 | 1.00 |
+| spelled + step-2 alignment | 0.71 / 0.08, 0.77 / 0.08, 0.74 / 0.14 | 0.96-0.99 |
+- **JEPA alignment of the second step adds to the arrow form: composition through new bridges 0.67 -> 0.78 at 1,500 steps (0.85 at 750)** - the C slot's state is keyed like the premise, so the premise's answer is retrieved for bridges never in a chain. It does NOT rescue the spelled form (0.08-0.14). Alignment with ONE wording per premise: running.
