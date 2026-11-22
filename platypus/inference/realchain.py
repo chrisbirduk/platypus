@@ -174,15 +174,18 @@ def rchain_readout(model, cfg, vis, sl, D=None):
             PRD8 = _PM8.get('PRD') or {}; GC8 = {'P131', 'P17', 'P30', 'P361', 'P276', 'P150', 'P706'}   #   in DocRED; evaluation only): right answers that are TRUE
             gt = [bool((PRD8.get((c[0], c[4])) or set()) & GC8) for c in L]; gcr = [y for y, g_ in zip(cr, gt) if g_]
             gold_ = f"; GOLD-TRUE conclusions {len(gcr)}: C right {np.mean(gcr):.2f}" if gcr else "; GOLD-TRUE conclusions 0"
-            PRS = _RC.get('pairs') or set(); va, vc, wg, wn = [], [], [], 0                # 22 Nov kra39: ANY VALID CHAIN - test heads often have several recorded
-            for x, c in zip(g, L):                                                 #   containers (e.g. 'Vancouver International Airport -> British Columbia >
-                pt = [s_.strip() for s_ in x.split(' > ')]                         #   Canada' counted wrong against the record's 'Richmond'); a written chain is
-                if len(pt) != 2 or not all(pt): continue                           #   VALID when both of its links are recorded (any wording), and its
-                wn += 1; b_ok = (c[0], pt[0]) in PRS; va.append(b_ok); vc.append(b_ok and (pt[0], pt[1]) in PRS)   #   conclusion GOLD-TRUE when Wikidata
-                g8 = PRD8.get((c[0], pt[1])) or set()                              #   labels A -> C as containment (evaluation only)
-                if g8 or (c[0], pt[1]) in PRD8: wg.append(bool(g8 & GC8))
-            gold_ += (f"; ANY VALID CHAIN (both links recorded, any wording; of {wn} well-formed): first link recorded {np.mean(va) if va else float('nan'):.2f}, "
-                      f"whole chain recorded {np.mean(vc) if vc else float('nan'):.2f}, written conclusion gold-labelled {len(wg)}: true containment {np.mean(wg) if wg else float('nan'):.2f}")
+            try:
+                PRS = _RC.get('pairs') or set(); va, vc, wg, wn = [], [], [], 0                # 22 Nov kra39: ANY VALID CHAIN - test heads often have several recorded
+                for x, c in zip(g, L):                                                 #   containers (e.g. 'Vancouver International Airport -> British Columbia >
+                    pt = [s_.strip() for s_ in x.split(' > ')]                         #   Canada' counted wrong against the record's 'Richmond'); a written chain is
+                    if len(pt) != 2 or not all(pt): continue                           #   VALID when both of its links are recorded (any wording), and its
+                    wn += 1; b_ok = (c[0], pt[0]) in PRS; va.append(b_ok); vc.append(b_ok and (pt[0], pt[1]) in PRS)   #   conclusion GOLD-TRUE when Wikidata
+                    g8 = PRD8.get((c[0], pt[1])) or set()                              #   labels A -> C as containment (evaluation only)
+                    if g8 or (c[0], pt[1]) in PRD8: wg.append(bool(g8 & GC8))
+                gold_ += (f"; ANY VALID CHAIN (both links recorded, any wording; of {wn} well-formed): first link recorded {np.mean(va) if va else float('nan'):.2f}, "
+                          f"whole chain recorded {np.mean(vc) if vc else float('nan'):.2f}, written conclusion gold-labelled {len(wg)}: true containment {np.mean(wg) if wg else float('nan'):.2f}")
+            except Exception as e_:                                                # readout only: never stop the run
+                gold_ += f"; ANY VALID CHAIN readout failed ({type(e_).__name__}: {e_})"
             return (f"{len(L)}: chain format {np.mean(fm):.2f}, bridge right {np.mean(br):.2f}, C right {np.mean(cr):.2f} (given the right bridge {np.mean(cb) if cb else float('nan'):.2f}; "
                     f"guessing the commonest taught C {mcv:.2f}; C first, direct {np.mean(dr):.2f}{gold_}) | "
                     f"premises asked alone: first hop {p1:.2f}, second hop {p2:.2f}"), g
