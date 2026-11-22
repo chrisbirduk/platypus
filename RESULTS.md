@@ -5956,3 +5956,7 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Route D (two steps prompted), pure families 0.93 (n 67) vs direct 0.00; route J 0.98 (n 292).
 - REAL-TEXT CHAINS: taught C 0.91 (given the bridge 0.95). **TEST (bridge never in a taught chain): bridge right 0.35 -> 0.49, C right 0.11 -> 0.19 (commonest-C baseline 0.14), given the right bridge 0.23 -> 0.35**, direct 0.00. Premises asked alone 0.89 / 0.89. Rising, but C only 0.05 above the baseline: step 2 on real text is still the gap kra36's arrow frames target.
 - Gate: never-read questions given a stored name 0.03 (ungated 0.57); known answered 0.75, right when answered 0.98.
+
+### kra34 VISIT 4 (GPU, seed 4 restart; 22 Nov 13:51)
+- RULE WORLD, THE TRUNK'S OWN CHAIN: **HELD BACK (never planted, never written by route J) C right 0.44 (n 18), bridge 0.44, direct 0.00; PURE FAMILIES C right 0.14 (n 14), bridge 0.29, direct 0.00.** Same visit on seed 5 (kra35): held back 0.14 (n 14), pure 0.10 (n 20). Seed 4 is ahead of seed 5 at visit 4 - the composition through bridges never in a chain is appearing on a second seed; the verdict needs visits 5-6 (n is small).
+- Route D pure families two-step 0.83 (n 54) vs direct 0.00. Gate: never-read given a stored name 0.06 (ungated 0.68).
