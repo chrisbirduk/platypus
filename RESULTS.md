@@ -5969,3 +5969,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 | **contrastive (InfoNCE over the batch)** | **0.68 / 0.77 / 0.64** | **0.79 / 0.77 / 0.65** | 1.00 |
 | answer-space KL | 0.55 / 0.35 / 0.60 | 0.58 / 0.37 / 0.58 | 0.63-0.79 (damaged) |
 - **Contrastive alignment is best at every step count: +0.12 to +0.30 over none, +0.07 to +0.11 over cosine; for roots never an answer +0.16 to +0.35 over none.** Fits the maths note: cosine on raw states is dominated by shared directions; the negatives force the step-2 state to carry the bridge's identity. Answer-space KL harms the taught chains. Residual mode and alignment on top of the arrow frame queued.
+
+### kra34 VISIT 5 (GPU, seed 4; 22 Nov 14:05) - THE SEED-5 RESULT REPLICATES
+- RULE WORLD, THE TRUNK'S OWN CHAIN: **HELD BACK C right 0.62 (n 13), bridge 0.62, direct 0.00; PURE FAMILIES C right 0.58 (n 12), bridge 0.50, direct 0.00.** Visits 4-5 pooled: held back 0.52 (16 / 31), pure families 0.35 (9 / 26), direct 0.00. Seed 5 (kra35) visits 5-8: pure families 0.35 (n 134). Planted 0.84 (direct 0.35).
+- Caveat: the pure-family examples at visit 5 mostly end in the same root (Zototo), C right (0.58) is above bridge right (0.50), and n is small - some C may be the family's common root rather than a composed answer; the bridge-right figure (0.50, direct 0.00) is the cleaner evidence.
+- Route D pure families two-step 0.88 (n 65) vs direct 0.02. Gate: never-read given a stored name 0.02 (ungated 0.60).
+- **Composition by the trunk's own written chain through bridges never in a chain is now seen on two seeds (4 and 5), with the direct answer at 0.00 on both.**
