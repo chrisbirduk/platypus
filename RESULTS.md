@@ -6127,3 +6127,15 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - TRUNK, 3-hop arrow chains taught for 199 people (was 100): taught 1.00; **NEVER TAUGHT (68, cities in no taught chain): bridge 0.15-0.22, region 0.00-0.01, country 0.01-0.03** (100 taught: 0.08-0.10 / 0.00-0.01 / 0.01-0.03); never-read names given a well-formed chain 0.80. Premises recalled 1.00.
 - **More chains do not help at three hops; the first hop fails inside the chain (0.15-0.22) although the premise is recalled perfectly** - the real-text step-1 failure in the synthetic world. kra41's step-1 frame fixed exactly that on real text (bridge 0.29 -> 0.66): the next local test teaches the premises in the chain's own frames at every step ('A is a citizen of ' -> 'B >', 'B > ' -> 'R >', 'R > ' -> 'K.').
 - LATENT ARM (route J search) again: 3 hops held-out 1.00, gated 0.63 answered right 1.00, never-read 0.00; 4 hops 1.00.
+
+### RELATION MERGING v2 (offline, real records; 22 Nov 23:00; 32,014 facts, 40 raw wordings; merged to fixed numbers of relations)
+- Most similar pairs by JEPA operator agreement: 'state of' ~ 'region of', 'and in' ~ 'region of', 'since' ~ 'in early', 'until' ~ 'since', 'is' ~ 'are' (0.13-0.17); by Jaccard of (head, tail) pairs: all below 0.005 (the wordings share almost no pairs).
+| merged to | method | gold purity | rules above the null | route J held-out (heads with other facts) |
+|---|---|---|---|---|
+| 40 (raw) | - | 1.000 (trivial) | 0 | 0.010 (0.004) |
+| 20 | **JEPA operator agreement** | **0.826** | 0 | 0.003 (0.005) |
+| 20 | symbolic Jaccard | 0.640 | 0 | 0.004 (0.007) |
+| 10 | **JEPA operator agreement** | **0.667** | 1 (0.125, 3 / 24) | 0.003 (0.007) |
+| 10 | symbolic Jaccard | 0.576 | 4 (all <= 0.034) | 0.004 (0.007) |
+- **JEPA operator agreement merges wordings into purer relations than co-occurrence** (0.83 vs 0.64 at 20; groups such as {in, until, and in, since, in early}, {at, died in, was born in}, {film, rock band, album}) - a label-free latent criterion that finds what the wordings mean.
+- **But merging does not create density**: route J's held-out one-hop stays at 0.003-0.007 and no strong rules appear. The sparsity is in the NAMES (about one fact per name), not in the wordings. Redundancy for retraction and inference on real text has to come from elsewhere: more documents per entity, the trunk filling in facts it read (the combined design), or chains through the containment hierarchy (where kra36-kra41 work).
