@@ -77,6 +77,7 @@ def rchain_rows(cfg, vis, sl):
         for (h, w, t) in ((A_, w1, B_), (B_, w2, C_)):
             if (h, w, t) in seen: continue
             seen.add((h, w, t)); P.extend((p, a, sl) for p, a in _frames(h, w, t, k))
+            P.extend([(f"{h} > ".encode('latin-1', 'replace'), (t + '.').encode('latin-1', 'replace'), sl)] * int(getattr(cfg, 'inf_rchain_arrowprem', 0)))   # 22 Nov arrow premise frame
     for (A_, w1, B_, w2, C_) in trn:                                           # 22 Nov kra32 visits 4-5: with the chain asked as 'A in ' - the SAME prompt as a first premise
         r1 = _crel(cfg)                                                        #   worded 'in' - test heads answer their premise ('A in B.', format 0.20) and never chain;
                                                                                #   the composite gets its own relation (inf_rchain_crel, e.g. 'is within'), as the rule world's
