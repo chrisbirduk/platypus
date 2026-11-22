@@ -5968,6 +5968,7 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 | cosine (current GPU builds) | 0.61 / 0.69 / 0.53 | 0.56 / 0.74 / 0.58 | 0.96-0.97 |
 | **contrastive (InfoNCE over the batch)** | **0.68 / 0.77 / 0.64** | **0.79 / 0.77 / 0.65** | 1.00 |
 | answer-space KL | 0.55 / 0.35 / 0.60 | 0.58 / 0.37 / 0.58 | 0.63-0.79 (damaged) |
+| residual (centred, the counterfactual world-model rule; 15:35) | 0.57 / 0.64 / 0.71 | 0.63 / 0.63 / 0.74 | 0.92-0.97 |
 - **Contrastive alignment is best at every step count: +0.12 to +0.30 over none, +0.07 to +0.11 over cosine; for roots never an answer +0.16 to +0.35 over none.** Fits the maths note: cosine on raw states is dominated by shared directions; the negatives force the step-2 state to carry the bridge's identity. Answer-space KL harms the taught chains. Residual mode and alignment on top of the arrow frame queued.
 
 ### kra34 VISIT 5 (GPU, seed 4; 22 Nov 14:05) - THE SEED-5 RESULT REPLICATES
@@ -5975,3 +5976,5 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - Caveat: the pure-family examples at visit 5 mostly end in the same root (Zototo), C right (0.58) is above bridge right (0.50), and n is small - some C may be the family's common root rather than a composed answer; the bridge-right figure (0.50, direct 0.00) is the cleaner evidence.
 - Route D pure families two-step 0.88 (n 65) vs direct 0.02. Gate: never-read given a stored name 0.02 (ungated 0.60).
 - **Composition by the trunk's own written chain through bridges never in a chain is now seen on two seeds (4 and 5), with the direct answer at 0.00 on both.**
+
+- RESIDUAL (15:35): between cosine and contrastive on average (new bridge mean 0.64 vs cosine 0.61, contrastive 0.70); the only form still rising at 1,500 steps (0.71, best there; contrastive 0.64). Contrastive stays the choice for kra37; one seed, about +/-0.055 per point.
