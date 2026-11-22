@@ -5950,3 +5950,9 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - FALSE MEMORY on made-up chains: after chain teaching, NOVEL (never read) names given a well-formed chain to a known city and country **0.90** (held-out known people 0.93) - chain teaching makes the trunk invent chains. Confidence (mean byte log-prob of its own chain) separates known from novel AUC 0.81 (0.54 before teaching). **GATED (t keeps 75% of right known chains): novel names given a chain 0.11, known answered 0.58, right when answered 1.00.**
 - Premises only read (never taught or asked): chain C 0.04 / 0.08 / 0.07 / 0.16 at 1 / 2 / 4 / 8 reads - reading alone does not build chains. Forgetting 0.435 -> 0.463 bits/byte.
 - **The confidence gate that fixed false memory for single facts also works for chains: invention falls from 0.90 to 0.11 while every answered chain is right.**
+
+### kra35 VISIT 8 (GPU, seed 5; 22 Nov 13:49)
+- RULE WORLD, THE TRUNK'S OWN CHAIN, PURE FAMILIES (bridge never in a chain, never written): **visit 8 C right 0.40 (n 60), bridge right 0.52, direct 0.00**. Visits 5-8: 0.36 (11), 0.35 (17), 0.28 (46), 0.40 (60) - pooled **0.35 (n 134)**, direct 0.00 throughout. Held back 0.33 (46). Planted 0.83 (direct 0.42).
+- Route D (two steps prompted), pure families 0.93 (n 67) vs direct 0.00; route J 0.98 (n 292).
+- REAL-TEXT CHAINS: taught C 0.91 (given the bridge 0.95). **TEST (bridge never in a taught chain): bridge right 0.35 -> 0.49, C right 0.11 -> 0.19 (commonest-C baseline 0.14), given the right bridge 0.23 -> 0.35**, direct 0.00. Premises asked alone 0.89 / 0.89. Rising, but C only 0.05 above the baseline: step 2 on real text is still the gap kra36's arrow frames target.
+- Gate: never-read questions given a stored name 0.03 (ungated 0.57); known answered 0.75, right when answered 0.98.
