@@ -340,7 +340,10 @@ if COTLATE:                                                                    #
                 h1 = hlast(q1)
                 with torch.no_grad(): h2 = hlast(q2)
                 AM_ = os.environ.get('CS_ALIGN_MODE', 'cos')                   # 22 Nov: cos (as before) | nce - contrastive: the chain state must pick ITS premise's state among
-                if AM_ == 'nce':                                               #   the batch's (identity directions, not the shared high-variance ones) | kl - the premise's
+                if AM_ == 'res':                                               # 22 Nov RESIDUAL alignment (after Balestriero, LeCun & Varaku's counterfactual rule
+                    h1c_ = h1 - h1.mean(0, keepdim=True); h2c_ = h2 - h2.mean(0, keepdim=True)   #   s' + mu(a') - mu(a)): each view centred on its own context's batch mean, so
+                    la_ = AW_ * (1 - F.cosine_similarity(h1c_, h2c_, dim=-1)).mean()   #   only the entity-specific RESIDUAL is matched, not the shared context directions
+                elif AM_ == 'nce':                                               #   the batch's (identity directions, not the shared high-variance ones) | kl - the premise's
                     sim_ = F.normalize(h1, dim=-1) @ F.normalize(h2, dim=-1).T / 0.1   #   ANSWER distribution distilled into the chain slot (output space: names never
                     la_ = AW_ * F.cross_entropy(sim_, torch.arange(len(h1)))   #   seen after '>' become reachable)
                 elif AM_ == 'kl':                                              #   (every answer byte, teacher-forced on the true root: the chain slot's distribution
