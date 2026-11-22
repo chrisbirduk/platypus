@@ -574,6 +574,7 @@ class Config:
     inf_rule_world_chainplant=0     #   21 Nov kra23 ROUTE B (MODEL CHANGE when 1): planted rule-world composites written with their bridge, 'X is a grandchild of M > Z.' 2 (kra26): both steps spelled, 'X is a grandchild of: X is a child of M; M is a child of Z.' 3 (kra27): step 1 without the subject restated
     inf_rule_world_align=0.0        #   22 Nov kra30 (MODEL CHANGE when > 0): JEPA step-2 alignment on planted arrow chains, in the question-row step (distill.distill_wake_loss)
     inf_distill_gate_min=0.0        #   22 Nov: a floor on the gate's calibrated threshold (the visit-1 calibration gave 0.12-0.13 -> never-read 0.40-0.51 at visit 2)
+    inf_jd_reg='sigreg'             #   22 Nov: the LeJEPA dream selector's regulariser - 'sigreg' (as before) or 'svreg' (variance floor on random projections)
     inf_rchain=0                    #   22 Nov (MODEL CHANGE when 1) REAL-TEXT CHAINS (inference/realchain.py): containment chains from the distant records; premises of all
                                     #     chains taught as question rows in inf_rchain_frames wordings, train chains in the arrow form 'A in B > C.'; readout on chains
                                     #     whose bridge was never in a taught chain [REAL-TEXT CHAINS, THE TRUNK'S OWN]
