@@ -141,9 +141,10 @@ def align_loss(hc, hp, cfg):
         hc = hc - hc.mean(0, keepdim=True); hp = hp - hp.mean(0, keepdim=True)
     return (1 - F.cosine_similarity(hc, hp, dim=-1)).mean()
 
-def _greedy_batch(model, prompts, sl, n=60):
+def _greedy_batch(model, prompts, sl, n=60, lp=False):
+    """greedy continuation up to '.' or a newline; lp=True also returns each answer's mean byte log-probability (its confidence)"""
     from platypus.inference.closed_form import _ws_batch, _ws_run
-    bs = [bytearray(p) for p in prompts]; done = [False] * len(bs)
+    bs = [bytearray(p) for p in prompts]; done = [False] * len(bs); LP = [[] for _ in bs]
     for _ in range(n):
         live = [j for j in range(len(bs)) if not done[j]]
         if not live: break
@@ -153,9 +154,11 @@ def _greedy_batch(model, prompts, sl, n=60):
             p = len(bs[j]) - 1
             if p >= lg.shape[1]: done[j] = True; continue
             ch = int(lg[r, p].argmax())
+            if lp: LP[j].append(float(F.log_softmax(lg[r, p].float(), -1)[ch]))
             if ch in (46, 10): done[j] = True
             else: bs[j].append(ch)
-    return [bytes(b[len(p):]).decode('latin-1', 'replace').strip() for b, p in zip(bs, prompts)]
+    out = [bytes(b[len(p):]).decode('latin-1', 'replace').strip() for b, p in zip(bs, prompts)]
+    return (out, [float(np.mean(x)) if x else -99.0 for x in LP]) if lp else out
 
 
 def rchain_readout(model, cfg, vis, sl, D=None):
@@ -192,6 +195,23 @@ def rchain_readout(model, cfg, vis, sl, D=None):
                           f"whole chain recorded {np.mean(vc) if vc else float('nan'):.2f}, written conclusion gold-labelled {len(wg)}: true containment {np.mean(wg) if wg else float('nan'):.2f}")
             except Exception as e_:                                                # readout only: never stop the run
                 gold_ += f"; ANY VALID CHAIN readout failed ({type(e_).__name__}: {e_})"
+            try:                                                               # 22 Nov kra43 STEP BY STEP (route D on real text; the combined design's test):
+                d1, l1 = _greedy_batch(model, [f"{c[0]} {c[1]} ".encode('latin-1', 'replace') for c in L], sl, 40, lp=True)   #   the trunk answers hop 1
+                b1 = [x.split(' > ')[0].strip() or '?' for x in d1]                    #   ALONE in its premise wording, then hop 2 on ITS OWN hop-1 answer
+                d2, l2 = _greedy_batch(model, [f"{b} {c[3]} ".encode('latin-1', 'replace') for b, c in zip(b1, L)], sl, 40, lp=True)
+                c2 = [x.split(' > ')[0].strip() for x in d2]; cf = np.minimum(l1, l2)  #   confidence = the weaker hop's mean byte log-probability
+                PRS = _RC.get('pairs') or set()
+                rd = np.array([y == c[4] for y, c in zip(c2, L)]); vd = np.array([(c[0], b) in PRS and (b, y) in PRS for b, y, c in zip(b1, c2, L)])
+                b1r = np.array([b == c[2] for b, c in zip(b1, L)])
+                gd = [bool((PRD8.get((c[0], y)) or set()) & GC8) for y, c in zip(c2, L) if PRD8.get((c[0], y)) or (c[0], y) in PRD8]
+                if list(L) == list((_RC.get('train') or [])[:len(L)]) or _RC.get('rd_t') is None:   # calibrated on the TAUGHT chains (scored first)
+                    if rd.any(): _RC['rd_t'] = float(np.quantile(cf[rd], 0.25))   #   gate: keeps 75% of the right TAUGHT step-by-step answers
+                t_ = _RC.get('rd_t', -99.0); g_ = cf >= t_
+                gold_ += (f"; STEP BY STEP (hop 1 alone, then hop 2 on the trunk's own hop-1 answer): hop 1 right {b1r.mean():.2f}, C right {rd.mean():.2f}, valid chain (both links recorded) {vd.mean():.2f}, "
+                          f"written conclusion gold-labelled {len(gd)}: true {np.mean(gd) if gd else float('nan'):.2f} | GATED (t = {t_:.2f}, keeps 75% of right taught): answered {g_.mean():.2f}, "
+                          f"right when answered {rd[g_].mean() if g_.any() else float('nan'):.2f}, valid when answered {vd[g_].mean() if g_.any() else float('nan'):.2f}")
+            except Exception as e_:
+                gold_ += f"; STEP BY STEP readout failed ({type(e_).__name__}: {e_})"
             return (f"{len(L)}: chain format {np.mean(fm):.2f}, bridge right {np.mean(br):.2f}, C right {np.mean(cr):.2f} (given the right bridge {np.mean(cb) if cb else float('nan'):.2f}; "
                     f"guessing the commonest taught C {mcv:.2f}; C first, direct {np.mean(dr):.2f}{gold_}) | "
                     f"premises asked alone: first hop {p1:.2f}, second hop {p2:.2f}"), g
