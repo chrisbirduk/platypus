@@ -2157,9 +2157,11 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                     if r29 not in up9 or (seen9 and int(d9) not in seen9): continue
                     r19, m9 = up9[r29]; B9 = m9.get(A9)
                     if B9: rwal9.setdefault(int(S_slot(d9)), []).append((f"{A9} {rw9_[r29]} {B9} > ".encode('latin-1', 'replace'), f"{B9} {rw9_[r19]} ".encode('latin-1', 'replace')))
+                    if B9 and int(getattr(cfg, 'inf_rule_world_align_step', 2)) == 3:   # 22 Nov kra31: STEP 1 too - 'A r2 ' (predicts the bridge) ~ 'A r1 ' (its premise)
+                        rwal9.setdefault(int(S_slot(d9)), []).append((f"{A9} {rw9_[r29]} ".encode('latin-1', 'replace'), f"{A9} {rw9_[r19]} ".encode('latin-1', 'replace')))
             except Exception: _fail('inference.distill:rwal')
             print(f"  [JEPA STEP-2 ALIGNMENT | visit {vis + 1}] next visit: {sum(len(v) for v in rwal9.values())} planted chains: the state where 'A r2 B > ' predicts the root "
-                  f"pulled to the state of the bridge's premise 'B r1 ' (stop-gradient), weight {float(getattr(cfg, 'inf_rule_world_align', 0.0)):g}, 8 a step", flush=True)
+                  f"pulled to the state of the bridge's premise 'B r1 ' (stop-gradient){' + STEP 1: A r2 ~ A r1' if int(getattr(cfg, 'inf_rule_world_align_step', 2)) == 3 else ''}, weight {float(getattr(cfg, 'inf_rule_world_align', 0.0)):g}, 8 a step", flush=True)
         model.__dict__['_dtw'] = dict(rwal=rwal9, rwa=[], vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
