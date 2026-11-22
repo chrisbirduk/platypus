@@ -5987,3 +5987,15 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 | arrow + cosine | 0.71 / 0.68 / 0.71 (0.70) | 0.65 / 0.70 / 0.60 | 0.93-0.99 |
 - **The gains do not stack on average**: with the arrow frame, contrastive is faster early (+0.06 / +0.05) and lower at 1,500 (-0.10); cosine is slightly worse than no alignment. Both fixes address the same failure (the second premise not retrieved in the chain's context), and the frame alone reaches most of it.
 - **For the GPU: kra37 (arrow + contrastive 0.3) is at least as good as the frame alone and better than kra36 (arrow + cosine 0.5)** - run kra37 first if only one can run. One seed, about +/-0.05 per point.
+
+### kra36 VISITS 1-6 (GPU, seed 4, arrow premise frames; 22 Nov 16:09)
+- REAL-TEXT CHAINS, TEST (bridge never in a taught chain, n 150), kra36 vs kra35 (no frame, seed 5) at the same visit:
+  | visit | bridge right | C right | C given the right bridge | commonest-C baseline | GOLD-TRUE C right |
+  |---|---|---|---|---|---|
+  | 3 | 0.13 (0.09) | 0.06 (0.03) | **0.37** (0.29) | 0.07 | 0.12 (n 24) |
+  | 4 | 0.29 (0.34) | **0.15** (0.04) | **0.50** (0.10) | 0.05 | 0.21 (n 28) |
+  | 5 | 0.26 (0.30) | 0.09 (0.04) | **0.33** (0.13) | 0.07 | 0.17 (n 23) |
+  Direct 0.00-0.01. Taught 0.88-0.93. Premises asked alone, test heads: first hop 0.60-0.69, second hop 0.43-0.71.
+- **The arrow frame lifts real-text step 2 (C given the right bridge) from 0.10-0.29 to 0.33-0.50 at the same visits, and C to 1.3-3x the baseline (pooled visits 3-5: 0.10 vs baseline 0.06; kra35 0.04).** Different seeds, so partly confounded.
+- **The bottleneck has moved to STEP 1 on real text: the bridge is right 0.26-0.29 inside the chain although the first premise asked alone is right 0.60-0.69.** The chain prompt 'A is within ' does not retrieve the premise learned as 'A in B' / 'A, B' - the step-1 analogue of what the arrow frame fixed for step 2. Next: first premises also taught in the composite frame ('A is within B.', true by transitivity of containment).
+- RULE WORLD, THE TRUNK'S OWN CHAIN: pure families visit 5 C right 0.42 (n 12), bridge 0.33; held back 0.55 (n 11), direct 0.00 (kra34, same seed without the frame: 0.58 / 0.62). Route D pure families two-step 0.98 (n 65) vs direct 0.00. Gate: never-read given a stored name 0.01 (ungated 0.60).
