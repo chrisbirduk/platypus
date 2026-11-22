@@ -94,7 +94,9 @@ PT = ["{A} lives in {B}.", "{A} has a home in {B}.", "{A} moved to {B} years ago
 IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
 def pre_sentences():
     out = []
-    for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT[:int(os.environ.get('CS_PREMW', 4))]] * int(os.environ.get('CS_PREMREP', 3))   # 21 Nov: CS_PREMW wordings x CS_PREMREP copies (premise strength)
+    for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT[:int(os.environ.get('CS_PREMW', 4))]] * int(os.environ.get('CS_PREMREP', 3))
+    if int(os.environ.get('CS_ARROWPREM', 0)):                                 # 22 Nov ARROW PREMISE FRAME: every city's premise also as '<B> > <C>.' - every root is an
+        for b, c in OLD: out += [f"{b} > {COUNTRY[c]}."] * int(os.environ.get('CS_ARROWPREM', 0))   #   answer after '>' somewhere, before any chain is taught   # 21 Nov: CS_PREMW wordings x CS_PREMREP copies (premise strength)
     nw_ = int(os.environ.get('CS_PTW', 3))                                      # 21 Nov: CS_PTW person-city wordings, copies keep 6 sentences a person
     for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT[:nw_]] * (6 // nw_)
     if IMPL and COT:
@@ -273,7 +275,8 @@ if COTLATE:                                                                    #
             for p_ in pool_: d_.setdefault(p_[1], p_)
             pool_ = list(d_.values())
         TP = pool_[:NT]
-    TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
+    TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]
+    TPR_ = {OLD[bi][1] for a, bi in TP}; HNN_ = [p_ for p_ in HN_ if OLD[p_[1]][1] not in TPR_]; HNS_ = [p_ for p_ in HN_ if OLD[p_[1]][1] in TPR_]   # 22 Nov: NEW bridge split by ROOT never / ever an answer in a taught chain  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
     KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
     for tag, fmt in [x for x in (('CHAIN', (lambda a, bi: f"{a} is a citizen of: lives in {OLD[bi][0]}; {OLD[bi][0]} lies in {CN[OLD[bi][1]]}.") if SPELL else (lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}.")), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
@@ -341,6 +344,7 @@ if COTLATE:                                                                    #
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
                 if tag == 'CHAIN' and NB_: s1 = chain(mm, HS_, OLD) if HS_ else (float('nan'),) * 2; s2 = chain(mm, HN_, OLD) if HN_ else (float('nan'),) * 2; out[-1] += f" [SEEN bridge (n {len(HS_)}) B {s1[0]:.2f} C {s1[1]:.2f} | NEW bridge (n {len(HN_)}) B {s2[0]:.2f} C {s2[1]:.2f}; taught cities {len(TPC_)}]"
+                if tag == 'CHAIN' and NB_: s3 = chain(mm, HNS_, OLD) if HNS_ else (float('nan'),) * 2; s4 = chain(mm, HNN_, OLD) if HNN_ else (float('nan'),) * 2; out[-1] += f" {{NEW bridge, root SEEN in a taught chain (n {len(HNS_)}) B {s3[0]:.2f} C {s3[1]:.2f} | NEW bridge, root NEVER an answer (n {len(HNN_)}) B {s4[0]:.2f} C {s4[1]:.2f}}}"
                 elif tag.endswith('3'):
                     def h3(G):
                         r_ = [[], [], [], []]
