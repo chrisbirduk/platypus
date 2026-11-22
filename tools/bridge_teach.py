@@ -79,10 +79,11 @@ class Blk(nn.Module):
 class LM(nn.Module):
     def __init__(s, d=DW, nl=3):
         super().__init__(); s.emb = nn.Embedding(V_, d); s.pos = nn.Parameter(torch.randn(L_, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl)); s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V_)
-    def forward(s, X):
+    def hid(s, X):
         Tn = X.shape[1]; am = torch.triu(torch.ones(Tn, Tn, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:Tn]
         for b in s.b: x = b(x, am)
-        return s.o(s.n(x))
+        return s.n(x)
+    def forward(s, X): return s.o(s.hid(X))
 base = LM(); base.load_state_dict(torch.load(os.environ['TG_CKPT'])); base.eval()
 MP = os.environ.get('MINIPILE_DIR', '/tmp/claude-0/sweep/minipile')
 DOMS = {d: np.frombuffer(open(f'{MP}/{d}.bin', 'rb').read().replace(b'\n', b' '), np.uint8) for d in ('wiki', 'prose', 'arxiv', 'pubmed', 'law')}
@@ -177,6 +178,14 @@ for arm in os.environ.get('BT_ARMS', 'DIRECT,BRIDGE').split(','):
     m = copy.deepcopy(start); torch.manual_seed(1); op = torch.optim.Adam(m.parameters(), lr=LR); rs = np.random.RandomState(11); m.train(); RW = ROWS[arm]
     for st in range(STEPS):
         step(m, op, rs, [PREM[i] for i in rs.randint(0, len(PREM), 4)] + [RW[i] for i in rs.randint(0, len(RW), 4)])
+        AW = float(os.environ.get('BT_ALIGN', 0))                              # 22 Nov BT_ALIGN w (arrow form): JEPA STEP-2 ALIGNMENT - the state where 'A r B > '
+        if AW > 0 and ARW and not SPL and arm == 'BRIDGE':                     #   predicts C pulled to the state of the bridge's own premise 'B w2 ' (stop-gradient)
+            cc = [TR[i] for i in rs.randint(0, len(TR), 8)]
+            def hl(ps):
+                bl = [enc(p_) for p_ in ps]; X, Xi = tens([b_ + b'.' for b_ in bl]); H = m.hid(Xi); return torch.stack([H[k, min(len(b_), H.shape[1] - 1)] for k, b_ in enumerate(bl)])
+            h1 = hl([f"{c[0]} {c[1]} {c[4][2]} > " for c in cc])
+            with torch.no_grad(): h2 = hl([f"{c[5][0]} {c[5][1]} " for c in cc])
+            la = AW * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean(); op.zero_grad(); la.backward(); op.step()
         if (st + 1) % (STEPS // 2) == 0:
             m.eval()
             P(f"   {arm:7s} step {st + 1}: TRAIN (taught) {ev(m, arm, TR[:100])} || TEST (never taught) {ev(m, arm, TE)} || forgetting {dbits(m) - d0:+.4f}  ({time.time() - T0:.0f}s)")
