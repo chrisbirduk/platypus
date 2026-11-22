@@ -90,13 +90,13 @@ for s in range(SE):
             EN = F.normalize(E, dim=-1)
             for i in range(0, len(te), 1024):
                 ix = torch.tensor(te[i:i + 1024]); lg = F.log_softmax(pred(E, OPS, A_[ix], R_[ix]) @ EN.T / 0.05, -1)
-                LP[s, ix] = lg.gather(-1, B_[ix, None])[:, 0].numpy(); mx = lg.max(-1); PT[s, ix] = mx.values.exp().numpy(); TT[s, ix] = mx.indices.numpy()
+                LP[s, ix.numpy()] = lg.gather(-1, B_[ix, None])[:, 0].numpy(); mx = lg.max(-1); PT[s, ix.numpy()] = mx.values.exp().numpy(); TT[s, ix.numpy()] = mx.indices.numpy()
                 grp = collections.defaultdict(list)                            # latent two-hop composite through the wording's best rule
                 for j, r in enumerate(R_[ix].tolist()):
                     if W[r] in best: grp[best[W[r]][1:]].append(j)
                 for (r1, r2), js in grp.items():
                     jj = ix[torch.tensor(js)]; v = pred(E, OPS, A_[jj], torch.full((len(js),), WI[r1])); bi = (v @ EN.T).argmax(-1)
-                    v2 = pred(E, OPS, bi, torch.full((len(js),), WI[r2])); LC[s, jj] = F.log_softmax(v2 @ EN.T / 0.05, -1).gather(-1, B_[jj, None])[:, 0].numpy()
+                    v2 = pred(E, OPS, bi, torch.full((len(js),), WI[r2])); LC[s, jj.numpy()] = F.log_softmax(v2 @ EN.T / 0.05, -1).gather(-1, B_[jj, None])[:, 0].numpy()
         P(f"   seed {s} fold {f_}: trained on {int((fold != f_).sum())}, scored {len(te)} ({time.time() - T0:.0f}s)")
 lp = LP.mean(0); nd = np.array([f[4] for f in F_], dtype=float)
 tc = collections.Counter((f[1], f[2]) for f in F_); nw = collections.Counter(f[1] for f in F_); ntw = collections.Counter(w_ for (w_, b_) in set((f[1], f[2]) for f in F_))
