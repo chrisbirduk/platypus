@@ -79,10 +79,11 @@ class Blk(nn.Module):
 class LM(nn.Module):
     def __init__(s, d=DW, nl=3):
         super().__init__(); s.emb = nn.Embedding(V_, d); s.pos = nn.Parameter(torch.randn(L_, d) * 0.02); s.b = nn.ModuleList(Blk(d, 4) for _ in range(nl)); s.n = nn.LayerNorm(d); s.o = nn.Linear(d, V_)
-    def forward(s, X):
+    def hid(s, X):
         Tn = X.shape[1]; am = torch.triu(torch.ones(Tn, Tn, dtype=torch.bool), 1); x = s.emb(X) + s.pos[:Tn]
         for b in s.b: x = b(x, am)
-        return s.o(s.n(x))
+        return s.n(x)
+    def forward(s, X): return s.o(s.hid(X))
 base = LM(); base.load_state_dict(torch.load(os.environ['TG_CKPT'])); base.eval()
 MP = os.environ.get('MINIPILE_DIR', '/tmp/claude-0/sweep/minipile')
 DOMS = {d: np.frombuffer(open(f'{MP}/{d}.bin', 'rb').read().replace(b'\n', b' '), np.uint8) for d in ('wiki', 'prose', 'arxiv', 'pubmed', 'law')}
@@ -96,11 +97,13 @@ PREM = [enc(f.format(a=p[0], w=p[1], b=p[2])) for c in TR + TE for p in (c[4], c
 q_ = lambda c: f"Q: {c[0]} {c[1]} ? "
 so_ = lambda c: f"So {c[0]} {c[1]} "
 ARW = os.environ.get('BT_FORMAT', '') in ('arrow', 'spelled')                             # 21 Nov: 'arrow' - the synthetic world's and the rule world's form 'A r B > C.' (the
+CREL = os.environ.get('BT_CREL', '')                                           # 22 Nov: the composite's own relation ('is within'): with 'A in ' the chain prompt equals a
+R_ = lambda c: CREL or c[1]                                                    #   first premise worded 'in', so test heads answer the premise (GPU kra32)
 if ARW:                                                                        #   subject is never written again: the stand-in cannot copy a new name and wrote a
-    q_ = lambda c: f"{c[0]} {c[1]} "                                           #   taught one with similar letters in its place)
-    so_ = lambda c: f"{c[0]} {c[1]} "
-ROWS = {'DIRECT': [enc(q_(c) + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {c[1]} {c[2]}.") for c in TR],
-        'BRIDGE': [enc(q_(c) + f"{c[4][0]} {c[4][1]} {c[4][2]}. {c[5][0]} {c[5][1]} {c[5][2]}. " + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {c[1]} {c[4][2]} > {c[2]}.") for c in TR]}
+    q_ = lambda c: f"{c[0]} {R_(c)} "                                           #   taught one with similar letters in its place)
+    so_ = lambda c: f"{c[0]} {R_(c)} "
+ROWS = {'DIRECT': [enc(q_(c) + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {R_(c)} {c[2]}.") for c in TR],
+        'BRIDGE': [enc(q_(c) + f"{c[4][0]} {c[4][1]} {c[4][2]}. {c[5][0]} {c[5][1]} {c[5][2]}. " + so_(c) + c[2] + '.') for c in TR] if not ARW else [enc(f"{c[0]} {R_(c)} {c[4][2]} > {c[2]}.") for c in TR]}
 SPL = os.environ.get('BT_FORMAT', '') == 'spelled'                             # 21 Nov: kra26's form 'A r: A w1 B; B w2 C.' (both steps spelled, A restated)
 if SPL: ROWS['BRIDGE'] = [enc(f"{c[0]} {c[1]}: {c[4][0]} {c[4][1]} {c[4][2]}; {c[5][0]} {c[5][1]} {c[2]}.") for c in TR]
 EVD = {d: [bytes(a[len(a) - 200000 + k * 129:len(a) - 200000 + (k + 1) * 129]) for k in range(64)] for d, a in DOMS.items()}
@@ -135,7 +138,7 @@ def greedy(m, prompts, n=110):                                                # 
 def ev(m, arm, cl):
     if ARW:                                                                    # arrow form: DIRECT ranks C after 'A r '; BRIDGE decodes 'B > C' after 'A r '
         if arm == 'DIRECT':
-            r = [rank_at(m, f"{c[0]} {c[1]} ", CAND[c]) for c in cl]; return f"C first among 10 {np.mean(r):.3f}"
+            r = [rank_at(m, f"{c[0]} {R_(c)} ", CAND[c]) for c in cl]; return f"C first among 10 {np.mean(r):.3f}"
         if SPL:                                                                # spelled: decode after 'A r:'; step 1 must restate 'A w1 ', its tail is the bridge
             g = greedy(m, [f"{c[0]} {c[1]}:" for c in cl], 110); r, fm, bb, ex, cp = [], [], [], [], []
             if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:118]) for x in g[:3]))
@@ -147,13 +150,13 @@ def ev(m, arm, cl):
                 b_ = st[0][len(h1):]; bb.append(b_ == c[4][2]); ex.append(st[1].endswith(c[2]))
                 r.append(rank_at(m, f"{c[0]} {c[1]}: {st[0]}; {b_} {c[5][1]} ", CAND[c]))
             return f"C first among 10 {np.mean(r):.3f} | C exact {np.mean(ex):.3f} | own bridge B right {np.mean(bb):.3f} | chain format {np.mean(fm):.3f} | subject copied {np.mean(cp):.3f}"
-        g = greedy(m, [f"{c[0]} {c[1]} " for c in cl], 60); r, fm, bb, ex = [], [], [], []
+        g = greedy(m, [f"{c[0]} {R_(c)} " for c in cl], 60); r, fm, bb, ex = [], [], [], []
         if os.environ.get('BT_SHOW'): P('      e.g. ' + ' || '.join(repr(x[:100]) for x in g[:3]))
         for x, c in zip(g, cl):
-            body = x[len(f"{c[0]} {c[1]} "):].split('.')[0]; pt = [t.strip() for t in body.split('>')]
+            body = x[len(f"{c[0]} {R_(c)} "):].split('.')[0]; pt = [t.strip() for t in body.split('>')]
             fm.append(len(pt) == 2); bb.append(len(pt) == 2 and pt[0] == c[4][2])
             if len(pt) != 2: r.append(0); ex.append(False); continue
-            r.append(rank_at(m, f"{c[0]} {c[1]} {pt[0]} > ", CAND[c])); ex.append(pt[1] == c[2])
+            r.append(rank_at(m, f"{c[0]} {R_(c)} {pt[0]} > ", CAND[c])); ex.append(pt[1] == c[2])
         return f"C first among 10 {np.mean(r):.3f} | C exact {np.mean(ex):.3f} | own bridge B right {np.mean(bb):.3f} | chain format {np.mean(fm):.3f}"
     if arm == 'DIRECT':
         r = [rank_at(m, q_(c) + so_(c), CAND[c]) for c in cl]
@@ -177,6 +180,19 @@ for arm in os.environ.get('BT_ARMS', 'DIRECT,BRIDGE').split(','):
     m = copy.deepcopy(start); torch.manual_seed(1); op = torch.optim.Adam(m.parameters(), lr=LR); rs = np.random.RandomState(11); m.train(); RW = ROWS[arm]
     for st in range(STEPS):
         step(m, op, rs, [PREM[i] for i in rs.randint(0, len(PREM), 4)] + [RW[i] for i in rs.randint(0, len(RW), 4)])
+        AW = float(os.environ.get('BT_ALIGN', 0))                              # 22 Nov BT_ALIGN w (arrow form): JEPA STEP-2 ALIGNMENT - the state where 'A r B > '
+        if AW > 0 and ARW and not SPL and arm == 'BRIDGE':                     #   predicts C pulled to the state of the bridge's own premise 'B w2 ' (stop-gradient)
+            cc = [TR[i] for i in rs.randint(0, len(TR), 8)]
+            def hl(ps):
+                bl = [enc(p_) for p_ in ps]; X, Xi = tens([b_ + b'.' for b_ in bl]); H = m.hid(Xi); return torch.stack([H[k, min(len(b_), H.shape[1] - 1)] for k, b_ in enumerate(bl)])
+            h1 = hl([f"{c[0]} {R_(c)} {c[4][2]} > " for c in cc])
+            with torch.no_grad(): h2 = hl([f"{c[5][0]} {c[5][1]} " for c in cc])
+            la = AW * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean()
+            if int(os.environ.get('BT_ALIGN_STEP', 2)) == 3:                   # 22 Nov: STEP 1 too - 'A <composite> ' (predicts the bridge) ~ 'A <w1> ' (its premise)
+                h3 = hl([f"{c[0]} {R_(c)} " for c in cc])
+                with torch.no_grad(): h4 = hl([f"{c[4][0]} {c[4][1]} " for c in cc])
+                la = la + AW * (1 - F.cosine_similarity(h3, h4, dim=-1)).mean()
+            op.zero_grad(); la.backward(); op.step()
         if (st + 1) % (STEPS // 2) == 0:
             m.eval()
             P(f"   {arm:7s} step {st + 1}: TRAIN (taught) {ev(m, arm, TR[:100])} || TEST (never taught) {ev(m, arm, TE)} || forgetting {dbits(m) - d0:+.4f}  ({time.time() - T0:.0f}s)")

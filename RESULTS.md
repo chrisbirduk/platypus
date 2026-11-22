@@ -4,6 +4,8 @@ Results go here as they come, with the conditions that limit them; negatives sta
 without an explicit seed are seed 0; local recall differences under about 0.15 are seed noise). GPU = Colab, 130 probes, pass 1 (10 visits).
 "Shadow" = a readout that fits a variant on one sleep's conclusions alone, applies it to the pre-edit weights, measures and removes it.
 
+**Latest summary:** "Summary, 20-22 November" at the end of this file (earlier: "Summary, 18-19 November"). The log below is in date order.
+
 ## Words used carefully
 
 - **From the weights**: the trunk's own parameters, fast store off. A closed-form edit to a trunk matrix counts as the weights.
@@ -5827,3 +5829,255 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - No Traceback (GPU visits 1-2; local visits 1-2). Reader on the GPU: planted rule-world facts recorded 109 / 128 and 206 / 232 at visits 1 / 2 (kra27 128 / 128, 230 / 232) - the comma wording ('X, who is a child of M, lives nearby.') is split by the clause reader; locally the loss is about half (57 vs 110). Rules: 0 found at visit 1, both at visit 2, 0 FALSE (kra27: both from visit 1).
 - [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 2: PLANTED bridge 0.46, C 0.31 (n 13); HELD BACK never written bridge 0.55, C 0.36 (n 11); **PURE FAMILIES bridge 0.25, C 0.00 (n 12)** - as kra27 at visit 2 (0.64 / 0.36; 0.33 / 0.00). Step 2 inside the chain still repeats the bridge in some examples ('Tarquira -> is a child of Zogalka; Zogalka is a child of Zogalka'). Visits 3-4 decide.
 - Route D: first step 0.65, two-step 0.56, pure 0.48. Bits on read domains 2.0339 (kra27 2.0187 at visit 2; +0.015, about seed noise).
+
+### cg27a_kra28 GPU, visit 3 (21 Nov 23:51)
+- [RULE WORLD, THE TRUNK'S OWN CHAIN]: PLANTED bridge 0.88, C 0.59 (n 17); HELD BACK never written bridge 0.27, C 0.00 (n 11); **PURE FAMILIES never written: format 0.83, bridge right 0.33, C right 0.00 (n 12)** (kra27 visit 3: 0.10 / 0.00; kra26: 0.00 / 0.00).
+- Examples: step 2 is now mostly a real second statement with a NEW name ('Quibrisal -> is a child of Quibelris; Quibelris is a child of Quibelor'; 'Quirasal -> ... Quiratev is a child of Quiedzo; Quiedzo is a c...' - a third step), not kra27's 'M is a child of M'; but the root is wrong (C 0.00), often a name sharing the bridge's first letters. One restates the subject ('Tozomon -> is a child of Ratozo; Tozomon is a child of Ratozo').
+- Route D (premises asked directly): first step 0.70, two-step 0.62, **pure 0.58** (kra27 0.62 / 0.53 / 0.49) - six wordings raise premise recall in the canonical wording too. Facts taught 0.90; gate right when answered 1.00; bits on read domains 2.0152 (kra27 1.9977). No Traceback.
+
+### THE SPELLED FORM DOES NOT COMPOSE THROUGH NEW BRIDGES; THE ARROW FORM DOES (synthetic, 22 Nov 00:10; compose_synth CS_SPELL 1 - 'A is a citizen of: lives in B; B lies in C.', kra27 / kra28's form - premises in 4 / 3 wordings, checkpoint of the clean run, 100 taught)
+| form (varied premises) | NEW bridge B / C at 300 / 750 / 1,500 steps (n 78) | SEEN bridge C |
+|---|---|---|
+| arrow 'A is a citizen of B > C.' (clean run) | 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67 | 0.68-0.91 |
+| **spelled (kra27 / kra28)** | **0.77 / 0.12, 0.86 / 0.14, 0.86 / 0.12** | 0.55-0.86 |
+| spelled + JEPA alignment of STEP 1's state to the premise's (weight 1.0) | 0.24 / 0.06, 0.44 / 0.08, 0.47 / 0.12 (taught C 0.45-0.89) | 0.23-0.41 |
+- In the spelled form the FIRST step works for new bridges (B 0.86) and the SECOND fails (C 0.12-0.14): 'B lies in' inside the chain is answered only for bridges seen in taught chains - **exactly kra28 at visit 3** (pure bridge 0.33, C 0.00; step 2 a real statement with the wrong root). Aligning step 1 (which was not the problem) hurts.
+- **kra29: the arrow form back (inf_rule_world_chainplant 1) with the six premise wordings** - the combination that composes in the synthetic world. Queued locally: JEPA alignment of the SECOND step's state (spelled and arrow, weight 0.3), alignment with one wording, two wordings.
+
+### cg27a_kra28 GPU, visit 4 (22 Nov 00:16) - the synthetic spelled-form prediction, on the GPU
+- [RULE WORLD, THE TRUNK'S OWN CHAIN]: PLANTED bridge 0.77, C 0.50 (n 26); **HELD BACK never written (new subjects): bridge 0.65, C 0.35 (n 20)**; **PURE FAMILIES never written: bridge right 0.56, C right 0.00 (n 18)** (kra26 visit 4: 0.17 / 0.08; kra27 visit 3: 0.10 / 0.00).
+- **Six wordings fixed the FIRST step for new bridges (0.00-0.17 -> 0.56) and the premises (route D first step 0.91, two-step 0.84, pure 0.78; kra26 visit 4: 0.69 / 0.66 / 0.57); the spelled form's SECOND step fails** - examples 'Tozosen -> is a child of Risquiris; Loquiris is a child of Quihunis', 'Quimontar -> is a child of Riszohun' (step 2 dropped): step 2 does not even restate the bridge. The synthetic world's spelled form: B 0.86, C 0.12-0.14. kra29 (arrow form + six wordings) replaces it.
+- Gate never-read 0.02; bits on read domains 1.9199 (kra26 visit 4 1.9202). No Traceback.
+
+### JEPA ALIGNMENT OF THE SECOND STEP (synthetic, 22 Nov 00:30; CS_ALIGN 0.3, CS_ALIGN_STEP 2: the state where the chain predicts the root ('A is a citizen of B > ' / '...; B lies in ') pulled to the state in the bridge's own premise 'B lies in ' (stop-gradient), taught people only; premises in 4 / 3 wordings, same checkpoint)
+| form | NEW bridge B / C at 300 / 750 / 1,500 steps (n 78) | taught C |
+|---|---|---|
+| arrow, no alignment | 0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67 | 1.00 |
+| **arrow + step-2 alignment** | 0.67 / **0.62**, 0.82 / **0.85**, 0.82 / **0.78** | 0.93-1.00 |
+| spelled, no alignment | 0.77 / 0.12, 0.86 / 0.14, 0.86 / 0.12 | 1.00 |
+| spelled + step-2 alignment | 0.71 / 0.08, 0.77 / 0.08, 0.74 / 0.14 | 0.96-0.99 |
+- **JEPA alignment of the second step adds to the arrow form: composition through new bridges 0.67 -> 0.78 at 1,500 steps (0.85 at 750)** - the C slot's state is keyed like the premise, so the premise's answer is retrieved for bridges never in a chain. It does NOT rescue the spelled form (0.08-0.14). Alignment with ONE wording per premise: running.
+- **Alignment with ONE wording per premise (22 Nov 01:00; arrow form, CS_ALIGN 0.3 step 2, re-pretrained one-wording checkpoint cs_onew_s0.pt):** NEW bridge B / C 0.14 / 0.21, 0.26 / 0.28, 0.17 / 0.22 at 300 / 750 / 1,500 (one wording, no alignment: 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18). A small gain (+0.04-0.09) - **alignment does not replace varied wordings**: with one wording the FIRST step fails (B 0.14-0.26), and step-2 alignment cannot fix it. Varied premises fix step 1; alignment boosts step 2. Queued: alignment of BOTH steps with one wording (CS_ALIGN_STEP 3).
+- **TWO wordings are enough (22 Nov 01:35; arrow form, no alignment, CS_PREMW 2 x6, CS_PTW 2 x3, re-pretrained; premises 1.00):** NEW bridge B / C **0.83 / 0.74, 0.71 / 0.62, 0.79 / 0.77** at 300 / 750 / 1,500 (n 78) - as good as four / three wordings (0.82 / 0.55, 0.82 / 0.60, 0.85 / 0.67); one wording 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18 (re-run from the saved checkpoint: identical). **The step is from one wording to two**: any second context keys the premise on its subject. kra28-kra30's six wordings are ample; for real text, a recorded fact needs only one rehearsal in a second frame.
+
+### kra30 local check (22 Nov 02:05; three visits, 150 steps a task)
+- No Traceback through visit 3. [JEPA STEP-2 ALIGNMENT] prints each visit: 38 / 82 / 108 planted chains; 149 alignment steps a visit; mean 1 - cosine 0.028 -> 0.009 (visit 2), 0.018 -> 0.011 (visit 3) - the term trains. Trunk's own chain 0.00-0.02 locally (as every build at this scale). Relational module 2 relations, 0 rules locally (as kra25-kra28 locally; the GPU finds them). **kra30 clear to run.**
+
+### Overnight synthetic tests, part 2 (22 Nov 02:51-03:20; arrow form; NEW bridge B / C at 300 / 750 / 1,500 steps)
+- **JEPA ALIGNMENT OF BOTH STEPS rescues ONE-wording premises (CS_ALIGN 0.3, CS_ALIGN_STEP 3; step 1 'A is a citizen of ' ~ 'A lives in ', step 2 'A is a citizen of B > ' ~ 'B lies in '):** 0.55 / **0.50**, 0.72 / **0.68**, 0.64 / **0.55** (n 78) vs no alignment 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18 and step 2 only 0.14 / 0.21, 0.26 / 0.28, 0.17 / 0.22. Taught C 0.96 / 0.99 / 0.85 (a dip at 1,500). **Aligning the chain's steps to their premises' own states does what varied wordings do** - a label-free, general mechanism (no generated wordings needed), close to two wordings (0.62-0.77).
+- **FEWER TAUGHT CHAINS (30, the GPU's dose), four wordings:** no alignment 0.66 / 0.34, 0.60 / 0.43, 0.63 / 0.30; **step-2 alignment 0.54 / 0.48, 0.58 / 0.52, 0.65 / 0.65** (n 91). With few chains alignment roughly doubles composition at 1,500 steps - it matters most at the rule world's dose (13-26 planted chains by visit 4).
+- Chain teaching + step-2 alignment, 100 taught (CS_COTLATE_X run): 0.67 / 0.63, 0.81 / 0.78, 0.76 / 0.76 - false-memory and forgetting lines pending.
+- **COST CHECKS with step-2 alignment (CS_COTLATE_X / CS_COTLATE_REV, seed 0, clean checkpoint, 1,500 steps; the 19 Nov no-alignment runs used 3,000 steps and another checkpoint, so the comparison is indicative):**
+  - FALSE MEMORY: NOVEL names (never read) given a well-formed made-up chain **0.90** (19 Nov, no alignment: 0.93); abstain 0.00; confidence separates known from novel AUC 0.81 (0.83). **Alignment neither causes nor cures confabulation - the trunk's own chain still needs the gate** (as concluded 19 Nov: composite questions answered through the gated memory / margin gate).
+  - FORGETTING on fixed pretraining windows: 0.435 -> 0.463 bits per byte (+0.028; 19 Nov no alignment +0.021). A small extra cost at most.
+  - Premises only READ (never taught, never asked): chain C 0.04 / 0.08 / 0.07 / 0.16 for 1 / 2 / 4 / 8 reads (19 Nov 0.08 at 8 reads) - reading alone still does not make a premise chainable.
+  - **BELIEF REVISION (move to a city in another country, new premise taught 600 steps): taught people NEW / STALE country 0.32 / 0.42 (19 Nov seed 0, no alignment: 0.19 / 0.65); never-taught 0.39 / 0.24 (0.14 / 0.52).** Aligned chains follow the new premise more often - the chain step is keyed on the premise, so changing the premise changes the conclusion. Partial, not complete: retraction and re-derivation of written composites stays necessary.
+
+### Overnight synthetic tests, part 3 (22 Nov 03:55-05:35)
+- **Four wordings + alignment of BOTH steps (seed 0):** NEW bridge B / C 0.74 / 0.68, **0.40 / 0.37**, 0.90 / 0.81 at 300 / 750 / 1,500; taught C 0.85 / 0.81 / 0.96 - unstable and costly to taught chains; no gain over step 2 alone (0.62 / 0.85 / 0.78, taught 0.93-1.00). **Both-step alignment is for one-wording premises only; kra31 not recommended.**
+- **SECOND SEED (seed 1, re-pretrained, four / three wordings, premises 1.00):** arrow form, no alignment NEW bridge B / C **0.86 / 0.75, 0.92 / 0.84, 0.88 / 0.86** (n 85) - **the main finding replicates** (seed 0: 0.55 / 0.60 / 0.67). With step-2 alignment: 0.86 / 0.82, 0.71 / 0.71, 0.81 / 0.65, taught C 0.98 / 0.97 / 0.86 - **alignment does not help on seed 1** (+0.07 at 300, -0.21 at 1,500).
+- **Real text with step-2 alignment (bridge_teach arrow, oracle relations, BT_ALIGN 0.3):** TEST never taught C first 0.150 / 0.150, exact 0.150 / 0.050, own bridge 0.150 / 0.175 at 1,500 / 3,000 (no alignment: 0.175 / 0.150, 0.100 / 0.050, 0.250 / 0.175). No change; the stand-in's real-text limit is unchanged.
+- **Summary of the night:** robust on two seeds - varied premise wordings (two suffice) + the arrow form compose through new bridges (0.67-0.86); one wording or the spelled form do not (0.12-0.19). JEPA step-2 alignment: helps on seed 0 (0.67 -> 0.78; at 30 chains 0.30 -> 0.65), hurts late on seed 1 (0.86 -> 0.65), no change on real text; no false-memory cost, revision better. Both-step alignment rescues one-wording premises (0.15-0.19 -> 0.50-0.68) but destabilises varied ones. **Morning GPU: kra29 (the robust combination); kra30 (+ step-2 alignment) second.** Seed 1 at 30 chains with / without alignment: running.
+- **Seed 1 at 30 taught chains (the GPU's dose), four wordings:** NEW bridge C no alignment 0.56 / 0.51 / 0.64; **step-2 alignment 0.56 / 0.77 / 0.63** at 300 / 750 / 1,500 (n 94; taught C 0.90-1.00). At the low dose alignment never hurts on either seed (seed 0: 0.34 / 0.43 / 0.30 -> 0.48 / 0.52 / 0.65; seed 1: equal at the end, +0.26 mid-way); it hurt only at 100 chains on seed 1. kra30 is a reasonable second run after kra29.
+
+### cg27a_kra29 GPU, visit 1 (22 Nov 06:56; arrow form + premises in six wordings)
+- No Traceback. Relational module: 242 names, 12 relations, 179 facts; **both rules found at visit 1, 0 FALSE** (kra28: at visit 2). Planted rule-world facts recorded 118 / 128 (kra28 109 / 128). Bits on read domains 2.0096 (kra27 2.0086).
+- Trunk's own chain at visit 1: 0.00 everywhere (as every build); examples answer one name with no '>' ('Tevmizo -> Zofaris', 'Quisenhun -> Zonorbri'). Local check (two visits): no Traceback.
+
+### cg27a_kra29 GPU, visits 2-4 (22 Nov 07:43): the arrow form is not taken up from the planted chains alone
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 2 / 3 / 4: PLANTED format 0.46 / 0.29 / 0.46, bridge 0.38 / 0.24 / 0.27, C 0.46 / 0.59 / 0.58 (direct 0.08 / 0.41 / 0.38 - planted composites mostly answered DIRECTLY); HELD BACK never written C 0.00 / 0.00 / 0.00 (n 11-13); **PURE FAMILIES never written: format 0.17-0.20, bridge 0.08-0.10, C 0.00 / 0.10 / 0.00 (n 10-12).** Examples: single names ('Quibrisal -> Quibelor'), drift ('Quihunis and Technology and Technology').
+- Premises are strong (route D first step 0.64 / 0.68 / 0.86, two-step 0.51 / 0.59 / 0.73, pure 0.46 / 0.56 / 0.69 - the best yet), but chain FORMAT uptake is low: kra29 teaches route J's composites DIRECTLY (inf_distill_chainform 0 since kra26), so arrow chains come only from 13-26 planted sentences. The synthetic world taught 100 chains intensively. kra23-kra25 taught route J writes in the chain form (format and composition for new subjects 0.12-0.29) but with one-wording premises. **Neither GPU build had both: kra33 = kra29 + inf_distill_chainform 1.** kra32 (real text, seed 5) now builds on kra33.
+- Gate never-read: 0.51 at visit 2 (!), 0.03, 0.02 at visits 3-4. Facts and bits normal (2.0326 / 2.0060). No Traceback.
+
+### kra32 local check (real-text chains; 22 Nov 08:30; two visits, inf_premises_visits 2 locally)
+- No Traceback. Chains built from the record store's reading: visit 1 276 (TAUGHT 227, TEST 22), visit 2 832 (TAUGHT 400, TEST 75; 0.17 of test chains have both premises gold-labelled as containment), places only ('1 Carlton Gardens in London > UK.', 'Talyllyn Railway in Wales > United Kingdom.'). Rows: 588 / 1,164 premise rows (two wordings), 227 / 400 chain rows; the rows' loss falls 1.785 -> 0.712 over visit 2's 149 steps.
+- [REAL-TEXT CHAINS, THE TRUNK'S OWN | visit 2] prints: 0.00 everywhere locally (the 150-step stand-in recalls neither premises nor chains; guessing the commonest taught C 0.34 on taught, 0.05 on test). **kra32 clear to run** (the GPU is the test).
+
+### cg27a_kra33 GPU, visit 3 (22 Nov 08:47): chain-form teaching starts
+- [RELATIONAL MODULE WRITES | visit 3] 93 written (precision 0.99) -> 59 taught, 34 held back; CHAIN FORM 93.
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 3 (kra29 visit 3): PLANTED format 0.59 (0.29), bridge 0.29, C 0.47; HELD BACK never written format **0.64** (0.18), bridge 0.18 (0.00), C 0.00; **PURE FAMILIES format 0.42 (0.20), bridge 0.08, C 0.00 (n 12)**. Examples now in the arrow form: 'Tozomon -> Tozodra > Quizotev', 'Pelsenzo -> Ratozo > Ratozo'. Format taken up; the bridge and root not yet (one visit of chain teaching).
+- Route D: first step 0.62, two-step 0.48, pure 0.46. Gate never-read 0.40 (visit 2), **0.16 (visit 3; kra29 0.03)**. No Traceback.
+
+### SLOW CHANNELS, ONE WORDING (synthetic, 22 Nov 08:50; CS_SLOW 0.1, 32 channels, slowness within a sentence + SVReg variance floor, during pretraining and teaching; after Ren, Wang, Hoang, Kuang & LeCun 2026)
+- Pretraining unchanged: 0.429 bits per byte at step 6,000 (one wording without: 0.428); premises 1.00.
+- **NEW bridge B / C at 300 / 750 / 1,500: 0.29 / 0.22, 0.35 / 0.29, 0.32 / 0.32** (n 78) vs one wording alone 0.12 / 0.15, 0.18 / 0.19, 0.19 / 0.18; two wordings 0.83 / 0.74, 0.71 / 0.62, 0.79 / 0.77. **A partial rescue at no cost: +0.07 to +0.14 on C, the first step roughly doubled.** Weight 0.3 running.
+- **Slow channels at weight 0.3 (one wording, 22 Nov 09:20):** pretraining 0.429 bits per byte (no cost); NEW bridge B / C **0.18 / 0.22, 0.14 / 0.17, 0.21 / 0.23** - no better than one wording alone (0.15-0.19) and below weight 0.1 (0.22-0.32). **No dose-response: slow channels are at best a weak, uncertain help (n 78, about 0.05 standard error); not a candidate for the GPU.** Varied wordings (two suffice) stay the fix.
+
+### cg27a_kra33 GPU, visits 4-5 (22 Nov 09:22): THE TRUNK COMPOSES FOR NEW SUBJECTS; the second step fails through bridges never in a chain
+- [RULE WORLD, THE TRUNK'S OWN CHAIN] visit 4 / 5: PLANTED format 0.46 / 0.55, bridge 0.35 / 0.48, C 0.69 / 0.84; **HELD BACK, never planted, never written (new subjects, known bridges): format 0.82 / 0.85, bridge 0.53 / 0.46, C right 0.41 / 0.31 (n 17 / 13; direct 0.00 / 0.00)** - the best clean composition by the trunk yet (kra28 0.35, kra29 0.00); **PURE FAMILIES never written: format 0.46 / 0.89, bridge 0.08 / 0.67, C 0.08 / 0.00 (n 13 / 9).**
+- Examples, pure families: 'Raquiul -> Quiulsal > Quigalcor', 'Tartarqui -> Quiulsal > Quigalcor', 'Quivinzo -> Quiquihun > Quigalcor' - step 1 now right (0.67), step 2 answers a common root for bridges never seen in a chain. Route D (asked step by step): first step 0.92, two-step 0.82, pure 0.74 - the premise B -> C is known when asked alone.
+- Gate recovered: never-read 0.02 / 0.01 (t 0.84 / 0.87). Bits on read domains 1.9191 (visit 4). No Traceback.
+- **kra34 = kra33 + JEPA step-2 alignment (inf_rule_world_align 0.5) + gate floor 0.8.**
+
+### cg27a_kra32 GPU (seed 5, real-text chains), visits 1-4 (22 Nov 09:29)
+- Real-text chains on the GPU: 848 / 2,088 / 3,345 chains at visits 1-3 (TAUGHT 400, TEST 80 / 150 / 150; 0.16-0.23 of test chains gold-labelled). Rows' loss 1.147 -> 0.108 (visit 2), 0.826 -> 0.083 (visit 3).
+- **[REAL-TEXT CHAINS, THE TRUNK'S OWN | visit 3]: TAUGHT (80) format 0.93, bridge 0.90, C 0.89 (given the right bridge 0.99), premises alone 0.94 / 0.70 - the trunk learns real chains and premises. TEST, bridge never in a taught chain (150): format 0.40, bridge 0.03, C 0.03 (given the right bridge 0.25; commonest-C guess 0.07; direct 0.00); premises asked alone: first hop 0.55, second hop 0.69.** Composition through unseen bridges on real text: not yet. The first hop is known in its own wording (0.55) but not inside 'A in ' (0.03) - many first premises are worded 'region of', 'located in', 'province of', never 'in'. Prepared: inf_rchain_ownw (chains start with the first premise's own wording).
+- Rule world, seed 5, visit 4: PLANTED C 0.65; HELD BACK never written bridge 0.41, C 0.09 (n 22); PURE FAMILIES format 0.95, bridge 0.58, C 0.05 (n 19) - the same step-2 failure as kra33 (seed 4), weaker for new subjects (0.09 vs 0.41).
+- Gate never-read: 0.07 (visit 3, t 0.94), 0.10 (visit 4, t 0.77) - the pooled threshold fell below 0.8; kra34's floor (0.8) addresses it.
+
+### cg27a_kra32 GPU, visits 4-5 (22 Nov 10:00): the real-text test was confounded by its prompt
+- [REAL-TEXT CHAINS, THE TRUNK'S OWN] visit 4 / 5: TAUGHT C 0.81 / 0.85 (premises alone 0.91-0.96 / 0.75-0.82); **TEST format 0.21 / 0.20, bridge 0.01 / 0.01, C 0.01 / 0.01** (premises alone 0.75 / 0.81, 0.71 / 0.67). Examples: 'Amargosa River -> Nye County', 'Nuffield Theatre -> Southampton' - the right first premise, then a full stop. **Cause (design): the chain was asked as 'A in ', the same prompt as a first premise worded 'in', and every test premise was taught as 'A in B.' - so for test heads the trunk answers the premise, as taught. (inf_rchain_ownw would have made it universal; replaced by inf_rchain_crel - the composite gets its own relation, 'A is within B > C.', as the rule world's 'grandchild' differs from 'child'.)**
+- Rule world, seed 5, visit 5: PLANTED C 0.80; HELD BACK never written bridge 0.48, **C 0.22** (n 23); PURE FAMILIES format 0.92, bridge 0.38, C 0.00 (n 13). Gate never-read 0.02 (visit 5, t 0.90).
+- **kra35 = kra34 + real-text chains as 'A is within B > C.' + JEPA step-2 alignment on them; seed 5.**
+
+### cg27a_kra35 GPU (seed 5; kra34 + real-text chains 'A is within B > C' + step-2 alignment), visits 1-3 (22 Nov 11:17)
+- **[REAL-TEXT CHAINS, THE TRUNK'S OWN | visit 3]: TAUGHT (80) format 0.96, bridge 0.96, C 0.94; TEST, bridge never in a taught chain (150): chain format 0.97 (kra32: 0.20 - the prompt fix works), bridge right 0.09, C right 0.03 (given the right bridge 0.29; commonest-C guess 0.07; direct 0.01); premises asked alone 0.66 / 0.51.** Test heads now chain, but step 1 inside the chain is mostly wrong ('Amargosa River -> India > Andhra Pradesh' for Nye County > U.S.; 'Permesta rebellion -> Indonesia > Andhra Pradesh' - bridge right, root a taught one). Rows' loss 0.767 -> 0.064; alignment 1 - cos 0.046 -> 0.035.
+- Rule world, seed 5, visit 3: PLANTED C 0.38; HELD BACK C 0.06 (n 16); PURE bridge 0.00, C 0.00 (n 16). JEPA step-2 alignment 0.069 -> 0.009 within visit 3 (399 steps; 64 planted chains next).
+- Gate: visit 3 t 0.84 (floor held), never-read 0.07 (ungated 0.65). No Traceback.
+
+### Real-text stand-in with the composite relation (22 Nov 11:55; bridge_teach BT_FORMAT arrow, BT_CREL 'is within', oracle relations P131/P17/P30/P361, BRIDGE arm; same 237 chains: TRAIN 197, TEST 40)
+- TEST (bridges never in a train chain) at 1,500 / 3,000 steps: **chain format 0.925 / 0.925** (with 'A in ': 0.275 / 0.625), **own bridge right 0.300 / 0.300** (0.250 / 0.175), **C first among 10 0.250 / 0.250** (0.175 / 0.150; direct teaching 0.050 / 0.075; chance 0.10), C exact 0.150 / 0.100 (0.100 / 0.050). TRAIN 0.97-1.00.
+- **The prompt clash was part of the stand-in's weak real-text result: with the composite's own relation, composition through unseen bridges rises to 0.25 (2.5x chance, 3-5x direct teaching; n 40, about 0.07 standard error).** Modest and on the small stand-in; examples 'Fraser River is within British Columbia > Canada', 'Museo del Prado is within Madrid > England' (bridge right, root wrong).
+- **kra35 visit 4 (11:55):** REAL-TEXT TEST (150): format 0.94, **bridge right 0.34** (visit 3: 0.09), C right 0.04 (**given the right bridge 0.10**; guess 0.05); premises alone 0.79 / 0.77. Step 1 improving, step 2 failing: 'Lateran University -> Rome > Georgia' (Rome > Gianicolo), 'Permesta rebellion -> Indonesia > Andhra Pradesh'. TAUGHT C 0.86. Rule world, seed 5: HELD BACK C 0.14 (n 14; kra32 visit 4 0.09); PURE bridge 0.10, C 0.10 (direct 0.10; n 20; kra32 visit 4: bridge 0.58, C 0.05). Gate 0.06 (t 0.84). Step-2 alignment trains (0.045 -> 0.010) but has not fixed step 2 on seed 5 by visit 4.
+
+### cg27a_kra35 GPU, visit 5 (22 Nov 12:13): FIRST COMPOSITION THROUGH BRIDGES NEVER IN A CHAIN (rule world, seed 5, with JEPA step-2 alignment)
+- [RULE WORLD, THE TRUNK'S OWN CHAIN | visit 5]: PLANTED C 0.76; HELD BACK never written: format 0.96, bridge 0.39, **C 0.26** (n 23; direct 0.09); **PURE FAMILIES, NEVER WRITTEN: format 1.00, bridge right 0.36, C right 0.36 (n 11; direct 0.00)** - kra32 (seed 5, same settings without alignment) at visit 5: pure bridge 0.38, C 0.00; held back C 0.22. When the bridge is right the root is right. Examples: 'Razolo -> Drazo > Monzocor', 'Tevulqui -> Zofapel > Zorapel', 'Ormonqui -> Zorisbri > Drazoto' (varied roots, no single repeated guess). n 11 (about 0.14 standard error): one visit, to be confirmed at visits 6-8 and on seed 4 (kra34 disconnected at visit 2).
+- Real text, visit 5: TEST format 0.96, bridge 0.30, C 0.04 (given the right bridge 0.13; guess 0.07); TAUGHT C 0.84. Step 2 still fails on real text: 'Barangay Tinago -> China > Liaoning', 'Mont Perdito -> London > UK' (roots that are taught chain answers).
+- Gate never-read 0.05 (t 0.91). No Traceback.
+- **Real-text stand-in, composite relation + JEPA alignment of BOTH steps (BT_ALIGN 0.3, BT_ALIGN_STEP 3; 22 Nov 12:35):** TEST at 1,500 / 3,000: C first among 10 **0.375** / 0.275 (no alignment 0.250 / 0.250), C exact **0.275** / 0.150 (0.150 / 0.100), own bridge 0.325 / 0.250 (0.300 / 0.300); TRAIN 0.93-0.95. A gain at 1,500 steps that fades by 3,000 (n 40, about 0.07 standard error): suggestive, not established.
+- **kra35 visit 6 (12:52): CONFIRMED on a second visit.** PURE FAMILIES, NEVER WRITTEN: format 0.94, bridge 0.59, **C right 0.35 (n 17; direct 0.00)** - visits 5-6 together 10 / 28 = 0.36. HELD BACK never written: C 0.32 (n 34; direct 0.03). PLANTED C 0.88. Examples: 'Briedqui -> Zoraed > Kaquiul', 'Hunquiul -> Mizolo > Loquian' (siblings share bridge and root). Real text: TEST C 0.09 (given the right bridge 0.26; guess 0.07), bridge 0.31; TAUGHT C 0.86. Gate never-read 0.01 (t 0.91). Bits on read domains 1.8622 (visit 5), 1.9103 (visit 6). No Traceback.
+
+### Root novelty does not block step 2 (synthetic, 22 Nov 13:10; 150 countries, four wordings, arrow form, 100 taught, re-pretrained)
+- NEW bridge, C at 300 / 750 / 1,500: **root SEEN as an answer in a taught chain (n 34) 0.56 / 0.50 / 0.56 | root NEVER an answer (n 43) 0.44 / 0.44 / 0.49**; seen bridge 0.78-0.91; never taught overall 0.54-0.60.
+- **Hypothesis rejected (mostly):** roots never written after '>' compose nearly as well (a 0.07-0.12 gap, within noise at n 34-43). Real-text step 2 (C given the right bridge 0.10-0.26 in kra35) fails for another reason - candidates: a much larger answer set, noisy and multi-word names, fewer visits of teaching (it is still rising: 0.10 -> 0.13 -> 0.26 at visits 4-6).
+- **kra35 visit 7 (13:21): holds with a larger sample.** PURE FAMILIES, NEVER WRITTEN: format 0.98, bridge 0.39, **C right 0.28 (n 46; direct 0.00)**; visits 5-7 together 23 / 74 = **0.31**. HELD BACK never written: **C 0.40** (n 50; direct 0.02). PLANTED C 0.77. Real text TEST: bridge 0.35, C 0.11 (given the right bridge 0.23; commonest-C guess 0.15 - the baseline rose with more chains). Gate never-read 0.02 (t 0.92). Bits on read domains 1.8802. No Traceback.
+
+### THE ARROW PREMISE FRAME (synthetic, 22 Nov 13:45; 150 countries, four wordings + every city's premise also as '<B> > <C>.' x3 in pretraining, CS_ARROWPREM 3, re-pretrained; arrow chains, 100 taught, no alignment)
+- NEW bridge B / C at 300 / 750 / 1,500: **0.84 / 0.73, 0.77 / 0.73, 0.81 / 0.81** (without the frame, same world: 0.88 / 0.49, 0.79 / 0.47, 0.77 / 0.52). Root NEVER an answer: **0.65 / 0.70 / 0.77** (without: 0.44 / 0.44 / 0.49); root seen 0.82 / 0.76 / 0.85. Taught 1.00.
+- **The premise written in the chain's own step-2 context ('B > C') lifts step 2 by about 0.25-0.30** - for roots never an answer most of all. Not the root-vocabulary hypothesis (which failed), but the same lesson as the wordings: a premise is retrieved in the contexts it was learned in.
+- **kra36 = kra35 + arrow premise frames (rule world 'M > Z.' x2, inf_rule_world_premarrow 2; real text 'B > C.', inf_rchain_arrowprem 1), seed 4.**
+
+### GATED CHAINS (synthetic, 22 Nov 13:30; 20 countries, CS_COTLATE_X, step-2 alignment 0.3, 100 taught chains)
+- Chains: new bridge C 0.63 / 0.78 / 0.76 at 300 / 750 / 1,500 steps; taught 0.92-1.00.
+- FALSE MEMORY on made-up chains: after chain teaching, NOVEL (never read) names given a well-formed chain to a known city and country **0.90** (held-out known people 0.93) - chain teaching makes the trunk invent chains. Confidence (mean byte log-prob of its own chain) separates known from novel AUC 0.81 (0.54 before teaching). **GATED (t keeps 75% of right known chains): novel names given a chain 0.11, known answered 0.58, right when answered 1.00.**
+- Premises only read (never taught or asked): chain C 0.04 / 0.08 / 0.07 / 0.16 at 1 / 2 / 4 / 8 reads - reading alone does not build chains. Forgetting 0.435 -> 0.463 bits/byte.
+- **The confidence gate that fixed false memory for single facts also works for chains: invention falls from 0.90 to 0.11 while every answered chain is right.**
+
+### kra35 VISIT 8 (GPU, seed 5; 22 Nov 13:49)
+- RULE WORLD, THE TRUNK'S OWN CHAIN, PURE FAMILIES (bridge never in a chain, never written): **visit 8 C right 0.40 (n 60), bridge right 0.52, direct 0.00**. Visits 5-8: 0.36 (11), 0.35 (17), 0.28 (46), 0.40 (60) - pooled **0.35 (n 134)**, direct 0.00 throughout. Held back 0.33 (46). Planted 0.83 (direct 0.42).
+- Route D (two steps prompted), pure families 0.93 (n 67) vs direct 0.00; route J 0.98 (n 292).
+- REAL-TEXT CHAINS: taught C 0.91 (given the bridge 0.95). **TEST (bridge never in a taught chain): bridge right 0.35 -> 0.49, C right 0.11 -> 0.19 (commonest-C baseline 0.14), given the right bridge 0.23 -> 0.35**, direct 0.00. Premises asked alone 0.89 / 0.89. Rising, but C only 0.05 above the baseline: step 2 on real text is still the gap kra36's arrow frames target.
+- Gate: never-read questions given a stored name 0.03 (ungated 0.57); known answered 0.75, right when answered 0.98.
+
+### kra34 VISIT 4 (GPU, seed 4 restart; 22 Nov 13:51)
+- RULE WORLD, THE TRUNK'S OWN CHAIN: **HELD BACK (never planted, never written by route J) C right 0.44 (n 18), bridge 0.44, direct 0.00; PURE FAMILIES C right 0.14 (n 14), bridge 0.29, direct 0.00.** Same visit on seed 5 (kra35): held back 0.14 (n 14), pure 0.10 (n 20). Seed 4 is ahead of seed 5 at visit 4 - the composition through bridges never in a chain is appearing on a second seed; the verdict needs visits 5-6 (n is small).
+- Route D pure families two-step 0.83 (n 54) vs direct 0.00. Gate: never-read given a stored name 0.06 (ungated 0.68).
+
+### JEPA STEP-2 ALIGNMENT FORMS (synthetic, 22 Nov 13:55; 150 countries, same checkpoint, alignment 0.3, step 2, 100 taught arrow chains; new bridge n 77, root seen 34 / never an answer 43)
+| form | NEW bridge C at 300 / 750 / 1,500 | root never an answer | taught C |
+|---|---|---|---|
+| none | 0.49 / 0.47 / 0.52 | 0.44 / 0.44 / 0.49 | - |
+| cosine (current GPU builds) | 0.61 / 0.69 / 0.53 | 0.56 / 0.74 / 0.58 | 0.96-0.97 |
+| **contrastive (InfoNCE over the batch)** | **0.68 / 0.77 / 0.64** | **0.79 / 0.77 / 0.65** | 1.00 |
+| answer-space KL | 0.55 / 0.35 / 0.60 | 0.58 / 0.37 / 0.58 | 0.63-0.79 (damaged) |
+| residual (centred, the counterfactual world-model rule; 15:35) | 0.57 / 0.64 / 0.71 | 0.63 / 0.63 / 0.74 | 0.92-0.97 |
+- **Contrastive alignment is best at every step count: +0.12 to +0.30 over none, +0.07 to +0.11 over cosine; for roots never an answer +0.16 to +0.35 over none.** Fits the maths note: cosine on raw states is dominated by shared directions; the negatives force the step-2 state to carry the bridge's identity. Answer-space KL harms the taught chains. Residual mode and alignment on top of the arrow frame queued.
+
+### kra34 VISIT 5 (GPU, seed 4; 22 Nov 14:05) - THE SEED-5 RESULT REPLICATES
+- RULE WORLD, THE TRUNK'S OWN CHAIN: **HELD BACK C right 0.62 (n 13), bridge 0.62, direct 0.00; PURE FAMILIES C right 0.58 (n 12), bridge 0.50, direct 0.00.** Visits 4-5 pooled: held back 0.52 (16 / 31), pure families 0.35 (9 / 26), direct 0.00. Seed 5 (kra35) visits 5-8: pure families 0.35 (n 134). Planted 0.84 (direct 0.35).
+- Caveat: the pure-family examples at visit 5 mostly end in the same root (Zototo), C right (0.58) is above bridge right (0.50), and n is small - some C may be the family's common root rather than a composed answer; the bridge-right figure (0.50, direct 0.00) is the cleaner evidence.
+- Route D pure families two-step 0.88 (n 65) vs direct 0.02. Gate: never-read given a stored name 0.02 (ungated 0.60).
+- **Composition by the trunk's own written chain through bridges never in a chain is now seen on two seeds (4 and 5), with the direct answer at 0.00 on both.**
+
+- RESIDUAL (15:35): between cosine and contrastive on average (new bridge mean 0.64 vs cosine 0.61, contrastive 0.70); the only form still rising at 1,500 steps (0.71, best there; contrastive 0.64). Contrastive stays the choice for kra37; one seed, about +/-0.055 per point.
+
+### ARROW PREMISE FRAME + ALIGNMENT (synthetic, 22 Nov 15:50; 150 countries, arrow frame x3 checkpoint, alignment 0.3 step 2)
+| | NEW bridge C at 300 / 750 / 1,500 (mean) | root never an answer | taught C |
+|---|---|---|---|
+| arrow frame alone | 0.73 / 0.73 / 0.81 (0.76) | 0.65 / 0.70 / 0.77 | 1.00 |
+| arrow + contrastive | 0.79 / 0.78 / 0.71 (0.76) | 0.77 / 0.77 / 0.67 | 1.00 |
+| arrow + cosine | 0.71 / 0.68 / 0.71 (0.70) | 0.65 / 0.70 / 0.60 | 0.93-0.99 |
+- **The gains do not stack on average**: with the arrow frame, contrastive is faster early (+0.06 / +0.05) and lower at 1,500 (-0.10); cosine is slightly worse than no alignment. Both fixes address the same failure (the second premise not retrieved in the chain's context), and the frame alone reaches most of it.
+- **For the GPU: kra37 (arrow + contrastive 0.3) is at least as good as the frame alone and better than kra36 (arrow + cosine 0.5)** - run kra37 first if only one can run. One seed, about +/-0.05 per point.
+
+### kra36 VISITS 1-6 (GPU, seed 4, arrow premise frames; 22 Nov 16:09)
+- REAL-TEXT CHAINS, TEST (bridge never in a taught chain, n 150), kra36 vs kra35 (no frame, seed 5) at the same visit:
+  | visit | bridge right | C right | C given the right bridge | commonest-C baseline | GOLD-TRUE C right |
+  |---|---|---|---|---|---|
+  | 3 | 0.13 (0.09) | 0.06 (0.03) | **0.37** (0.29) | 0.07 | 0.12 (n 24) |
+  | 4 | 0.29 (0.34) | **0.15** (0.04) | **0.50** (0.10) | 0.05 | 0.21 (n 28) |
+  | 5 | 0.26 (0.30) | 0.09 (0.04) | **0.33** (0.13) | 0.07 | 0.17 (n 23) |
+  Direct 0.00-0.01. Taught 0.88-0.93. Premises asked alone, test heads: first hop 0.60-0.69, second hop 0.43-0.71.
+- **The arrow frame lifts real-text step 2 (C given the right bridge) from 0.10-0.29 to 0.33-0.50 at the same visits, and C to 1.3-3x the baseline (pooled visits 3-5: 0.10 vs baseline 0.06; kra35 0.04).** Different seeds, so partly confounded.
+- **The bottleneck has moved to STEP 1 on real text: the bridge is right 0.26-0.29 inside the chain although the first premise asked alone is right 0.60-0.69.** The chain prompt 'A is within ' does not retrieve the premise learned as 'A in B' / 'A, B' - the step-1 analogue of what the arrow frame fixed for step 2. Next: first premises also taught in the composite frame ('A is within B.', true by transitivity of containment).
+- RULE WORLD, THE TRUNK'S OWN CHAIN: pure families visit 5 C right 0.42 (n 12), bridge 0.33; held back 0.55 (n 11), direct 0.00 (kra34, same seed without the frame: 0.58 / 0.62). Route D pure families two-step 0.98 (n 65) vs direct 0.00. Gate: never-read given a stored name 0.01 (ungated 0.60).
+
+### kra36 VISITS 6-7 (GPU, seed 4; 22 Nov 16:45)
+- REAL-TEXT TEST (n 150): visit 6 bridge 0.32, C 0.13 (given the right bridge 0.38; baseline 0.07); visit 7 bridge 0.26, C 0.10 (given the right bridge 0.31; baseline 0.15). Premises asked alone (test heads): first hop 0.78 / 0.68.
+- Visits 3-7: C given the right bridge mean **0.38 (kra35, no frame: 0.20)**; C mean 0.11 vs baseline mean 0.08; bridge right flat at 0.26-0.32 against the first premise alone at 0.60-0.78. **Step 2 doubled by the arrow frame and holding; step 1 is the bottleneck (kra38's paraphrased wordings target it).**
+- RULE WORLD, own chain: pure families visit 6 0.11 (n 28), visit 7 0.35 (n 20); visits 5-7 pooled **0.25 (15 / 60)**, held back 0.40 (25 / 62); direct 0.00 for pure families (held back 0.03-0.10). Route D pure families two-step 0.86-0.87 vs direct 0.00. Gate: never-read given a stored name 0.02.
+
+### realrules (offline, real records; 22 Nov 17:05; 20,000 documents, 31,081 facts in the 30 commonest raw wordings, 32,189 names)
+- RULES on raw wordings: only one above the shuffled null ('on' o 'and in' => 'and in' 0.135, 5 / 37; null best 0.111). **Raw connecting words ('in', 'on', 'of', 'by', 'until') are too ambiguous to compose symbolically** - the real-text chains work because they are filtered to LOC containment first.
+- ROUTE J on real records: one-hop TRAIN 0.81, HELD-OUT (never trained) 0.010 (chance 0.00003). **Real records are about one fact per name (31k facts, 32k names): route J memorises but has almost no neighbours to generalise from.** Composites mostly noise (e.g. 'Gwadar Port -> Spain'), gold containment 0.73 among the 52 pairs that have any gold relation (selection).
+- RETRACTION proxy (gold-labelled vs unlabelled held-out records): rest-of-knowledge log p AUC 0.538, documents 0.522 - near chance; the proxy is weak (unlabelled is not wrong). The planted-error test (tools/retract_jepa.py, running) gives a clean ground truth and reports facts whose head has other facts separately.
+
+### kra38 VISITS 2-3 (GPU, seed 4; 22 Nov 17:16) - EARLY WARNING
+- Contrastive alignment converges (1.02 -> 0.07 at visit 2; 0.26 -> 0.15 at visit 3); paraphrased premise rows in (4,123 -> 5,117).
+- REAL-TEXT TEST visit 3: bridge 0.17 (kra36 0.13), C 0.03 (kra36 0.06), **C given the right bridge 0.04 (kra36 0.37)**; premises asked alone 0.53 / 0.37 (kra36 0.60 / 0.43). Taught 0.90.
+- RULE WORLD own chain visit 3: chain format 0.08 held back / 0.08 pure (kra36 same seed 0.46 / 0.88; kra34 0.42 / 0.25).
+- Step 2 lost on real text and the chain format slower in the rule world. Suspect: the contrastive loss at 0.3 is about 15x the cosine term's gradient scale (InfoNCE ~1 vs 1 - cos ~0.04) in a loss shared with many other rows. Visits 4-5 decide. Contingency built: **kra39 = kra36 + paraphrased wordings, cosine alignment** (separates the two changes).
+
+### JEPA RETRACTION ON PLANTED ERRORS (offline, real records; 22 Nov 17:45; tools/retract_jepa.py; 31,081 facts, 5% corrupted with frequency-matched tails, 4-fold x 2 seeds)
+- AUC corrupted vs clean (0.5 = chance): S1 surprise 0.44 | S2 normalised 0.46 | S3a latent path 0.44 | S3b symbolic paths 0.50 | S4 confident contradiction 0.51 | rank sum 0.46 | baselines: documents 0.50, tail prior 0.45, head degree 0.49. Same on heads with other facts (12,104). Real-data proxy (gold vs unlabelled) 0.49-0.55.
+- **NEGATIVE: no signal detects planted errors on real records.** Surprise is even slightly inverted (frequency-matched wrong tails are common names, easier to predict than true rare ones). Cause, with realrules: about one fact per name per wording - route J predicts held-out real facts 0.01 - so there is no 'rest of knowledge' to contradict a fact. JEPA surprise can only retract where knowledge is dense and redundant. Next: (1) relation merging (denser relations; tools/relmerge.py tonight), (2) the mechanism in a dense world (two views of the same fact).
+
+### LATENT SEARCH vs WRITTEN CHAINS (offline, synthetic; 22 Nov 17:45; tools/latent_search.py; person -> city -> region -> country -> continent, two wordings, 945 names)
+- LATENT (route J on the trunk's codes, programs found by search over 340 operator sequences scored on endpoints only): 'citizen of' -> **lives o city_in o region_of found, right 1.00 on 100 endpoints (null, answers shuffled, 0.15)**; HELD-OUT people in cities in no taught example (79) **1.00**; margin gate: answered 0.70, right when answered 1.00; **never-read names given an answer 0.00**. 'continent' (4 hops, never taught to the trunk) from 20 endpoints: **lives o city_in o region_of o country_in found (null 0.50), held-out 1.00.**
+- TRUNK (3-hop arrow chains taught for 100 people; premises recalled 1.00): taught 1.00, **NEVER TAUGHT 0.01-0.03** (format 0.41-0.68, bridge 0.08-0.10, region 0.00-0.01); never-read names given a well-formed 3-hop chain **0.77** (invented).
+- **Inference as search over latent operators (LeCun's direction) solves 3- and 4-hop composition from endpoints alone, abstains on unknown names, and finds a relation never taught; the autoregressive trunk does not generalise 3-hop chains here and invents chains for unknown names.** Caveat: route J's operators are fitted on the premises (the random-code control in tonight's pure-JEPA test checks how much is a learned table).
+
+### kra38 VISITS 4-6 (GPU, seed 4; 22 Nov 18:25) - NEGATIVE for its two changes
+- REAL-TEXT TEST, kra38 vs kra36 (same seed): bridge 0.36 / 0.25 (0.29 / 0.26) | C 0.05 / 0.07 (0.15 / 0.09) | **C given the right bridge 0.11 / 0.27 (0.50 / 0.33)** | baseline 0.05 / 0.07 | premises alone, first hop 0.67 / 0.65.
+- **Paraphrased containment wordings did not lift step 1** (bridge within noise of kra36); **contrastive alignment on the GPU is worse for step 2** than cosine (visits 3-5 C given the bridge mean 0.14 vs 0.40), unlike the synthetic test (where it was the only extra loss).
+- RULE WORLD own chain, pure families visits 4-6: 0.00 (12), 0.62 (8), 0.08 (24) - pooled 0.16 (kra36 same visits 0.17); held back 0.27 / 0.46 / 0.18. Route D pure families 0.78-0.94 vs direct 0.00.
+- TEST EXAMPLES show the readout undercounts and the records are noisy: 'Vancouver International Airport -> British Columbia > Canada' (true) scored wrong against the record's 'Richmond > North Yorkshire'; records such as 'Southampton > Suffolk County', 'Manchester > New England' (name ambiguity). Many wrong bridges are frequent places ('New York City', 'Canada') - guessing.
+- Next: **kra39 = kra36 on seed 5 + an ANY VALID CHAIN readout** (written chain valid when both links are recorded in any wording; written conclusion checked against Wikidata containment).
+
+### SVReg AS THE DREAM SELECTOR'S REGULARISER (local, kra38 preset, 22 Nov 18:40; vs SIGReg, same 50-minute limit)
+- No errors. Dream mixing identical on the local stand-in: 644 spliced pairs tested, 0 accepted in both; known linked pairs pass 2/2 (weaker-side gain +4.3 vs +3.9 bits). The SVReg-trained selector's embeddings sit much closer to Gaussian by the SIGReg statistic (0.38-0.79 vs 3.6-10.1).
+- **Inconclusive locally** (the local stand-in accepts no dreams either way); harmless; a GPU comparison is needed to judge it, low priority beside real text and retraction.
+- NOTE (19:00): the GPU run named kra39 (started 18:24, seed 4) used the FIRST kra39 definition (kra36 + paraphrased wordings, COSINE alignment) - it isolates the paraphrases from contrastive alignment. The redefinition (kra36 on seed 5 + ANY VALID CHAIN readout) is now **kra40**; kra39's files are restored to what ran.
+
+### REASONING WITHOUT THE LANGUAGE MODEL (offline, synthetic; 22 Nov 19:00; tools/jepa_reason.py; five-level world, 945 names)
+- ARM D, PURE JEPA (bidirectional byte encoder trained ONLY by masked-word latent prediction, InfoNCE in the batch, EMA target; hops = the predictor on masked text, snapped to name codes; no next-byte objective, no fitted operators, no labels): **one-hop recall 0.01 / 0.01 / 0.04 / 0.12 / 0.11 at 1k-5k steps** (the causal trunk recalls the same premises 0.97-1.00 by 2k steps); 3 hops 0.00 (null 0.01), 4 hops 0.00; margin gate useless; never-read names given an answer 0.55. Loss flat about 1.0 from 1k steps.
+- ARM B, ROUTE J on the JEPA encoder's codes: 3 hops held-out 1.00, gated 0.75 answered right 1.00, never-read 0.00, 4 hops 1.00. ARM C, ROUTE J on RANDOM codes: the same (1.00; gated 0.82 / 1.00; never-read 0.00; 4 hops 1.00).
+- **Two findings: (1) route J's reasoning needs no knowledge in the codes - its fitted operators are the fact table, and latent search composes them (fully separable from the language model); (2) a JEPA trained only by latent prediction on these sentences does NOT store arbitrary facts (who lives where) - it learned within-batch discrimination (coarse categories), not 945-way identity.** In this design the next-byte trunk (or an explicit relational memory) stores facts; the JEPA side reasons over them - LeCun's hybrid, not a JEPA-only replacement. One configuration (word masks, 48-sentence batches, 5k steps); recall was still rising slowly.
+
+### kra39 VISIT 3 (GPU, seed 4; paraphrased wordings + COSINE alignment; 22 Nov 19:18)
+- REAL-TEXT TEST visit 3: bridge 0.18, C 0.02, **C given the right bridge 0.04** - the same as kra38 (paraphrases + contrastive: 0.17 / 0.03 / 0.04) and below kra36 (no paraphrases, cosine: 0.13 / 0.06 / 0.37). Premises alone 0.57 / 0.37.
+- **So the PARAPHRASES, not the contrastive alignment, cost step 2 at visit 3.** Likely mechanism: half of each step's real-text rows are premise rows; with 4 paraphrases per premise the arrow-frame rows ('B > C.', the step-2 fix) are diluted about 3x. (The contrastive question is reopened; it may still be weaker than cosine on the GPU.) Visits 4-5 to confirm; kra40 (kra36 recipe, seed 5) unaffected.
+- Rule world own chain visit 3: held back 0.00 (n 11), pure families 0.00 (n 10), format 0.73 / 0.50 (kra36 same visit 0.15 / 0.00).
+- kra39 VISIT 4 (19:51): REAL-TEXT TEST bridge **0.42** (kra38 0.36, kra36 0.29), C 0.09 (kra36 0.15; baseline 0.05), C given the right bridge 0.21 (kra38 0.11, kra36 0.50); premises alone first hop 0.79 (kra36 0.69). Rule world held back 0.37 (19), pure families 0.08 (12).
+- **Revised reading: the paraphrases DO lift step 1 (bridge at visit 4: 0.36-0.42 with them vs 0.29 without) but dilute the arrow rows and cost step 2.** A trade-off, not a failure: paraphrases with the arrow rows scaled up to keep their share (e.g. inf_rchain_arrowprem 3-4) should keep both. Candidate after kra41.
+
+### RELATION MERGING v1 (offline, real records; 22 Nov 20:05; 32,014 facts, 40 raw wordings, 33,038 names)
+- Raw wordings: route J held-out one-hop 0.0097 (heads with other facts 0.0041); rules above the shuffled null 0. **The merge thresholds (JEPA operator agreement 0.50 and 0.35) merged nothing** - every pair of wordings agrees below 0.35 (operators fitted on about one fact per name rarely see the same heads) - so v1 is uninformative. v2 merges to fixed numbers of relations (20, 10) and prints the most similar pairs.
+
+## Summary, 20-22 November
+
+Every figure below is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named. Synthetic = tools/compose_synth.py and the other offline worlds; rule world = the planted families and org charts inside the GPU build.
+
+**Composition by the trunk itself (criterion 2).**
+- The trunk composes by writing its own intermediate step ('A is a grandchild of B > C'), taught on route J's written composites in that arrow form (kra23 onwards). First for new subjects (kra23, held back 0.19-0.30), then through bridges never in any chain ('pure families'): kra35, seed 5, visits 5-8 pooled **0.35 (n 134)**; kra34, seed 4, visits 4-5 pooled 0.35 (9 / 26; visit 5 0.58); **the direct one-step answer 0.00 throughout**. Prompted step by step, pure families 0.78-0.98.
+- What made it work, each found in the synthetic world first and then on the GPU: premises in at least **two wordings** (one wording: new-bridge composition 0.12-0.19; two or more: 0.62-0.77 - a premise learned in one context is not retrieved inside a chain); the **arrow form**, not the spelled form (spelled 0.12-0.14); enough **taught chains**; and **JEPA alignment of the second step** (synthetic 0.67 -> 0.78; on the GPU kra33 without it: bridge 0.67, root 0.00).
+- Alignment forms (synthetic, 150 countries): contrastive 0.64-0.77 > residual 0.57-0.71 > cosine 0.53-0.69 > none 0.47-0.52; answer-space KL damages taught chains. On top of the arrow premise frame the gains do not stack.
+- The arrow premise frame ('B > C.' as an extra premise wording) adds about 0.25-0.30 for new bridges (synthetic 0.73-0.81 vs 0.47-0.52).
+
+**False memories.**
+- The trunk's confidence gate with a start-up floor (inf_distill_gate_min 0.8): never-read questions given a stored name **0.01-0.07** (ungated 0.55-0.69), right when answered 0.93-1.00, on seeds 4 and 5.
+- Chains: teaching chains makes a synthetic trunk invent chains for 90% of unknown names; the same gate cuts that to 11% with every answered chain right.
+
+**Real text.**
+- Containment chains from the distant Wikipedia records ('A is within B > C'; LOC filter, composite relation of its own after kra32's prompt clash): taught chains learned 0.86-0.94.
+- Through bridges never in a taught chain: kra35 C 0.03-0.19 (baseline 0.07-0.15); **kra36 (arrow premise frames) doubled step 2** (C given the right bridge 0.31-0.50 vs 0.10-0.29 at the same visits), C 0.06-0.15 vs baseline 0.05-0.15 - above baseline, not yet clearly. **Step 1 is the bottleneck**: the bridge inside the chain 0.25-0.36 while the first premise asked alone is 0.60-0.79.
+- Paraphrased premise wordings (kra38, kra39) lift step 1 (bridge 0.36-0.42 at visit 4) but dilute the arrow rows and cost step 2; contrastive alignment did not help on the GPU (kra38). Next: the step-1 frame ('A is within ' -> 'B >', kra41), kra36 on seed 5 with an ANY VALID CHAIN readout (kra40) - test examples show valid alternative bridges scored wrong and noisy records ('Southampton > Suffolk County').
+
+**Latent reasoning and the JEPA (offline, synthetic).**
+- Inference as search over route J's operators (latent_search.py): finds the 3-hop and a never-taught 4-hop relation from endpoints alone, held-out 1.00, abstains on unknown names; the trunk's written 3-hop chains reach 0.01 on people never taught (100 taught chains).
+- Route J works as well on random name codes: its operators are the fact table. A JEPA trained only by latent prediction stores few facts (recall 0.11 vs 1.00 for the next-byte trunk): the language model stores, the JEPA side reasons.
+- Slow channels (Slow SVReg): no dose-response; dropped. SVReg as the dream selector's regulariser: harmless, inconclusive locally.
+
+**Retraction (open).**
+- Offline: re-confirmation removed 0.53 of wrong confirmed inferences and 0.34 of right ones; on the GPU (kra21) it was not selective (retracted right 0.82 vs kept 0.84) because almost every pair recurs; unlearning itself works (retracted inferences 0.92-1.00 -> 0.00-0.03 in one visit).
+- JEPA surprise on real records with planted errors: AUC 0.44-0.51 for every signal (surprise, normalised, path consistency, confident contradiction) - real records hold about one fact per name, so nothing contradicts a wrong one (route J held-out one-hop 0.01; rules over raw wordings: none above a shuffled null). A dense-world test (redundant facts) and relation merging by JEPA operator agreement are running.

@@ -412,6 +412,8 @@ def _dw_false_probe(model, cfg, S_slot, ents, held, vis):
                 tn = float(min(ok_t)) if ok_t else tp
                 if tn is not None: tn = max(tn, float(np.quantile(kc2, 0.1)) if len(kc2) >= 4 else 0.9)   # floor: never below the keep-90%-of-right threshold (local kra22: with few
                                                                                #   stored names every t passes, min t was 0.10, and 0.33 of the next sleep's never-read got a name)
+            gmn = float(getattr(cfg, 'inf_distill_gate_min', 0.0))           # 22 Nov START-UP FLOOR: the first calibration (visit 1, facts barely learned) gave t 0.12-0.13
+            if gmn > 0 and tn is not None: tn = max(tn, gmn)                   #   and let 0.40-0.51 of never-read questions through at visit 2 (kra29, kra33); later t 0.84-0.92
             if tp is not None and kr2 and un2:
                 ak = [(ok_, c) for ok_, c, rf in kr2 if not rf and c >= tp]; ru = [bool(st) for st, c, rf in un2 if not rf and c >= tp]
                 gl_ = float(getattr(cfg, 'inf_distill_gate_leak', 0.0)); lab_ = (f"at most {gl_:.0%} of never-read questions answered, never below keep-90% of right" if gl_ > 0 else f"keep {gq:.0%} of its right answers")
@@ -1727,6 +1729,8 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
     f = lambda L: (f"{len(L)}: chain format {np.mean([x[0] for x in L]):.2f}, bridge right {np.mean([x[1] for x in L]):.2f}, C right {np.mean([x[2] for x in L]):.2f} "
                    f"(C first, direct {np.mean([x[3] for x in L]):.2f}; subject copied {np.mean([x[4] for x in L]):.2f}, another subject written with ITS true bridge "
                    f"{np.mean([x[5] for x in L]):.2f})") if L else "0"
+    ra9 = (model.__dict__.get('_dtw') or {}).get('rwa') or []
+    if ra9: print(f"  [JEPA STEP-2 ALIGNMENT | visit {vis + 1}] during this visit: mean alignment loss ({getattr(cfg, 'inf_align_mode', 'cos')}; cos = 1 - cosine) {np.mean(ra9[:max(1, len(ra9) // 10)]):.3f} (first tenth of the steps) -> {np.mean(ra9[-max(1, len(ra9) // 10):]):.3f} (last tenth), {len(ra9)} steps", flush=True)
     print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
           f"{f(pl)} || HELD BACK, NEVER PLANTED, NEVER WRITTEN BY ROUTE J {f(rn)} || PURE FAMILIES, NEVER WRITTEN {f(rp)}", flush=True)
     if rp: print("      PURE FAMILIES, e.g. " + " | ".join(x[6] for x in rp[:4]), flush=True)
@@ -2145,7 +2149,34 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                 for fm in FORMS9: rret9.append((fm.format(A=e['A'], r=e['r']).encode('latin-1', 'replace'), (e['ans'] + '.').encode('latin-1', 'replace'), sl9))
             print(f"  [RETRACTION | visit {vis + 1}] next visit: {len(model.__dict__.get('_rret_x') or [])} retracted inferences, {len(rret9)} unlikelihood rows, "
                   f"{int(getattr(cfg, 'inf_rret_rows', 8))} a step at weight {float(getattr(cfg, 'inf_rret_w', 0.1)):g}", flush=True)
-        model.__dict__['_dtw'] = dict(vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
+        rwal9 = {}                                                             # 22 Nov kra30 JEPA STEP-2 ALIGNMENT (inf_rule_world_align): planted chain composites in
+        if float(getattr(cfg, 'inf_rule_world_align', 0.0)) > 0 and int(getattr(cfg, 'inf_rule_world_chainplant', 0)) == 1:   #   visited domains -> (the chain's
+            try:                                                               #   prompt where it predicts the root 'A r2 B > ', the bridge's own premise prompt 'B r1 ')
+                from platypus.inference.probes import inf_rule_world
+                W9 = inf_rule_world(cfg); rw9_ = W9.get('rel', {}); seen9 = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys())
+                up9 = {'grand': ('parent', W9.get('parent', {})), 'skip': ('mgr', W9.get('mgr', {}))}
+                for (d9, s9_, r29, A9, C9) in W9['planted']:
+                    if r29 not in up9 or (seen9 and int(d9) not in seen9): continue
+                    r19, m9 = up9[r29]; B9 = m9.get(A9)
+                    if B9: rwal9.setdefault(int(S_slot(d9)), []).append((f"{A9} {rw9_[r29]} {B9} > ".encode('latin-1', 'replace'), f"{B9} {rw9_[r19]} ".encode('latin-1', 'replace')))
+                    if B9 and int(getattr(cfg, 'inf_rule_world_align_step', 2)) == 3:   # 22 Nov kra31: STEP 1 too - 'A r2 ' (predicts the bridge) ~ 'A r1 ' (its premise)
+                        rwal9.setdefault(int(S_slot(d9)), []).append((f"{A9} {rw9_[r29]} ".encode('latin-1', 'replace'), f"{A9} {rw9_[r19]} ".encode('latin-1', 'replace')))
+            except Exception: _fail('inference.distill:rwal')
+            print(f"  [JEPA STEP-2 ALIGNMENT | visit {vis + 1}] next visit: {sum(len(v) for v in rwal9.values())} planted chains: the state where 'A r2 B > ' predicts the root "
+                  f"pulled to the state of the bridge's premise 'B r1 ' (stop-gradient){' + STEP 1: A r2 ~ A r1' if int(getattr(cfg, 'inf_rule_world_align_step', 2)) == 3 else ''}, weight {float(getattr(cfg, 'inf_rule_world_align', 0.0)):g}, 8 a step", flush=True)
+        rch9 = None                                                            # 22 Nov REAL-TEXT CHAINS (inf_rchain; realchain.py): readout of the last visit's
+        if int(getattr(cfg, 'inf_rchain', 0)):                                 #   chains, then the next visit's premise / chain / alignment rows
+            try:
+                from platypus.inference.realchain import rchain_readout, rchain_rows
+                sn9 = sorted(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()) or [0]; rsl9 = int(S_slot(1 if 1 in sn9 else sn9[-1]))
+                rchain_readout(model, cfg, vis, rsl9, model.__dict__.get('_dtw'))
+                rch9 = rchain_rows(cfg, vis, rsl9)
+                print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] next visit: {len(rch9['prem'])} premise rows ({int(getattr(cfg, 'inf_rchain_frames', 2))} wordings), "
+                      f"{len(rch9['chain'])} chain rows, {len(rch9['align'])} alignment pairs (weight {float(getattr(cfg, 'inf_rchain_align', 0.0)):g}); "
+                      f"{int(getattr(cfg, 'inf_rchain_rows', 8))} rows a step", flush=True)
+            except Exception as e9:
+                _fail('inference.distill:rchain'); print(f"  [REAL-TEXT CHAINS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True); rch9 = None
+        model.__dict__['_dtw'] = dict(rch=rch9, rchl=[], rcha=[], rwal=rwal9, rwa=[], vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was
 
@@ -2291,6 +2322,16 @@ def distill_wake_loss(model, cfg):
             except Exception as e2:
                 _fail('inference.distill:rti_dose')
                 if not D.get('err2'): D['err2'] = 1; print(f"  [REAL-TEXT INFERENCE DOSE] a step failed ({type(e2).__name__}: {e2})"[:300], flush=True)
+        if D.get('rch'):                                                       # 22 Nov REAL-TEXT CHAINS (realchain.py; its own guard)
+            try:
+                from platypus.inference.realchain import rchain_loss
+                l5, ce5, al5 = rchain_loss(model, cfg, D['rch'], rs)
+                if l5 is not None:
+                    loss = loss + float(getattr(cfg, 'inf_rchain_w', 1.0)) * l5; D['rchl'].append(ce5)
+                    if al5 is not None: D['rcha'].append(al5)
+            except Exception as e5:
+                _fail('inference.distill:rchain_loss')
+                if not D.get('err5'): D['err5'] = 1; print(f"  [REAL-TEXT CHAINS] a step failed ({type(e5).__name__}: {e5})"[:300], flush=True)
         rk3 = int(getattr(cfg, 'inf_rret_rows', 8)); rp3 = D.get('rret')
         if int(getattr(cfg, 'inf_rret', 0)) and rk3 > 0 and rp3:              # 14 Nov RETRACTION: unlikelihood on retracted inferences' answer bytes
             try:                                                               #   -log(1 - p(byte)), weight inf_rret_w (offline 0.1: unlearns, no bystander harm)
@@ -2318,6 +2359,17 @@ def distill_wake_loss(model, cfg):
             if ok3:
                 hq3 = torch.stack([Hq3[j, len(vv[j][0]) - 1] for j in ok3]).float(); hd3 = torch.stack([Hd3[j, vv[j][2]] for j in ok3]).float()
                 a3 = (1 - F.cosine_similarity(hq3, hd3, dim=-1)).mean(); loss = loss + aw * a3; D['rtxa'].append(float(a3.detach()))
+        rwa9 = float(getattr(cfg, 'inf_rule_world_align', 0.0)); rwp9 = (D.get('rwal') or {}).get(sl) if rwa9 > 0 else None
+        if rwp9:                                                               # 22 Nov kra30 JEPA STEP-2 ALIGNMENT (see distill_wake_sleep; synthetic: arrow-form
+            vv9 = [rwp9[int(i)] for i in rs.choice(len(rwp9), min(8, len(rwp9)), replace=False)]   #   composition through new bridges 0.67 -> 0.78)
+            Xc9, _ = _ws_batch(model, [c for c, p_ in vv9]); Xp9, _ = _ws_batch(model, [p_ for c, p_ in vv9])
+            _, Hc9 = _ws_hidden(model, lambda: _ws_run(model, Xc9, sl, grad_=True))
+            with torch.no_grad(): _, Hp9 = _ws_hidden(model, lambda: _ws_run(model, Xp9, sl))
+            ok9 = [j for j, (c, p_) in enumerate(vv9) if Hc9 is not None and Hp9 is not None and len(c) - 1 < Hc9.shape[1] and len(p_) - 1 < Hp9.shape[1]]
+            if ok9:
+                hc9 = torch.stack([Hc9[j, len(vv9[j][0]) - 1] for j in ok9]).float(); hp9 = torch.stack([Hp9[j, len(vv9[j][1]) - 1] for j in ok9]).float()
+                from platypus.inference.realchain import align_loss as _alr9
+                a9 = _alr9(hc9, hp9, cfg); loss = loss + rwa9 * a9; D.setdefault('rwa', []).append(float(a9.detach()))
         for pk_, lk_ in (('lf', 'al_lf'), ('para', 'al_pa')):                 # LABEL-FREE ALIGNMENT (never-asked facts) and PARAPHRASE ALIGNMENT (taught facts asked
             lfp_ = (D.get(pk_) or {}).get(sl) if aw > 0 else None             #   with a merged paraphrase of their relation): questions with no answer bytes and
             if not lfp_: continue                                              #   no cross-entropy -> the stored declaration's state

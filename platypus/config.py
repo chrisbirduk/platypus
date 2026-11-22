@@ -572,6 +572,29 @@ class Config:
     inf_distill_relmod_ctl_tail=0   #   18 Nov: 1 = the held-back share is drawn BY ANSWER (relation, C): every composite with the same answer (a family's grandchildren) is held back together, so none can be answered from a taught sibling
     inf_rule_world_premk=1          #   21 Nov kra25 (MODEL CHANGE when > 1): rule-world premises (child of / supervised by) planted this many times as often
     inf_rule_world_chainplant=0     #   21 Nov kra23 ROUTE B (MODEL CHANGE when 1): planted rule-world composites written with their bridge, 'X is a grandchild of M > Z.' 2 (kra26): both steps spelled, 'X is a grandchild of: X is a child of M; M is a child of Z.' 3 (kra27): step 1 without the subject restated
+    inf_rule_world_align=0.0        #   22 Nov kra30 (MODEL CHANGE when > 0): JEPA step-2 alignment on planted arrow chains, in the question-row step (distill.distill_wake_loss)
+    inf_distill_gate_min=0.0        #   22 Nov: a floor on the gate's calibrated threshold (the visit-1 calibration gave 0.12-0.13 -> never-read 0.40-0.51 at visit 2)
+    inf_jd_reg='sigreg'             #   22 Nov: the LeJEPA dream selector's regulariser - 'sigreg' (as before) or 'svreg' (variance floor on random projections)
+    inf_rchain=0                    #   22 Nov (MODEL CHANGE when 1) REAL-TEXT CHAINS (inference/realchain.py): containment chains from the distant records; premises of all
+                                    #     chains taught as question rows in inf_rchain_frames wordings, train chains in the arrow form 'A in B > C.'; readout on chains
+                                    #     whose bridge was never in a taught chain [REAL-TEXT CHAINS, THE TRUNK'S OWN]
+    inf_rchain_loc=1                #     bridge and end must be places (automatic type LOC): 'in' also catches dates ('Paris in 1771')
+    inf_rchain_arrowprem=0          #     22 Nov: each real-text premise also taught this many times as 'B > C.'
+    inf_rchain_crel=''              #     22 Nov: the composite's own relation ('is within'); empty = 'in', the same prompt as first premises worded 'in' (kra32: test heads never chain)
+    inf_rchain_oracle=''            #     only records whose pair carries one of these gold relations (e.g. 'P131,P17,P30,P361'; an oracle reader); empty = the reader as is
+    inf_rchain_ntr=400              #     taught chains (at most)
+    inf_rchain_test=150             #     test chains (at most)
+    inf_rchain_testq=0.3            #     share of bridges held out
+    inf_rchain_frames=2             #     premise wordings (1-3)
+    inf_rchain_rows=8               #     rows a question-row step (half premises, half chains)
+    inf_rchain_w=1.0                #     weight of their loss
+    inf_rchain_align_step=2         #     3 = align step 1 too ('A is within ' ~ 'A <w1> ')
+    inf_rchain_align=0.0            #     JEPA step-2 alignment weight ('A in B > ' ~ 'B <w2> ')
+    inf_align_mode='cos'            #     22 Nov: JEPA step-2 alignment loss for the rule world and real-text chains: cos | nce (contrastive, best in synthetic) | res (centred)
+    inf_rchain_paraw=0              #     22 Nov kra38: real-text premises also taught in N paraphrased containment wordings ('A is located in B.', ...; never the composite's)
+    inf_rchain_s1frame=0            #     22 Nov kra41: first real-text premises also taught in the chain's step-1 context, 'A is within ' -> 'B >' (N copies)
+    inf_rule_world_align_step=2     #   22 Nov kra31: 3 = align STEP 1 too ('A r2 ' ~ 'A r1 '); synthetic, one wording: 0.15-0.19 -> 0.50-0.68
+    inf_rule_world_premarrow=0      #   22 Nov (MODEL CHANGE when > 0): each rule-world premise also planted this many times as 'M > Z.' (the chain's step-2 context)
     inf_rule_world_premw=0          #   21 Nov kra28 (MODEL CHANGE when > 1): rule-world premises planted in this many wordings (knowledge augmentation; probes._RW_PREMW)
     inf_rule_world_pure=0.0         #   18 Nov: share of rule-world families / charts with NO composite planted (pure test families; readout RELATIONAL MODULE WRITES, PURE FAMILIES)
     inf_rule_world=12               # 11 Nov RULE WORLD (on): N families and N org charts whose facts obey composition rules (grandchild = child o child, skip level = supervisor o supervisor), half the composite facts held out

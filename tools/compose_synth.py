@@ -94,7 +94,9 @@ PT = ["{A} lives in {B}.", "{A} has a home in {B}.", "{A} moved to {B} years ago
 IT = ["{A} is a citizen of {C}.", "{A} holds the passport of {C}."]
 def pre_sentences():
     out = []
-    for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT[:int(os.environ.get('CS_PREMW', 4))]] * int(os.environ.get('CS_PREMREP', 3))   # 21 Nov: CS_PREMW wordings x CS_PREMREP copies (premise strength)
+    for b, c in OLD: out += [t.format(B=b, C=COUNTRY[c]) for t in CT[:int(os.environ.get('CS_PREMW', 4))]] * int(os.environ.get('CS_PREMREP', 3))
+    if int(os.environ.get('CS_ARROWPREM', 0)):                                 # 22 Nov ARROW PREMISE FRAME: every city's premise also as '<B> > <C>.' - every root is an
+        for b, c in OLD: out += [f"{b} > {COUNTRY[c]}."] * int(os.environ.get('CS_ARROWPREM', 0))   #   answer after '>' somewhere, before any chain is taught   # 21 Nov: CS_PREMW wordings x CS_PREMREP copies (premise strength)
     nw_ = int(os.environ.get('CS_PTW', 3))                                      # 21 Nov: CS_PTW person-city wordings, copies keep 6 sentences a person
     for a, bi in TRAINP + HELDP: out += [t.format(A=a, B=OLD[bi][0]) for t in PT[:nw_]] * (6 // nw_)
     if IMPL and COT:
@@ -129,9 +131,19 @@ def tens(seqs):
     X = torch.full((len(seqs), L), PAD, dtype=torch.long)
     for k, q in enumerate(seqs): X[k, :len(q[:L])] = torch.tensor(list(q[:L]))
     return X
-def step(m, op, seqs, sch=None):
-    X = tens(seqs); Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1); lo = m(Xi).reshape(-1, V); tg = X.reshape(-1)
-    l = F.cross_entropy(lo[tg != PAD], tg[tg != PAD]); op.zero_grad(); l.backward(); op.step()
+SLOWW = float(os.environ.get('CS_SLOW', 0)); SLOWK = int(os.environ.get('CS_SLOWK', 32))   # 22 Nov SLOW CHANNELS (after Ren, Wang, Hoang, Kuang & LeCun, Slow SVReg):
+def step(m, op, seqs, sch=None):                                               #   a slowness term on the first SLOWK channels of the top state between consecutive
+    X = tens(seqs); Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1)   #   bytes of the same sentence, normalised by their variance, plus a variance floor
+    if SLOWW > 0:                                                              #   on random projections (SVReg) so the slow channels cannot collapse
+        H = m.hid(Xi); lo = m.o(H).reshape(-1, V)
+        b = H[:, :, :SLOWK]; sid = torch.cumsum((Xi == 46).long(), 1); ok = ((sid[:, 1:] == sid[:, :-1]) & (Xi[:, 1:] != PAD) & (Xi[:, :-1] != PAD)).float()
+        dv = ((b[:, 1:] - b[:, :-1]) ** 2).sum(-1); bv = b[Xi != PAD]; var = bv.var(0).sum().clamp(min=1e-6)
+        rs_ = (dv * ok).sum() / ok.sum().clamp(min=1) / (2 * var)
+        u = F.normalize(torch.randn(SLOWK, 16), dim=0); sv = F.relu(1 - (bv @ u).std(0)).pow(2).mean()
+        extra = SLOWW * (rs_ + sv)
+    else: lo = m(Xi).reshape(-1, V); extra = 0.0
+    tg = X.reshape(-1)
+    l = F.cross_entropy(lo[tg != PAD], tg[tg != PAD]); op.zero_grad(); (l + extra).backward(); op.step()
     if sch: sch.step()
     return float(l)
 @torch.no_grad()
@@ -263,7 +275,8 @@ if COTLATE:                                                                    #
             for p_ in pool_: d_.setdefault(p_[1], p_)
             pool_ = list(d_.values())
         TP = pool_[:NT]
-    TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
+    TPC_ = {bi for a, bi in TP}; HS_ = [p_ for p_ in HELDP if p_[1] in TPC_]; HN_ = [p_ for p_ in HELDP if p_[1] not in TPC_]
+    TPR_ = {OLD[bi][1] for a, bi in TP}; HNN_ = [p_ for p_ in HN_ if OLD[p_[1]][1] not in TPR_]; HNS_ = [p_ for p_ in HN_ if OLD[p_[1]][1] in TPR_]   # 22 Nov: NEW bridge split by ROOT never / ever an answer in a taught chain  #   at all; then the chain 'A is a citizen of B > C.' is taught briefly for NT people (8 rows +
     KN = ['Arvenland', 'Ostrelia', 'Mirkasia', 'Pelundra', 'Corvania']; KC = {c: KN[i % len(KN)] for i, c in enumerate(CN)}   # 19 Nov THREE HOPS: continents, new facts
     KF = [f"{c} is part of {KC[c]}." for c in CN]                              #   'C is part of K.' taught as rows (2 a batch) in the 3-hop arms only
     for tag, fmt in [x for x in (('CHAIN', (lambda a, bi: f"{a} is a citizen of: lives in {OLD[bi][0]}; {OLD[bi][0]} lies in {CN[OLD[bi][1]]}.") if SPELL else (lambda a, bi: f"{a} is a citizen of {OLD[bi][0]} > {CN[OLD[bi][1]]}.")), ('DIRECT', lambda a, bi: f"{a} is a citizen of {CN[OLD[bi][1]]}."),
@@ -298,9 +311,14 @@ if COTLATE:                                                                    #
                 from sklearn.metrics import roc_auc_score
                 nv = [glp(m_, a) for a in NOV]; kn = [glp(m_, a) for a, bi in HELDP[:200]]
                 auc = roc_auc_score([1] * len(kn) + [0] * len(nv), [-x[1] for x in kn] + [-x[1] for x in nv])
+                kr_ = [x[0].split('>')[-1].strip() == CN[OLD[bi][1]] for x, (a, bi) in zip(kn, HELDP[:200])]   # 22 Nov GATED CHAINS: answer only when the chain's
+                rn_ = [x[1] for x, r_ in zip(kn, kr_) if r_]                                                        #   mean byte loss <= t, t keeping 75% of the known-right
+                t_ = float(np.quantile(rn_, 0.75)) if len(rn_) >= 4 else -1.0                                     #   chains (the GPU gate's rule)
+                gate_ = (f" | GATED (t keeps 75% of right known chains): novel names given a chain {np.mean([x[2] and x[1] <= t_ for x in nv]):.2f}, known answered "
+                         f"{np.mean([x[1] <= t_ for x in kn]):.2f}, right when answered {np.mean([r_ for x, r_ in zip(kn, kr_) if x[1] <= t_]) if any(x[1] <= t_ for x in kn) else float('nan'):.2f}")
                 return (f"{tagx}: NOVEL names given a well-formed chain to a known city and country {np.mean([x[2] for x in nv]):.2f} (held-out known people {np.mean([x[2] for x in kn]):.2f}) | "
                         f"answer '?' (abstains): novel {np.mean([x[0].startswith('?') for x in nv]):.2f}, known {np.mean([x[0].startswith('?') for x in kn]):.2f} | "
-                        f"confidence (mean byte log-prob of its own chain) separates known from novel AUC {auc:.2f} | e.g. '{NOV[0]} is a citizen of {nv[0][0]}'")
+                        f"confidence (mean byte log-prob of its own chain) separates known from novel AUC {auc:.2f}{gate_} | e.g. '{NOV[0]} is a citizen of {nv[0][0]}'")
             m0 = LM(); m0.load_state_dict(st0); b0 = bpb(m0); f0 = fm(m0, 'BEFORE'); del m0
         mm = LM(); mm.load_state_dict(st0); mm.train(); op2 = torch.optim.AdamW(mm.parameters(), lr=3e-4, weight_decay=0.01); r2 = np.random.RandomState(SEED + 31); out = []
         for s_ in range(1, int(os.environ.get('CS_COTLATE_STEPS', 1500)) + 1):
@@ -308,9 +326,48 @@ if COTLATE:                                                                    #
             ab_ = [ABN[r2.randint(len(ABN))].encode('latin-1') for _ in range(2)] if X_ and ABN else []
             if tag.endswith('3'): ab_ = [KF[r2.randint(len(KF))].encode('latin-1') for _ in range(2)]
             step(mm, op2, [sents[r2.randint(len(sents))].encode('latin-1') for _ in range(8 - len(ab_))] + ab_ + rx_ + win(PRES, B_ - 8 - len(rx_), r2))
+            AW_ = float(os.environ.get('CS_ALIGN', 0))                         # 21 Nov CS_ALIGN w (JEPA KEY ALIGNMENT, after LLM-JEPA): the trunk's state where the
+            if AW_ > 0 and tag == 'CHAIN':                                     #   chain's step 1 predicts the bridge ('A is a citizen of: lives in ') is pulled to its
+                ap_ = [TP[r2.randint(len(TP))] for _ in range(8)]              #   state in the premise's own sentence ('A lives in '; stop-gradient target), on taught
+                q1 = [(f"{a} is a citizen of: lives in " if SPELL else f"{a} is a citizen of ").encode('latin-1') for a, bi in ap_]   #   people only
+                q2 = [f"{a} lives in ".encode('latin-1') for a, bi in ap_]
+                if int(os.environ.get('CS_ALIGN_STEP', 1)) == 2:               #   CS_ALIGN_STEP 2: the SECOND step - the state where the chain predicts the root
+                    q1 = [(f"{a} is a citizen of: lives in {OLD[bi][0]}; {OLD[bi][0]} lies in " if SPELL else f"{a} is a citizen of {OLD[bi][0]} > ").encode('latin-1') for a, bi in ap_]
+                    q2 = [f"{OLD[bi][0]} lies in ".encode('latin-1') for a, bi in ap_]   #   pulled to the state in the bridge's own premise 'B lies in '
+                def hlast(qs):
+                    X = tens(qs); Xi = torch.cat([torch.full((len(qs), 1), PAD), X[:, :-1]], 1); H = mm.hid(Xi)
+                    return torch.stack([H[k, min(len(q), L - 1)] for k, q in enumerate(qs)])
+                h1 = hlast(q1)
+                with torch.no_grad(): h2 = hlast(q2)
+                AM_ = os.environ.get('CS_ALIGN_MODE', 'cos')                   # 22 Nov: cos (as before) | nce - contrastive: the chain state must pick ITS premise's state among
+                if AM_ == 'res':                                               # 22 Nov RESIDUAL alignment (after Balestriero, LeCun & Varaku's counterfactual rule
+                    h1c_ = h1 - h1.mean(0, keepdim=True); h2c_ = h2 - h2.mean(0, keepdim=True)   #   s' + mu(a') - mu(a)): each view centred on its own context's batch mean, so
+                    la_ = AW_ * (1 - F.cosine_similarity(h1c_, h2c_, dim=-1)).mean()   #   only the entity-specific RESIDUAL is matched, not the shared context directions
+                elif AM_ == 'nce':                                               #   the batch's (identity directions, not the shared high-variance ones) | kl - the premise's
+                    sim_ = F.normalize(h1, dim=-1) @ F.normalize(h2, dim=-1).T / 0.1   #   ANSWER distribution distilled into the chain slot (output space: names never
+                    la_ = AW_ * F.cross_entropy(sim_, torch.arange(len(h1)))   #   seen after '>' become reachable)
+                elif AM_ == 'kl':                                              #   (every answer byte, teacher-forced on the true root: the chain slot's distribution
+                    cs_ = [(CN[OLD[bi][1]] + '.').encode('latin-1') for a, bi in ap_]   #   matched to the premise's at each byte)
+                    def lg_(qs):
+                        X = tens([q + c for q, c in zip(qs, cs_)]); Xi = torch.cat([torch.full((len(qs), 1), PAD), X[:, :-1]], 1); return mm(Xi)
+                    G1 = lg_(q1)
+                    with torch.no_grad(): G2 = lg_(q2)
+                    kl_ = []
+                    for k_, (qa, qb, c) in enumerate(zip(q1, q2, cs_)):
+                        n_ = min(len(c), L - 1 - len(qa), L - 1 - len(qb))
+                        if n_ > 0: kl_.append(F.kl_div(F.log_softmax(G1[k_, len(qa):len(qa) + n_], -1), F.softmax(G2[k_, len(qb):len(qb) + n_], -1), reduction='batchmean'))
+                    la_ = AW_ * torch.stack(kl_).mean() if kl_ else torch.zeros((), requires_grad=True)
+                else: la_ = AW_ * (1 - F.cosine_similarity(h1, h2, dim=-1)).mean()
+                if int(os.environ.get('CS_ALIGN_STEP', 1)) == 3 and not SPELL:     #   CS_ALIGN_STEP 3: BOTH steps - step 1 ('A is a citizen of ' ~ 'A lives in ') and step 2
+                    q3 = [f"{a} is a citizen of {OLD[bi][0]} > ".encode('latin-1') for a, bi in ap_]; q4 = [f"{OLD[bi][0]} lies in ".encode('latin-1') for a, bi in ap_]
+                    h3 = hlast(q3)
+                    with torch.no_grad(): h4 = hlast(q4)
+                    la_ = la_ + AW_ * (1 - F.cosine_similarity(h3, h4, dim=-1)).mean()
+                op2.zero_grad(); la_.backward(); op2.step()
             if s_ in (300, 750, 1500, 3000):
                 if tag == 'CHAIN': bb_, c_ = chain(mm, HELDP, OLD); tb_, tc_ = chain(mm, TP[:100], OLD); out.append(f"{s_}: taught C {tc_:.2f} | NEVER TAUGHT B {bb_:.2f} C {c_:.2f}")
                 if tag == 'CHAIN' and NB_: s1 = chain(mm, HS_, OLD) if HS_ else (float('nan'),) * 2; s2 = chain(mm, HN_, OLD) if HN_ else (float('nan'),) * 2; out[-1] += f" [SEEN bridge (n {len(HS_)}) B {s1[0]:.2f} C {s1[1]:.2f} | NEW bridge (n {len(HN_)}) B {s2[0]:.2f} C {s2[1]:.2f}; taught cities {len(TPC_)}]"
+                if tag == 'CHAIN' and NB_: s3 = chain(mm, HNS_, OLD) if HNS_ else (float('nan'),) * 2; s4 = chain(mm, HNN_, OLD) if HNN_ else (float('nan'),) * 2; out[-1] += f" {{NEW bridge, root SEEN in a taught chain (n {len(HNS_)}) B {s3[0]:.2f} C {s3[1]:.2f} | NEW bridge, root NEVER an answer (n {len(HNN_)}) B {s4[0]:.2f} C {s4[1]:.2f}}}"
                 elif tag.endswith('3'):
                     def h3(G):
                         r_ = [[], [], [], []]

@@ -215,6 +215,12 @@ def _jx_sigreg(z_,nd_=64,tg_=None):
     t_=tg_ if tg_ is not None else torch.linspace(0.2,3.0,15,device=z_.device)
     tx_=x_[:,:,None]*t_[None,None,:]; re_=torch.cos(tx_).mean(0); im_=torch.sin(tx_).mean(0); gt_=torch.exp(-t_**2/2)
     return (((re_-gt_[None,:])**2+im_**2)*gt_[None,:]).mean()
+def _svreg(z_,ns_=256,gen_=None,**kw_):
+    """22 Nov SVReg (Ren, Wang, Hoang, Kuang & LeCun 2026): a variance floor on random projections, E_u max(0, 1 - std(z u))^2 -
+    keeps the codes spread without pulling them to a Gaussian (their finding: smoother latent geometry than SIGReg)"""
+    u_=F.normalize(torch.randn(z_.shape[-1],ns_,generator=gen_).to(z_.device),dim=0); return F.relu(1-(z_@u_).std(0)).pow(2).mean()
+def _jd_reg(cfg,z_,gen_=None):
+    return _svreg(z_,gen_=gen_) if str(getattr(cfg,'inf_jd_reg','sigreg'))=='svreg' else _sigreg_le(z_,gen_=gen_)
 def _sigreg_le(z_,ns_=256,nk_=17,tm_=5.0,gen_=None):
     """cg26j SIGReg exactly as LeJEPA (Balestriero & LeCun 2025, arXiv 2511.08544) defines it: the Epps-Pulley statistic
     N * integral over t in [-tm, tm] of |ecf(t) - exp(-t^2/2)|^2 * exp(-t^2/2) dt (trapezoid rule, nk knots), for each of ns random unit
@@ -800,7 +806,7 @@ def _jd_train(model,cfg,S_):
             a9_,b9_=xa_[vbt_],xb_[vbt_]
             if obj_=='lejepa':                                                  # FIX: under LeJEPA the validation score is the whole objective (prediction + SIGReg, fixed
                 za9_,zb9_=g_(a9_),g_(b9_); gv_=torch.Generator().manual_seed(4242)   #   directions so checks are comparable) - the prediction term alone grows as SIGReg spreads
-                return float((1-llam_)*((za9_-zb9_)**2).mean(-1).mean()/4+llam_*(_sigreg_le(za9_,gen_=gv_)+_sigreg_le(zb9_,gen_=torch.Generator().manual_seed(4243)))/2)   #   the codes, so it froze training
+                return float((1-llam_)*((za9_-zb9_)**2).mean(-1).mean()/4+llam_*(_jd_reg(cfg,za9_,gen_=gv_)+_jd_reg(cfg,zb9_,gen_=torch.Generator().manual_seed(4243)))/2)   #   the codes, so it froze training
             return float(((F.normalize(Pq_(g_(a9_)),dim=-1)-F.normalize(gt_(b9_),dim=-1))**2).sum(-1).mean()+((F.normalize(Pq_(g_(b9_)),dim=-1)-F.normalize(gt_(a9_),dim=-1))**2).sum(-1).mean())/2
     snap_=lambda: [{k9_:v9_.detach().clone() for k9_,v9_ in m9_.state_dict().items()} for m9_ in (g_,gt_,Pq_)]
     v00_=vloss_() if vb_ else float('nan')
@@ -811,7 +817,7 @@ def _jd_train(model,cfg,S_):
             b_=torch.as_tensor(rs_.choice(trn_,min(128,len(trn_),int((pw9_>0).sum()) if pw9_ is not None else len(trn_)),replace=False,p=pw9_),device=ZA_.device); a1_,b1_=xa_[b_],xb_[b_]   # FIX (review): no repeats in a batch
             if obj_=='lejepa':                                                  # cg26k LeJEPA: centre of the two views mu = (zA + zB)/2, prediction loss = mean over views and
                 za_=g_(a1_); zb_=g_(b1_); lp_=2*((za_-zb_)**2).mean(-1).mean()/4  #   dimensions of (mu - z)^2 (= (zA - zB)^2 / 4; x2 here so that lp_/2 below is that loss);
-                sg_=(_sigreg_le(za_)+_sigreg_le(zb_))/2; loss_=(1-llam_)*lp_/2+llam_*sg_; sgl_.append(float(sg_.detach()))   #   SIGReg on each view, averaged
+                sg_=(_jd_reg(cfg,za_)+_jd_reg(cfg,zb_))/2; loss_=(1-llam_)*lp_/2+llam_*sg_; sgl_.append(float(sg_.detach()))   #   SIGReg on each view, averaged
             else:
                 lp_=((F.normalize(Pq_(g_(a1_)),dim=-1)-F.normalize(gt_(b1_),dim=-1))**2).sum(-1).mean()+((F.normalize(Pq_(g_(b1_)),dim=-1)-F.normalize(gt_(a1_),dim=-1))**2).sum(-1).mean()
                 if lmode_=='lejepa':                                            # cg26j LeJEPA weighting: (1 - lambda) x prediction + lambda x SIGReg (statistic scaled by N),
