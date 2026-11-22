@@ -6031,3 +6031,7 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - RULE WORLD own chain, pure families visits 4-6: 0.00 (12), 0.62 (8), 0.08 (24) - pooled 0.16 (kra36 same visits 0.17); held back 0.27 / 0.46 / 0.18. Route D pure families 0.78-0.94 vs direct 0.00.
 - TEST EXAMPLES show the readout undercounts and the records are noisy: 'Vancouver International Airport -> British Columbia > Canada' (true) scored wrong against the record's 'Richmond > North Yorkshire'; records such as 'Southampton > Suffolk County', 'Manchester > New England' (name ambiguity). Many wrong bridges are frequent places ('New York City', 'Canada') - guessing.
 - Next: **kra39 = kra36 on seed 5 + an ANY VALID CHAIN readout** (written chain valid when both links are recorded in any wording; written conclusion checked against Wikidata containment).
+
+### SVReg AS THE DREAM SELECTOR'S REGULARISER (local, kra38 preset, 22 Nov 18:40; vs SIGReg, same 50-minute limit)
+- No errors. Dream mixing identical on the local stand-in: 644 spliced pairs tested, 0 accepted in both; known linked pairs pass 2/2 (weaker-side gain +4.3 vs +3.9 bits). The SVReg-trained selector's embeddings sit much closer to Gaussian by the SIGReg statistic (0.38-0.79 vs 3.6-10.1).
+- **Inconclusive locally** (the local stand-in accepts no dreams either way); harmless; a GPU comparison is needed to judge it, low priority beside real text and retraction.
