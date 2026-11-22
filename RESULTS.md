@@ -5978,3 +5978,12 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 - **Composition by the trunk's own written chain through bridges never in a chain is now seen on two seeds (4 and 5), with the direct answer at 0.00 on both.**
 
 - RESIDUAL (15:35): between cosine and contrastive on average (new bridge mean 0.64 vs cosine 0.61, contrastive 0.70); the only form still rising at 1,500 steps (0.71, best there; contrastive 0.64). Contrastive stays the choice for kra37; one seed, about +/-0.055 per point.
+
+### ARROW PREMISE FRAME + ALIGNMENT (synthetic, 22 Nov 15:50; 150 countries, arrow frame x3 checkpoint, alignment 0.3 step 2)
+| | NEW bridge C at 300 / 750 / 1,500 (mean) | root never an answer | taught C |
+|---|---|---|---|
+| arrow frame alone | 0.73 / 0.73 / 0.81 (0.76) | 0.65 / 0.70 / 0.77 | 1.00 |
+| arrow + contrastive | 0.79 / 0.78 / 0.71 (0.76) | 0.77 / 0.77 / 0.67 | 1.00 |
+| arrow + cosine | 0.71 / 0.68 / 0.71 (0.70) | 0.65 / 0.70 / 0.60 | 0.93-0.99 |
+- **The gains do not stack on average**: with the arrow frame, contrastive is faster early (+0.06 / +0.05) and lower at 1,500 (-0.10); cosine is slightly worse than no alignment. Both fixes address the same failure (the second premise not retrieved in the chain's context), and the frame alone reaches most of it.
+- **For the GPU: kra37 (arrow + contrastive 0.3) is at least as good as the frame alone and better than kra36 (arrow + cosine 0.5)** - run kra37 first if only one can run. One seed, about +/-0.05 per point.
