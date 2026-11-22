@@ -6035,3 +6035,4 @@ Scored by RIGHT LOST PER WRONG REMOVED (random removal: 3.31).
 ### SVReg AS THE DREAM SELECTOR'S REGULARISER (local, kra38 preset, 22 Nov 18:40; vs SIGReg, same 50-minute limit)
 - No errors. Dream mixing identical on the local stand-in: 644 spliced pairs tested, 0 accepted in both; known linked pairs pass 2/2 (weaker-side gain +4.3 vs +3.9 bits). The SVReg-trained selector's embeddings sit much closer to Gaussian by the SIGReg statistic (0.38-0.79 vs 3.6-10.1).
 - **Inconclusive locally** (the local stand-in accepts no dreams either way); harmless; a GPU comparison is needed to judge it, low priority beside real text and retraction.
+- NOTE (19:00): the GPU run named kra39 (started 18:24, seed 4) used the FIRST kra39 definition (kra36 + paraphrased wordings, COSINE alignment) - it isolates the paraphrases from contrastive alignment. The redefinition (kra36 on seed 5 + ANY VALID CHAIN readout) is now **kra40**; kra39's files are restored to what ran.

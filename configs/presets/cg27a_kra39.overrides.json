@@ -321,5 +321,6 @@
  "inf_rule_world_premarrow": 2,
  "inf_rchain_arrowprem": 1,
  "_inf_rule_world_premarrow": "kra36: arrow premise frame (rule world and real text)",
- "_kra39": "kra39 = kra36 exactly (arrow frames, cosine alignment 0.5) on SEED 5 + the ANY VALID CHAIN readout (readout only). kra38 visits 3-6 (paraphrased wordings + contrastive alignment): real-text bridge 0.17-0.36 (kra36 0.13-0.29), C given the bridge 0.04-0.27 (kra36 0.33-0.50) - paraphrases neutral, contrastive worse; test examples show valid alternative bridges counted wrong ('Vancouver International Airport -> British Columbia > Canada' vs the record's Richmond) and noisy records ('Southampton > Suffolk County')"
+ "inf_rchain_paraw": 4,
+ "_inf_rchain_paraw": "kra39: kra36 (arrow frames, COSINE alignment 0.5) + real-text premises in 4 paraphrased containment wordings - kra38 (same + contrastive alignment 0.3) at visit 3: real-text C given the right bridge 0.04 vs kra36 0.37 and rule-world chain format 0.08 vs 0.46-0.88; this separates the paraphrases from the contrastive alignment"
 }
