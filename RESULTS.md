@@ -6203,3 +6203,17 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - Taught chains: bridge 0.96, C 0.95 (C given the bridge 0.99); taught step by step C 0.56, gated right 0.83. Premise rows 3,905 at visit 2 (16 a step), so the dose problem of kra42 is gone: test premises are learned a visit earlier than in kra41.
 - **Step 1 is fixed a visit earlier (bridge 0.66 at visit 3) and step 2 is rising (0.07 -> 0.16 given the bridge, vs kra41 at the same visit).** The chain's C (0.11) is still limited by step 2; **asking each hop separately triples it (0.33) and the gate makes it reliable (0.80 right on the 20% it answers)** - the route J plans / trunk answers each step / gates check design works on real text.
 - Route J (rule world) composite 0.99, null 0.01, never-read families pass the gate 0.03 (AUC 0.98). Rule world trunk chain: held back C 0.00 (14), pure families 0.00 (12). No Traceback.
+
+### kra43 VISIT 4 (GPU, seed 5; 23 Nov 17:47) - BEST REAL-TEXT INFERENCE SO FAR
+| REAL-TEXT TEST (n 150; bridge never in a taught chain) | kra43 visit 4 | kra43 visit 3 | kra41 visit 4 (seed 4) |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.88 / 0.68 | 0.72 / 0.44 | 0.77 / 0.49 |
+| bridge right (step 1) | **0.75** | 0.66 | 0.66 |
+| C given the right bridge (step 2) | **0.31** | 0.16 | 0.23 |
+| **C right** (baseline commonest C 0.05) | **0.24** | 0.11 | 0.16 |
+| C right on GOLD-TRUE chains (28) | **0.46** | 0.17 | - |
+| ANY VALID: written conclusions gold-labelled true | 0.94 (18) | 0.78 (9) | - |
+| **STEP BY STEP: hop 1 / C / valid** | **0.88 / 0.62 / 0.61** (gold-labelled true 20 / 20) | 0.72 / 0.33 / 0.33 | - |
+| STEP BY STEP gated: answered / right when answered | 0.23 / **0.88** | 0.20 / 0.80 | - |
+- **The written chain's answer is 0.24, five times the baseline (0.05) and 1.5x kra41's best; 0.46 on the chains whose links are gold-labelled containment. Asked step by step, the trunk answers 0.62 of never-composed chains right (every gold-labelled conclusion true, 20 / 20); gated, 0.88 right on the 23% it answers.**
+- Both steps now improve together (step 1 0.75, step 2 0.31 given the bridge) - the step-1 frame plus the arrow rows at 16 rows a step is the real-text recipe. Taught chains 0.88. Route J composite 0.98, null 0.00. Rule world: held back C 0.23 (13; visit 3 0.00), planted 0.70.
