@@ -6293,3 +6293,14 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **On a frozen test set the written chain holds (0.41 -> 0.39) and the gold-true chains rise (0.50 -> 0.67): the real-text gain is kept at visit 5** (kra43's visit-5 dip was the rebuilt list).
 - RULE WORLD visit 5: step by step planted C 0.76 (gated 0.57 answered, right 1.00); held back 0.53 (17), pure 0.50 (12), the gate (calibrated on planted, t = -0.01) answers none of them; the trunk's own chain held back 0.25 (8), pure 0.50 (8).
 - kra46 local check complete (21:07): no Traceback; COMBINED ANSWER prints at visit 3 (local: nothing answered - no learned rule and route J's gate passes nothing at this size); CONTRADICTION WITH THE GATE at visit 3 as at visit 2, moved leaves (31) evaluated. PASS.
+
+### kra46 VISIT 2 (GPU, seed 5; 23 Nov 21:34) - UNKNOWN vs CONTRADICTED SOLVED BY THE GATE
+| route J, visit 2 | ensemble alone (seeds agree >= 0.8 on another answer) | ensemble + MARGIN GATE |
+|---|---|---|
+| FALSE claims about read families: contradicted | 0.98 | **0.88** |
+| TRUE claims: contradicted | 0.00 | **0.00** |
+| NEVER-READ families: called contradicted | 0.67 | **0.03** |
+| NEVER-READ families: called UNKNOWN | - | **0.97** |
+- **With the gate, the model separates three states: a false claim about something it knows is CONTRADICTED (0.88), a true claim is not (0.00), and a claim about something it never read is UNKNOWN (0.97), not contradicted (0.03).** Without the gate (kra44 / this run) unknowns were called contradicted 0.41-0.67. Read families the gate refuses (0.12) are called unknown, never contradicted.
+- MOVED leaves with the move read: only 2, the OLD composite not contradicted and the NEW one contradicted - route J still holds the old composite (the new parent's family is probably not yet read; the readout does not require it). Too few to judge; kra47 should require the new family read, as the kra9 readout does.
+- Second seed of the learned-plan step by step (rule world, visit 2): planted 0.21, held back 0.28 (32), pure 0.30 (20); **gated right 1.00 in all three** (answered 0.14-0.30) - weaker than seed 4's visit 2 (0.56-0.64; hop 1 here 0.38-0.50), precision the same. Program search: both rules again (third run); non-contrastive = InfoNCE again.
