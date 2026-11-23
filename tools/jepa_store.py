@@ -34,6 +34,9 @@ W = {'lives': ["{a} lives in {b}.", "{a} has a home in {b}."], 'city_in': ["{a} 
      'region_of': ["{a} is part of {b}.", "The region {a} belongs to {b}."], 'country_in': ["{a} is in {b}.", "The country {a} lies in {b}."]}
 FACTS = {'lives': [(a, CIT[ci][0]) for a, ci in TRP + HEP], 'city_in': [(c, REG[r][0]) for c, r in CIT], 'region_of': [(r, CTY[k][0]) for r, k in REG],
          'country_in': [(k, CONT[c]) for k, c in CTY]}
+if int(os.environ.get('JS_CITIZEN', 0)):                                       # 23 Nov VERIFIED REPLAY: a second view of each person - the country they are a citizen
+    W['citizen'] = ["{a} is a citizen of {b}.", "{a} holds a passport of {b}."]  #   of (true), read in the person's own domain
+    FACTS['citizen'] = [(a, CTY[cty(ci)][0]) for a, ci in TRP + HEP]
 PRE1 = sorted({t.format(a=a, b=b) for rel, fs in FACTS.items() for a, b in fs for t in W[rel]}); PRE = PRE1 * 3
 L, V, PAD, DW, NL = 64, 256, 0, 192, 3
 class Blk(nn.Module):
@@ -170,7 +173,14 @@ if int(os.environ.get('JS_CONT', 0)):                                          #
                         while w_ == got[i]: w_ = cities[rb.randint(len(cities))]
                         BAD[a] = (w_, got[i]); got[i] = w_
                 P(f"      FALSE MEMORY: {len(BAD)} of {len(heads)} dreamed recalls replaced by a wrong city (first dream only)")
-            dw = W['lives'][int(os.environ.get('JS_DREAMW', 0))]; dr = [dw.format(a=a, b=c) for a, c in zip(heads, got)]
+            dw = W['lives'][int(os.environ.get('JS_DREAMW', 0))]; keep = [True] * len(heads); extra = []
+            if 'citizen' in W:                                                 # the citizen view is dreamed too (its own recall), in both arms
+                cz = recall('citizen', heads); extra = [W['citizen'][0].format(a=a, b=c) for a, c in zip(heads, cz)]
+                if int(os.environ.get('JS_VERIFY', 0)):                        # VERIFIED REPLAY: a 'lives' memory is replayed only if its city's own chain
+                    ct = recall('region_of', recall('city_in', got)); keep = [x == y for x, y in zip(ct, cz)]   #   (city -> region -> country) reaches the
+                    pb = [k for a, k in zip(heads, keep) if a in BAD]; pt = [k for a, k in zip(heads, keep) if a not in BAD]   #   person's recalled citizenship
+                    P(f"      VERIFIED REPLAY: 'lives' memories kept {np.mean(keep):.2f} | PLANTED false memories kept {np.mean(pb) if pb else float('nan'):.2f} (n {len(pb)}) | the others kept {np.mean(pt):.2f}")
+            dr = [dw.format(a=a, b=c) for a, c, k in zip(heads, got, keep) if k] + extra
             ok = np.mean([c == CIT[ci][0] for c, (a, ci) in zip(got, [x for h in range(g) for x in GROUPS[h]])])
             P(f"      domain {g}: {len(dr)} dream sentences in the wording '{dw}' from the model's own recall of earlier domains (correct {ok:.2f})")
             return cur + dr * max(1, int(round(rp * len(cur) / len(dr) / (1 - rp))))
