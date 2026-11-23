@@ -6188,3 +6188,16 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **Replaying its own recall protects the keyed-memory JEPA as fully as replaying the real sentences (no replay: 0.03 / 0.30 / 1.00), and 10% is enough.** Platypus-style dreams carry over to a JEPA learner.
 - Caveats: the dreams were written in the same wording the test asks in ('{a} lives in {b}.'), which favours them; and dreams are only as good as recall (here 1.00) - a wrong recall would be replayed as a false memory. Running: dreams in the OTHER wording ('{a} has a home in {b}.'), 10% and 5%.
 - **CROSS-WORDING DREAMS (23 Nov 16:45; JS_DREAMW=1):** dreams written as '{a} has a home in {b}.', recall asked as '{a} lives in {b}.'. 10%: after domain 1 1.00 / 1.00, after domain 2 **0.99 / 1.00 / 1.00**; **5%: 0.99 / 1.00, then 0.99 / 1.00 / 1.00**. **The protection does not depend on the test's wording, and 5% dream replay is enough.** Running: FALSE MEMORY - 10% of the first dream's recalls replaced by a wrong city; are they kept or corrected?
+
+### kra43 VISIT 3 (GPU, seed 5; kra41 + arrow rows x2 + 16 real-text rows a step, no paraphrases; 23 Nov 17:10) - BEST VISIT 3 ON REAL TEXT
+| REAL-TEXT TEST (n 150) | kra43 visit 3 | kra41 visit 3 (seed 4) | kra41 visit 4 |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | **0.72 / 0.44** | 0.53 / 0.21 | 0.77 / 0.49 |
+| bridge right (step 1) | **0.66** | 0.40 | 0.66 |
+| C given the right bridge (step 2) | 0.16 | 0.07 | 0.23 |
+| C right (baseline commonest C 0.07) | 0.11 | 0.04 | 0.16 |
+| STEP BY STEP: hop 1 / C / valid | **0.72 / 0.33 / 0.33** (gold-labelled written conclusions true 7 / 7) | - | - |
+| STEP BY STEP gated (keeps 75% of right taught) | answered 0.20, **right when answered 0.80** | - | - |
+- Taught chains: bridge 0.96, C 0.95 (C given the bridge 0.99); taught step by step C 0.56, gated right 0.83. Premise rows 3,905 at visit 2 (16 a step), so the dose problem of kra42 is gone: test premises are learned a visit earlier than in kra41.
+- **Step 1 is fixed a visit earlier (bridge 0.66 at visit 3) and step 2 is rising (0.07 -> 0.16 given the bridge, vs kra41 at the same visit).** The chain's C (0.11) is still limited by step 2; **asking each hop separately triples it (0.33) and the gate makes it reliable (0.80 right on the 20% it answers)** - the route J plans / trunk answers each step / gates check design works on real text.
+- Route J (rule world) composite 0.99, null 0.01, never-read families pass the gate 0.03 (AUC 0.98). Rule world trunk chain: held back C 0.00 (14), pure families 0.00 (12). No Traceback.
