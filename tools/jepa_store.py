@@ -71,7 +71,7 @@ def capspans(s):
 span_mean = lambda H, sp: torch.stack([H[k, a:b].mean(0) for k, (a, b) in enumerate(sp)])
 NAMES = sorted({x for fs in FACTS.values() for p_ in fs for x in p_}); NI = {n: i for i, n in enumerate(NAMES)}
 QW = {r: W[r][0] for r in W}; ST = int(os.environ.get('JS_STEPS', 8000)); BS = 48
-def run(variant):
+def run(variant, phases=None):
     torch.manual_seed(0); r_ = np.random.RandomState(1)
     ctx, tgt = Enc(), Enc(); tgt.load_state_dict(ctx.state_dict())
     for p_ in tgt.parameters(): p_.requires_grad = False
@@ -110,8 +110,16 @@ def run(variant):
         c3 = hop('region_of', c2, Z); t3 = np.mean([o == CTY[cty(ci)][0] for o, (a, ci) in zip(c3, HEP)])
         ctx.train(); pred.train()
         P(f"   {variant:5s} step {st}: ONE-HOP recall lives {r1:.2f}, city_in {r2:.2f} | CHAINED by its own hops: 2 hops {t2:.2f}, 3 hops {t3:.2f}  ({time.time() - T0:.0f}s)")
-    for st in range(1, ST + 1):
-        ss = [PRE[i] for i in r_.randint(0, len(PRE), BS)]; Xs, sp, ky = [], [], []
+    def evalc(tag):                                                            # continual mode: 'lives' recall per domain of people
+        ctx.eval(); pred.eval(); Z = codes(); out = []
+        for g, peo in enumerate(GROUPS):
+            o = hop('lives', [a for a, ci in peo], Z); out.append(np.mean([x == CIT[ci][0] for x, (a, ci) in zip(o, peo)]))
+        ctx.train(); pred.train(); P(f"   {variant:5s} {tag}: 'lives' recall by domain " + ' | '.join(f"D{g} {v:.2f}" for g, v in enumerate(out)) + f"  ({time.time() - T0:.0f}s)")
+    sched = [(PRE, ST, None)] if phases is None else phases; st = 0
+    for pool, n_, tag in sched:
+      for _ in range(n_):
+        st += 1
+        ss = [pool[i] for i in r_.randint(0, len(pool), BS)]; Xs, sp, ky = [], [], []
         for s in ss:
             if variant == 'word':
                 ws = words(s); k = r_.randint(len(ws)); k2 = min(len(ws) - 1, k + r_.randint(2)); a_, b_ = ws[k][0], ws[k2][1]; key = None
@@ -132,7 +140,24 @@ def run(variant):
         with torch.no_grad():
             mo = min(0.999, 0.99 + 0.009 * st / ST)
             for pt, pc in zip(tgt.parameters(), ctx.parameters()): pt.mul_(mo).add_(pc.detach(), alpha=1 - mo)
-        if st % 2000 == 0 or st == ST: evaluate(st)
+        if phases is None and (st % 2000 == 0 or st == ST): evaluate(st)
+      if phases is not None: evalc(tag)
 P(f"CAN A JEPA STORE KNOWLEDGE? {len(NAMES)} names, {len(PRE1)} premise sentences (x3), {ST} steps each; the next-byte trunk recalls these premises 1.00 by 2k steps")
-for v in os.environ.get('JS_VARIANTS', 'word,bank,slot').split(','): run(v)
+GROUPS = []
+if int(os.environ.get('JS_CONT', 0)):                                          # 23 Nov CONTINUAL: three domains of people learned one after another;
+    PEO = TRP + HEP; GROUPS = [PEO[g::3] for g in range(3)]                    # geography in every domain's text; forgetting of earlier domains
+    def sents(peo):                                                            #   with and without replay
+        ps = {a for a, ci in peo}; return [s for s in PRE1 if any((' ' + a + ' ') in (' ' + s + ' ') for a in ps)]
+    LIV = {g: sents(GROUPS[g]) for g in range(3)}; ALLP = set(x for g in range(3) for x in LIV[g]); GEO = [s for s in PRE1 if s not in ALLP]
+    PH = int(os.environ.get('JS_PHASE', 4000)); RP = float(os.environ.get('JS_REPLAY', 0.0))
+    P(f"CONTINUAL KEYED-MEMORY JEPA: 3 domains of people ({', '.join(str(len(LIV[g])) for g in range(3))} sentences) + {len(GEO)} geography sentences; {PH} steps a domain; replay of earlier domains {RP:.0%}")
+    for rp in (0.0, RP) if RP else (0.0,):
+        ph = []
+        for g in range(3):
+            cur = (LIV[g] + GEO) * 3; old = [x for h in range(g) for x in LIV[h]]
+            pool = cur if not (rp and old) else cur + old * max(1, int(round(rp * len(cur) / max(1, len(old)) / (1 - rp))))
+            ph.append((pool, PH, f"after domain {g} (replay {rp:.0%})"))
+        ST = PH * 3; run('slot', ph)
+else:
+    for v in os.environ.get('JS_VARIANTS', 'word,bank,slot').split(','): run(v)
 P(f"DONE ({time.time() - T0:.0f}s)")
