@@ -6270,3 +6270,6 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 | PURE FAMILIES, never written | 13 | 0.54 / 0.38 | 0.08 / **1.00** | 0.44 / 0.33 |
 - By visit 4 the trunk's own chain also composes on held-back and pure families (0.53 / 0.33; 0.00-0.18 at visits 2-3); step by step is a little ahead (0.58 / 0.38) and **its gated answers are right 1.00 on never-seen composites at visits 3 and 4.**
 - Route J composite 0.99, gate answers 0.98 right 1.00, never-read through the gate 0.03 (AUC 1.00); program search: both rules again from 18 / 19 examples, targets 0.99 / 1.00. Bagged ensemble: no contradictions (0.01), as before.
+
+### kra46 local check (23 Nov 20:54, in progress; seed 5): released
+- No Traceback through two domains. CONTRADICTION WITH THE GATE prints at visit 2 (local route J is weak, so the gate calls 0.97 of read families and 1.00 of never-read families UNKNOWN, and contradicts nothing - the gate is doing its job at this size; judged on the GPU). The COMBINED ANSWER readout needs route J's answers from an earlier sleep, so it first prints at visit 3 (guarded). Released before the check ends, at the user's request; the check continues.
