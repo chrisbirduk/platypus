@@ -6304,3 +6304,17 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **With the gate, the model separates three states: a false claim about something it knows is CONTRADICTED (0.88), a true claim is not (0.00), and a claim about something it never read is UNKNOWN (0.97), not contradicted (0.03).** Without the gate (kra44 / this run) unknowns were called contradicted 0.41-0.67. Read families the gate refuses (0.12) are called unknown, never contradicted.
 - MOVED leaves with the move read: only 2, the OLD composite not contradicted and the NEW one contradicted - route J still holds the old composite (the new parent's family is probably not yet read; the readout does not require it). Too few to judge; kra47 should require the new family read, as the kra9 readout does.
 - Second seed of the learned-plan step by step (rule world, visit 2): planted 0.21, held back 0.28 (32), pure 0.30 (20); **gated right 1.00 in all three** (answered 0.14-0.30) - weaker than seed 4's visit 2 (0.56-0.64; hop 1 here 0.38-0.50), precision the same. Program search: both rules again (third run); non-contrastive = InfoNCE again.
+
+### kra46 VISITS 3-4 (GPU, seed 5, frozen test set; 23 Nov 22:24) - REAL TEXT REPLICATED, GATE HOLDS
+| REAL-TEXT TEST (frozen, n 150) | kra46 visit 3 | **kra46 visit 4 (seed 5)** | kra45 visit 4 (seed 4) |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.73 / 0.57 | 0.96 / 0.81 | 0.91 / 0.69 |
+| bridge right | 0.64 | **0.91** | 0.84 |
+| C given the right bridge | 0.14 | 0.45 | 0.49 |
+| **C right** (baseline 0.07) | 0.09 | **0.41** | 0.41 |
+| gold-true chains C | 0.17 | 0.46 | 0.50 |
+| **STEP BY STEP: C / valid** | 0.41 / 0.40 | **0.77 / 0.77** (gold-labelled true 0.95, 20) | 0.64 / 0.64 |
+| STEP BY STEP gated: answered / right | 0.21 / 0.87 | **0.58 / 0.95** | 0.36 / 0.98 |
+- **On frozen test sets both seeds reach written-chain C 0.41 at visit 4 (six times the baseline), and step by step 0.64-0.77 with 0.95-0.98 right when gated - seed 5 answers 58% of never-composed real-text chains at 0.95 precision.**
+- CONTRADICTION WITH THE GATE holds: visit 3 false 0.86 / true 0.00 / never-read unknown 0.94; visit 4 **false 0.87 / true 0.00 / never-read unknown 0.97 (contradicted 0.03)**. MOVED leaves (the move read; 8 then 16): the OLD composite is never contradicted and the NEW one is (0.81) - route J keeps the pre-move composite (it has the old bridge's chain); the readout does not require the new parent's family to be read; kra47.
+- COMBINED ANSWER on composites route J did NOT write (by construction route J abstained on them): step by step adds visit 3 held back 0.36 (right 0.88), visit 4 held back 0.16 and pure 0.39, **right 1.00**. RULE WORLD STEP BY STEP visit 4: planted 0.73, held back 0.48, pure 0.54; gated right 1.00 in all three (answered 0.55 / 0.16 / 0.39).
