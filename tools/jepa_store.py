@@ -124,10 +124,11 @@ def run(variant):
         elif variant == 'bank':
             neg = bank[:4096]; l = F.cross_entropy(torch.cat([p_ @ z_.T, p_ @ neg.T], 1) / 0.1, torch.arange(BS)); bank = torch.cat([z_.detach(), bank])[:4096]
         else:
-            ix = torch.tensor([SI[k] for k in ky]); l = F.cross_entropy(p_ @ SL.T / 0.1, ix)
-            with torch.no_grad():
-                for k_, v in zip(ix.tolist(), z_): SL[k_] = F.normalize(0.9 * SL[k_] + 0.1 * v, dim=0)
+            ix = torch.tensor([SI[k] for k in ky]); l = F.cross_entropy(p_ @ SL.clone().T / 0.1, ix)
         opt.zero_grad(); l.backward(); opt.step(); sch.step()
+        if variant == 'slot':
+            with torch.no_grad():                                                  # the memory slots: EMA of the target encoder's states of each name
+                for k_, v in zip(ix.tolist(), z_): SL[k_] = F.normalize(0.9 * SL[k_] + 0.1 * v, dim=0)
         with torch.no_grad():
             mo = min(0.999, 0.99 + 0.009 * st / ST)
             for pt, pc in zip(tgt.parameters(), ctx.parameters()): pt.mul_(mo).add_(pc.detach(), alpha=1 - mo)
