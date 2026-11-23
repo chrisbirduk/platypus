@@ -332,8 +332,8 @@
  "_inf_kmc_rulej_search": "kra45: program search falls back to the planted composites of the domains read",
  "inf_rule_steps": 1,
  "_inf_rule_steps": "kra45 READOUT: rule-world STEP BY STEP (learned rule plans, trunk answers each hop, gate)",
- "inf_rchain_testfix": 1,
- "_inf_rchain_testfix": "kra45: the real-text TEST chain set frozen once full",
+ "inf_rchain_testfix": 150,
+ "_inf_rchain_testfix": "kra45: the real-text TEST chain set frozen once it holds 150 chains (the readout's size; GPU: at visit 2)",
  "inf_kmc_rulej_ens_bag": 1,
  "_inf_kmc_rulej_ens_bag": "kra45: ensemble seeds on bootstrap resamples of the recorded facts"
 }
