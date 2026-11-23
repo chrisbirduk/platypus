@@ -117,6 +117,8 @@ def run(variant, phases=None):
         ctx.train(); pred.train(); P(f"   {variant:5s} {tag}: 'lives' recall by domain " + ' | '.join(f"D{g} {v:.2f}" for g, v in enumerate(out)) + f"  ({time.time() - T0:.0f}s)")
     sched = [(PRE, ST, None)] if phases is None else phases; st = 0
     for pool, n_, tag in sched:
+      if callable(pool):                                                       # 23 Nov DREAM replay: the pool is built at the phase start from the
+          ctx.eval(); pred.eval(); pool = pool(lambda rel, heads: hop(rel, heads, codes())); ctx.train(); pred.train()   #   model's own recall
       for _ in range(n_):
         st += 1
         ss = [pool[i] for i in r_.randint(0, len(pool), BS)]; Xs, sp, ky = [], [], []
@@ -151,9 +153,21 @@ if int(os.environ.get('JS_CONT', 0)):                                          #
     LIV = {g: sents(GROUPS[g]) for g in range(3)}; ALLP = set(x for g in range(3) for x in LIV[g]); GEO = [s for s in PRE1 if s not in ALLP]
     PH = int(os.environ.get('JS_PHASE', 4000)); RP = float(os.environ.get('JS_REPLAY', 0.0))
     P(f"CONTINUAL KEYED-MEMORY JEPA: 3 domains of people ({', '.join(str(len(LIV[g])) for g in range(3))} sentences) + {len(GEO)} geography sentences; {PH} steps a domain; replay of earlier domains {RP:.0%}")
-    for rp in (0.0, RP) if RP else (0.0,):
+    DREAM = [float(x) for x in os.environ.get('JS_DREAM', '').split(',') if x]   # 23 Nov: replay of the model's OWN recall of earlier domains
+    def dpool(g, rp):                                                          #   ('<person> lives in <recalled city>'), no stored sentences
+        def mk(recall):
+            cur = (LIV[g] + GEO) * 3; heads = [a for h in range(g) for a, ci in GROUPS[h]]
+            if not heads: return cur
+            got = recall('lives', heads); dr = [QW['lives'].format(a=a, b=c) for a, c in zip(heads, got)]
+            ok = np.mean([c == CIT[ci][0] for c, (a, ci) in zip(got, [x for h in range(g) for x in GROUPS[h]])])
+            P(f"      domain {g}: {len(dr)} dream sentences from the model's own recall of earlier domains (correct {ok:.2f})")
+            return cur + dr * max(1, int(round(rp * len(cur) / len(dr) / (1 - rp))))
+        return mk
+    arms = [('data', r) for r in ((0.0, RP) if RP else (0.0,))] if not DREAM else [('dream', r) for r in DREAM]
+    for kind, rp in arms:
         ph = []
         for g in range(3):
+            if kind == 'dream': ph.append((dpool(g, rp), PH, f"after domain {g} (DREAM replay {rp:.0%})")); continue
             cur = (LIV[g] + GEO) * 3; old = [x for h in range(g) for x in LIV[h]]
             pool = cur if not (rp and old) else cur + old * max(1, int(round(rp * len(cur) / max(1, len(old)) / (1 - rp))))
             ph.append((pool, PH, f"after domain {g} (replay {rp:.0%})"))
