@@ -1738,6 +1738,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
         try:                                                                   #   THE TRUNK ANSWERS EACH STEP, THE GATE CHECKS): a composite question 'A r3 ?' is answered
             from platypus.inference.realchain import _greedy_batch            #   with the relational module's LEARNED rule r3 = r1 o r2 (no rule given), hop 1 'A r1 ' by
             LR = {str(t[2]).strip(): (str(t[0]).strip(), str(t[1]).strip()) for t in (model.__dict__.get('_rm_rules') or [])}   #   the trunk, hop 2 'B r2 ' on its own
+            if not LR and int(getattr(cfg, 'inf_rule_steps_oracle', 0)): LR = {rw['grand']: (rw['parent'], rw['parent']), rw['skip']: (rw['mgr'], rw['mgr'])}   # local checks only
             was = model.training; model.eval()                                 #   answer B; confidence = the lower hop's mean byte log-probability; gate calibrated on the
             def steps(L):                                                      #   PLANTED composites (keeps 75% of the right ones). Real text (kra43 visit 4): 0.62 vs the
                 out, Q = [], [x for x in L[:120] if not seen or int(x[0]) in seen]   #   written chain's 0.24
