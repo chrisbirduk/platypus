@@ -6287,3 +6287,8 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 | written conclusions gold-labelled true | 13 / 13 | 10 / 10 | 0.94 |
 - **The written chain answers 0.41 of never-composed real-text chains right - six times the baseline (0.07) - and step by step 0.64; gated, 0.98 right on the 36% it answers; every conclusion with a gold label is true.** Taught chains 0.88.
 - **The real-text recipe (step-1 frame + arrow rows x2 + 16 rows a step) is replicated on a second seed, and on a FROZEN test set the visit-3 -> visit-4 gain is a true learning curve** (C 0.13 -> 0.41, step by step 0.28 -> 0.64).
+
+### kra45 VISIT 5 (GPU, seed 4, frozen test set; 23 Nov 21:06)
+- REAL TEXT (n 150): premises alone 0.87 / 0.59, **bridge 0.89, C 0.39 (visit 4 0.41; baseline 0.07), gold-true chains C 0.67 (24)**; ANY VALID: whole chain recorded 0.49, written conclusions gold-labelled true 25 / 25. STEP BY STEP: hop 1 0.87, C 0.47 (visit 4 0.64), **valid 0.57, gold-labelled true 26 / 26**; gated answered 0.32, right 0.56, **valid when answered 0.81** - on the frozen set the step-by-step answers that are not the recorded C are mostly other valid containments (both links recorded).
+- **On a frozen test set the written chain holds (0.41 -> 0.39) and the gold-true chains rise (0.50 -> 0.67): the real-text gain is kept at visit 5** (kra43's visit-5 dip was the rebuilt list).
+- RULE WORLD visit 5: step by step planted C 0.76 (gated 0.57 answered, right 1.00); held back 0.53 (17), pure 0.50 (12), the gate (calibrated on planted, t = -0.01) answers none of them; the trunk's own chain held back 0.25 (8), pure 0.50 (8).
