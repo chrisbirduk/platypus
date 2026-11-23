@@ -6236,3 +6236,14 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra45 local check (23 Nov 19:37; 150 steps a domain, distant_10k, seed 5, 50-minute limit): PASS
 - No Traceback through three domains. BAGGED ensemble: the four route J fits now disagree (seeds agree 0.33 vs 0.72 unbagged) - independent views; PROGRAM SEARCH on the planted composites (fallback): 'is overseen by' found 'is supervised by o is supervised by' (0.83 on 6 examples, null 0.00) = the learned rule; RULE WORLD STEP BY STEP prints (no learned rule locally yet: plan 0.00 - judged on the GPU, where rules are learned by visit 2); OBJECTIVE COMPARISON as in kra44. Test-set freezing set to 150 chains (GPU: visit 2). kra45 moved to seed 4 (the recipe's seed partner).
+
+### kra45 VISIT 2 (GPU, SEED 4; 23 Nov 20:03) - STEP BY STEP WITH A LEARNED PLAN GENERALISES
+| RULE WORLD, visit 2 (learned rule plans, trunk answers each hop, gate) | n | plan from a learned rule | hop 1 | C right | GATED answered / right |
+|---|---|---|---|---|---|
+| planted composites | 18 | 1.00 | 0.72 | 0.50 | 0.56 / 0.70 |
+| **HELD BACK, never planted, never written** | 14 | 1.00 | 0.71 | **0.64** | 0.71 / **0.80** |
+| **PURE FAMILIES (no composite in the family)** | 16 | 1.00 | 0.69 | **0.56** | 0.62 / **0.90** |
+- **The combined design works with a LEARNED plan: on composites the model never saw in any form, step by step answers 0.56-0.64 right (0.80-0.90 when the gate answers), where the trunk's own written chain answers 0.00 (kra43 visit 3, held back and pure) to 0.23 (visit 4).** Route J's learned rule supplies the plan; nothing about the composite is planted for these families.
+- PROGRAM SEARCH replicates on the second seed: both rules found from 5 and 8 examples (1.00; nulls 0.20 / 0.12) = the learned rules; targets 1.00 / 1.00. NON-CONTRASTIVE route J = InfoNCE again (composite 1.00 / 1.00; AUC 0.94 / 0.98).
+- **BAGGING over-corrects:** each bootstrap fit misses about a third of the facts, so the fits disagree on READ families too (majority right 0.56, agree 0.49) and nothing is contradicted (false claims 0.02). kra44's unbagged ensemble separates false from true (1.00 vs 0.02) but over-calls unknowns (0.41); route J's own MARGIN GATE passes only 0.04 of never-read families (AUC 0.98). kra46: CONTRADICTED = the unbagged seeds agree on another answer AND the margin gate passes; UNKNOWN = the gate fails.
+- Real-text test set frozen at 225 chains at visit 2.
