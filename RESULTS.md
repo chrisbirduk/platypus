@@ -6273,3 +6273,17 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra46 local check (23 Nov 20:54, in progress; seed 5): released
 - No Traceback through two domains. CONTRADICTION WITH THE GATE prints at visit 2 (local route J is weak, so the gate calls 0.97 of read families and 1.00 of never-read families UNKNOWN, and contradicts nothing - the gate is doing its job at this size; judged on the GPU). The COMBINED ANSWER readout needs route J's answers from an earlier sleep, so it first prints at visit 3 (guarded). Released before the check ends, at the user's request; the check continues.
+
+### kra45 VISIT 4, REAL TEXT (GPU, SEED 4, frozen test set; 23 Nov 20:56) - BEST REAL-TEXT INFERENCE, SECOND SEED
+| REAL-TEXT TEST (frozen, n 150; bridge never in a taught chain) | kra45 visit 4 (seed 4) | kra45 visit 3 | kra43 visit 4 (seed 5, list rebuilt) |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.91 / 0.69 | 0.70 / 0.37 | 0.88 / 0.68 |
+| bridge right (step 1) | **0.84** | 0.55 | 0.75 |
+| C given the right bridge (step 2) | **0.49** | 0.23 | 0.31 |
+| **C right** (baseline commonest C 0.07) | **0.41** | 0.13 | 0.24 |
+| gold-true chains: C right | **0.50** (24) | 0.25 | 0.46 |
+| **STEP BY STEP: hop 1 / C / valid** | **0.91 / 0.64 / 0.64** (gold-labelled true 18 / 18) | 0.70 / 0.28 | 0.88 / 0.62 |
+| STEP BY STEP gated: answered / right | 0.36 / **0.98** | 0.09 / 0.85 | 0.23 / 0.88 |
+| written conclusions gold-labelled true | 13 / 13 | 10 / 10 | 0.94 |
+- **The written chain answers 0.41 of never-composed real-text chains right - six times the baseline (0.07) - and step by step 0.64; gated, 0.98 right on the 36% it answers; every conclusion with a gold label is true.** Taught chains 0.88.
+- **The real-text recipe (step-1 frame + arrow rows x2 + 16 rows a step) is replicated on a second seed, and on a FROZEN test set the visit-3 -> visit-4 gain is a true learning curve** (C 0.13 -> 0.41, step by step 0.28 -> 0.64).
