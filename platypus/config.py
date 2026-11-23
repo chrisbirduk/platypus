@@ -789,6 +789,10 @@ class Config:
     inf_premises_states=0           #   19 Nov kra9 readout: the same reader on the trunk's own states (N pseudo-labelled records a class; 0 off)
     inf_nm_update_first=0           #   19 Nov kra11 FIX: the store's current object per (subject, relation) = the one introduced most recently (first sighting), seen 2+ times
     inf_kmc_rulej_allrec=0          #   19 Nov kra11: the composition routes (route J) read every recorded fact, the held-back control fifth too
+    inf_kmc_rulej_obj='nce'         #   23 Nov kra44: route J predictor objective - 'nce' (InfoNCE over the recorded names) or 'cos' (NON-CONTRASTIVE: 1 - cosine to the answer's code)
+    inf_kmc_rulej_cmpobj=0          #   23 Nov kra44 READOUT: route J refitted with the other objective (nce <-> cos) on the same targets
+    inf_kmc_rulej_ens=0             #   23 Nov kra44 READOUT: route J refitted with this many seeds; ENSEMBLE CONTRADICTION (false vs unknown claims)
+    inf_kmc_rulej_search=0          #   23 Nov kra44 READOUT: LATENT PROGRAM SEARCH over route J's operators from each composite's recorded examples
     inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
     inf_rti_conf_min=1              #   19 Nov kra12: relational records of the pair since the write needed to confirm

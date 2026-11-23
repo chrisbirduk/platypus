@@ -1163,17 +1163,20 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 HJ = int(getattr(cfg, 'inf_kmc_rulej_mlp', 0)); SNAP = int(getattr(cfg, 'inf_kmc_rulej_snap', 0)); DP = {n: k for k, n in enumerate(DN)}
                 if HJ:                                                         # 19 Nov kra7: a JEPA-style PREDICTOR per relation (MLP, InfoNCE over the recorded names' codes,
                     Zd = Z.detach()                                            #   temperature 0.05) - the linear operator holds about D facts; the synthetic world showed the
-                    def fit(pairs, shuffle=False):                             #   MLP holds 2,200 (first hop 1.00) and its top-1 minus top-2 margin rejects unrecorded subjects
-                        g9 = torch.Generator().manual_seed(11)
+                    OBJ = str(getattr(cfg, 'inf_kmc_rulej_obj', 'nce'))       # 23 Nov kra44: 'cos' = NON-CONTRASTIVE predictor (1 - cosine to the answer's code, no
+                    def fit(pairs, shuffle=False, seed=11, obj=None):                    #   negatives; the trunk's codes are fixed, so nothing can collapse); 'nce' = InfoNCE (default)
+                        g9 = torch.Generator().manual_seed(seed)               #   MLP holds 2,200 (first hop 1.00) and its top-1 minus top-2 margin rejects unrecorded subjects
                         with torch.random.fork_rng(devices=[]):                # a fixed init without touching the run's own random stream
-                            torch.manual_seed(11); net = torch.nn.Sequential(torch.nn.Linear(D9, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, D9)).to(Z.device)
+                            torch.manual_seed(seed); net = torch.nn.Sequential(torch.nn.Linear(D9, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, HJ), torch.nn.GELU(), torch.nn.Linear(HJ, D9)).to(Z.device)
                         A_ = torch.tensor([NI[a] for a, b in pairs], device=Z.device); yb = torch.tensor([DP[b] for a, b in pairs], device=Z.device)
                         if shuffle: yb = yb[torch.randperm(len(yb), generator=g9).to(yb.device)]
                         o9 = torch.optim.Adam(net.parameters(), lr=1e-3)
                         with torch.enable_grad():
                             for _ in range(int(getattr(cfg, 'inf_kmc_rulej_mlp_steps', 1500))):
                                 k9 = torch.randint(0, len(A_), (min(256, len(A_)),), generator=g9).to(Z.device)
-                                l9 = F.cross_entropy(F.normalize(net(Zd[A_[k9]]), dim=-1) @ Zd[DI].t() / 0.05, yb[k9]); o9.zero_grad(); l9.backward(); o9.step()
+                                if (obj or OBJ) == 'cos': l9 = (1 - (F.normalize(net(Zd[A_[k9]]), dim=-1) * Zd[DI][yb[k9]]).sum(-1)).mean()
+                                else: l9 = F.cross_entropy(F.normalize(net(Zd[A_[k9]]), dim=-1) @ Zd[DI].t() / 0.05, yb[k9])
+                                o9.zero_grad(); l9.backward(); o9.step()
                         net.eval(); return net
                     app = lambda O_, v: O_(v)
                 else: app = lambda O_, v: v @ O_
@@ -1234,6 +1237,70 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                       f"first hop B {m(oJ['b'])} | COMPOSITE C {m(oJ['c'])} | PURE FAMILIES {m(oJ['pure'])} | NULL (operators fitted on shuffled facts) {m(oJ['null'])} || "
                       f"margin gate >= {thr9}: answers {cov:.2f}, right when answering {pg:.2f} | NEVER-READ families: margin >= gate {np.mean([x >= thr9 for x in mu]) if mu else float('nan'):.2f} (n {len(mu)}), "
                       f"AUC right-vs-never-read {auc:.2f} | predictor {'MLP ' + str(HJ) if HJ else 'linear'}{', B snapped' if SNAP else ''}, gate {thr9:.3f}", flush=True)
+                if HJ and int(getattr(cfg, 'inf_kmc_rulej_cmpobj', 0)):       # 23 Nov kra44 READOUT: the OTHER objective's route J on the same targets (InfoNCE vs
+                    try:                                                       #   NON-CONTRASTIVE cosine; local lecun_steps A: non-contrastive objectives as good as InfoNCE)
+                        ob2 = 'nce' if OBJ == 'cos' else 'cos'; OP2 = {r: fit(p, obj=ob2) for r, p in rel9.items() if len(p) >= 5}; o2 = {'b': [], 'c': [], 'pure': [], 'mr': [], 'mw': []}
+                        for (d, l, r3, C) in tg:
+                            x = comp(l, r3, OP2)
+                            if x is None: continue
+                            o2['b'].append(x[0] == par.get(l)); o2['c'].append(x[1] == C); (o2['mr'] if x[1] == C else o2['mw']).append(x[2])
+                            if l in pure: o2['pure'].append(x[1] == C)
+                        mu2 = [(lambda x: x[2] if x else 0.0)(comp(l, r3, OP2)) for (d, l, r3, C) in tuJ]
+                        au2 = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in mu2] for a_ in o2['mr']]) if o2['mr'] and mu2 else float('nan')
+                        print(f"  [ROUTE J, OBJECTIVE COMPARISON | visit {vis + 1}] route J's operators refitted with '{ob2}' ({'NON-CONTRASTIVE: 1 - cosine, no negatives' if ob2 == 'cos' else 'InfoNCE'}) on the same "
+                              f"recorded facts; the run uses '{OBJ}' (above) || first hop B {m(o2['b'])} | COMPOSITE C {m(o2['c'])} | PURE FAMILIES {m(o2['pure'])} | AUC right-vs-never-read {au2:.2f}", flush=True)
+                    except Exception as e9: print(f"  [ROUTE J, OBJECTIVE COMPARISON | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
+                NE9 = int(getattr(cfg, 'inf_kmc_rulej_ens', 0))
+                if HJ and NE9 > 1:                                             # 23 Nov kra44 READOUT: ENSEMBLE CONTRADICTION (local, lecun_steps B: false claims contradicted
+                    try:                                                       #   1.00, true 0.00, never-read names 0.02) - route J refitted with other seeds; a claim
+                        OPS9 = [OP] + [{r: fit(p, seed=11 + 100 * k9) for r, p in rel9.items() if len(p) >= 5} for k9 in range(1, NE9)]   #   is CONTRADICTED when the
+                        def ens9(Q):                                           #   seeds agree (>= 0.8) on another answer; unknown subjects should not be
+                            out9 = []
+                            for (d, l, r3, C) in Q:
+                                xs = [comp(l, r3, O_) for O_ in OPS9]; ans = [x[1] for x in xs if x is not None]
+                                if not ans: out9.append(None); continue
+                                top = max(set(ans), key=ans.count); out9.append((top, ans.count(top) / len(OPS9), C))
+                            return out9
+                        rk9 = np.random.RandomState(13); ek = [x for x in ens9(tg) if x is not None]; eu = [x for x in ens9(tuJ) if x is not None]
+                        fc9 = [DN[rk9.randint(len(DN))] for _ in ek]; fc9 = [f if f != C else DN[(DN.index(f) + 1) % len(DN)] for f, (t_, a_, C) in zip(fc9, ek)]
+                        ctr = lambda x, claim: x[1] >= 0.8 and x[0] != claim
+                        akn = [a_ for t_, a_, C in ek]; aun = [a_ for t_, a_, C in eu]
+                        auc9 = np.mean([[float(a_ > b_) + 0.5 * (a_ == b_) for b_ in aun] for a_ in akn]) if akn and aun else float('nan')
+                        print(f"  [ROUTE J, ENSEMBLE CONTRADICTION | visit {vis + 1}] {NE9} seeds of route J; READ families' composites (n {len(ek)}): seeds' majority right {m([t_ == C for t_, a_, C in ek])}, "
+                              f"seeds agree {np.mean(akn) if akn else float('nan'):.2f} || CLAIMS: FALSE claims CONTRADICTED {m([ctr(x, f) for x, f in zip(ek, fc9)])} | TRUE claims contradicted "
+                              f"{m([ctr(x, x[2]) for x in ek])} || NEVER-READ families (n {len(eu)}): seeds agree {np.mean(aun) if aun else float('nan'):.2f}, a claim called contradicted "
+                              f"{m([x[1] >= 0.8 for x in eu])} (should be low: unknown, not contradicted) | AUC agreement read-vs-never-read {auc9:.2f}", flush=True)
+                    except Exception as e9: print(f"  [ROUTE J, ENSEMBLE CONTRADICTION | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
+                if HJ and int(getattr(cfg, 'inf_kmc_rulej_search', 0)):       # 23 Nov kra44 READOUT: LATENT PROGRAM SEARCH (local, latent_search / lecun_steps: 3-4 hops 1.00)
+                    try:                                                       #   for each composite relation with recorded examples, every program of 1-2 OTHER relations
+                        out9 = []                                              #   is run through route J's operators (bridge snapped) and the best on the examples kept;
+                        RL9 = [r for r in OP]                                  #   found program = the learned rule? and its answers on the targets
+                        for r3, (r1g, r2g) in rules.items():
+                            ex = [(a, b) for a, b in rel9.get(r3, []) if a in NI and b in DP][:60]
+                            if len(ex) < 5: continue
+                            hs = torch.tensor([NI[a] for a, b in ex], device=Z.device); ans = [b for a, b in ex]; sh = list(np.random.RandomState(3).permutation(ans))
+                            best = None; bn = 0.0; n9 = 0
+                            with torch.no_grad():
+                                for ra in RL9:
+                                    if ra == r3: continue
+                                    s1 = F.normalize(app(OP[ra], Z[hs]), dim=-1) @ Z[DI].t(); i1 = s1.argmax(-1); v1 = Z[DI][i1]
+                                    for prog, vv in [((ra,), None)] + [((ra, rb), rb) for rb in RL9 if rb != r3]:
+                                        if vv is None: ii = i1
+                                        else: ii = (F.normalize(app(OP[vv], v1), dim=-1) @ Z[DI].t()).argmax(-1)
+                                        o9 = [DN[int(i)] for i in ii.tolist()]; n9 += 1
+                                        acc = np.mean([o == a for o, a in zip(o9, ans)]); bn = max(bn, np.mean([o == a for o, a in zip(o9, sh)]))
+                                        if best is None or acc > best[0]: best = (acc, prog)
+                            tg3 = [(l, C) for (d, l, r3_, C) in tg if r3_ == r3 and l in NI]; rt9 = []
+                            if tg3 and len(best[1]) == 2:
+                                with torch.no_grad():
+                                    v = Z[torch.tensor([NI[l] for l, C in tg3], device=Z.device)]
+                                    for r_ in best[1]: v = Z[DI][(F.normalize(app(OP[r_], v), dim=-1) @ Z[DI].t()).argmax(-1)]
+                                    rt9 = [DN[int(i)] == C for i, (l, C) in zip((F.normalize(v, dim=-1) @ Z[DI].t()).argmax(-1).tolist(), tg3)]
+                            out9.append(f"'{r3}': found {' o '.join(best[1])} (right on {len(ex)} recorded examples {best[0]:.2f}, shuffled null {bn:.2f}, {n9} programs) "
+                                        f"{'= the learned rule' if tuple(best[1]) == (r1g, r2g) else '!= the learned rule ' + r1g + ' o ' + r2g} | on the targets {m(rt9)}")
+                        print(f"  [ROUTE J, LATENT PROGRAM SEARCH | visit {vis + 1}] programs of 1-2 relations searched over route J's operators from each composite's recorded examples (no rule given) || "
+                              + (" || ".join(out9) if out9 else "no composite relation with 5+ recorded examples"), flush=True)
+                    except Exception as e9: print(f"  [ROUTE J, LATENT PROGRAM SEARCH | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
                 if int(getattr(cfg, 'inf_kmc_rulej_write', 0)) and (src.startswith('LEARNED') or int(getattr(cfg, 'inf_kmc_rulecomp_oracle_write', 0))):
                     hasr = {(e['A'], str(e['r']).strip()) for e in fs0}; RW = model.__dict__.setdefault('_ra_written', {}); nw = 0; ok_ = []; why = {'margin': 0, 'same name': 0, 'B has no recorded r2 fact': 0}
                     for e in fs0:
