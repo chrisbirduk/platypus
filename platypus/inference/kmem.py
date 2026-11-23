@@ -1250,6 +1250,12 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         print(f"  [ROUTE J, OBJECTIVE COMPARISON | visit {vis + 1}] route J's operators refitted with '{ob2}' ({'NON-CONTRASTIVE: 1 - cosine, no negatives' if ob2 == 'cos' else 'InfoNCE'}) on the same "
                               f"recorded facts; the run uses '{OBJ}' (above) || first hop B {m(o2['b'])} | COMPOSITE C {m(o2['c'])} | PURE FAMILIES {m(o2['pure'])} | AUC right-vs-never-read {au2:.2f}", flush=True)
                     except Exception as e9: print(f"  [ROUTE J, OBJECTIVE COMPARISON | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
+                try:                                                           # 23 Nov kra46: route J's answer and gate per composite, for the COMBINED readout
+                    RJ9 = model.__dict__.setdefault('_rj_ans', {})
+                    for (d, l, r3, C) in tg:
+                        x = comp(l, r3, OP)
+                        if x is not None: RJ9[(l, r3)] = (x[1], x[2] >= thr9, vis)
+                except Exception: pass
                 NE9 = int(getattr(cfg, 'inf_kmc_rulej_ens', 0))
                 if HJ and NE9 > 1:                                             # 23 Nov kra44 READOUT: ENSEMBLE CONTRADICTION (local, lecun_steps B: false claims contradicted
                     try:                                                       #   1.00, true 0.00, never-read names 0.02) - route J refitted with other seeds; a claim
@@ -1272,6 +1278,19 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                               f"seeds agree {np.mean(akn) if akn else float('nan'):.2f} || CLAIMS: FALSE claims CONTRADICTED {m([ctr(x, f) for x, f in zip(ek, fc9)])} | TRUE claims contradicted "
                               f"{m([ctr(x, x[2]) for x in ek])} || NEVER-READ families (n {len(eu)}): seeds agree {np.mean(aun) if aun else float('nan'):.2f}, a claim called contradicted "
                               f"{m([x[1] >= 0.8 for x in eu])} (should be low: unknown, not contradicted) | AUC agreement read-vs-never-read {auc9:.2f}", flush=True)
+                        if int(getattr(cfg, 'inf_kmc_rulej_ens_gate', 0)):     # 23 Nov kra46: CONTRADICTED = route J CONFIDENT (its margin gate passes) AND the seeds agree
+                            gk = [(comp(l, r3, OP) or (0, 0, -9.0))[2] >= thr9 for (d, l, r3, C) in tg if ens9([(d, l, r3, C)])[0] is not None]   #   (>= 0.8) on
+                            gu = [(comp(l, r3, OP) or (0, 0, -9.0))[2] >= thr9 for (d, l, r3, C) in tuJ if ens9([(d, l, r3, C)])[0] is not None]  #   another answer;
+                            cg = lambda x, claim, g_: g_ and x[1] >= 0.8 and x[0] != claim                                                      #   UNKNOWN = the gate fails
+                            MV9 = W.get('moves') or {}; mvr = [(l, v) for l, v in MV9.items() if v['d2'] in seen and int(v['d']) in seen and l in NI and v['C_old'] != v['C_new']]
+                            r3m = lambda v: ph['grand'] if v['kind'] == 'parent' else ph['skip']
+                            em = [(x, (comp(l, r3m(v), OP) or (0, 0, -9.0))[2] >= thr9, v) for (l, v) in mvr for x in [ens9([(0, l, r3m(v), v['C_new'])])[0]] if x is not None]
+                            print(f"  [ROUTE J, CONTRADICTION WITH THE GATE | visit {vis + 1}] CONTRADICTED = route J's margin gate passes AND the seeds agree (>= 0.8) on another answer; "
+                                  f"UNKNOWN = the gate fails || READ families: FALSE claims CONTRADICTED {m([cg(x, f, g_) for x, f, g_ in zip(ek, fc9, gk)])} | TRUE claims contradicted "
+                                  f"{m([cg(x, x[2], g_) for x, g_ in zip(ek, gk)])} | called UNKNOWN {m([not g_ for g_ in gk])} || NEVER-READ families: called contradicted "
+                                  f"{m([cg(x, 'Zz_none', g_) for x, g_ in zip(eu, gu)])}, called UNKNOWN {m([not g_ for g_ in gu])} (should be high) || MOVED leaves, the move read "
+                                  f"({len(em)}): the OLD composite (stale) CONTRADICTED {m([cg(x, v['C_old'], g_) for x, g_, v in em])} | the NEW composite contradicted "
+                                  f"{m([cg(x, v['C_new'], g_) for x, g_, v in em])}", flush=True)
                     except Exception as e9: print(f"  [ROUTE J, ENSEMBLE CONTRADICTION | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:100]})", flush=True)
                 if HJ and int(getattr(cfg, 'inf_kmc_rulej_search', 0)):       # 23 Nov kra44 READOUT: LATENT PROGRAM SEARCH (local, latent_search / lecun_steps: 3-4 hops 1.00)
                     try:                                                       #   for each composite relation with recorded examples, every program of 1-2 OTHER relations

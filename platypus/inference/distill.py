@@ -1760,6 +1760,21 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                         f"{np.mean([o[2] == o[0][4] for o in g_]) if g_ else float('nan'):.2f}")
             print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] route J's learned rule plans, the trunk answers each hop, the gate (t = {th:.2f}) checks: PLANTED {fs(sp)} || "
                   f"HELD BACK, NEVER WRITTEN {fs(sh)} || PURE FAMILIES, NEVER WRITTEN {fs(su)}", flush=True)
+            RJ9 = model.__dict__.get('_rj_ans') or {}
+            if RJ9:                                                            # 23 Nov kra46 COMBINED: route J's gated composite, else the step-by-step gated answer
+                def cmb(L):
+                    o_ = []
+                    for (x, b, c_, conf, Bt) in L:
+                        rj = RJ9.get((x[3], rw[x[2]]))
+                        if rj and rj[1]: o_.append(('J', rj[0] == x[4]))
+                        elif b is not None and conf >= th: o_.append(('S', c_ == x[4]))
+                        else: o_.append(('-', None))
+                    if not o_: return "0"
+                    an = [v for k, v in o_ if k != '-']; jn = [v for k, v in o_ if k == 'J']; sn = [v for k, v in o_ if k == 'S']
+                    return (f"{len(o_)}: answered {len(an) / len(o_):.2f} (route J {len(jn) / len(o_):.2f}, step by step where route J abstains {len(sn) / len(o_):.2f}), right when answered "
+                            f"{np.mean(an) if an else float('nan'):.2f} (route J {np.mean(jn) if jn else float('nan'):.2f}, step by step {np.mean(sn) if sn else float('nan'):.2f})")
+                print(f"  [RULE WORLD, COMBINED ANSWER | visit {vis + 1}] route J's gated composite (this or the last sleep's), else the step-by-step gated answer: HELD BACK {cmb(sh)} || "
+                      f"PURE FAMILIES {cmb(su)}", flush=True)
         except Exception as e9: print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:120]})", flush=True)
         finally: model.train(was)
 

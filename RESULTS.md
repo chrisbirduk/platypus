@@ -6226,3 +6226,38 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 ### kra44 local check (23 Nov 18:15; 150 steps a domain, distant_10k, seed 4, 50-minute limit): PASS
 - No Traceback through four domains (as kra41 / kra42's checks). The three readouts print at visits 2 and 3: OBJECTIVE COMPARISON (cos: composite 0.04 vs nce 0.03-0.04, AUC 0.93 both); ENSEMBLE CONTRADICTION (seeds agree 0.72 on read families and 0.71 on NEVER-READ ones; false claims contradicted 0.34 vs true 0.30, AUC 0.51 - **with the trunk's fixed name codes, refitting route J with other seeds gives no independent views: the seeds agree by construction**; the local LeCun test learned codes per seed); LATENT PROGRAM SEARCH: 'no composite relation with 5+ recorded examples' (the reader does not record composite facts under the rule's relation - the search needs another example source). Local route J is weak at this size (composite 0.03); the readouts are judged on the GPU.
 - kra45 candidates from this: the ensemble by BAGGING (each seed fitted on a resample of the facts) and the program search on the planted / written composites.
+
+### kra44 VISIT 2 (GPU; ran on SEED 5 - the notebook's SEED overrides the preset - so its real text repeats kra43; 23 Nov 19:18) - THE ROUTE J READOUTS ON THE GPU
+- **NON-CONTRASTIVE route J (1 - cosine, no negatives) = InfoNCE:** first hop 1.00 / 1.00, composite 0.98 / 0.98, pure families 1.00 / 1.00, AUC right-vs-never-read 0.96 / 0.98.
+- **ENSEMBLE CONTRADICTION (4 seeds):** read families: majority right 0.98, seeds agree 1.00; **FALSE claims CONTRADICTED 1.00, TRUE claims 0.02** (local LeCun test: 1.00 / 0.00). Never-read families: seeds agree 0.79, a claim called contradicted 0.41 (AUC agreement read vs never-read 0.80) - as the local check predicted, seeds on the trunk's fixed codes agree too often on unknowns; kra45 bags the facts.
+- **LATENT PROGRAM SEARCH, no rule given:** 'is overseen by' -> found 'is supervised by o is supervised by' from 6 recorded examples (1.00; shuffled null 0.17; 272 programs) = the learned rule, targets 0.97 (70); 'is a grandchild of' -> 'is a child of o is a child of' from 11 examples (1.00; null 0.36) = the learned rule, targets 1.00 (49). (On the GPU the reader does record composites under the rule's relation; locally it did not.)
+- **Three LeCun-direction results confirmed inside the model on the GPU:** non-contrastive latent prediction works as well as contrastive; an ensemble separates false claims from true ones (1.00 vs 0.02); latent search discovers the composition rules from a handful of examples. Open: unknown vs contradicted (0.41 of never-read called contradicted).
+- kra45 moved to SEED 4 (notebook and preset) so it is the recipe's seed partner as well as the next readouts.
+
+### kra45 local check (23 Nov 19:37; 150 steps a domain, distant_10k, seed 5, 50-minute limit): PASS
+- No Traceback through three domains. BAGGED ensemble: the four route J fits now disagree (seeds agree 0.33 vs 0.72 unbagged) - independent views; PROGRAM SEARCH on the planted composites (fallback): 'is overseen by' found 'is supervised by o is supervised by' (0.83 on 6 examples, null 0.00) = the learned rule; RULE WORLD STEP BY STEP prints (no learned rule locally yet: plan 0.00 - judged on the GPU, where rules are learned by visit 2); OBJECTIVE COMPARISON as in kra44. Test-set freezing set to 150 chains (GPU: visit 2). kra45 moved to seed 4 (the recipe's seed partner).
+
+### kra45 VISIT 2 (GPU, SEED 4; 23 Nov 20:03) - STEP BY STEP WITH A LEARNED PLAN GENERALISES
+| RULE WORLD, visit 2 (learned rule plans, trunk answers each hop, gate) | n | plan from a learned rule | hop 1 | C right | GATED answered / right |
+|---|---|---|---|---|---|
+| planted composites | 18 | 1.00 | 0.72 | 0.50 | 0.56 / 0.70 |
+| **HELD BACK, never planted, never written** | 14 | 1.00 | 0.71 | **0.64** | 0.71 / **0.80** |
+| **PURE FAMILIES (no composite in the family)** | 16 | 1.00 | 0.69 | **0.56** | 0.62 / **0.90** |
+- **The combined design works with a LEARNED plan: on composites the model never saw in any form, step by step answers 0.56-0.64 right (0.80-0.90 when the gate answers), where the trunk's own written chain answers 0.00 (kra43 visit 3, held back and pure) to 0.23 (visit 4).** Route J's learned rule supplies the plan; nothing about the composite is planted for these families.
+- PROGRAM SEARCH replicates on the second seed: both rules found from 5 and 8 examples (1.00; nulls 0.20 / 0.12) = the learned rules; targets 1.00 / 1.00. NON-CONTRASTIVE route J = InfoNCE again (composite 1.00 / 1.00; AUC 0.94 / 0.98).
+- **BAGGING over-corrects:** each bootstrap fit misses about a third of the facts, so the fits disagree on READ families too (majority right 0.56, agree 0.49) and nothing is contradicted (false claims 0.02). kra44's unbagged ensemble separates false from true (1.00 vs 0.02) but over-calls unknowns (0.41); route J's own MARGIN GATE passes only 0.04 of never-read families (AUC 0.98). kra46: CONTRADICTED = the unbagged seeds agree on another answer AND the margin gate passes; UNKNOWN = the gate fails.
+- Real-text test set frozen at 225 chains at visit 2.
+
+### kra45 VISIT 3 (GPU, SEED 4; 23 Nov 20:16)
+| REAL-TEXT TEST (frozen set, first 150 of 225) | kra45 visit 3 (seed 4) | kra43 visit 3 (seed 5) |
+|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.70 / 0.37 | 0.72 / 0.44 |
+| bridge right (step 1) | 0.55 | 0.66 |
+| C given the right bridge | 0.23 | 0.16 |
+| C right (baseline 0.07) | **0.13** | 0.11 |
+| gold-true chains: C right | 0.25 (24) | 0.17 (24) |
+| STEP BY STEP: C / gated answered / right | **0.28** / 0.09 / **0.85** | 0.33 / 0.20 / 0.80 |
+| written conclusions gold-labelled true | 1.00 (10), step by step 1.00 (11) | 0.78, 1.00 |
+- **The real-text recipe replicates on the second seed at visit 3:** C 0.13 vs 0.11 (baseline 0.07), step by step 0.28 vs 0.33, gated precision 0.85 vs 0.80, every gold-labelled conclusion true.
+- RULE WORLD STEP BY STEP, visit 3 (larger sets than visit 2): planted C 0.53, HELD BACK 0.37 (19), PURE 0.40 (20); **gated: right when answered 1.00 in all three** (answered 0.40 / 0.16 / 0.40). Visit 2 was 0.64 / 0.56 on 14 / 16; hop 1 fell (0.71 -> 0.53-0.60) as more families entered. The trunk's own chain: held back 0.18, pure 0.00.
+- Route J composite 0.99, never-read families through the gate 0.01 (AUC 1.00); program search finds both rules again (13 / 12 examples, targets 0.99 / 1.00). Bagged ensemble: nothing contradicted (0.02), as at visit 2 - unbagged with the gate in kra46.
