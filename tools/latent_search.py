@@ -132,7 +132,10 @@ def trunk_eval(ppl):
 P(f"TRUNK ARM (3-hop chains taught in the arrow form for {len(TPOOL)} people; never-taught people in cities in no taught chain, {len(HN)}):")
 TE = int(os.environ.get('LS_TEACH', 1500))
 FRM = int(os.environ.get('LS_FRAMES', 0))                                      # 22 Nov STEP FRAMES (kra41's step-1 frame, every step): each premise also
-FR = ([f"{a} is a citizen of {CIT[ci][0]} >" for a, ci in TRP + HEP] + [f"{c} > {REG[r][0]} >" for c, r in CIT] + [f"{r} > {CTY[k][0]}." for r, k in REG]) if FRM else []   #   in the chain's own
+FR = ([f"{a} is a citizen of {CIT[ci][0]} >" for a, ci in TRP + HEP] + [f"{c} > {REG[r][0]} >" for c, r in CIT] + [f"{r} > {CTY[k][0]}." for r, k in REG]) if FRM else []
+if FRM >= 2:                                                                   # 23 Nov MIDDLE-STEP FRAME IN CONTEXT: every person's chain PREFIX up to the
+    FR += [f"{a} is a citizen of {CIT[ci][0]} > {REG[reg(ci)][0]} >" for a, ci in TRP + HEP]   #   middle step ('A is a citizen of B > R >': premises only,
+                                                                               #   the country never shown) - the standalone 'B > R >' did not carry into the chain   #   in the chain's own
 if FRM: P(f"   STEP FRAMES on: {len(FR)} premise rows in the chain's own frames ('A is a citizen of B >', 'B > R >', 'R > K.'), 8 a step")   # context at its step; C never shown
 for st in range(1, TE + 1):
     fr_ = [FR[i].encode('latin-1') for i in rs.randint(0, len(FR), 8)] if FR else []
