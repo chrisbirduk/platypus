@@ -6247,3 +6247,17 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - PROGRAM SEARCH replicates on the second seed: both rules found from 5 and 8 examples (1.00; nulls 0.20 / 0.12) = the learned rules; targets 1.00 / 1.00. NON-CONTRASTIVE route J = InfoNCE again (composite 1.00 / 1.00; AUC 0.94 / 0.98).
 - **BAGGING over-corrects:** each bootstrap fit misses about a third of the facts, so the fits disagree on READ families too (majority right 0.56, agree 0.49) and nothing is contradicted (false claims 0.02). kra44's unbagged ensemble separates false from true (1.00 vs 0.02) but over-calls unknowns (0.41); route J's own MARGIN GATE passes only 0.04 of never-read families (AUC 0.98). kra46: CONTRADICTED = the unbagged seeds agree on another answer AND the margin gate passes; UNKNOWN = the gate fails.
 - Real-text test set frozen at 225 chains at visit 2.
+
+### kra45 VISIT 3 (GPU, SEED 4; 23 Nov 20:16)
+| REAL-TEXT TEST (frozen set, first 150 of 225) | kra45 visit 3 (seed 4) | kra43 visit 3 (seed 5) |
+|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.70 / 0.37 | 0.72 / 0.44 |
+| bridge right (step 1) | 0.55 | 0.66 |
+| C given the right bridge | 0.23 | 0.16 |
+| C right (baseline 0.07) | **0.13** | 0.11 |
+| gold-true chains: C right | 0.25 (24) | 0.17 (24) |
+| STEP BY STEP: C / gated answered / right | **0.28** / 0.09 / **0.85** | 0.33 / 0.20 / 0.80 |
+| written conclusions gold-labelled true | 1.00 (10), step by step 1.00 (11) | 0.78, 1.00 |
+- **The real-text recipe replicates on the second seed at visit 3:** C 0.13 vs 0.11 (baseline 0.07), step by step 0.28 vs 0.33, gated precision 0.85 vs 0.80, every gold-labelled conclusion true.
+- RULE WORLD STEP BY STEP, visit 3 (larger sets than visit 2): planted C 0.53, HELD BACK 0.37 (19), PURE 0.40 (20); **gated: right when answered 1.00 in all three** (answered 0.40 / 0.16 / 0.40). Visit 2 was 0.64 / 0.56 on 14 / 16; hop 1 fell (0.71 -> 0.53-0.60) as more families entered. The trunk's own chain: held back 0.18, pure 0.00.
+- Route J composite 0.99, never-read families through the gate 0.01 (AUC 1.00); program search finds both rules again (13 / 12 examples, targets 0.99 / 1.00). Bagged ensemble: nothing contradicted (0.02), as at visit 2 - unbagged with the gate in kra46.
