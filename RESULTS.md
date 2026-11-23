@@ -6261,3 +6261,12 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **The real-text recipe replicates on the second seed at visit 3:** C 0.13 vs 0.11 (baseline 0.07), step by step 0.28 vs 0.33, gated precision 0.85 vs 0.80, every gold-labelled conclusion true.
 - RULE WORLD STEP BY STEP, visit 3 (larger sets than visit 2): planted C 0.53, HELD BACK 0.37 (19), PURE 0.40 (20); **gated: right when answered 1.00 in all three** (answered 0.40 / 0.16 / 0.40). Visit 2 was 0.64 / 0.56 on 14 / 16; hop 1 fell (0.71 -> 0.53-0.60) as more families entered. The trunk's own chain: held back 0.18, pure 0.00.
 - Route J composite 0.99, never-read families through the gate 0.01 (AUC 1.00); program search finds both rules again (13 / 12 examples, targets 0.99 / 1.00). Bagged ensemble: nothing contradicted (0.02), as at visit 2 - unbagged with the gate in kra46.
+
+### kra45 VISIT 4, rule world (GPU, seed 4; 23 Nov 20:37; the real-text visit-4 readout not yet in the log)
+| RULE WORLD, visit 4 | n | STEP BY STEP: hop 1 / C | gated answered / right | the trunk's own written chain: bridge / C |
+|---|---|---|---|---|
+| planted | 39 | 0.90 / 0.82 | 0.67 / 0.92 | 0.42 / 0.77 |
+| HELD BACK, never written | 24 | 0.67 / **0.58** | 0.33 / **1.00** | 0.65 / 0.53 |
+| PURE FAMILIES, never written | 13 | 0.54 / 0.38 | 0.08 / **1.00** | 0.44 / 0.33 |
+- By visit 4 the trunk's own chain also composes on held-back and pure families (0.53 / 0.33; 0.00-0.18 at visits 2-3); step by step is a little ahead (0.58 / 0.38) and **its gated answers are right 1.00 on never-seen composites at visits 3 and 4.**
+- Route J composite 0.99, gate answers 0.98 right 1.00, never-read through the gate 0.03 (AUC 1.00); program search: both rules again from 18 / 19 examples, targets 0.99 / 1.00. Bagged ensemble: no contradictions (0.01), as before.
