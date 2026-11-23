@@ -134,5 +134,5 @@ def run(variant):
             for pt, pc in zip(tgt.parameters(), ctx.parameters()): pt.mul_(mo).add_(pc.detach(), alpha=1 - mo)
         if st % 2000 == 0 or st == ST: evaluate(st)
 P(f"CAN A JEPA STORE KNOWLEDGE? {len(NAMES)} names, {len(PRE1)} premise sentences (x3), {ST} steps each; the next-byte trunk recalls these premises 1.00 by 2k steps")
-for v in ('word', 'bank', 'slot'): run(v)
+for v in os.environ.get('JS_VARIANTS', 'word,bank,slot').split(','): run(v)
 P(f"DONE ({time.time() - T0:.0f}s)")
