@@ -312,18 +312,16 @@
  "_inf_rule_world_align": "kra34: JEPA step-2 alignment on planted arrow chains (kra33 visit 5: pure families bridge 0.67, root 0.00)",
  "inf_rchain": 1,
  "inf_rchain_frames": 2,
- "inf_rchain_ntr": 800,
+ "inf_rchain_ntr": 400,
  "inf_rchain_test": 400,
- "inf_rchain_rows": 8,
+ "inf_rchain_rows": 16,
  "inf_rchain_crel": "is within",
  "inf_rchain_align": 0.5,
  "_inf_rchain": "kra35: real-text chains with their own composite relation (is within) and JEPA step-2 alignment",
  "inf_rule_world_premarrow": 2,
- "inf_rchain_arrowprem": 4,
+ "inf_rchain_arrowprem": 2,
  "_inf_rule_world_premarrow": "kra36: arrow premise frame (rule world and real text)",
  "inf_rchain_s1frame": 1,
  "_inf_rchain_s1frame": "kra41: kra36 + the STEP-1 FRAME - first real-text premises also taught as 'A is within ' -> 'B >' (one row each). kra36: step 2 fixed by the arrow frame (C given the bridge 0.33-0.50) but the bridge inside the chain 0.26-0.32 vs the premise alone 0.60-0.78; kra38/kra39: paraphrased premise wordings diluted the arrow rows and cost step 2 (0.04 at visit 3)",
- "inf_rchain_paraw": 4,
- "_kra42": "kra42 = kra41 (step-1 frame) + paraphrased real-text premise wordings (inf_rchain_paraw 4: lifted step 1 in kra38/kra39, bridge 0.36-0.42 at visit 4) with the arrow rows scaled x4 (inf_rchain_arrowprem 4) to keep their share (the paraphrases diluted them and cost step 2) + 400 test chains (150 gave about +/-0.04 a visit). Existing options only. + 800 taught real-text chains (inf_rchain_ntr 800, was 400: the rule world needed many taught chains before composing; about 8,500-9,900 chains available by visits 7-8). STEP BY STEP readout (every build from cfb5362).",
- "_kra43": "kra43 = kra42 on SEED 5 (the replication partner)"
+ "_kra43": "kra43 (redefined 23 Nov 07:20, before it ran) = kra41 (step-1 frame, 400 taught chains, no paraphrases) + arrow premise rows x2 + 16 real-text rows a question step (was 8) + 400 test chains. kra42 visit 3: 9,454-13,302 premise rows at 8 a step diluted every premise - test premises asked alone 0.23 (kra41 0.53), bridge 0.11 (kra41 0.40); this keeps kra41's row count and doubles the exposure. Seed 5."
 }
