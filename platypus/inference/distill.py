@@ -1758,6 +1758,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                 for k9 in ('grand', 'skip'):
                     ok9 = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4] and o[0][2] == k9]
                     if len(ok9) >= 4: TH9[k9] = float(np.quantile(ok9, 0.25))
+            if int(getattr(cfg, 'inf_rule_steps_gforce', 0)): th, TH9 = -1e9, {}   # LOCAL CHECKS ONLY: the gate open, so the write / re-derive paths run
             gt = lambda o: o[1] is not None and o[3] >= TH9.get(o[0][2], th)
             def fs(L):
                 if not L: return "0"
