@@ -1282,7 +1282,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             gk = [(comp(l, r3, OP) or (0, 0, -9.0))[2] >= thr9 for (d, l, r3, C) in tg if ens9([(d, l, r3, C)])[0] is not None]   #   (>= 0.8) on
                             gu = [(comp(l, r3, OP) or (0, 0, -9.0))[2] >= thr9 for (d, l, r3, C) in tuJ if ens9([(d, l, r3, C)])[0] is not None]  #   another answer;
                             cg = lambda x, claim, g_: g_ and x[1] >= 0.8 and x[0] != claim                                                      #   UNKNOWN = the gate fails
-                            MV9 = W.get('moves') or {}; mvr = [(l, v) for l, v in MV9.items() if v['d2'] in seen and int(v['d']) in seen and l in NI and v['C_old'] != v['C_new']]
+                            MV9 = W.get('moves') or {}; fdm9 = {a_: int(d_) for (d_, s_, k_, a_, b_) in W['planted'] if k_ in ('parent', 'mgr')}   # kra47: the NEW parent's family read too
+                            mvr = [(l, v) for l, v in MV9.items() if v['d2'] in seen and int(v['d']) in seen and l in NI and v['C_old'] != v['C_new'] and fdm9.get(v['new']) in seen]
                             r3m = lambda v: ph['grand'] if v['kind'] == 'parent' else ph['skip']
                             em = [(x, (comp(l, r3m(v), OP) or (0, 0, -9.0))[2] >= thr9, v) for (l, v) in mvr for x in [ens9([(0, l, r3m(v), v['C_new'])])[0]] if x is not None]
                             print(f"  [ROUTE J, CONTRADICTION WITH THE GATE | visit {vis + 1}] CONTRADICTED = route J's margin gate passes AND the seeds agree (>= 0.8) on another answer; "
@@ -1349,8 +1350,15 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         return (C == m9.get(m9.get(A))) if m9 is not None and A in m9 else None
                     if int(getattr(cfg, 'inf_kmc_rulej_reverify', 0)) and RW:  # 19 Nov kra9 MODEL CHANGE: RE-DERIVE every earlier write with today's predictor (synthetic world:
                         WRm = model.__dict__.get('_rm_written', {}); BR = model.__dict__.setdefault('_ra_bridge', {}); kp9, rw9, rt9 = [], [], []   # check the bridge, retract,
+                        SSW9 = model.__dict__.get('_ss_written') or {}; ctr9 = []
                         for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
                             if r3 not in rules or A not in NI: continue
+                            if SSW9.get((r3, A), (None,))[0] == C:              # 23 Nov kra47: a STEP-BY-STEP write is re-derived by the step-by-step route; here it is
+                                if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) and 'OPS9' in dir():   #   only RETRACTED ON CONTRADICTION: route J confident (gate)
+                                    x = comp(A, r3, OP); xs = [comp(A, r3, O_) for O_ in OPS9]; an_ = [y[1] for y in xs if y is not None]   #   and the seeds agree
+                                    if x is not None and x[2] >= thr9 and an_ and an_.count(x[1]) / len(OPS9) >= 0.8 and x[1] != C:          #   (>= 0.8) on another C
+                                        RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None); SSW9.pop((r3, A), None); ctr9.append(tru9(A, r3, C))
+                                continue
                             x = comp(A, r3, OP); r2 = rules[r3][1]
                             ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr
                             if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); continue
@@ -1360,7 +1368,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         pr9 = lambda L: f"{np.mean([v for v in L if v is not None]):.2f}" if any(v is not None for v in L) else 'n/a'
                         print(f"  [ROUTE J RE-DERIVE | visit {vis + 1}] MODEL CHANGE: every earlier route J write re-derived with today's predictor and gate: KEPT {len(kp9)} (right {pr9(kp9)}) | "
                               f"REWRITTEN {len(rw9)} (old right {pr9([a for a, b in rw9])} -> new right {pr9([b for a, b in rw9])}) | RETRACTED {len(rt9)} (were right {pr9(rt9)}) | "
-                              f"{len(RW)} written composites now", flush=True)
+                              f"{len(RW)} written composites now" + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
                     if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
                         hasp = collections.defaultdict(set)
                         for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])

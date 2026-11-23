@@ -1752,9 +1752,15 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                 return out
             sp, sh, su = steps([x for x in W['planted'] if x[2] in ('grand', 'skip')]), steps(hn), steps(hp)
             ok = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4]]; th = float(np.quantile(ok, 0.25)) if ok else float('inf')
+            TH9 = {}                                                           # 23 Nov kra47: the gate calibrated PER QUESTION TYPE (kra45 visit 5: one threshold from
+            if int(getattr(cfg, 'inf_rule_steps_gtype', 0)):                   #   all planted composites answered none of the never-seen ones)
+                for k9 in ('grand', 'skip'):
+                    ok9 = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4] and o[0][2] == k9]
+                    if len(ok9) >= 4: TH9[k9] = float(np.quantile(ok9, 0.25))
+            gt = lambda o: o[1] is not None and o[3] >= TH9.get(o[0][2], th)
             def fs(L):
                 if not L: return "0"
-                pl_ = [o for o in L if o[1] is not None]; g_ = [o for o in pl_ if o[3] >= th]
+                pl_ = [o for o in L if o[1] is not None]; g_ = [o for o in pl_ if gt(o)]
                 return (f"{len(L)}: plan from a learned rule {len(pl_) / len(L):.2f} | hop 1 right {np.mean([o[1] == o[4] for o in pl_]) if pl_ else float('nan'):.2f}, "
                         f"C right {np.mean([o[2] == o[0][4] for o in pl_]) if pl_ else float('nan'):.2f} | GATED answered {len(g_) / len(L):.2f}, right when answered "
                         f"{np.mean([o[2] == o[0][4] for o in g_]) if g_ else float('nan'):.2f}")
@@ -1767,7 +1773,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                     for (x, b, c_, conf, Bt) in L:
                         rj = RJ9.get((x[3], rw[x[2]]))
                         if rj and rj[1]: o_.append(('J', rj[0] == x[4]))
-                        elif b is not None and conf >= th: o_.append(('S', c_ == x[4]))
+                        elif b is not None and gt((x, b, c_, conf, Bt)): o_.append(('S', c_ == x[4]))
                         else: o_.append(('-', None))
                     if not o_: return "0"
                     an = [v for k, v in o_ if k != '-']; jn = [v for k, v in o_ if k == 'J']; sn = [v for k, v in o_ if k == 'S']
@@ -1775,6 +1781,24 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                             f"{np.mean(an) if an else float('nan'):.2f} (route J {np.mean(jn) if jn else float('nan'):.2f}, step by step {np.mean(sn) if sn else float('nan'):.2f})")
                 print(f"  [RULE WORLD, COMBINED ANSWER | visit {vis + 1}] route J's gated composite (this or the last sleep's), else the step-by-step gated answer: HELD BACK {cmb(sh)} || "
                       f"PURE FAMILIES {cmb(su)}", flush=True)
+            if int(getattr(cfg, 'inf_rule_steps_write', 0)):                  # 23 Nov kra47 MODEL CHANGE: STEP-BY-STEP WRITES - where route J abstained (never written),
+                RW = model.__dict__.setdefault('_ra_written', {}); BR = model.__dict__.setdefault('_ra_bridge', {})   #   a GATED step-by-step answer is written as a
+                WRm = model.__dict__.setdefault('_rm_written', {}); SSW = model.__dict__.setdefault('_ss_written', {})   #   composite (taught like route J's writes); every
+                kp, rt, nw, okn = [], [], 0, []                                 #   earlier step write is RE-DERIVED each sleep (kept only if the gated answer is the same)
+                if SSW:
+                    ix9 = {(rw[x[2]], x[3]): x for x in W['held']}
+                    old = [ix9[k] for k in SSW if k in ix9 and (not seen or int(ix9[k][0]) in seen)]
+                    for o in steps(old):
+                        x = o[0]; k = (rw[x[2]], x[3]); C0 = SSW[k][0]
+                        if gt(o) and o[2] == C0: kp.append(C0 == x[4]); continue
+                        RW.pop((k[0], k[1], C0), None); WRm.pop((k[0], k[1], C0), None); BR.pop((k[0], k[1], C0), None); SSW.pop(k, None); rt.append(C0 == x[4])
+                for o in sh + su:
+                    x = o[0]; k = (rw[x[2]], x[3])
+                    if not gt(o) or k in SSW or not o[2] or o[2] in (x[3], o[1]): continue
+                    RW[(k[0], k[1], o[2])] = vis; BR[(k[0], k[1], o[2])] = o[1]; SSW[k] = (o[2], vis); nw += 1; okn.append(o[2] == x[4])
+                pr9 = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
+                print(f"  [RULE WORLD, STEP-BY-STEP WRITES | visit {vis + 1}] MODEL CHANGE: gated step-by-step answers written where route J abstained: NEW {nw} (right {pr9(okn)}) | "
+                      f"earlier step writes re-derived: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED {len(rt)} (were right {pr9(rt)}) | {len(SSW)} step writes now", flush=True)
         except Exception as e9: print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:120]})", flush=True)
         finally: model.train(was)
 

@@ -796,6 +796,9 @@ class Config:
     inf_rchain_testfix=0            #   23 Nov kra45: the real-text TEST chain set frozen once it is full
     inf_rule_steps=0                #   23 Nov kra45 READOUT: STEP BY STEP on the rule world (learned rule plans, trunk answers each hop, gate)
     inf_kmc_rulej_ens_gate=0        #   23 Nov kra46 READOUT: CONTRADICTED = margin gate passes AND seeds agree on another answer; UNKNOWN = gate fails
+    inf_rule_steps_gtype=0          #   23 Nov kra47: the step-by-step gate calibrated per question type
+    inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
+    inf_kmc_rulej_retract_contra=0  #   23 Nov kra47 MODEL CHANGE: step-by-step writes retracted when route J (gate + seeds) contradicts them
     inf_kmc_rulej_search=0          #   23 Nov kra44 READOUT: LATENT PROGRAM SEARCH over route J's operators from each composite's recorded examples
     inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)
