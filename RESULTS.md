@@ -6081,3 +6081,148 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 **Retraction (open).**
 - Offline: re-confirmation removed 0.53 of wrong confirmed inferences and 0.34 of right ones; on the GPU (kra21) it was not selective (retracted right 0.82 vs kept 0.84) because almost every pair recurs; unlearning itself works (retracted inferences 0.92-1.00 -> 0.00-0.03 in one visit).
 - JEPA surprise on real records with planted errors: AUC 0.44-0.51 for every signal (surprise, normalised, path consistency, confident contradiction) - real records hold about one fact per name, so nothing contradicts a wrong one (route J held-out one-hop 0.01; rules over raw wordings: none above a shuffled null). A dense-world test (redundant facts) and relation merging by JEPA operator agreement are running.
+
+### kra40 VISITS 2-3 (GPU, seed 5; kra36 recipe + ANY VALID CHAIN readout; 22 Nov 20:19)
+- The new readout runs. REAL-TEXT TEST visit 3 (n 150, 148 well-formed): bridge right 0.21, C 0.03, C given the right bridge 0.13 (baseline 0.07); **ANY VALID CHAIN: first link recorded (any recorded container of A, any wording) 0.21, whole chain recorded 0.03** - the same as the strict scores; written conclusions with a gold label 5, all true containment. Taught (77 well-formed): valid 0.96.
+- **The measurement hypothesis is rejected:** wrong bridges are almost never another recorded container of A - they are guesses ('Woodbine Racetrack -> Australia > Tasmania', 'Oland -> Brooklyn > New York City'). The strict score was not undercounting; step 1 genuinely fails inside the chain (premise alone 0.51).
+- Same visit, other runs: kra35 (seed 5, no arrow frame) 0.09 / 0.03 / 0.29; kra36 (seed 4) 0.13 / 0.06 / 0.37. Rule world visit 3: held back 0.00 (14), pure 0.00 (12) - as kra35 at visit 3 (composition appeared from visit 5 on seed 5).
+
+### New readout (22 Nov 20:40): STEP BY STEP on real text (route D for real-text chains; the combined design's test)
+- In [REAL-TEXT CHAINS, THE TRUNK'S OWN], for taught and TEST chains: the trunk answers hop 1 ALONE in its premise wording ('A in '), then hop 2 on its OWN hop-1 answer ('B' lies in ' -> C'); hop 1 right, C right, valid chain (both links recorded), gold-true written conclusions; GATED by the weaker hop's mean byte log-probability, the threshold keeping 75% of the right TAUGHT step-by-step answers: answered, right when answered. Compares the trunk's one-chain answer (bridge 0.21-0.32 inside the chain vs the premise alone 0.51-0.79) with the plan-then-answer-each-step design. Readout only, guarded; in every build from commit below (kra42 onwards if started after it).
+- kra40 VISIT 4 (20:36): REAL-TEXT TEST bridge 0.32, C 0.07 (baseline 0.05), C given the right bridge 0.21 (kra36 visit 4, seed 4: 0.29 / 0.15 / 0.50; kra35 visit 4, seed 5 without frames: 0.34 / 0.04 / 0.10); premises alone 0.74 / 0.71. Rule world: held back 0.23 (13), **pure families 0.11 (18), bridge 0.44**, direct 0.00 (kra35 same visit 0.10). On seed 5 the arrow frame's step-2 gain is smaller so far (0.13-0.21 vs 0.10-0.29 without it at visits 3-4).
+
+### RETRACTION IN A DENSE WORLD (offline, synthetic; 22 Nov 20:53; tools/retract_dense.py; five-level world, 500 people, wrong facts planted in 'lives' (person -> wrong city) and 'city_in' (city -> wrong region), a redundant recorded country for 0 / 50 / 100% of people; route J 4-fold x 2 seeds)
+| signal (AUC; precision at the error count) | 0% redundant | 50% | 100% |
+|---|---|---|---|
+| 'lives' S1 surprise (leave-fold-out) | 0.54 | 0.41 | 0.51 |
+| 'lives' S4 confident contradiction | 0.46 | 0.48 | 0.42 |
+| **'lives' S5 path contradiction, symbolic** (recorded city -> region -> country vs the recorded country) | - | **0.94; 0.60** | **0.95; 0.69** |
+| 'lives' S5 path contradiction, latent (route J composite) | - | 0.84; 0.10 | 0.83; 0.34 |
+| 'city_in' S1 surprise | 0.53 | 0.57 | 0.55 |
+| **'city_in' S5 path contradiction** (share of the city's residents whose recorded country disagrees) | - | **0.82; 0.67** | **0.998; 0.90** |
+- BLAME (which link of a contradicted chain is planted, by surprise): 0.35-0.49 vs chance 0.33 - surprise does not localise.
+- **Retraction works by CONSISTENCY BETWEEN REDUNDANT VIEWS, not by surprise.** Leave-one-out surprise and confident contradiction stay at chance even in a dense world (a held-out fact's subject has nothing else that predicts it). A chain that contradicts an independent record finds wrong facts at AUC 0.94-0.998 - but only where that redundant record exists (0% redundancy: no signal possible). A fact contradicted by MANY independent chains (a wrong city_in, contradicted by its residents) is found and localised at 0.90 precision; a single contradicted chain flags all its links (lives precision 0.60-0.69).
+- For real text (one fact per name, no redundancy): retraction needs redundant views - the same fact reached by two routes (another relation, another document, a composite) - which relation merging and the trunk filling in facts (the combined design) would supply; and aggregation over many contradicting chains to localise the culprit.
+
+### kra41 local check (22 Nov 20:50): PASS
+- No Traceback; the step-1 frame adds one premise row per chain (visit 1 64 vs kra36's 51; visit 2 318 vs 249; visit 3 587 vs 459); ANY VALID CHAIN prints; taught real-text chains at visit 3 as kra36 (format 0.96, C given the bridge 0.92).
+- kra40 VISIT 5 and END (21:05; stopped by the user after visit 5): REAL-TEXT TEST bridge 0.22, **C 0.10 (baseline 0.07), C given the right bridge 0.42**; premises alone 0.70 / 0.69. Visits 3-5 on seed 5: C given the bridge 0.13 / 0.21 / 0.42 (kra35, same seed, no frames: 0.29 / 0.10 / 0.13) - **the arrow frame's step-2 gain replicates on seed 5 by visit 5**; C stays close to baseline because step 1 (bridge 0.21-0.32) is the bottleneck on both seeds. Rule world: held back **0.48 (n 23)**, pure families 0.11 (n 9) (visits 4-5 pooled 0.11, n 27), direct 0.00; route D pure families 0.88 vs direct 0.00. Gate: never-read given a stored name 0.03 (ungated 0.57).
+
+### kra41 VISITS 3-5 (GPU, seed 4; kra36 + the STEP-1 FRAME 'A is within ' -> 'B >'; 22 Nov 21:40) - STEP 1 FIXED
+| REAL-TEXT TEST (n 150) | kra41 visit 3 | kra41 visit 4 | kra36 (same seed) visit 3 / 4 | kra39 (paraphrases) visit 3 / 4 |
+|---|---|---|---|---|
+| **bridge right (step 1)** | **0.40** | **0.66** | 0.13 / 0.29 | 0.18 / 0.42 |
+| C right | 0.04 | **0.16** | 0.06 / 0.15 | 0.02 / 0.09 |
+| C given the right bridge (step 2) | 0.07 | 0.23 | 0.37 / 0.50 | 0.04 / 0.21 |
+| baseline (commonest C) | 0.07 | 0.05 | 0.07 / 0.05 | 0.07 / 0.05 |
+| premises alone, hop 1 / hop 2 | 0.53 / 0.21 | 0.77 / 0.49 | 0.57-0.69 / 0.37-0.62 | 0.57 / 0.37, 0.79 / 0.66 |
+- **The step-1 frame closes the step-1 gap: the bridge inside the chain 0.66 against the premise alone 0.77 (kra36: 0.29 vs 0.69).** The C answer at visit 4 is 0.16, three times the baseline (0.05), the best real-text visit-4 figure so far; ANY VALID CHAIN agrees (149 well-formed).
+- Step 2 is now the weaker step (0.07-0.23 vs kra36's 0.37-0.50), and the second premise asked alone is lower (0.21-0.49). kra42 (step-1 frame + arrow rows x4 + paraphrases + 800 taught chains) adds weight to step 2 - the right combination on paper.
+- Rule world: held back 0.29 / 0.50 (n 14 each), pure families 0.00 (12) / 0.12 (8), direct 0.00-0.07.
+
+### kra42 local check (22 Nov 21:45): PASS
+- No Traceback (four visits within the 50-minute limit); premise rows with the paraphrases and the arrow rows x4 (visit 1: 183 vs kra41's 64); the STEP BY STEP readout prints on the full system (stand-in, visit 3 taught: hop 1 right 0.43, C 0.13, gated answered 0.58, right 0.23) - readout only. Ran with 400 taught chains (preset loaded before the 800 change; a count only).
+
+### THREE HOPS WITH TWICE THE TAUGHT CHAINS (offline, synthetic; 22 Nov 22:05; tools/latent_search.py LS_NT 200)
+- TRUNK, 3-hop arrow chains taught for 199 people (was 100): taught 1.00; **NEVER TAUGHT (68, cities in no taught chain): bridge 0.15-0.22, region 0.00-0.01, country 0.01-0.03** (100 taught: 0.08-0.10 / 0.00-0.01 / 0.01-0.03); never-read names given a well-formed chain 0.80. Premises recalled 1.00.
+- **More chains do not help at three hops; the first hop fails inside the chain (0.15-0.22) although the premise is recalled perfectly** - the real-text step-1 failure in the synthetic world. kra41's step-1 frame fixed exactly that on real text (bridge 0.29 -> 0.66): the next local test teaches the premises in the chain's own frames at every step ('A is a citizen of ' -> 'B >', 'B > ' -> 'R >', 'R > ' -> 'K.').
+- LATENT ARM (route J search) again: 3 hops held-out 1.00, gated 0.63 answered right 1.00, never-read 0.00; 4 hops 1.00.
+
+### RELATION MERGING v2 (offline, real records; 22 Nov 23:00; 32,014 facts, 40 raw wordings; merged to fixed numbers of relations)
+- Most similar pairs by JEPA operator agreement: 'state of' ~ 'region of', 'and in' ~ 'region of', 'since' ~ 'in early', 'until' ~ 'since', 'is' ~ 'are' (0.13-0.17); by Jaccard of (head, tail) pairs: all below 0.005 (the wordings share almost no pairs).
+| merged to | method | gold purity | rules above the null | route J held-out (heads with other facts) |
+|---|---|---|---|---|
+| 40 (raw) | - | 1.000 (trivial) | 0 | 0.010 (0.004) |
+| 20 | **JEPA operator agreement** | **0.826** | 0 | 0.003 (0.005) |
+| 20 | symbolic Jaccard | 0.640 | 0 | 0.004 (0.007) |
+| 10 | **JEPA operator agreement** | **0.667** | 1 (0.125, 3 / 24) | 0.003 (0.007) |
+| 10 | symbolic Jaccard | 0.576 | 4 (all <= 0.034) | 0.004 (0.007) |
+- **JEPA operator agreement merges wordings into purer relations than co-occurrence** (0.83 vs 0.64 at 20; groups such as {in, until, and in, since, in early}, {at, died in, was born in}, {film, rock band, album}) - a label-free latent criterion that finds what the wordings mean.
+- **But merging does not create density**: route J's held-out one-hop stays at 0.003-0.007 and no strong rules appear. The sparsity is in the NAMES (about one fact per name), not in the wordings. Redundancy for retraction and inference on real text has to come from elsewhere: more documents per entity, the trunk filling in facts it read (the combined design), or chains through the containment hierarchy (where kra36-kra41 work).
+
+### THREE STEPS TOWARD LECUN'S DESIGN (offline, synthetic; 23 Nov 00:00; tools/lecun_steps.py; five-level world, codes learned jointly, 3,000 steps)
+- **A. Objectives:** InfoNCE, VICReg, SIGReg, SVReg and plain regression ('none') ALL find 'citizen of' (3 hops) and 'continent' (4 hops) by search, held-out 1.00, never-read names answered 0.00; codes' effective rank 59.8-64 of 64 (no collapse, even unregularised, in this small world). **Non-contrastive objectives answer more under the same gate (0.72-0.73 vs 0.56 for InfoNCE) at the same precision (1.00)** - route J can drop its negatives without loss; the world is too easy to separate the regularisers.
+- **B. Ensemble of 5 seeds:** known held-out people right 1.00, seeds agree 1.00; never-read names: seeds agree 0.34 (uncertain). Unknown vs known AUC 1.000 (one model's margin also 1.000 - this world is too clean to show a gain). **Claims about known people: false claims CONTRADICTED (seeds agree >= 0.8 on another answer) 1.00, true claims 0.00; never-read names called contradicted 0.02.** The ensemble separates "contradicted" (retract) from "unknown" (abstain) - the distinction retraction needs.
+- **C. Hierarchy by cached programs:** 'continent' within a 2-step budget: relations only 0.40 (= null 0.40); **with the cached 'citizen of' program: citizen* o country_in found, 1.00, held-out 1.00** (30 programs searched). A distilled macro (one MLP on the cached program's 100 endpoints): held-out 0.06 - a fitted shortcut is a table; the cached composition generalises.
+
+### THREE HOPS WITH STEP FRAMES (offline, synthetic; 23 Nov 00:05; latent_search LS_FRAMES 1, 100 taught people)
+- Premises also taught in the chain's own frame at every step ('A is a citizen of ' -> 'B >', 'B > ' -> 'R >', 'R > ' -> 'K.'). NEVER-TAUGHT people (79, cities in no taught chain): **bridge 0.86-0.99 (without frames 0.08-0.22)**, region 0.00-0.01, country 0.00-0.04; format 0.42-0.70. Taught 1.00. Never-read names given a chain 0.70.
+- **The step-1 frame fixes step 1 at three hops too (kra41's real-text result replicated in the synthetic world); the MIDDLE step does not follow** - 'B > R >' as a standalone row does not carry into the chain after 'A is a citizen of B >'. Two-hop chains end in the arrow frame 'B > C.' (which works); the middle step of a longer chain needs its own fix.
+
+### THREE HOPS, MIDDLE-STEP FRAME IN CHAIN CONTEXT (offline, synthetic; 23 Nov 06:55; latent_search LS_FRAMES 2)
+- Step frames as before plus each person's chain PREFIX up to the middle step ('A is a citizen of B > R >': premises only, the country never shown). NEVER-TAUGHT people (79): **bridge 0.80 / 0.95 / 1.00, region 0.15 / 0.46 / 0.81, country 0.01 / 0.06 / 0.14** at 300 / 750 / 1,500 steps (standalone frames only: region 0.00-0.01, country 0.00-0.04); format 0.94.
+- **The middle step is fixed by its frame IN CHAIN CONTEXT (region 0.81 vs 0.01); the last step now limits (0.14, still rising).** The pattern: each step must be learned in the context in which the chain reaches it. The last step's in-context frame would show the answer, so it has to come from the standalone arrow frame ('R > K.') - which works for two-hop chains - and more teaching.
+
+### kra42 VISIT 3 (GPU, seed 4; 23 Nov 07:15) - DILUTED
+- Real-text premise rows 9,454 (visit 1) -> 13,302 (visit 2) from 4 paraphrases + arrow rows x4 + 800 taught chains, at 8 rows a step (kra41: 2,247). TEST (n 150) visit 3: **premises asked alone 0.23 / 0.13 (kra41 0.53 / 0.21)**, bridge 0.11 (kra41 0.40), C 0.02 (baseline 0.07). TAUGHT chains fine (C 0.72). STEP BY STEP prints on the GPU: taught hop 1 0.71, C 0.38 (valid 0.38, gold-true 7 / 7); test hop 1 0.23, C 0.05.
+- **Too many premise rows for the rows a step: each test premise is seen about a fifth as often, so the trunk has not learned them by visit 3.** kra43 redefined (it had not run): kra41 + arrow rows x2 + 16 real-text rows a step + 400 test chains, no paraphrases, seed 5.
+- kra42 VISIT 4 (07:41): TEST premises alone 0.41 / 0.22 (rising from 0.23 / 0.13), bridge 0.25, **C 0.02 (baseline 0.05), C given the right bridge 0.03** - step 2 inside the chain collapses with the paraphrases even with arrow rows x4 (as kra38 / kra39). **STEP BY STEP on the same test chains: hop 1 0.41, C 0.10, valid 0.07, gold-true 8 / 8** - asking each hop separately beats the chain 5x when the chain's step 2 fails. Taught: chain C 0.76, step by step C 0.51. Rule world: held back 0.40 (15), pure families 0.12 (8), direct 0.00. Verdict: stopped; paraphrases out of the recipe.
+
+### CAN A JEPA STORE KNOWLEDGE? (offline, synthetic; 23 Nov 08:27; tools/jepa_store.py; five-level world, 885 names, 1,760 premise sentences x3; no next-byte objective, no fitted operators, no labels; 8,000 steps each)
+| JEPA (bidirectional encoder, EMA target, predictor) | step | one-hop recall lives / city_in | chained by its own hops: 2 / 3 hops |
+|---|---|---|---|
+| WORD masks, in-batch negatives (v1 recipe) | 2k / 4k / 6k / 8k | 0.07 / 0.23 / 0.38 / 0.40 ; 0.03 / 0.24 / 0.36 / 0.37 | 0.16 / 0.07 at 8k |
+| NAME masks + 4,096-target memory bank | 8k | 0.01 ; 0.22 | 0.00 / 0.00 |
+| **SLOT: the JEPA predicts a KEYED MEMORY** (each name string owns a slot, an EMA of the target encoder's states of that name; InfoNCE over all slots) | 2k / 4k / 6k / 8k | **0.73 / 0.98 / 0.97 / 1.00 ; 0.43 / 1.00 / 1.00 / 0.98** | **0.36 / 0.98 / 0.95 / 1.00 ; 0.08 / 0.90 / 0.95 / 1.00** |
+- **A JEPA stores knowledge when it predicts into a keyed memory: recall 0.98-1.00 and two- and three-hop answers by chaining its own predictions 1.00 - from raw sentences, without a generative objective.** The next-byte trunk reaches 1.00 recall by 2k steps; the slot JEPA by 4k.
+- The plain JEPA learns slowly (0.40 at 8k; 0.11 at 5k in v1) - unstable, few targets. A memory bank of stale targets makes it worse.
+- Caveat: predicting a slot over the named entities is close to choosing from an entity vocabulary (masked entity prediction); the targets are latent (EMA of the encoder's own states), not bytes or words. The design point: **memory as the store, the JEPA as reader and predictor** - Platypus's keyed memory is that store.
+
+### LLM-JEPA IN THE TRUNK (offline, synthetic; 23 Nov 09:08; latent_search LS_FRAMES 2 + LS_LLMJEPA 0.5: during pretraining the trunk's last-byte state of one wording of a premise predicts, through a small predictor, its state of the other wording)
+- Never-taught 3-hop chains at 300 / 750 / 1,500 steps, WITH vs WITHOUT ($S/latent_search_frames2.log): bridge 0.84 / 1.00 / 1.00 vs 0.80 / 0.95 / 1.00; **region 0.27 / 0.75 / 0.96 vs 0.15 / 0.46 / 0.81**; country 0.01 / 0.03 / 0.06 vs 0.01 / 0.06 / 0.14; never-read names given a well-formed chain 0.90 vs 0.77. Premises recalled 1.00 by 3k steps either way.
+- **Mixed: the latent-prediction loss speeds and raises the middle step (region 0.96 vs 0.81) but not the last step (0.06 vs 0.14), and the trunk invents more chains for unknown names.** One seed; not a recommendation for the GPU build yet.
+- REPLICATION (23 Nov 13:05; two new worlds, LS_SEED 1 and 2, slot JEPA only): world 1 - 2k 0.34 / 0.05, 4k 1.00 / 0.96 (chained 0.94 / 0.81), 6k 0.97 / 1.00 (0.96 / 0.96), **8k 0.99 / 1.00 (chained 2 hops 0.99, 3 hops 0.99)**; world 2 - 2k 0.13 / 0.07, 4k 0.98 / 0.93 (0.89 / 0.71), **6k 1.00 / 1.00 (1.00 / 1.00)**, **8k 1.00 / 1.00 (1.00 / 1.00)**. **Replicates on three worlds**: the keyed-memory JEPA learns every fact and chains three hops by 6-8k steps (slower start than world 0).
+
+### CONTINUAL KEYED-MEMORY JEPA (offline, synthetic; 23 Nov 14:23; tools/jepa_store.py JS_CONT=1 JS_PHASE=2500 JS_REPLAY=0.25; slot JEPA; three domains of people learned one after another, 334 / 334 / 332 'lives' sentences each, the 760 geography sentences in every domain)
+| replay of earlier domains | after domain 0: D0 / D1 / D2 | after domain 1 | after domain 2 |
+|---|---|---|---|
+| none | 1.00 / 0.00 / 0.01 | 0.08 / 1.00 / 0.00 | 0.03 / 0.30 / 1.00 |
+| 25% of the stored sentences | 1.00 / 0.00 / 0.01 | **1.00 / 1.00** / 0.01 | **1.00 / 1.00 / 0.99** |
+- **Without replay the keyed-memory JEPA forgets catastrophically (D0 1.00 -> 0.08 after one more domain), although the memory slots of the earlier people are never touched: the forgetting is in the reader (encoder and predictor), not the store.** 25% replay holds every domain at 1.00 / 1.00 / 0.99 - the same protection Platypus gives its trunk.
+- Recall claim only ('lives' one-hop recall per domain); consolidation not measured here.
+- **DREAM REPLAY (23 Nov 15:36; JS_DREAM=0.25,0.1):** before each new domain the JEPA writes out its OWN recall of the earlier people ('<person> lives in <recalled city>.', one sentence a person: 167 then 334; recalled correctly 1.00) and replays only that - no stored sentences.
+| dream replay | after domain 0 | after domain 1 | after domain 2 |
+|---|---|---|---|
+| 25% | 1.00 / 0.00 / 0.01 | **1.00 / 1.00** / 0.00 | **1.00 / 1.00 / 1.00** |
+| 10% | 1.00 / 0.00 / 0.01 | **1.00 / 1.00** / 0.00 | **0.99 / 1.00 / 1.00** |
+- **Replaying its own recall protects the keyed-memory JEPA as fully as replaying the real sentences (no replay: 0.03 / 0.30 / 1.00), and 10% is enough.** Platypus-style dreams carry over to a JEPA learner.
+- Caveats: the dreams were written in the same wording the test asks in ('{a} lives in {b}.'), which favours them; and dreams are only as good as recall (here 1.00) - a wrong recall would be replayed as a false memory. Running: dreams in the OTHER wording ('{a} has a home in {b}.'), 10% and 5%.
+- **CROSS-WORDING DREAMS (23 Nov 16:45; JS_DREAMW=1):** dreams written as '{a} has a home in {b}.', recall asked as '{a} lives in {b}.'. 10%: after domain 1 1.00 / 1.00, after domain 2 **0.99 / 1.00 / 1.00**; **5%: 0.99 / 1.00, then 0.99 / 1.00 / 1.00**. **The protection does not depend on the test's wording, and 5% dream replay is enough.** **Replicated on world 1 (LS_SEED 1; 23 Nov 18:47): 5% cross-wording dreams, after domain 1 0.99 / 1.00, after domain 2 0.95 / 0.98 / 1.00** (no replay on world 0: 0.03 / 0.30 / 1.00). Running: FALSE MEMORY - 10% of the first dream's recalls replaced by a wrong city; are they kept or corrected?
+- **FALSE MEMORY (23 Nov 17:20; JS_DREAM=0.1 JS_DREAMBAD=0.1):** 21 of domain 0's 167 dreamed recalls replaced by a wrong city in the FIRST dream only; the next dream is the model's own recall again. The 21 planted people afterwards: **FALSE city 1.00, true city 0.00, after domain 1 and still after domain 2** (domain 0 recall 0.87 = everyone else kept). Domains 1 and 2 1.00.
+- **A wrong memory replayed once is learned permanently and then re-dreamed as the model's own: self-replay protects whatever it replays, true or false.** Nothing in this world contradicts a 'lives' fact (no redundant view), so nothing can correct it - the same limit as retraction on real records. A JEPA protected by its own dreams needs Platypus's false-memory checks on what it dreams: verification before replay, and a contradiction trigger where redundant evidence exists (dense world: AUC 0.94-0.998; ensemble: false claims contradicted 1.00).
+
+### kra43 VISIT 3 (GPU, seed 5; kra41 + arrow rows x2 + 16 real-text rows a step, no paraphrases; 23 Nov 17:10) - BEST VISIT 3 ON REAL TEXT
+| REAL-TEXT TEST (n 150) | kra43 visit 3 | kra41 visit 3 (seed 4) | kra41 visit 4 |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | **0.72 / 0.44** | 0.53 / 0.21 | 0.77 / 0.49 |
+| bridge right (step 1) | **0.66** | 0.40 | 0.66 |
+| C given the right bridge (step 2) | 0.16 | 0.07 | 0.23 |
+| C right (baseline commonest C 0.07) | 0.11 | 0.04 | 0.16 |
+| STEP BY STEP: hop 1 / C / valid | **0.72 / 0.33 / 0.33** (gold-labelled written conclusions true 7 / 7) | - | - |
+| STEP BY STEP gated (keeps 75% of right taught) | answered 0.20, **right when answered 0.80** | - | - |
+- Taught chains: bridge 0.96, C 0.95 (C given the bridge 0.99); taught step by step C 0.56, gated right 0.83. Premise rows 3,905 at visit 2 (16 a step), so the dose problem of kra42 is gone: test premises are learned a visit earlier than in kra41.
+- **Step 1 is fixed a visit earlier (bridge 0.66 at visit 3) and step 2 is rising (0.07 -> 0.16 given the bridge, vs kra41 at the same visit).** The chain's C (0.11) is still limited by step 2; **asking each hop separately triples it (0.33) and the gate makes it reliable (0.80 right on the 20% it answers)** - the route J plans / trunk answers each step / gates check design works on real text.
+- Route J (rule world) composite 0.99, null 0.01, never-read families pass the gate 0.03 (AUC 0.98). Rule world trunk chain: held back C 0.00 (14), pure families 0.00 (12). No Traceback.
+
+### kra43 VISIT 4 (GPU, seed 5; 23 Nov 17:47) - BEST REAL-TEXT INFERENCE SO FAR
+| REAL-TEXT TEST (n 150; bridge never in a taught chain) | kra43 visit 4 | kra43 visit 3 | kra41 visit 4 (seed 4) |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.88 / 0.68 | 0.72 / 0.44 | 0.77 / 0.49 |
+| bridge right (step 1) | **0.75** | 0.66 | 0.66 |
+| C given the right bridge (step 2) | **0.31** | 0.16 | 0.23 |
+| **C right** (baseline commonest C 0.05) | **0.24** | 0.11 | 0.16 |
+| C right on GOLD-TRUE chains (28) | **0.46** | 0.17 | - |
+| ANY VALID: written conclusions gold-labelled true | 0.94 (18) | 0.78 (9) | - |
+| **STEP BY STEP: hop 1 / C / valid** | **0.88 / 0.62 / 0.61** (gold-labelled true 20 / 20) | 0.72 / 0.33 / 0.33 | - |
+| STEP BY STEP gated: answered / right when answered | 0.23 / **0.88** | 0.20 / 0.80 | - |
+- **The written chain's answer is 0.24, five times the baseline (0.05) and 1.5x kra41's best; 0.46 on the chains whose links are gold-labelled containment. Asked step by step, the trunk answers 0.62 of never-composed chains right (every gold-labelled conclusion true, 20 / 20); gated, 0.88 right on the 23% it answers.**
+- Both steps now improve together (step 1 0.75, step 2 0.31 given the bridge) - the step-1 frame plus the arrow rows at 16 rows a step is the real-text recipe. Taught chains 0.88. Route J composite 0.98, null 0.00. Rule world: held back C 0.23 (13; visit 3 0.00), planted 0.70.
+
+### kra43 VISIT 5 (GPU, seed 5; 23 Nov 18:12)
+- TEST (n 150): premises alone 0.69 / 0.63 (visit 4 0.88 / 0.68), bridge 0.67 (0.75), C given the bridge 0.23 (0.31), **C 0.16** (0.24; baseline 0.07), gold-true chains C 0.30 (23); ANY VALID written conclusions gold-labelled true 0.92 (13). **STEP BY STEP: hop 1 0.69, C 0.46, valid 0.45, gold-labelled true 0.94 (18); gated answered 0.20, right 0.63.** Taught chains C 0.90 (unchanged).
+- **Not a regression of the model, most likely a change of test set:** the test list is rebuilt every visit from the chains found so far (848 -> 5,988 chains; first 150 by a hash of the head), so each visit's test set takes in chains found in the visit before, whose premises have been taught one visit only. The drop is in the PREMISES asked alone (hop 1 0.88 -> 0.69) while the taught chains hold (0.88 -> 0.90). kra45: freeze the test set at its first full build (and report by premise age) so visits compare like with like.
+- Visits 3-5 together: bridge 0.66-0.75, C 0.11-0.24 (baseline 0.05-0.07), step by step C 0.33-0.62 with 0.94-1.00 of gold-labelled conclusions true.
+
+### kra44 local check (23 Nov 18:15; 150 steps a domain, distant_10k, seed 4, 50-minute limit): PASS
+- No Traceback through four domains (as kra41 / kra42's checks). The three readouts print at visits 2 and 3: OBJECTIVE COMPARISON (cos: composite 0.04 vs nce 0.03-0.04, AUC 0.93 both); ENSEMBLE CONTRADICTION (seeds agree 0.72 on read families and 0.71 on NEVER-READ ones; false claims contradicted 0.34 vs true 0.30, AUC 0.51 - **with the trunk's fixed name codes, refitting route J with other seeds gives no independent views: the seeds agree by construction**; the local LeCun test learned codes per seed); LATENT PROGRAM SEARCH: 'no composite relation with 5+ recorded examples' (the reader does not record composite facts under the rule's relation - the search needs another example source). Local route J is weak at this size (composite 0.03); the readouts are judged on the GPU.
+- kra45 candidates from this: the ensemble by BAGGING (each seed fitted on a resample of the facts) and the program search on the planted / written composites.

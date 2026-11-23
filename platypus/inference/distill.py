@@ -1734,6 +1734,34 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
     print(f"  [RULE WORLD, THE TRUNK'S OWN CHAIN | visit {vis + 1}] greedy answer to 'A <composite relation> ' (store and memory off), parsed 'B > C': PLANTED (taught by reading) "
           f"{f(pl)} || HELD BACK, NEVER PLANTED, NEVER WRITTEN BY ROUTE J {f(rn)} || PURE FAMILIES, NEVER WRITTEN {f(rp)}", flush=True)
     if rp: print("      PURE FAMILIES, e.g. " + " | ".join(x[6] for x in rp[:4]), flush=True)
+    if int(getattr(cfg, 'inf_rule_steps', 0)):                                # 23 Nov kra45 STEP BY STEP ANSWERING on the rule world (the combined design: ROUTE J PLANS,
+        try:                                                                   #   THE TRUNK ANSWERS EACH STEP, THE GATE CHECKS): a composite question 'A r3 ?' is answered
+            from platypus.inference.realchain import _greedy_batch            #   with the relational module's LEARNED rule r3 = r1 o r2 (no rule given), hop 1 'A r1 ' by
+            LR = {str(t[2]).strip(): (str(t[0]).strip(), str(t[1]).strip()) for t in (model.__dict__.get('_rm_rules') or [])}   #   the trunk, hop 2 'B r2 ' on its own
+            was = model.training; model.eval()                                 #   answer B; confidence = the lower hop's mean byte log-probability; gate calibrated on the
+            def steps(L):                                                      #   PLANTED composites (keeps 75% of the right ones). Real text (kra43 visit 4): 0.62 vs the
+                out, Q = [], [x for x in L[:120] if not seen or int(x[0]) in seen]   #   written chain's 0.24
+                for sl_ in sorted({int(S_slot(x[0])) for x in Q}):
+                    q = [x for x in Q if int(S_slot(x[0])) == sl_]; pl_ = [LR.get(rw[x[2]]) for x in q]
+                    qq = [(x, p_) for x, p_ in zip(q, pl_) if p_]; out += [(x, None, None, None, None) for x, p_ in zip(q, pl_) if not p_]
+                    if not qq: continue
+                    g1, c1 = _greedy_batch(model, [f"{x[3]} {p_[0]} ".encode('latin-1', 'replace') for x, p_ in qq], sl_, 30, lp=True)
+                    b1 = [g.split('.')[0].strip() for g in g1]
+                    g2, c2 = _greedy_batch(model, [f"{b} {p_[1]} ".encode('latin-1', 'replace') for b, (x, p_) in zip(b1, qq)], sl_, 30, lp=True)
+                    out += [(x, b, g.split('.')[0].strip(), min(a_, b_), up[x[2]].get(x[3])) for (x, p_), b, g, a_, b_ in zip(qq, b1, g2, c1, c2)]
+                return out
+            sp, sh, su = steps([x for x in W['planted'] if x[2] in ('grand', 'skip')]), steps(hn), steps(hp)
+            ok = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4]]; th = float(np.quantile(ok, 0.25)) if ok else float('inf')
+            def fs(L):
+                if not L: return "0"
+                pl_ = [o for o in L if o[1] is not None]; g_ = [o for o in pl_ if o[3] >= th]
+                return (f"{len(L)}: plan from a learned rule {len(pl_) / len(L):.2f} | hop 1 right {np.mean([o[1] == o[4] for o in pl_]) if pl_ else float('nan'):.2f}, "
+                        f"C right {np.mean([o[2] == o[0][4] for o in pl_]) if pl_ else float('nan'):.2f} | GATED answered {len(g_) / len(L):.2f}, right when answered "
+                        f"{np.mean([o[2] == o[0][4] for o in g_]) if g_ else float('nan'):.2f}")
+            print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] route J's learned rule plans, the trunk answers each hop, the gate (t = {th:.2f}) checks: PLANTED {fs(sp)} || "
+                  f"HELD BACK, NEVER WRITTEN {fs(sh)} || PURE FAMILIES, NEVER WRITTEN {fs(su)}", flush=True)
+        except Exception as e9: print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:120]})", flush=True)
+        finally: model.train(was)
 
 
 def _dw_greedy(model, prompt, sl, n=24):
