@@ -51,6 +51,10 @@ def rchain_build(cfg, vis):
     trn = sorted([c for c in CL if c[2] not in BT], key=lambda c: _hash(c[0], 'rct'))[:int(getattr(cfg, 'inf_rchain_ntr', 400))]
     inch = {x for c in trn for x in (c[0], c[2], c[4])}
     tst = sorted([c for c in CL if c[2] in BT and c[2] not in inch], key=lambda c: _hash(c[0], 'rce'))[:int(getattr(cfg, 'inf_rchain_test', 150))]
+    if int(getattr(cfg, 'inf_rchain_testfix', 0)):                            # 23 Nov kra45: the TEST set FROZEN once it is full (kra43 visit 5: the rebuilt list took in
+        fx = _RC.get('tfix')                                                   #   chains found one visit before, premises taught one visit only - visits did not compare)
+        if fx: tst = [c for c in fx if c[2] not in {x[2] for x in trn}]
+        elif len(tst) >= int(getattr(cfg, 'inf_rchain_test', 150)): _RC['tfix'] = list(tst); print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] TEST set FROZEN at {len(tst)} chains", flush=True)
     _RC.update(vis=vis, train=trn, test=tst, pairs={(a, t) for a, c in HT.items() for (w, t) in c})   # every recorded containment link (any wording)
     gl = [bool((PRD.get((c[0], c[2])) or set()) & {'P131', 'P17', 'P30', 'P361', 'P276', 'P150'}) and bool((PRD.get((c[2], c[4])) or set()) & {'P131', 'P17', 'P30', 'P361', 'P276', 'P150'}) for c in tst]
     print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] {ndv} distant documents read: {len(CL)} containment chains{' (oracle ' + ','.join(sorted(orc)) + ')' if orc else ''} "

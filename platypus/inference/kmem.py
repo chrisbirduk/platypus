@@ -1253,7 +1253,9 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 NE9 = int(getattr(cfg, 'inf_kmc_rulej_ens', 0))
                 if HJ and NE9 > 1:                                             # 23 Nov kra44 READOUT: ENSEMBLE CONTRADICTION (local, lecun_steps B: false claims contradicted
                     try:                                                       #   1.00, true 0.00, never-read names 0.02) - route J refitted with other seeds; a claim
-                        OPS9 = [OP] + [{r: fit(p, seed=11 + 100 * k9) for r, p in rel9.items() if len(p) >= 5} for k9 in range(1, NE9)]   #   is CONTRADICTED when the
+                        BG9 = int(getattr(cfg, 'inf_kmc_rulej_ens_bag', 0))   # 23 Nov kra45: BAGGING - each seed on a bootstrap resample of the recorded
+                        bs9 = lambda p, k9: [p[i] for i in np.random.RandomState(500 + k9).randint(0, len(p), len(p))] if BG9 else p   #   facts (kra44 local:
+                        OPS9 = ([] if BG9 else [OP]) + [{r: fit(bs9(p, k9), seed=11 + 100 * k9) for r, p in rel9.items() if len(p) >= 5} for k9 in range(0 if BG9 else 1, NE9)]   #   seeds alone agree by construction)   #   is CONTRADICTED when the
                         def ens9(Q):                                           #   seeds agree (>= 0.8) on another answer; unknown subjects should not be
                             out9 = []
                             for (d, l, r3, C) in Q:
@@ -1277,6 +1279,9 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         RL9 = [r for r in OP]                                  #   found program = the learned rule? and its answers on the targets
                         for r3, (r1g, r2g) in rules.items():
                             ex = [(a, b) for a, b in rel9.get(r3, []) if a in NI and b in DP][:60]
+                            if len(ex) < 5 and int(getattr(cfg, 'inf_kmc_rulej_search', 0)) >= 2:   # 23 Nov kra45: the composites PLANTED in the domains read (kra44 local:
+                                kq = [k for k, v in ph.items() if v == r3]                         #   the reader records none under the rule's relation)
+                                ex = [(a_, b_) for (d_, s_, k_, a_, b_) in W['planted'] if k_ in kq and int(d_) in seen and a_ in NI and b_ in DP][:60]
                             if len(ex) < 5: continue
                             hs = torch.tensor([NI[a] for a, b in ex], device=Z.device); ans = [b for a, b in ex]; sh = list(np.random.RandomState(3).permutation(ans))
                             best = None; bn = 0.0; n9 = 0
