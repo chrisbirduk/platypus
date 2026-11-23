@@ -67,8 +67,20 @@ def gen(m, p, n=70):
     m.train(); return bytes(b[len(p):]).decode('latin-1', 'replace').strip()
 m = LM(); op = torch.optim.AdamW(m.parameters(), lr=1e-3, weight_decay=0.01); ST = int(os.environ.get('LS_STEPS', 5000))
 sch = torch.optim.lr_scheduler.OneCycleLR(op, max_lr=1e-3, total_steps=ST, pct_start=0.05)
+LJ = float(os.environ.get('LS_LLMJEPA', 0))                                     # 23 Nov LLM-JEPA (Huang, LeCun & Balestriero 2025): during pretraining, the
+if LJ:                                                                         #   trunk's last-byte state of one wording of a premise predicts (through a small
+    PV = [(W[r][0].format(a=a, b=b), W[r][1].format(a=a, b=b)) for r, fs in FACTS.items() for a, b in fs]   # predictor) its state of the other wording
+    jp = nn.Sequential(nn.Linear(DW, 2 * DW), nn.GELU(), nn.Linear(2 * DW, DW)); opj = torch.optim.AdamW(jp.parameters(), lr=1e-3, weight_decay=0.01)   # (stop-gradient
+    P(f"   LLM-JEPA on: weight {LJ}, {len(PV)} premise pairs (two wordings), 8 pairs a step")                                                                          #  target, cosine)
+    def last_state(seqs):
+        X = tens(seqs); Xi = torch.cat([torch.full((len(seqs), 1), PAD), X[:, :-1]], 1); H = m.hid(Xi)
+        return H[torch.arange(len(seqs)), torch.tensor([min(len(q), L) - 1 for q in seqs])]
 for st in range(1, ST + 1):
-    step(m, op, [PRE[i].encode('latin-1') for i in rs.randint(0, len(PRE), 32)]); sch.step()
+    step(m, op, [PRE[i].encode('latin-1') for i in rs.randint(0, len(PRE), 32)])
+    if LJ:
+        pr = [PV[i] for i in rs.randint(0, len(PV), 8)]; sw = rs.rand(8) < 0.5; v1 = [(b if w else a).encode('latin-1') for (a, b), w in zip(pr, sw)]; v2 = [(a if w else b).encode('latin-1') for (a, b), w in zip(pr, sw)]
+        lj = LJ * (1 - F.cosine_similarity(jp(last_state(v1)), last_state(v2).detach(), dim=-1)).mean(); op.zero_grad(); opj.zero_grad(); lj.backward(); op.step(); opj.step()
+    sch.step()
     if st % 1000 == 0:
         ok = np.mean([gen(m, f"{a} lives in ").startswith(CIT[ci][0]) for a, ci in HEP[:40]] + [gen(m, f"{c} lies in ").startswith(REG[r][0]) for c, r in CIT[:40]]
                      + [gen(m, f"{r} is part of ").startswith(CTY[k][0]) for r, k in REG[:40]])
