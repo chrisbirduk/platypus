@@ -6179,4 +6179,11 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 | none | 1.00 / 0.00 / 0.01 | 0.08 / 1.00 / 0.00 | 0.03 / 0.30 / 1.00 |
 | 25% of the stored sentences | 1.00 / 0.00 / 0.01 | **1.00 / 1.00** / 0.01 | **1.00 / 1.00 / 0.99** |
 - **Without replay the keyed-memory JEPA forgets catastrophically (D0 1.00 -> 0.08 after one more domain), although the memory slots of the earlier people are never touched: the forgetting is in the reader (encoder and predictor), not the store.** 25% replay holds every domain at 1.00 / 1.00 / 0.99 - the same protection Platypus gives its trunk.
-- Recall claim only ('lives' one-hop recall per domain); consolidation not measured here. Next: replay from the model's OWN recall of earlier domains (dream replay, no stored sentences), 25% and 10% - running.
+- Recall claim only ('lives' one-hop recall per domain); consolidation not measured here.
+- **DREAM REPLAY (23 Nov 15:36; JS_DREAM=0.25,0.1):** before each new domain the JEPA writes out its OWN recall of the earlier people ('<person> lives in <recalled city>.', one sentence a person: 167 then 334; recalled correctly 1.00) and replays only that - no stored sentences.
+| dream replay | after domain 0 | after domain 1 | after domain 2 |
+|---|---|---|---|
+| 25% | 1.00 / 0.00 / 0.01 | **1.00 / 1.00** / 0.00 | **1.00 / 1.00 / 1.00** |
+| 10% | 1.00 / 0.00 / 0.01 | **1.00 / 1.00** / 0.00 | **0.99 / 1.00 / 1.00** |
+- **Replaying its own recall protects the keyed-memory JEPA as fully as replaying the real sentences (no replay: 0.03 / 0.30 / 1.00), and 10% is enough.** Platypus-style dreams carry over to a JEPA learner.
+- Caveats: the dreams were written in the same wording the test asks in ('{a} lives in {b}.'), which favours them; and dreams are only as good as recall (here 1.00) - a wrong recall would be replayed as a false memory. Running: dreams in the OTHER wording ('{a} has a home in {b}.'), 10% and 5%.

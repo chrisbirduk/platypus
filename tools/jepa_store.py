@@ -158,9 +158,9 @@ if int(os.environ.get('JS_CONT', 0)):                                          #
         def mk(recall):
             cur = (LIV[g] + GEO) * 3; heads = [a for h in range(g) for a, ci in GROUPS[h]]
             if not heads: return cur
-            got = recall('lives', heads); dr = [QW['lives'].format(a=a, b=c) for a, c in zip(heads, got)]
+            got = recall('lives', heads); dw = W['lives'][int(os.environ.get('JS_DREAMW', 0))]; dr = [dw.format(a=a, b=c) for a, c in zip(heads, got)]
             ok = np.mean([c == CIT[ci][0] for c, (a, ci) in zip(got, [x for h in range(g) for x in GROUPS[h]])])
-            P(f"      domain {g}: {len(dr)} dream sentences from the model's own recall of earlier domains (correct {ok:.2f})")
+            P(f"      domain {g}: {len(dr)} dream sentences in the wording '{dw}' from the model's own recall of earlier domains (correct {ok:.2f})")
             return cur + dr * max(1, int(round(rp * len(cur) / len(dr) / (1 - rp))))
         return mk
     arms = [('data', r) for r in ((0.0, RP) if RP else (0.0,))] if not DREAM else [('dream', r) for r in DREAM]
