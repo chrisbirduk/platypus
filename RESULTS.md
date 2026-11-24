@@ -6386,3 +6386,6 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra50 (24 Nov 12:30; pending its local check): THE KEYED-MEMORY JEPA AS A PARALLEL MEMORY
 - platypus/inference/jmem.py: own byte encoder (context + EMA target), predictor, one slot per name; trained each sleep on the premise sentences read so far (rule world + real-text chain premises); readouts by its own hops vs the trunk's. Smoke on a tiny rule world (3 domains, 96 premises; 64-dim, 1 layer): after 300 steps one hop 0.57, two hops 0.16-0.22; **after 600 steps one hop 1.00, two hops 1.00 on planted AND held-back composites, gated answered 0.75-0.81, right 1.00**; never-read margin AUC 0.70.
+
+### kra50 local check (24 Nov 13:12; seed 5; inf_jmem_steps 400 locally): released
+- First run: 'JEPA MEMORY unavailable (element 0 of tensors does not require grad)' - the sleep's readouts run without gradients; fixed (training under torch.enable_grad), pushed, re-run. Now visit 1 prints: 222 premise sentences read, 259 slots, 400 steps (loss 4.45), one hop 0.05, two hops 0.00 - too few steps on the CPU to learn (the tiny-world smoke needed 600 steps for 1.00); 118 s per sleep on 2 CPUs (GPU: 1,500 steps a sleep, expected well under a minute). No Traceback. The real-text line prints once the TEST set exists (visit 2+).
