@@ -6463,3 +6463,4 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - REAL TEXT v3: JEPA memory C 0.49, gated answered 0.31 right 0.96 vs the trunk's step by step C 0.48, gated answered 0.29 right 0.67.
 - **MOVED LEAVES (movek 2 + recency audit): reader recorded the NEW premise 0.33 at v2 and v3 (kra51 / kra52: 0.00-0.03)**; route J's composite still OLD (n 3-6, small) - re-derivation should follow as the new premise holds.
 - Step writes: 5 (1.00), 5 (0.80).
+- kra52 visit 9 (22:12): ROUTE J contradiction 0.64, RE-DERIVE kept 419 (0.86), RETRACTED 38 (were right 0.89), held 268 in all; one right step write retracted on contradiction (the first). Step writes 47 new (0.96), 9 right ones retracted on re-derivation. JEPA MEMORY one hop **0.84** (its best), held-back two hops C 0.62 (gated 0.55 @ 0.82); REAL TEXT C 0.67 (gated 0.72 @ 0.80) vs the trunk's step by step C 0.73 (gated 0.44 @ 0.76). Prequential bits, domains read: 1.774 (v8 1.820).
