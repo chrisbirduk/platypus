@@ -143,7 +143,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
     RJ9 = model.__dict__.get('_rj_ans') or {}; SSW = model.__dict__.get('_ss_written') or {}
     BADJ = model.__dict__.setdefault('_jw_bad_conf', [])
     if BADJ and int(getattr(cfg, 'inf_rule_steps_selfcal', 0)): th = max(th, max(BADJ) + 1e-3)
-    H = [x for x in W.get('held', []) if x[2] in ('grand', 'skip') and (not seen or int(x[0]) in seen)][:400]
+    H = [x for x in W.get('held', []) if x[2] in ('grand', 'skip') and (not seen or int(x[0]) in seen)][:int(getattr(cfg, 'inf_jmem_heldmax', 400))]
     ans = {}
     for k in ('grand', 'skip'):
         Lk = [x for x in H if x[2] == k]
@@ -151,6 +151,12 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         r_ = 'parent' if k == 'grand' else 'mgr'; b1, g1 = J.hop([x[3] for x in Lk], rw[r_]); c2, g2 = J.hop(b1, rw[r_])
         for x, b, c, a1, a2 in zip(Lk, b1, c2, g1, g2): ans[(rw[k], x[3])] = (c, b, min(a1, a2), x)
     pr9 = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
+    thp = float(getattr(J, 'thq', th)) if np.isfinite(getattr(J, 'thq', float('inf'))) else th
+    model.__dict__['_jm_ans'] = {key: (c, bool(c) and g >= thp and c not in (x[3], b)) for key, (c, b, g, x) in ans.items()}   # kra54: for route J's protection
+    SSL = model.__dict__.get('_ss_last') or {}
+    sa = [(c == SSL[key], c == x[4]) for key, (c, b, g, x) in ans.items() if key in SSL and g >= th and c]
+    print(f"  [JEPA MEMORY vs STEP BY STEP | visit {vis + 1}] its gated answers where the trunk's step-by-step (ungated) also answered: {len(sa)} | AGREE {pr9([a for a, r in sa])} | "
+          f"right when they agree {pr9([r for a, r in sa if a])} | right when they disagree (JEPA) {pr9([r for a, r in sa if not a])}", flush=True)
     ag, dj, dr, cb = [], [], [], []
     for key, (c, b, g, x) in ans.items():
         jg = g >= th and bool(c) and c not in (x[3], b); rj = RJ9.get((x[3], rw[x[2]])); rjg = bool(rj and rj[1]); sw = SSW.get(key)
@@ -173,17 +179,22 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         drop = None
         if rj and rj[1] and rj[0] != C0: drop = 'contra'; BADJ.append(cf0)
         elif a is None or not (a[2] >= th and a[0] == C0): drop = 'rederive'
+        if drop == 'rederive' and int(getattr(cfg, 'inf_jmem_write_hyst', 0)):   # kra54 HYSTERESIS: dropped only after failing at two successive sleeps (kra53: right writes churned)
+            PJ = model.__dict__.setdefault('_jw_pend', {})
+            if PJ.get(key) != vis - 1: PJ[key] = vis; hj = model.__dict__.setdefault('_jw_held', [0]); hj[0] += 1; drop = None
+            else: PJ.pop(key, None)
         if drop is None: kp.append(C0 == (a[3][4] if a else None)); continue
         RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None)
         tru = a[3][4] if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
     for key, (c, b, g, x) in ans.items():
         if key in JW or key in SSW or g < th or not c or c in (x[3], b): continue
+        if int(getattr(cfg, 'inf_jmem_write_agree', 0)) and SSL.get(key) != c: continue   # kra54: written only when the trunk's step-by-step answer is the same (two routes)
         rj = RJ9.get((x[3], rw[x[2]]))
         if rj and rj[1]: continue                                              # route J answers this one itself
         RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); nw += 1; okn.append(c == x[4])
     print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)}) | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
-          f"{len(JW)} JEPA writes now", flush=True)
+          f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else ""), flush=True)
 
 
 def jmem_sleep(model, cfg, vis, W, seen, rw):
@@ -237,7 +248,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             return res
         pl = two([x for x in W.get('planted', []) if x[2] in ('grand', 'skip')]); hb = two([x for x in W.get('held', []) if x[3] not in pure]); hu = two([x for x in W.get('held', []) if x[3] in pure])
         okm = [g for (b, c, g) in pl if c]; th = float(np.quantile(okm, 0.25)) if okm else float('inf')
-        thw = _pcal([(g, c) for (b, c, g) in pl], float(getattr(cfg, 'inf_jmem_wprec', 0.9)), 10)   # kra53: the WRITE / ANSWER gate, precision-targeted on the planted composites
+        J.thq = th; thw = _pcal([(g, c) for (b, c, g) in pl], float(getattr(cfg, 'inf_jmem_wprec', 0.9)), 10)   # kra53: the WRITE / ANSWER gate, precision-targeted on the planted composites
         nr = [(d, s_, k, a, b) for (d, s_, k, a, b) in W.get('planted', []) if k in ('parent', 'mgr') and seen and int(d) not in seen][:200]
         mn = []
         for k in ('parent', 'mgr'):

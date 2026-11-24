@@ -1371,6 +1371,11 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr
                             PD9 = model.__dict__.setdefault('_rj_pend', {})
                             if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); PD9.pop((r3, A, C), None); continue
+                            if int(getattr(cfg, 'inf_kmc_rulej_jprotect', 0)):  # 24 Nov kra54: a write route J no longer re-derives is KEPT while the JEPA memory (its last sleep)
+                                ja9 = (model.__dict__.get('_jm_ans') or {}).get((r3, A))   #   still answers the same C above its gate (kra53 cross-check: when the two
+                                if ja9 and ja9[0] == C and ja9[1]:                         #   agree, right 1.00; kra52 visits 7-9: 23-40 right writes retracted by drift)
+                                    kp9.append(tru9(A, r3, C)); PD9.pop((r3, A, C), None); pt9 = model.__dict__.setdefault('_rj_prot', {}); pt9[vis] = pt9.get(vis, 0) + 1
+                                    model.__dict__.setdefault('_rj_prot_ok', {}).setdefault(vis, []).append(tru9(A, r3, C)); continue
                             if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)):    # 24 Nov kra51 HYSTERESIS: a write is retracted / rewritten only when it fails
                                 nx9 = x[1] if ok9 else None                            #   re-derivation at TWO successive sleeps the same way (kra47-49 visit 5: 6-15
                                 pd9 = PD9.get((r3, A, C))                              #   right writes retracted)
@@ -1383,7 +1388,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         pr9 = lambda L: f"{np.mean([v for v in L if v is not None]):.2f}" if any(v is not None for v in L) else 'n/a'
                         print(f"  [ROUTE J RE-DERIVE | visit {vis + 1}] MODEL CHANGE: every earlier route J write re-derived with today's predictor and gate: KEPT {len(kp9)} (right {pr9(kp9)}) | "
                               f"REWRITTEN {len(rw9)} (old right {pr9([a for a, b in rw9])} -> new right {pr9([b for a, b in rw9])}) | RETRACTED {len(rt9)} (were right {pr9(rt9)}) | "
-                              f"{len(RW)} written composites now" + (f" | HELD by hysteresis (first failure) {model.__dict__.get('_rj_held', [0])[0]} in all" if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)) else "") + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
+                              f"{len(RW)} written composites now" + (f" | PROTECTED by the JEPA memory's agreement {(model.__dict__.get('_rj_prot') or {}).get(vis, 0)} (right {pr9((model.__dict__.get('_rj_prot_ok') or {}).get(vis, []))})" if int(getattr(cfg, 'inf_kmc_rulej_jprotect', 0)) else "") + (f" | HELD by hysteresis (first failure) {model.__dict__.get('_rj_held', [0])[0]} in all" if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)) else "") + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
                     if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
                         hasp = collections.defaultdict(set)
                         for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])

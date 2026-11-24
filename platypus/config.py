@@ -816,6 +816,10 @@ class Config:
     inf_jmem_write=0                #   24 Nov kra53 MODEL CHANGE: its gated answers WRITTEN where route J and step by step abstain; re-derived each sleep; retracted on contradiction
     inf_jmem_wprec=0.9              #   24 Nov kra53: its write / answer gate = the lowest margin at which its planted-composite answers are >= this precise (10+); else closed
     inf_jmem_dprec=0.95             #   24 Nov kra53: its dream gate = the lowest margin at which its recalls of read premises are >= this precise (20+); else the read text
+    inf_jmem_write_agree=0          #   24 Nov kra54: a JEPA write only where the trunk's (ungated) step-by-step answer is the same (kra53 GPU visit 4: JEPA writes alone 0.69 right)
+    inf_jmem_write_hyst=0           #   24 Nov kra54: a JEPA write dropped on re-derivation only after failing at two successive sleeps
+    inf_jmem_heldmax=400            #   24 Nov kra54: held-back composites the JEPA memory answers each sleep (cross-check, writes, route J protection)
+    inf_kmc_rulej_jprotect=0        #   24 Nov kra54 MODEL CHANGE: a route J write that fails re-derivation is KEPT while the JEPA memory still answers the same (kra52: drift retracted right writes)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

@@ -1752,6 +1752,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                     out += [(x, b, g.split('.')[0].strip(), min(a_, b_), up[x[2]].get(x[3])) for (x, p_), b, g, a_, b_ in zip(qq, b1, g2, c1, c2)]
                 return out
             sp, sh, su = steps([x for x in W['planted'] if x[2] in ('grand', 'skip')]), steps(hn), steps(hp)
+            model.__dict__['_ss_last'] = {(rw[o[0][2]], o[0][3]): o[2] for o in sh + su if o[1] is not None and o[2]}   # 24 Nov kra54: the step-by-step answers (ungated) for the JEPA memory's agreement gate
             ok = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4]]; th = float(np.quantile(ok, 0.25)) if ok else float('inf')
             TH9 = {}                                                           # 23 Nov kra47: the gate calibrated PER QUESTION TYPE (kra45 visit 5: one threshold from
             if int(getattr(cfg, 'inf_rule_steps_gtype', 0)):                   #   all planted composites answered none of the never-seen ones)
