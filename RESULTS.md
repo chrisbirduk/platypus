@@ -6410,3 +6410,9 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra51 local check (24 Nov 15:31; seed 4): released
 - No Traceback through two domains; ROUTE J RE-DERIVE prints with 'HELD by hysteresis (first failure) 0' (no failures locally - the path is judged on the GPU at visits 4-5); JEPA MEMORY trains with the warm-up (visit 1 loss 3.89 vs 4.45 without; still no recall at 400 CPU steps a sleep).
+
+### kra49 VISITS 6-8 (GPU, seed 4; 24 Nov 16:15)
+- **Step-by-step writes stay precise as coverage returns: visit 6 NEW 19 (1.00), visit 7 NEW 9 (0.89), visit 8 NEW 73 (0.97); kept ones 0.98-1.00; 121 step-written composites; visit 8: 3 RETRACTED ON CONTRADICTION, all wrong.** Rule-world step by step visit 8: planted gated 0.67 / 0.99, held back C 0.80, gated 0.58 answered / 0.95 right.
+- Real-text self-writes (REM gate): 8 / 4 / 2 new, all as recorded and valid (1.00); 33 taught.
+- **Route J's instability grows:** RE-DERIVE retracted 8 (v6), **100 (v7) and 82 (v8) writes that were 0.91-0.92 right**; contradiction with the gate: false 0.95 (v6) -> 0.70 (v7) -> 0.76 (v8), never-read unknown 0.89-0.94. kra51's anchored codes and two-failure hysteresis target exactly this.
+- Real text (frozen test): visit 6 bridge 0.92, C 0.38, step by step 0.77; **visit 7 bridge 0.93, C 0.53, gold-true chains 0.62**, step by step 0.73.
