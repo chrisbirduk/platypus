@@ -1357,7 +1357,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                                 if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) and 'OPS9' in dir():   #   only RETRACTED ON CONTRADICTION: route J confident (gate)
                                     x = comp(A, r3, OP); xs = [comp(A, r3, O_) for O_ in OPS9]; an_ = [y[1] for y in xs if y is not None]   #   and the seeds agree
                                     if x is not None and x[2] >= thr9 and an_ and an_.count(x[1]) / len(OPS9) >= 0.8 and x[1] != C:          #   (>= 0.8) on another C
-                                        RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None); SSW9.pop((r3, A), None); ctr9.append(tru9(A, r3, C))
+                                        cf9 = SSW9.get((r3, A), (None, None, None)); model.__dict__.setdefault('_ss_bad_conf', []).append(cf9[2]) if len(cf9) > 2 and cf9[2] is not None else None; RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None); SSW9.pop((r3, A), None); ctr9.append(tru9(A, r3, C))
                                 continue
                             x = comp(A, r3, OP); r2 = rules[r3][1]
                             ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr

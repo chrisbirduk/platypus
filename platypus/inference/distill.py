@@ -1759,6 +1759,9 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                     ok9 = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4] and o[0][2] == k9]
                     if len(ok9) >= 4: TH9[k9] = float(np.quantile(ok9, 0.25))
             if int(getattr(cfg, 'inf_rule_steps_gforce', 0)): th, TH9 = -1e9, {}   # LOCAL CHECKS ONLY: the gate open, so the write / re-derive paths run
+            BADC = model.__dict__.get('_ss_bad_conf') or []                   # 24 Nov kra49 SELF-CALIBRATED GATE: the threshold rises above the confidence of every
+            if int(getattr(cfg, 'inf_rule_steps_selfcal', 0)) and BADC:        #   step write later RETRACTED ON CONTRADICTION (kra47 visit 5: new step writes
+                th = max(th, max(BADC) + 1e-3); TH9 = {k_: max(v_, th) for k_, v_ in TH9.items()}   #   0.40 right; the 3 contradicted ones were all wrong)
             gt = lambda o: o[1] is not None and o[3] >= TH9.get(o[0][2], th)
             def fs(L):
                 if not L: return "0"
@@ -1797,7 +1800,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                 for o in sh + su:
                     x = o[0]; k = (rw[x[2]], x[3])
                     if not gt(o) or k in SSW or not o[2] or o[2] in (x[3], o[1]): continue
-                    RW[(k[0], k[1], o[2])] = vis; BR[(k[0], k[1], o[2])] = o[1]; SSW[k] = (o[2], vis); nw += 1; okn.append(o[2] == x[4])
+                    RW[(k[0], k[1], o[2])] = vis; BR[(k[0], k[1], o[2])] = o[1]; SSW[k] = (o[2], vis, float(o[3])); nw += 1; okn.append(o[2] == x[4])
                 pr9 = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
                 print(f"  [RULE WORLD, STEP-BY-STEP WRITES | visit {vis + 1}] MODEL CHANGE: gated step-by-step answers written where route J abstained: NEW {nw} (right {pr9(okn)}) | "
                       f"earlier step writes re-derived: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED {len(rt)} (were right {pr9(rt)}) | {len(SSW)} step writes now", flush=True)
