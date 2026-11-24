@@ -6395,3 +6395,9 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - Contradiction with the gate: false 0.91 / true 0.00 / never-read unknown 0.94. Rule world step by step: held back C 0.57 (gated 0.71 answered, 0.70 right).
 - Real-text self-writes with the REM gate (both links recorded): NEW 0 at visit 2 (kra48 wrote 79 at 0.05 as recorded) - the verification blocks the early, loose writes.
 - kra50 local check complete (13:49): no Traceback; JEPA MEMORY visit 2: 497 premise sentences, 581 slots, 800 steps in all, loss 5.08, one hop 0.02 - not learning yet at 400 CPU steps a sleep while the slot count doubles (the synthetic worlds needed 4,000-6,000 steps; the GPU run gives 1,500 a sleep). 132 s a sleep on 2 CPUs. Watch on the GPU whether the loss falls by visit 3-4; if not, kra51 trains it longer (or with a learning-rate warm-up, as tools/jepa_store.py's OneCycle).
+
+### kra49 VISIT 3 (GPU, seed 4; 24 Nov 13:57)
+- Step-by-step writes: NEW 2 (right 1.00), the 16 kept re-derived right 1.00, none retracted - after visit 2's 4 contradicted writes the gate stands at t = -0.03 (visit 2: -0.08); the gate line did not name the self-calibration (the label edit had not applied; fixed for later builds). Planted gated 0.43 answered / 1.00 right; held back 0.11 / 1.00; pure none answered.
+- **REAL-TEXT SELF-WRITES WITH THE REM GATE: NEW 14, as recorded 1.00, valid 1.00** (kra48 visit 3 unverified: 41 at 0.51 / 0.49).
+- Contradiction with the gate: false 0.91 / true 0.00 / **never-read unknown 0.99**. Route J re-derive KEPT 149 (0.99), RETRACTED 3 (2 right).
+- Real text (frozen test) visit 3: bridge 0.61, C 0.09 (kra47 visit 3: 0.63 / 0.11).

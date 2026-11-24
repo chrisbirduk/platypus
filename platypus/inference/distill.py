@@ -1769,7 +1769,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                 return (f"{len(L)}: plan from a learned rule {len(pl_) / len(L):.2f} | hop 1 right {np.mean([o[1] == o[4] for o in pl_]) if pl_ else float('nan'):.2f}, "
                         f"C right {np.mean([o[2] == o[0][4] for o in pl_]) if pl_ else float('nan'):.2f} | GATED answered {len(g_) / len(L):.2f}, right when answered "
                         f"{np.mean([o[2] == o[0][4] for o in g_]) if g_ else float('nan'):.2f}")
-            print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] route J's learned rule plans, the trunk answers each hop, the gate (t = {th:.2f}) checks: PLANTED {fs(sp)} || "
+            print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] route J's learned rule plans, the trunk answers each hop, the gate (t = {th:.2f}{', self-calibrated on ' + str(len(BADC)) + ' contradicted writes' if BADC and int(getattr(cfg, 'inf_rule_steps_selfcal', 0)) else ''}) checks: PLANTED {fs(sp)} || "
                   f"HELD BACK, NEVER WRITTEN {fs(sh)} || PURE FAMILIES, NEVER WRITTEN {fs(su)}", flush=True)
             RJ9 = model.__dict__.get('_rj_ans') or {}
             if RJ9:                                                            # 23 Nov kra46 COMBINED: route J's gated composite, else the step-by-step gated answer
