@@ -810,6 +810,7 @@ class Config:
     inf_kmc_rulej_zema=0.0          #   24 Nov kra51: route J's name codes smoothed with their codes from earlier sleeps (weight of the old code)
     inf_kmc_rulej_reverify_hyst=0   #   24 Nov kra51: a route J write retracted / rewritten only after failing re-derivation at two successive sleeps
     inf_jmem_dream=0                #   24 Nov kra52: the JEPA memory replays earlier domains' premises from its own recall (dream replay)
+    inf_jmem_dream_min=0.9          #   24 Nov kra52: dream replay only once the memory's one-hop recall on what it read is at least this (else the read text)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

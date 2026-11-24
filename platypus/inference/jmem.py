@@ -134,7 +134,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         # what has been read: rule-world premises of the seen domains, and the recorded premises of the real-text chains
         rwp = [(d, s_, k, a, b) for (d, s_, k, a, b) in W.get('planted', []) if k in ('parent', 'mgr') and (not seen or int(d) in seen)]
         nd9 = ''
-        if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0:             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
+        if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
             cur9 = int(list((model.__dict__.get('_t2s') or {0: 0}).keys())[-1])  #   OWN recall, not the read text (jmem_sim: D0 0.98 / D1 0.99 / D2 1.00 after 3 sleeps)
             old9 = [x for x in rwp if int(x[0]) != cur9]; new9 = [x for x in rwp if int(x[0]) == cur9]; dr9 = []; ok9 = []
             for k in ('parent', 'mgr'):
@@ -159,6 +159,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         for k in ('parent', 'mgr'):
             L = [x for x in s1 if x[2] == k]
             if L: o, _ = J.hop([x[3] for x in L], rw[k]); r1 += [y == x[4] for y, x in zip(o, L)]
+        J.last_r1 = float(np.mean(r1)) if r1 else 0.0                          # kra52: the memory's own one-hop recall on what it read (a self-test on stored text)
         pure = W.get('pure') or set()
         def two(L):
             res = []
