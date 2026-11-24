@@ -6339,3 +6339,9 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 | LS_FRAMES 2 (middle-step frame) | 0.94 / 1.00 / 0.81 / **0.14** | 0.89 / 0.97 / 0.78 / **0.12** |
 | LS_FRAMES 3 (+ last-step frame) | 0.91 / 0.97 / 0.75 / **0.23** | 0.79 / 0.92 / 0.59 / **0.13** |
 - **Inconsistent: the last step rises on seed 0 (0.14 -> 0.23; country given the right region 0.17 -> 0.31) but not on seed 1 (0.12 -> 0.13, and the region falls 0.78 -> 0.59).** Teaching each city's own two-premise chain does not reliably carry into the person's chain; the extra rows also dilute the middle step on seed 1. Not a kra48 recipe as it stands. The real-text answer remains STEP BY STEP (each hop asked separately), which has no last-step problem by construction.
+
+### kra47 VISIT 2 (GPU, seed 4; 24 Nov 07:51) - THE BEHAVIOUR CHANGES WORK
+- **STEP-BY-STEP WRITES: 19 composites written where route J abstained, 0.95 right.** Rule-world step by step at visit 2 (per-type gate): planted C 0.50 (gated 0.39 answered, 1.00 right), held back 0.57 (gated 0.57 / 0.88), pure 0.69 (gated 0.69 / 1.00).
+- **RETRACTION ON CONTRADICTION: 1 step write retracted - and it was wrong (right 0.00).** Route J re-derive kept its own 84 writes (0.99 right); 102 written composites now.
+- CONTRADICTION WITH THE GATE (seed 4 now): false claims contradicted 0.89, true 0.00, never-read called UNKNOWN 0.95 (contradicted 0.05). Moved leaves with the new family read: none yet at visit 2.
+- No Traceback. The trunk's own chain at visit 2: held back 0.18, pure 0.00 (as kra45) - the step writes are taught from visit 3.
