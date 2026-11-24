@@ -65,18 +65,19 @@ class JMem:
         for (t, sp) in items:
             for (_, _, k) in sp: s._slot(k)
         s.ctx.train(); s.pred.train(); ls = []
-        for _ in range(steps):
-            b = [items[i] for i in s.rs.randint(0, len(items), bs)]; Xs, sp, ix, full = [], [], [], []
-            for t, spans in b:
-                a_, b_, k = spans[s.rs.randint(len(spans))]
-                Xs.append((t[:a_] + '\x01' * (b_ - a_) + t[b_:]).encode('latin-1', 'replace')); sp.append((a_, b_)); ix.append(s.ki[k]); full.append(t.encode('latin-1', 'replace'))
-            with torch.no_grad(): z = F.normalize(_span_mean(s.tgt(_tens(full, s.dev)), sp), dim=-1)
-            p = F.normalize(s.pred(_span_mean(s.ctx(_tens(Xs, s.dev)), sp)), dim=-1); it = torch.tensor(ix, device=s.dev)
-            l = F.cross_entropy(p @ s.SL.clone().T / 0.1, it); s.opt.zero_grad(); l.backward(); s.opt.step(); ls.append(float(l.detach()))
-            with torch.no_grad():
-                for k_, v in zip(ix, z): s.SL[k_] = F.normalize(0.9 * s.SL[k_] + 0.1 * v, dim=0)
-                for pt, pc in zip(s.tgt.parameters(), s.ctx.parameters()): pt.mul_(0.995).add_(pc.detach(), alpha=0.005)
-            s.steps += 1
+        with torch.enable_grad():                                              # the sleep's readouts run without gradients
+          for _ in range(steps):
+              b = [items[i] for i in s.rs.randint(0, len(items), bs)]; Xs, sp, ix, full = [], [], [], []
+              for t, spans in b:
+                  a_, b_, k = spans[s.rs.randint(len(spans))]
+                  Xs.append((t[:a_] + '\x01' * (b_ - a_) + t[b_:]).encode('latin-1', 'replace')); sp.append((a_, b_)); ix.append(s.ki[k]); full.append(t.encode('latin-1', 'replace'))
+              with torch.no_grad(): z = F.normalize(_span_mean(s.tgt(_tens(full, s.dev)), sp), dim=-1)
+              p = F.normalize(s.pred(_span_mean(s.ctx(_tens(Xs, s.dev)), sp)), dim=-1); it = torch.tensor(ix, device=s.dev)
+              l = F.cross_entropy(p @ s.SL.clone().T / 0.1, it); s.opt.zero_grad(); l.backward(); s.opt.step(); ls.append(float(l.detach()))
+              with torch.no_grad():
+                  for k_, v in zip(ix, z): s.SL[k_] = F.normalize(0.9 * s.SL[k_] + 0.1 * v, dim=0)
+                  for pt, pc in zip(s.tgt.parameters(), s.ctx.parameters()): pt.mul_(0.995).add_(pc.detach(), alpha=0.005)
+              s.steps += 1
         return float(np.mean(ls[-50:]))
 
     @torch.no_grad()
