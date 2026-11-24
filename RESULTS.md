@@ -6416,3 +6416,10 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - Real-text self-writes (REM gate): 8 / 4 / 2 new, all as recorded and valid (1.00); 33 taught.
 - **Route J's instability grows:** RE-DERIVE retracted 8 (v6), **100 (v7) and 82 (v8) writes that were 0.91-0.92 right**; contradiction with the gate: false 0.95 (v6) -> 0.70 (v7) -> 0.76 (v8), never-read unknown 0.89-0.94. kra51's anchored codes and two-failure hysteresis target exactly this.
 - Real text (frozen test): visit 6 bridge 0.92, C 0.38, step by step 0.77; **visit 7 bridge 0.93, C 0.53, gold-true chains 0.62**, step by step 0.73.
+
+### THE IN-MODEL JEPA MEMORY NEEDS A WARM-UP (offline; 24 Nov 16:37; tools/jmem_sim.py - platypus/inference/jmem.py on the five-level world, people in 3 domains arriving one per sleep, 1,500 steps a sleep on everything read so far)
+| learning-rate warm-up | after sleep 1: recall D0 / 2 hops | after sleep 2: D0 / D1 / 2 hops | after sleep 3: D0 / D1 / D2 / 2 hops | loss |
+|---|---|---|---|---|
+| none (kra50) | 0.02 / 0.02 | 0.01 / 0.02 / 0.00 | 0.02 / 0.02 / 0.02 / 0.00 | 5.42 -> 5.64 (not learning) |
+| **300 steps (kra51)** | **0.99 / 0.99** | **1.00 / 1.00 / 1.00** | **1.00 / 1.00 / 0.99 / 1.00** | 3.04 -> 2.85 |
+- **Without a warm-up the memory never starts learning (constant learning rate 1e-3 from step 0 on a fresh transformer); with 300 warm-up steps it stores every fact and chains two hops at 0.99-1.00 from the first sleep, and keeps all three domains as they arrive.** kra50's JEPA memory will therefore show nothing; kra51 (warm-up 300, 3,000 steps a sleep) is the real test in the model.
