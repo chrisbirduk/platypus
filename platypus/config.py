@@ -820,6 +820,7 @@ class Config:
     inf_jmem_write_hyst=0           #   24 Nov kra54: a JEPA write dropped on re-derivation only after failing at two successive sleeps
     inf_jmem_heldmax=400            #   24 Nov kra54: held-back composites the JEPA memory answers each sleep (cross-check, writes, route J protection)
     inf_kmc_rulej_jprotect=0        #   24 Nov kra54 MODEL CHANGE: a route J write that fails re-derivation is KEPT while the JEPA memory still answers the same (kra52: drift retracted right writes)
+    inf_rule_steps_write_hyst=0     #   24 Nov kra54: a step-by-step write dropped on re-derivation only after failing at two successive sleeps (kra52 v10: all 96 dropped at once)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
