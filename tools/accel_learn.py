@@ -6,7 +6,8 @@ premises plus 2 TAUGHT composites (so the composite relation exists for both arm
 7 composites are HELD BACK: never read.
 
 SLEEP after each family (same number of steps in both arms) trains only on the model's OWN RECALL (dream protection, never the read text):
-every remembered premise and taught composite whose answer passes the margin gate. Arm ON adds STEP-BY-STEP INFERENCE: for every non-root
+every remembered premise and taught composite whose answer passes the margin gate (SELF-CALIBRATED: the 25% quantile of
+the margins of its right recalls of the family it just read, at least AL_GATE; closed when it recalls fewer than 4). Arm ON adds STEP-BY-STEP INFERENCE: for every non-root
 entity it answers hop 1 (parent) and hop 2 (the parent of its own answer); if both pass the gate it WRITES 'X has grandparent Z.' into the
 sleep (re-derived from scratch each sleep, so a write that no longer holds is dropped). Arm OFF has no writes.
 
@@ -23,7 +24,7 @@ import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 
 torch.set_num_threads(2); T0 = time.time(); P = lambda s: print(s, flush=True)
 E = os.environ.get
-READS = [int(x) for x in E('AL_READS', '2,4,8,16').split(',')]; ARMS = E('AL_ARMS', 'off,on').split(',')
+READS = [int(x) for x in E('AL_READS', '4,8,16,32').split(',')]; ARMS = E('AL_ARMS', 'off,on').split(',')
 SEEDS = [int(x) for x in E('AL_SEEDS', '1,2').split(',')]; NF = int(E('AL_FAM', 8)); SLEEP = int(E('AL_SLEEP', 60))
 GATE = float(E('AL_GATE', 1.0)); LR = float(E('AL_LR', 3e-3)); D = int(E('AL_DIM', 128)); NL = int(E('AL_LAYERS', 3)); BS = 32; TMAX = 64
 SYL = ['ka', 'zo', 'bel', 'qui', 'ra', 'vin', 'tev', 'mon', 'dra', 'sal', 'nor', 'lo', 'pel', 'gal', 'bri', 'is', 'ul', 'tar', 'en', 'os']
@@ -97,13 +98,16 @@ def run(seed, arm, r):
         a, _ = hop(M, hl, 'grandparent', C); out['wake_comp'].append(np.mean([y == gp[x] for x, y in zip(hl, a)]))
         # SLEEP: own recall only (dream protection), plus step-by-step writes in arm ON
         sk = [x for x in mids + leaves if fam[x] <= f]; st = [l for l in taught if fam[l] <= f]
-        a, m = hop(M, sk, 'parent', C); bank = [f"{x} has parent {y}." for x, y, g in zip(sk, a, m) if g > GATE]
-        a, m = hop(M, st, 'grandparent', C); bank += [f"{x} has grandparent {y}." for x, y, g in zip(st, a, m) if g > GATE]
+        a, m = hop(M, sk, 'parent', C)                                          # SELF-CALIBRATED GATE: 25% quantile of the margins of its RIGHT recalls of what it
+        rm = [g for x, y, g in zip(sk, a, m) if y == par[x] and fam[x] == f]   #   just read (a self-test on stored text, as the JEPA memory's gate); none -> closed
+        th = max(GATE, float(np.quantile(rm, 0.25))) if len(rm) >= 4 else float('inf'); out.setdefault('th', []).append(th)
+        bank = [f"{x} has parent {y}." for x, y, g in zip(sk, a, m) if g > th]
+        a, m = hop(M, st, 'grandparent', C); bank += [f"{x} has grandparent {y}." for x, y, g in zip(st, a, m) if g > th]
         nw = rt = 0
         if arm == 'on':
             hx = [x for x in sk if x not in taught]; a1, m1 = hop(M, hx, 'parent', C); a2, m2 = hop(M, a1, 'parent', C)
             for x, y, g1, g2 in zip(hx, a2, m1, m2):
-                if min(g1, g2) > GATE: bank.append(f"{x} has grandparent {y}."); nw += 1; rt += int(gp.get(x) == y)
+                if min(g1, g2) > th: bank.append(f"{x} has grandparent {y}."); nw += 1; rt += int(gp.get(x) == y)
         out['writes'].append(nw); out['wright'].append(rt)
         if not bank: bank = list(new)                                           # nothing recalled yet: the sleep rehearses the day (first family only in practice)
         for _ in range(SLEEP): step(M, opt, rng.choices(bank, k=BS))
