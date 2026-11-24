@@ -814,8 +814,10 @@ class Config:
     inf_jmem_dream_gate=0           #   24 Nov kra53: dream only the recalls above the memory's own one-hop gate (25% quantile of its right recalls' margins), not all-or-nothing at dream_min
     inf_jmem_answer=0               #   24 Nov kra53: CROSS-CHECK readout - its gated two-hop answers on held-back composites vs route J; COMBINED route J / step / JEPA
     inf_jmem_write=0                #   24 Nov kra53 MODEL CHANGE: its gated answers WRITTEN where route J and step by step abstain; re-derived each sleep; retracted on contradiction
+    inf_jmem_wprec=0.9              #   24 Nov kra53: its write / answer gate = the lowest margin at which its planted-composite answers are >= this precise (10+); else closed
+    inf_jmem_dprec=0.95             #   24 Nov kra53: its dream gate = the lowest margin at which its recalls of read premises are >= this precise (20+); else the read text
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
-    inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)
+    inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
     inf_kmc_rulej_retract_contra=0  #   23 Nov kra47 MODEL CHANGE: step-by-step writes retracted when route J (gate + seeds) contradicts them
     inf_kmc_rulej_search=0          #   23 Nov kra44 READOUT: LATENT PROGRAM SEARCH over route J's operators from each composite's recorded examples

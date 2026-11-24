@@ -313,6 +313,10 @@ def _inf_plant_probes(raw,cfg,d,p):
     for l_, mv_ in (inf_rule_world(cfg).get('moves') or {}).items():          # 19 Nov kra9: the MOVED leaves' new premise, planted in its own domain
         if mv_['d2'] == int(d):                                                # 24 Nov kra52: the new premise planted as often as an ordinary premise (inf_rule_world_movek;
             k9_ = pk_ if int(getattr(cfg, 'inf_rule_world_movek', 0)) else 1   #   kra47-49: planted once, the reader recorded it 0.04-0.05 and route J kept the old fact)
+            if int(getattr(cfg, 'inf_rule_world_movek', 0)) >= 2 and pw_ > 1 and mv_['kind'] in _RW_PREMW:   # 24 Nov kra53: EXACTLY as an ordinary premise - in the pw_ wordings
+                T_ = _RW_PREMW[mv_['kind']][:pw_]; a_, b_ = mv_['sent'].split(' is a child of ' if mv_['kind'] == 'parent' else ' is supervised by ')   #   and the arrow frame (kra52 GPU:
+                b_ = b_.rstrip('.'); ss_ = [T_[j_ % len(T_)].format(a=a_, b=b_) for j_ in range(max(pk_, len(T_)))]   #   3 copies of one wording against the old premise's 8
+                ss_ += [f"{a_} > {b_}."] * int(getattr(cfg, 'inf_rule_world_premarrow', 0)); fs_.extend(ss_); nrw_ += len(ss_); continue   #   varied ones: recorded 0.00-0.03)
             fs_.extend([mv_['sent']] * k9_); nrw_ += k9_
     if not fs_ and not once_: return raw
     b_=bytes(raw); rs_=np.random.RandomState(9000+97*int(d)+int(p)); cuts=[m_.end() for m_ in _re_inf.finditer(rb'[.!?] (?=[A-Z])',b_)]
