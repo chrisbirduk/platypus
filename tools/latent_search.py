@@ -148,6 +148,9 @@ FR = ([f"{a} is a citizen of {CIT[ci][0]} >" for a, ci in TRP + HEP] + [f"{c} > 
 if FRM >= 2:                                                                   # 23 Nov MIDDLE-STEP FRAME IN CONTEXT: every person's chain PREFIX up to the
     FR += [f"{a} is a citizen of {CIT[ci][0]} > {REG[reg(ci)][0]} >" for a, ci in TRP + HEP]   #   middle step ('A is a citizen of B > R >': premises only,
                                                                                #   the country never shown) - the standalone 'B > R >' did not carry into the chain   #   in the chain's own
+if FRM >= 3:                                                                   # 24 Nov LAST-STEP FRAME IN CONTEXT: every city's own two-premise chain 'B > R > K.'
+    FR += [f"{c} > {REG[r][0]} > {CTY[reg_k][0]}." for c, r in CIT for reg_k in [REG[r][1]]] + [f"{r} > {CTY[k][0]}." for r, k in REG] * 2   #   (premises only,
+                                                                               #   in the chain's own frame; the PERSON is never shown with K) + 'R > K.' x3
 if FRM: P(f"   STEP FRAMES on: {len(FR)} premise rows in the chain's own frames ('A is a citizen of B >', 'B > R >', 'R > K.'), 8 a step")   # context at its step; C never shown
 for st in range(1, TE + 1):
     fr_ = [FR[i].encode('latin-1') for i in rs.randint(0, len(FR), 8)] if FR else []
