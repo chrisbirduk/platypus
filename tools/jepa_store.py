@@ -37,6 +37,9 @@ FACTS = {'lives': [(a, CIT[ci][0]) for a, ci in TRP + HEP], 'city_in': [(c, REG[
 if int(os.environ.get('JS_CITIZEN', 0)):                                       # 23 Nov VERIFIED REPLAY: a second view of each person - the country they are a citizen
     W['citizen'] = ["{a} is a citizen of {b}.", "{a} holds a passport of {b}."]  #   of (true), read in the person's own domain
     FACTS['citizen'] = [(a, CTY[cty(ci)][0]) for a, ci in TRP + HEP]
+if int(os.environ.get('JS_REGVIEW', 0)):                                       # 24 Nov a THIRD view: the region a person is registered in (true)
+    W['registered'] = ["{a} is registered in {b}.", "{a} has residency in {b}."]
+    FACTS['registered'] = [(a, REG[CIT[ci][1]][0]) for a, ci in TRP + HEP]
 PRE1 = sorted({t.format(a=a, b=b) for rel, fs in FACTS.items() for a, b in fs for t in W[rel]}); PRE = PRE1 * 3
 L, V, PAD, DW, NL = 64, 256, 0, 192, 3
 class Blk(nn.Module):
@@ -181,6 +184,9 @@ if int(os.environ.get('JS_CONT', 0)):                                          #
                 if int(os.environ.get('JS_VERIFY', 0)):                        # VERIFIED REPLAY: a 'lives' memory is replayed only if its city's own chain
                     m_cz = list(MG.get('last') or [9.0] * len(heads)); rg_ = recall('city_in', got); m1 = list(MG.get('last')); ct = recall('region_of', rg_); m2 = list(MG.get('last'))
                     keep = [x == y for x, y in zip(ct, cz)]                    #   (city -> region -> country) reaches the person's recalled citizenship
+                    if int(os.environ.get('JS_VERIFY', 0)) == 3 and 'registered' in W:   # 24 Nov v3: TWO independent corroborations - the city's region = the
+                        rr = recall('registered', heads); extra += [W['registered'][0].format(a=a, b=c) for a, c in zip(heads, rr)]   #   recalled registration,
+                        keep = [k or (r1 == r2) for k, r1, r2 in zip(keep, rg_, rr)]   #   or its country = the recalled citizenship: kept if EITHER corroborates
                     if int(os.environ.get('JS_VERIFY', 0)) == 2:              # 24 Nov v2: drop a memory only when the check is CONFIDENT (the gate idea: a mismatch
                         cf = [min(a_, b_, c_) for a_, b_, c_ in zip(m_cz, m1, m2)]   #   whose three reads all clear the median margin of the matching ones is a
                         okm = [c for c, k in zip(cf, keep) if k]; tq = float(np.median(okm)) if okm else 0.0   #   contradiction; an unsure mismatch is kept)
