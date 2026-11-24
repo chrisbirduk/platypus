@@ -1154,6 +1154,13 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                 tuJ = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
                 NM = sorted({e['A'] for e in fs0} | {e['ans'] for e in fs0} | {l for _, l, _, _ in tg} | {l for _, l, _, _ in tuJ})
                 Z = _kma_tcode(model, K, NM).float(); Z = Z - Z.mean(0); Z = Z / (Z.norm(dim=-1, keepdim=True) + 1e-8); NI = {n: k for k, n in enumerate(NM)}
+                ZA9 = float(getattr(cfg, 'inf_kmc_rulej_zema', 0.0))           # 24 Nov kra51 ANCHORED CODES: each name's code smoothed with its code from earlier sleeps
+                if ZA9 > 0:                                                    #   (kra47-49: route J destabilises when the fifth domain arrives - the trunk's codes drift)
+                    ZE9 = model.__dict__.setdefault('_rj_zema', {})
+                    with torch.no_grad():
+                        for n9, i9 in NI.items():
+                            if n9 in ZE9 and ZE9[n9].shape == Z[i9].shape: Z[i9] = F.normalize(ZA9 * ZE9[n9].to(Z.device) + (1 - ZA9) * Z[i9], dim=0)
+                            ZE9[n9] = Z[i9].detach().clone()
                 dec = {e['A'] for e in fs0} | {e['ans'] for e in fs0}; DI = torch.tensor([NI[n] for n in sorted(dec)], device=Z.device); DN = sorted(dec)
                 lam = float(getattr(cfg, 'inf_kmc_rulej_lam', 0.1)); D9 = Z.shape[1]; Id = torch.eye(D9, device=Z.device)
                 def fit(pairs, shuffle=False):
@@ -1361,14 +1368,21 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                                 continue
                             x = comp(A, r3, OP); r2 = rules[r3][1]
                             ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr
-                            if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); continue
+                            PD9 = model.__dict__.setdefault('_rj_pend', {})
+                            if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); PD9.pop((r3, A, C), None); continue
+                            if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)):    # 24 Nov kra51 HYSTERESIS: a write is retracted / rewritten only when it fails
+                                nx9 = x[1] if ok9 else None                            #   re-derivation at TWO successive sleeps the same way (kra47-49 visit 5: 6-15
+                                pd9 = PD9.get((r3, A, C))                              #   right writes retracted)
+                                if pd9 is None or pd9[0] != nx9 or pd9[1] != vis - 1:
+                                    PD9[(r3, A, C)] = (nx9, vis); kp9.append(tru9(A, r3, C)); hd9 = model.__dict__.setdefault('_rj_held', [0]); hd9[0] += 1; continue
+                                PD9.pop((r3, A, C), None)
                             RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None)
                             if ok9: RW[(r3, A, x[1])] = vis; BR[(r3, A, x[1])] = x[0]; rw9.append((tru9(A, r3, C), tru9(A, r3, x[1])))
                             else: rt9.append(tru9(A, r3, C))
                         pr9 = lambda L: f"{np.mean([v for v in L if v is not None]):.2f}" if any(v is not None for v in L) else 'n/a'
                         print(f"  [ROUTE J RE-DERIVE | visit {vis + 1}] MODEL CHANGE: every earlier route J write re-derived with today's predictor and gate: KEPT {len(kp9)} (right {pr9(kp9)}) | "
                               f"REWRITTEN {len(rw9)} (old right {pr9([a for a, b in rw9])} -> new right {pr9([b for a, b in rw9])}) | RETRACTED {len(rt9)} (were right {pr9(rt9)}) | "
-                              f"{len(RW)} written composites now" + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
+                              f"{len(RW)} written composites now" + (f" | HELD by hysteresis (first failure) {model.__dict__.get('_rj_held', [0])[0]} in all" if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)) else "") + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
                     if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
                         hasp = collections.defaultdict(set)
                         for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])

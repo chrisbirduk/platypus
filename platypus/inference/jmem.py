@@ -52,6 +52,7 @@ class JMem:
         for p in s.tgt.parameters(): p.requires_grad = False
         s.opt = torch.optim.AdamW(list(s.ctx.parameters()) + list(s.pred.parameters()), lr=float(getattr(cfg, 'inf_jmem_lr', 1e-3)), weight_decay=0.01)
         s.keys = []; s.ki = {}; s.SL = torch.zeros(0, d, device=dev); s.rs = np.random.RandomState(5); s.steps = 0
+        s.lr0 = float(getattr(cfg, 'inf_jmem_lr', 1e-3)); s.warm = int(getattr(cfg, 'inf_jmem_warm', 0))
 
     def _slot(s, k):
         if k not in s.ki:
@@ -73,6 +74,9 @@ class JMem:
                   Xs.append((t[:a_] + '\x01' * (b_ - a_) + t[b_:]).encode('latin-1', 'replace')); sp.append((a_, b_)); ix.append(s.ki[k]); full.append(t.encode('latin-1', 'replace'))
               with torch.no_grad(): z = F.normalize(_span_mean(s.tgt(_tens(full, s.dev)), sp), dim=-1)
               p = F.normalize(s.pred(_span_mean(s.ctx(_tens(Xs, s.dev)), sp)), dim=-1); it = torch.tensor(ix, device=s.dev)
+              wu = int(getattr(s, 'warm', 0))
+              if wu:                                                     # 24 Nov kra51: learning-rate warm-up over the first steps (tools/jepa_store.py used OneCycle)
+                  for g_ in s.opt.param_groups: g_['lr'] = s.lr0 * min(1.0, (s.steps + 1) / wu)
               l = F.cross_entropy(p @ s.SL.clone().T / 0.1, it); s.opt.zero_grad(); l.backward(); s.opt.step(); ls.append(float(l.detach()))
               with torch.no_grad():
                   for k_, v in zip(ix, z): s.SL[k_] = F.normalize(0.9 * s.SL[k_] + 0.1 * v, dim=0)

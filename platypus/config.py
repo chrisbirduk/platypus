@@ -807,6 +807,9 @@ class Config:
     inf_jmem_dim=192
     inf_jmem_layers=3
     inf_jmem_lr=0.001
+    inf_kmc_rulej_zema=0.0          #   24 Nov kra51: route J's name codes smoothed with their codes from earlier sleeps (weight of the old code)
+    inf_kmc_rulej_reverify_hyst=0   #   24 Nov kra51: a route J write retracted / rewritten only after failing re-derivation at two successive sleeps
+    inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
     inf_kmc_rulej_retract_contra=0  #   23 Nov kra47 MODEL CHANGE: step-by-step writes retracted when route J (gate + seeds) contradicts them
     inf_kmc_rulej_search=0          #   23 Nov kra44 READOUT: LATENT PROGRAM SEARCH over route J's operators from each composite's recorded examples
