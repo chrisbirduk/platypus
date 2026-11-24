@@ -178,7 +178,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         C0, v0, cf0 = JW[key]; a = ans.get(key); A = key[1]; rj = RJ9.get((A, key[0]))
         drop = None
         if rj and rj[1] and rj[0] != C0: drop = 'contra'; BADJ.append(cf0)
-        elif a is None or not (a[2] >= th and a[0] == C0): drop = 'rederive'
+        elif a is None or not (a[2] >= (min(th, thp) if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else th) and a[0] == C0): drop = 'rederive'   # kra54: re-derived at the looser quantile gate (kra53 v5: the precision gate closed and all 19 right JEPA writes were dropped)
         if drop == 'rederive' and int(getattr(cfg, 'inf_jmem_write_hyst', 0)):   # kra54 HYSTERESIS: dropped only after failing at two successive sleeps (kra53: right writes churned)
             PJ = model.__dict__.setdefault('_jw_pend', {})
             if PJ.get(key) != vis - 1: PJ[key] = vis; hj = model.__dict__.setdefault('_jw_held', [0]); hj[0] += 1; drop = None
