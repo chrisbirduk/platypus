@@ -6389,3 +6389,8 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra50 local check (24 Nov 13:12; seed 5; inf_jmem_steps 400 locally): released
 - First run: 'JEPA MEMORY unavailable (element 0 of tensors does not require grad)' - the sleep's readouts run without gradients; fixed (training under torch.enable_grad), pushed, re-run. Now visit 1 prints: 222 premise sentences read, 259 slots, 400 steps (loss 4.45), one hop 0.05, two hops 0.00 - too few steps on the CPU to learn (the tiny-world smoke needed 600 steps for 1.00); 118 s per sleep on 2 CPUs (GPU: 1,500 steps a sleep, expected well under a minute). No Traceback. The real-text line prints once the TEST set exists (visit 2+).
+
+### kra49 VISIT 2 (GPU, seed 4; 24 Nov 13:33)
+- Step-by-step writes: NEW 20, right 0.80 (kra47 visit 2: 19 at 0.95); **4 of them RETRACTED ON CONTRADICTION the same sleep - all 4 wrong** (right 0.00), so the self-calibrated gate starts visit 3 above those 4 confidences. Route J re-derive KEPT 89 (0.99).
+- Contradiction with the gate: false 0.91 / true 0.00 / never-read unknown 0.94. Rule world step by step: held back C 0.57 (gated 0.71 answered, 0.70 right).
+- Real-text self-writes with the REM gate (both links recorded): NEW 0 at visit 2 (kra48 wrote 79 at 0.05 as recorded) - the verification blocks the early, loose writes.
