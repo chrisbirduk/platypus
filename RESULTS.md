@@ -6378,3 +6378,11 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra49 local check (24 Nov 12:13; seed 4; gate forced open locally): released
 - No Traceback through two domains; step writes, route J re-derive (with the contradiction check) and the real-text self-write print as in kra47-48. The self-calibration only acts once a step write is retracted on contradiction (none locally: route J is not confident at this size); the verified self-write (both links recorded) passed a direct test with fixed answers (a chain with an unrecorded second link is not written).
+
+### kra48 VISIT 6 (GPU, seed 5; 24 Nov 12:27) - BEST WRITTEN REAL-TEXT CHAIN
+- REAL TEXT (frozen test, n 150): bridge 0.93, **C 0.53** (baseline 0.07; given the right bridge 0.57), gold-true chains 0.50, whole chain recorded 0.54; written conclusions gold-labelled true 16 / 16. **STEP BY STEP: hop 1 0.91, C 0.80, valid 0.81, gold-labelled true 23 / 23; GATED answered 0.75, right 0.83.** The written chain keeps rising past visit 4 (0.35 -> 0.43 -> 0.53).
+- Real-text self-writes visit 6: NEW 33 (as recorded 0.15, valid 0.12), KEPT 45, RETRACTED 7 -> 181 taught (still loose; kra49 adds the REM gate).
+- Rule world visit 6: step writes NEW 12 (0.83), KEPT 36 (1.00), RETRACTED 3; step-written retracted on contradiction 1 (wrong). Contradiction with the gate: false 0.88 / true 0.00 / never-read unknown 0.94. MOVED leaves with the move read (25): the stale composite is never contradicted (0.00) - route J keeps the old fact (open).
+
+### kra50 (24 Nov 12:30; pending its local check): THE KEYED-MEMORY JEPA AS A PARALLEL MEMORY
+- platypus/inference/jmem.py: own byte encoder (context + EMA target), predictor, one slot per name; trained each sleep on the premise sentences read so far (rule world + real-text chain premises); readouts by its own hops vs the trunk's. Smoke on a tiny rule world (3 domains, 96 premises; 64-dim, 1 layer): after 300 steps one hop 0.57, two hops 0.16-0.22; **after 600 steps one hop 1.00, two hops 1.00 on planted AND held-back composites, gated answered 0.75-0.81, right 1.00**; never-read margin AUC 0.70.

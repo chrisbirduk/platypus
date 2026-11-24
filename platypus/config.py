@@ -802,6 +802,11 @@ class Config:
     inf_rule_steps_oracle=0         #   23 Nov: LOCAL CHECKS ONLY - the oracle rule when none is learned, so the step-by-step code paths run
     inf_rule_steps_gforce=0         #   23 Nov: LOCAL CHECKS ONLY - the step-by-step gate open
     inf_rule_steps_selfcal=0        #   24 Nov kra49: the step gate rises above the confidence of every step write retracted on contradiction
+    inf_jmem=0                      #   24 Nov kra50: the keyed-memory JEPA as a PARALLEL memory (readout only; platypus/inference/jmem.py)
+    inf_jmem_steps=1500             #   its training steps per sleep
+    inf_jmem_dim=192
+    inf_jmem_layers=3
+    inf_jmem_lr=0.001
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
     inf_kmc_rulej_retract_contra=0  #   23 Nov kra47 MODEL CHANGE: step-by-step writes retracted when route J (gate + seeds) contradicts them
     inf_kmc_rulej_search=0          #   23 Nov kra44 READOUT: LATENT PROGRAM SEARCH over route J's operators from each composite's recorded examples

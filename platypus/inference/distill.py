@@ -1806,6 +1806,9 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                       f"earlier step writes re-derived: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED {len(rt)} (were right {pr9(rt)}) | {len(SSW)} step writes now", flush=True)
         except Exception as e9: print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:120]})", flush=True)
         finally: model.train(was)
+    if int(getattr(cfg, 'inf_jmem', 0)):                                       # 24 Nov kra50: the keyed-memory JEPA beside the trunk (readout only)
+        from platypus.inference.jmem import jmem_sleep
+        jmem_sleep(model, cfg, vis, W, seen, rw)
 
 
 def _dw_greedy(model, prompt, sl, n=24):
