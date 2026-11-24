@@ -6428,3 +6428,7 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 ### kra52 local check (24 Nov 17:45; seed 5; JEPA memory 600 CPU steps a sleep): released with one safeguard added
 - No Traceback. MOVED LEAVES at the normal dose: the reader now records the NEW premise 0.36-0.43 (kra49: 0.04-0.05) and route J's composite starts to follow (NEW 0.07-0.14 at visit 2).
 - **The JEPA memory's dream replay taught its own errors locally:** at 600 CPU steps its visit-1 recall was 0.14, so the visit-2 dreams were 0.15 right and the loss rose (4.29 -> 5.01). On the GPU (3,000 steps, warm-up) visit-1 recall should be ~0.99 (jmem_sim), but the rule is now explicit: **the memory dreams only once its own one-hop recall on what it read is at least 0.9 (inf_jmem_dream_min); otherwise it replays the read text.**
+
+### kra52 GPU, visit 1 (24 Nov 18:30; seed 5; run 20261124T181159Z)
+- No errors. JEPA MEMORY (parallel), first sleep, 3,000 steps with warm-up 300: 126 premise sentences, 147 slots, loss 3.59; one hop on read premises **0.37** (kra50 without warm-up: 0.02, not learning); two hops by its own hops: PLANTED bridge 0.52, C 0.30, gated answered 0.39, right 0.56 | HELD BACK bridge 0.31, C 0.07 | PURE bridge 0.25, C 0.03; never-read vs right margin AUC 0.47 (the margin does not yet separate). **The in-model JEPA memory learns on the GPU once warmed up**, but is far from the 0.9 recall that opens its dreams, so visit 2 should train on read premises only (the guard).
+- Moved leaves, route J contradiction and step writes start at visit 2.
