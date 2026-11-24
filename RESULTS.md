@@ -6332,3 +6332,10 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - Next (running): VERIFY 2 - drop a memory only when the check is CONFIDENT (all three reads clear the median margin of the matching ones), as route J's gate does for contradiction.
 | VERIFY 2 (24 Nov 01:30): drop a memory only when the check is CONFIDENT (all three reads clear the median margin of the matching ones) | 0.71 / 0.00; **0.48** / 0.00 | **0.80 / 0.77** | 0.67 / 0.92, then 0.52 / 0.94 |
 - **A confident-only check is the middle ground: domain 0 stays mostly protected (0.77 vs 0.85 unverified) while the planted false memories fade dream by dream (false city 0.71 -> 0.48, vs 0.95 -> 0.90 unverified).** No setting yet keeps all true memories AND removes all false ones: the check is the model's own reads, and those are not reliable enough at the first dream. Directions: a stronger second view (more than one corroborating fact), or keep failed memories out of replay without unlearning them (abstain rather than forget).
+
+### THREE HOPS, LAST-STEP FRAME (offline, synthetic; 24 Nov 03:16-04:05; latent_search LS_FRAMES 3 = LS_FRAMES 2 + every city's own premise chain 'B > R > K.' (premises only; the person never shown with K) + 'R > K.' x3)
+| never-taught 3-hop chains at 1,500 steps | fmt / bridge / region / COUNTRY, seed 0 | seed 1 |
+|---|---|---|
+| LS_FRAMES 2 (middle-step frame) | 0.94 / 1.00 / 0.81 / **0.14** | 0.89 / 0.97 / 0.78 / **0.12** |
+| LS_FRAMES 3 (+ last-step frame) | 0.91 / 0.97 / 0.75 / **0.23** | 0.79 / 0.92 / 0.59 / **0.13** |
+- **Inconsistent: the last step rises on seed 0 (0.14 -> 0.23; country given the right region 0.17 -> 0.31) but not on seed 1 (0.12 -> 0.13, and the region falls 0.78 -> 0.59).** Teaching each city's own two-premise chain does not reliably carry into the person's chain; the extra rows also dilute the middle step on seed 1. Not a kra48 recipe as it stands. The real-text answer remains STEP BY STEP (each hop asked separately), which has no last-step problem by construction.
