@@ -6261,3 +6261,192 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **The real-text recipe replicates on the second seed at visit 3:** C 0.13 vs 0.11 (baseline 0.07), step by step 0.28 vs 0.33, gated precision 0.85 vs 0.80, every gold-labelled conclusion true.
 - RULE WORLD STEP BY STEP, visit 3 (larger sets than visit 2): planted C 0.53, HELD BACK 0.37 (19), PURE 0.40 (20); **gated: right when answered 1.00 in all three** (answered 0.40 / 0.16 / 0.40). Visit 2 was 0.64 / 0.56 on 14 / 16; hop 1 fell (0.71 -> 0.53-0.60) as more families entered. The trunk's own chain: held back 0.18, pure 0.00.
 - Route J composite 0.99, never-read families through the gate 0.01 (AUC 1.00); program search finds both rules again (13 / 12 examples, targets 0.99 / 1.00). Bagged ensemble: nothing contradicted (0.02), as at visit 2 - unbagged with the gate in kra46.
+
+### kra45 VISIT 4, rule world (GPU, seed 4; 23 Nov 20:37; the real-text visit-4 readout not yet in the log)
+| RULE WORLD, visit 4 | n | STEP BY STEP: hop 1 / C | gated answered / right | the trunk's own written chain: bridge / C |
+|---|---|---|---|---|
+| planted | 39 | 0.90 / 0.82 | 0.67 / 0.92 | 0.42 / 0.77 |
+| HELD BACK, never written | 24 | 0.67 / **0.58** | 0.33 / **1.00** | 0.65 / 0.53 |
+| PURE FAMILIES, never written | 13 | 0.54 / 0.38 | 0.08 / **1.00** | 0.44 / 0.33 |
+- By visit 4 the trunk's own chain also composes on held-back and pure families (0.53 / 0.33; 0.00-0.18 at visits 2-3); step by step is a little ahead (0.58 / 0.38) and **its gated answers are right 1.00 on never-seen composites at visits 3 and 4.**
+- Route J composite 0.99, gate answers 0.98 right 1.00, never-read through the gate 0.03 (AUC 1.00); program search: both rules again from 18 / 19 examples, targets 0.99 / 1.00. Bagged ensemble: no contradictions (0.01), as before.
+
+### kra46 local check (23 Nov 20:54, in progress; seed 5): released
+- No Traceback through two domains. CONTRADICTION WITH THE GATE prints at visit 2 (local route J is weak, so the gate calls 0.97 of read families and 1.00 of never-read families UNKNOWN, and contradicts nothing - the gate is doing its job at this size; judged on the GPU). The COMBINED ANSWER readout needs route J's answers from an earlier sleep, so it first prints at visit 3 (guarded). Released before the check ends, at the user's request; the check continues.
+
+### kra45 VISIT 4, REAL TEXT (GPU, SEED 4, frozen test set; 23 Nov 20:56) - BEST REAL-TEXT INFERENCE, SECOND SEED
+| REAL-TEXT TEST (frozen, n 150; bridge never in a taught chain) | kra45 visit 4 (seed 4) | kra45 visit 3 | kra43 visit 4 (seed 5, list rebuilt) |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.91 / 0.69 | 0.70 / 0.37 | 0.88 / 0.68 |
+| bridge right (step 1) | **0.84** | 0.55 | 0.75 |
+| C given the right bridge (step 2) | **0.49** | 0.23 | 0.31 |
+| **C right** (baseline commonest C 0.07) | **0.41** | 0.13 | 0.24 |
+| gold-true chains: C right | **0.50** (24) | 0.25 | 0.46 |
+| **STEP BY STEP: hop 1 / C / valid** | **0.91 / 0.64 / 0.64** (gold-labelled true 18 / 18) | 0.70 / 0.28 | 0.88 / 0.62 |
+| STEP BY STEP gated: answered / right | 0.36 / **0.98** | 0.09 / 0.85 | 0.23 / 0.88 |
+| written conclusions gold-labelled true | 13 / 13 | 10 / 10 | 0.94 |
+- **The written chain answers 0.41 of never-composed real-text chains right - six times the baseline (0.07) - and step by step 0.64; gated, 0.98 right on the 36% it answers; every conclusion with a gold label is true.** Taught chains 0.88.
+- **The real-text recipe (step-1 frame + arrow rows x2 + 16 rows a step) is replicated on a second seed, and on a FROZEN test set the visit-3 -> visit-4 gain is a true learning curve** (C 0.13 -> 0.41, step by step 0.28 -> 0.64).
+
+### kra45 VISIT 5 (GPU, seed 4, frozen test set; 23 Nov 21:06)
+- REAL TEXT (n 150): premises alone 0.87 / 0.59, **bridge 0.89, C 0.39 (visit 4 0.41; baseline 0.07), gold-true chains C 0.67 (24)**; ANY VALID: whole chain recorded 0.49, written conclusions gold-labelled true 25 / 25. STEP BY STEP: hop 1 0.87, C 0.47 (visit 4 0.64), **valid 0.57, gold-labelled true 26 / 26**; gated answered 0.32, right 0.56, **valid when answered 0.81** - on the frozen set the step-by-step answers that are not the recorded C are mostly other valid containments (both links recorded).
+- **On a frozen test set the written chain holds (0.41 -> 0.39) and the gold-true chains rise (0.50 -> 0.67): the real-text gain is kept at visit 5** (kra43's visit-5 dip was the rebuilt list).
+- RULE WORLD visit 5: step by step planted C 0.76 (gated 0.57 answered, right 1.00); held back 0.53 (17), pure 0.50 (12), the gate (calibrated on planted, t = -0.01) answers none of them; the trunk's own chain held back 0.25 (8), pure 0.50 (8).
+- kra46 local check complete (21:07): no Traceback; COMBINED ANSWER prints at visit 3 (local: nothing answered - no learned rule and route J's gate passes nothing at this size); CONTRADICTION WITH THE GATE at visit 3 as at visit 2, moved leaves (31) evaluated. PASS.
+
+### kra46 VISIT 2 (GPU, seed 5; 23 Nov 21:34) - UNKNOWN vs CONTRADICTED SOLVED BY THE GATE
+| route J, visit 2 | ensemble alone (seeds agree >= 0.8 on another answer) | ensemble + MARGIN GATE |
+|---|---|---|
+| FALSE claims about read families: contradicted | 0.98 | **0.88** |
+| TRUE claims: contradicted | 0.00 | **0.00** |
+| NEVER-READ families: called contradicted | 0.67 | **0.03** |
+| NEVER-READ families: called UNKNOWN | - | **0.97** |
+- **With the gate, the model separates three states: a false claim about something it knows is CONTRADICTED (0.88), a true claim is not (0.00), and a claim about something it never read is UNKNOWN (0.97), not contradicted (0.03).** Without the gate (kra44 / this run) unknowns were called contradicted 0.41-0.67. Read families the gate refuses (0.12) are called unknown, never contradicted.
+- MOVED leaves with the move read: only 2, the OLD composite not contradicted and the NEW one contradicted - route J still holds the old composite (the new parent's family is probably not yet read; the readout does not require it). Too few to judge; kra47 should require the new family read, as the kra9 readout does.
+- Second seed of the learned-plan step by step (rule world, visit 2): planted 0.21, held back 0.28 (32), pure 0.30 (20); **gated right 1.00 in all three** (answered 0.14-0.30) - weaker than seed 4's visit 2 (0.56-0.64; hop 1 here 0.38-0.50), precision the same. Program search: both rules again (third run); non-contrastive = InfoNCE again.
+
+### kra46 VISITS 3-4 (GPU, seed 5, frozen test set; 23 Nov 22:24) - REAL TEXT REPLICATED, GATE HOLDS
+| REAL-TEXT TEST (frozen, n 150) | kra46 visit 3 | **kra46 visit 4 (seed 5)** | kra45 visit 4 (seed 4) |
+|---|---|---|---|
+| premises alone, hop 1 / hop 2 | 0.73 / 0.57 | 0.96 / 0.81 | 0.91 / 0.69 |
+| bridge right | 0.64 | **0.91** | 0.84 |
+| C given the right bridge | 0.14 | 0.45 | 0.49 |
+| **C right** (baseline 0.07) | 0.09 | **0.41** | 0.41 |
+| gold-true chains C | 0.17 | 0.46 | 0.50 |
+| **STEP BY STEP: C / valid** | 0.41 / 0.40 | **0.77 / 0.77** (gold-labelled true 0.95, 20) | 0.64 / 0.64 |
+| STEP BY STEP gated: answered / right | 0.21 / 0.87 | **0.58 / 0.95** | 0.36 / 0.98 |
+- **On frozen test sets both seeds reach written-chain C 0.41 at visit 4 (six times the baseline), and step by step 0.64-0.77 with 0.95-0.98 right when gated - seed 5 answers 58% of never-composed real-text chains at 0.95 precision.**
+- CONTRADICTION WITH THE GATE holds: visit 3 false 0.86 / true 0.00 / never-read unknown 0.94; visit 4 **false 0.87 / true 0.00 / never-read unknown 0.97 (contradicted 0.03)**. MOVED leaves (the move read; 8 then 16): the OLD composite is never contradicted and the NEW one is (0.81) - route J keeps the pre-move composite (it has the old bridge's chain); the readout does not require the new parent's family to be read; kra47.
+- COMBINED ANSWER on composites route J did NOT write (by construction route J abstained on them): step by step adds visit 3 held back 0.36 (right 0.88), visit 4 held back 0.16 and pure 0.39, **right 1.00**. RULE WORLD STEP BY STEP visit 4: planted 0.73, held back 0.48, pure 0.54; gated right 1.00 in all three (answered 0.55 / 0.16 / 0.39).
+
+### kra47 local check (23 Nov 23:13, in progress; seed 4; gate opened and the oracle rule given locally so the new paths run): released
+- No Traceback through two domains. STEP-BY-STEP WRITES: visit 2 wrote 15 composites where route J abstained (locally all wrong - the trunk cannot answer yet and the gate is forced open; on the GPU the gate is calibrated and gated answers were 1.00 right). ROUTE J RE-DERIVE leaves the step writes to their own re-derivation (KEPT 11 route J writes, 26 written now) and checks them for CONTRADICTION (0 locally: route J is not confident at this size). The step writes' own re-derivation prints from visit 3. Released at 23:13; the check continues.
+- kra47 local check complete (23:36; time limit in domain 4, no Traceback): **visit 3 re-derived the 15 step-by-step writes of visit 2 and RETRACTED all 15** (all were wrong - written with the gate forced open locally) and wrote 1 new; route J kept its own 15 writes (right 1.00). The write -> re-derive -> retract loop works end to end. PASS.
+
+### VERIFIED SELF-REPLAY FOR THE KEYED-MEMORY JEPA (offline, synthetic; 24 Nov 00:58; tools/jepa_store.py JS_CONT=1 JS_CITIZEN=1 JS_PHASE=2500 JS_DREAM=0.1 JS_DREAMBAD=0.1; each person also has a 'citizen of <country>' fact)
+| 10% dream replay, 21 of domain 0's 167 recalls replaced by a wrong city in the first dream | planted people: FALSE city / TRUE city (after domain 1; after domain 2) | domain 0 recall after domains 1 / 2 | memories replayed: planted / the others |
+|---|---|---|---|---|
+| no verification (JS_VERIFY 0) | **0.95 / 0.00; 0.90 / 0.00** | 0.87 / 0.85 | all / all |
+| VERIFIED (JS_VERIFY 1): a 'lives' memory replayed only if its city's own chain city -> region -> country reaches the person's recalled citizenship | **0.10 / 0.05; 0.10 / 0.05** | 0.47 / 0.48 | **0.05** / 0.51 (first dream), 0.19 / 0.78 (second) |
+- **The check keeps false memories out (5% of the planted ones replayed, false city recalled 0.10 vs 0.90-0.95) - but it also drops half the true memories at the first dream, so domain 0 is half forgotten (0.47 vs 0.87).** The check is only as good as the model's own reads of the chain and the citizenship; an unsure read fails true memories.
+- Next (running): VERIFY 2 - drop a memory only when the check is CONFIDENT (all three reads clear the median margin of the matching ones), as route J's gate does for contradiction.
+| VERIFY 2 (24 Nov 01:30): drop a memory only when the check is CONFIDENT (all three reads clear the median margin of the matching ones) | 0.71 / 0.00; **0.48** / 0.00 | **0.80 / 0.77** | 0.67 / 0.92, then 0.52 / 0.94 |
+| VERIFY 2 on WORLD 1 (LS_SEED 1; 24 Nov 08:20) | 0.67 / 0.00; **0.67** / 0.00 | 0.79 / 0.69 | 0.67 / 0.91, then 0.90 / 0.93 |
+- **A confident-only check is the middle ground: domain 0 stays mostly protected (0.77 vs 0.85 unverified) while the planted false memories fade dream by dream (false city 0.71 -> 0.48, vs 0.95 -> 0.90 unverified).** No setting yet keeps all true memories AND removes all false ones: the check is the model's own reads, and those are not reliable enough at the first dream. Directions: a stronger second view (more than one corroborating fact), or keep failed memories out of replay without unlearning them (abstain rather than forget).
+- **World 1 replicates only partly:** the confident check still prefers true memories (planted kept 0.67 vs the others 0.91 at the first dream) but the false memories do not fade (0.67 -> 0.67) and domain 0 slips more (0.69). The model's own chain is not a strong enough second view on its own; the next version needs independent evidence (several corroborating facts) rather than more threshold tuning.
+- **v3 (24 Nov 09:47; JS_REGVIEW=1 JS_VERIFY=3: a third view, the person's registered REGION; a memory kept if EITHER its region matches the registration OR its country the citizenship) - INCONCLUSIVE:** the extra relation slows learning (domain 0 recall 0.41 after its own 2,500 steps, vs 0.99 without it), so most memories fail both checks (kept 0.33-0.55) and domain 0 is lost (0.05 after domain 2) while the planted false memories are removed (false city 0.19 -> 0.05). The checks need a model that has learned the views; re-run with longer phases (5,000 steps).
+- **v3 WITH 5,000-STEP PHASES (24 Nov 11:36; world 0) - FALSE MEMORIES FILTERED, TRUE ONES KEPT:**
+| v3, 5,000 steps a domain | planted people: FALSE / TRUE city (after domain 1; after domain 2) | domain 0 recall after domains 1 / 2 | memories replayed: planted / the others |
+|---|---|---|---|
+| two independent views, kept if EITHER corroborates | **0.05 / 0.24; 0.05 / 0.33** | **0.90 / 0.89** | **0.05 / 1.00** (first dream), 0.43 / 1.00 (second) |
+- **With the views learned, verified self-replay does what is needed: 95% of the planted false memories are never replayed while EVERY true memory is (1.00), so the false city falls to 0.05 and domain 0 stays as protected as with unverified replay (0.89 vs 0.85).** A third of the planted people even recover their TRUE city (0.24 -> 0.33) from the other views. Independent corroboration, not a stricter threshold, is what works. **REPLICATED on world 1 (24 Nov 14:56): planted false memories replayed 0.00 at the first dream (the others 1.00), FALSE city 0.00 / 0.00, TRUE city recovered 0.14, domain 0 recall 0.89 / 0.89.** Verified self-replay by two independent views is the replay rule for a JEPA learner inside Platypus.
+
+### THREE HOPS, LAST-STEP FRAME (offline, synthetic; 24 Nov 03:16-04:05; latent_search LS_FRAMES 3 = LS_FRAMES 2 + every city's own premise chain 'B > R > K.' (premises only; the person never shown with K) + 'R > K.' x3)
+| never-taught 3-hop chains at 1,500 steps | fmt / bridge / region / COUNTRY, seed 0 | seed 1 |
+|---|---|---|
+| LS_FRAMES 2 (middle-step frame) | 0.94 / 1.00 / 0.81 / **0.14** | 0.89 / 0.97 / 0.78 / **0.12** |
+| LS_FRAMES 3 (+ last-step frame) | 0.91 / 0.97 / 0.75 / **0.23** | 0.79 / 0.92 / 0.59 / **0.13** |
+- **Inconsistent: the last step rises on seed 0 (0.14 -> 0.23; country given the right region 0.17 -> 0.31) but not on seed 1 (0.12 -> 0.13, and the region falls 0.78 -> 0.59).** Teaching each city's own two-premise chain does not reliably carry into the person's chain; the extra rows also dilute the middle step on seed 1. Not a kra48 recipe as it stands. The real-text answer remains STEP BY STEP (each hop asked separately), which has no last-step problem by construction.
+
+### kra47 VISIT 2 (GPU, seed 4; 24 Nov 07:51) - THE BEHAVIOUR CHANGES WORK
+- **STEP-BY-STEP WRITES: 19 composites written where route J abstained, 0.95 right.** Rule-world step by step at visit 2 (per-type gate): planted C 0.50 (gated 0.39 answered, 1.00 right), held back 0.57 (gated 0.57 / 0.88), pure 0.69 (gated 0.69 / 1.00).
+- **RETRACTION ON CONTRADICTION: 1 step write retracted - and it was wrong (right 0.00).** Route J re-derive kept its own 84 writes (0.99 right); 102 written composites now.
+- CONTRADICTION WITH THE GATE (seed 4 now): false claims contradicted 0.89, true 0.00, never-read called UNKNOWN 0.95 (contradicted 0.05). Moved leaves with the new family read: none yet at visit 2.
+- No Traceback. The trunk's own chain at visit 2: held back 0.18, pure 0.00 (as kra45) - the step writes are taught from visit 3.
+
+### kra48 local check (24 Nov 08:50; seed 5; in progress): released
+- No Traceback through two domains; kra47's rule-world paths as before. The real-text self-write runs (the local 10k distant set gives 14 chains, 1 untaught chain in the pool, nothing written at this size). A direct test of the logic with fixed answers: two untaught chains written (a chain sharing a TEST head excluded), the next sleep KEPT the one whose gated answer repeated and RETRACTED the one whose answer fell below the gate; the written chain enters the chain rows ('A1 is within ' -> 'B1 > C1.') beside the taught chains. PASS.
+
+### kra47 VISITS 3-4 (GPU, seed 4; 24 Nov 08:59) - SELF-WRITTEN CONCLUSIONS STAY RIGHT
+- **STEP-BY-STEP WRITES:** visit 3 NEW 5 (right 1.00), earlier ones re-derived KEPT 18 (right 1.00); visit 4 NEW 2 (1.00), KEPT 23 (1.00), RETRACTED 0 -> **25 step-written composites, all right** (the one wrong write of visit 2 was retracted on contradiction). Route J re-derive: KEPT 139 (0.99) and 199 (0.97); RETRACTED 1 at visit 3 (it was wrong).
+- CONTRADICTION WITH THE GATE: visit 3 false 0.91 / true 0.00 / never-read unknown 0.97; **visit 4 false 0.95 / true 0.00 / unknown 0.97**. Moved leaves with the new family read: 2 at visit 4 - route J still holds the old composite (stale contradicted 0.00, new 0.50); too few, and a real gap: route J's operators keep the pre-move fact.
+- RULE WORLD, the trunk's own chain at visit 4: held back 0.36 (14), pure 0.50 (8) (kra45 visit 4: 0.53 / 0.33 - small sets, no clear change from the step writes). Step by step: planted 0.85 (gated 0.64 answered, 1.00 right); held back 0.37 (gated 0.11 / 1.00); pure 0.17 (gated none).
+- REAL TEXT (seed 4, frozen test, n 150): visit 3 bridge 0.63, C 0.11, step by step 0.35 (gated 0.28 / 0.67); **visit 4 bridge 0.85, C 0.33, step by step 0.71, GATED answered 0.73, right 0.90** (kra45 visit 4: C 0.41, step by step 0.64, gated 0.36 / 0.98); gold-labelled conclusions true 1.00 (14) in the chain, 0.94 (18) step by step.
+
+### kra47 VISIT 5 (GPU, seed 4; 24 Nov 09:28) - THE STEP-BY-STEP GATE LOOSENS
+- STEP-BY-STEP WRITES visit 5: NEW 5, **right 0.40**; the 25 earlier ones KEPT (1.00). **3 step writes RETRACTED ON CONTRADICTION - all 3 wrong (right 0.00)**: the contradiction check catches most of the visit-5 errors. Route J RE-DERIVE: KEPT 227 (0.95), **RETRACTED 6 that were right (1.00)** - its gate tightened and dropped true writes.
+- RULE WORLD step by step, visit 5: planted gated 0.63 answered, 1.00 right; held back gated 0.32 / **0.33**; pure 0.08 / 0.00 - as in kra45 visit 5, the per-type gate (calibrated on planted composites) lets through confident wrong answers on never-seen families as more families arrive. Fix: calibrate the step gate on the held-out / step-written conclusions that later survive re-derivation (precision-tracked), or require route J's own margin to be at least neutral.
+- CONTRADICTION WITH THE GATE: false 0.83 / true 0.00 / never-read unknown 0.94. Moved leaves (4): stale composite contradicted 0.00, new 0.75 - route J keeps the pre-move fact.
+- REAL TEXT (frozen test, n 150): bridge 0.92, C 0.30, step by step 0.64 (valid 0.73; gold-labelled true 1.00, 27); gated answered 0.62, right 0.70, valid 0.85.
+- The pass has 10 domains (Pile): the HEADLINE / FORGETTING / FINAL BPC line comes only after visit 10.
+
+### kra48 VISITS 2-5 (GPU, seed 5; 24 Nov 11:58) - REAL-TEXT SELF-WRITES TOO LOOSE; THE TEST SET UNCHANGED
+- REAL-TEXT SELF-WRITTEN CHAINS (300 untaught chains): visit 2 NEW 79, **C as recorded 0.05, valid 0.00** (the gate calibrated at visit 2 is loose, t = -0.66); visit 3 RETRACTED 15 (all wrong), NEW 41 (0.51 / valid 0.49); visit 4 NEW 35 (0.29 / 0.26), KEPT 26, RETRACTED 3; visit 5 NEW 32 (0.16 / 0.16), RETRACTED 14 (0.14) -> 155 taught. **Re-derivation removes many wrong ones, but new wrong ones keep coming: on untaught real chains the step-by-step gate is not selective enough.** Gold-labelled ones are true (0.80-1.00) - the 'wrong' writes are mostly other places with unrecorded links.
+- TEST (frozen, unwritten) vs kra46 (seed 5, no self-writes): visit 4 C 0.35 (0.41), step by step 0.81 (0.77), gated 0.47 answered / 0.94 right (0.58 / 0.95); visit 5 C 0.43, step by step 0.69, gated 0.59 / 0.70. **No clear gain or loss from self-teaching.**
+- RULE WORLD (seed 5): step writes 9 / 6 / 11 / 17 new, right 1.00 / 1.00 / 1.00 / 0.88; none retracted on contradiction. CONTRADICTION WITH THE GATE: false 0.75-0.87 / true 0.00 / never-read unknown 0.97-0.98. Route J RE-DERIVE at visits 4-5 RETRACTED 15 and 12 writes that were right (0.87-1.00) and REWROTE 1 and 4 right ones into wrong ones - route J's re-derivation drifts late in the pass (open).
+- kra49 change from this: real-text self-writes only when BOTH links are on the model's own record (the REM gate, inf_rchain_selfwrite_verify).
+
+### kra49 local check (24 Nov 12:13; seed 4; gate forced open locally): released
+- No Traceback through two domains; step writes, route J re-derive (with the contradiction check) and the real-text self-write print as in kra47-48. The self-calibration only acts once a step write is retracted on contradiction (none locally: route J is not confident at this size); the verified self-write (both links recorded) passed a direct test with fixed answers (a chain with an unrecorded second link is not written).
+
+### kra48 VISIT 6 (GPU, seed 5; 24 Nov 12:27) - BEST WRITTEN REAL-TEXT CHAIN
+- REAL TEXT (frozen test, n 150): bridge 0.93, **C 0.53** (baseline 0.07; given the right bridge 0.57), gold-true chains 0.50, whole chain recorded 0.54; written conclusions gold-labelled true 16 / 16. **STEP BY STEP: hop 1 0.91, C 0.80, valid 0.81, gold-labelled true 23 / 23; GATED answered 0.75, right 0.83.** The written chain keeps rising past visit 4 (0.35 -> 0.43 -> 0.53).
+- Real-text self-writes visit 6: NEW 33 (as recorded 0.15, valid 0.12), KEPT 45, RETRACTED 7 -> 181 taught (still loose; kra49 adds the REM gate).
+- Rule world visit 6: step writes NEW 12 (0.83), KEPT 36 (1.00), RETRACTED 3; step-written retracted on contradiction 1 (wrong). Contradiction with the gate: false 0.88 / true 0.00 / never-read unknown 0.94. MOVED leaves with the move read (25): the stale composite is never contradicted (0.00) - route J keeps the old fact (open).
+
+### kra50 (24 Nov 12:30; pending its local check): THE KEYED-MEMORY JEPA AS A PARALLEL MEMORY
+- platypus/inference/jmem.py: own byte encoder (context + EMA target), predictor, one slot per name; trained each sleep on the premise sentences read so far (rule world + real-text chain premises); readouts by its own hops vs the trunk's. Smoke on a tiny rule world (3 domains, 96 premises; 64-dim, 1 layer): after 300 steps one hop 0.57, two hops 0.16-0.22; **after 600 steps one hop 1.00, two hops 1.00 on planted AND held-back composites, gated answered 0.75-0.81, right 1.00**; never-read margin AUC 0.70.
+
+### kra50 local check (24 Nov 13:12; seed 5; inf_jmem_steps 400 locally): released
+- First run: 'JEPA MEMORY unavailable (element 0 of tensors does not require grad)' - the sleep's readouts run without gradients; fixed (training under torch.enable_grad), pushed, re-run. Now visit 1 prints: 222 premise sentences read, 259 slots, 400 steps (loss 4.45), one hop 0.05, two hops 0.00 - too few steps on the CPU to learn (the tiny-world smoke needed 600 steps for 1.00); 118 s per sleep on 2 CPUs (GPU: 1,500 steps a sleep, expected well under a minute). No Traceback. The real-text line prints once the TEST set exists (visit 2+).
+
+### kra49 VISIT 2 (GPU, seed 4; 24 Nov 13:33)
+- Step-by-step writes: NEW 20, right 0.80 (kra47 visit 2: 19 at 0.95); **4 of them RETRACTED ON CONTRADICTION the same sleep - all 4 wrong** (right 0.00), so the self-calibrated gate starts visit 3 above those 4 confidences. Route J re-derive KEPT 89 (0.99).
+- Contradiction with the gate: false 0.91 / true 0.00 / never-read unknown 0.94. Rule world step by step: held back C 0.57 (gated 0.71 answered, 0.70 right).
+- Real-text self-writes with the REM gate (both links recorded): NEW 0 at visit 2 (kra48 wrote 79 at 0.05 as recorded) - the verification blocks the early, loose writes.
+- kra50 local check complete (13:49): no Traceback; JEPA MEMORY visit 2: 497 premise sentences, 581 slots, 800 steps in all, loss 5.08, one hop 0.02 - not learning yet at 400 CPU steps a sleep while the slot count doubles (the synthetic worlds needed 4,000-6,000 steps; the GPU run gives 1,500 a sleep). 132 s a sleep on 2 CPUs. Watch on the GPU whether the loss falls by visit 3-4; if not, kra51 trains it longer (or with a learning-rate warm-up, as tools/jepa_store.py's OneCycle).
+
+### kra49 VISIT 3 (GPU, seed 4; 24 Nov 13:57)
+- Step-by-step writes: NEW 2 (right 1.00), the 16 kept re-derived right 1.00, none retracted - after visit 2's 4 contradicted writes the gate stands at t = -0.03 (visit 2: -0.08); the gate line did not name the self-calibration (the label edit had not applied; fixed for later builds). Planted gated 0.43 answered / 1.00 right; held back 0.11 / 1.00; pure none answered.
+- **REAL-TEXT SELF-WRITES WITH THE REM GATE: NEW 14, as recorded 1.00, valid 1.00** (kra48 visit 3 unverified: 41 at 0.51 / 0.49).
+- Contradiction with the gate: false 0.91 / true 0.00 / **never-read unknown 0.99**. Route J re-derive KEPT 149 (0.99), RETRACTED 3 (2 right).
+- Real text (frozen test) visit 3: bridge 0.61, C 0.09 (kra47 visit 3: 0.63 / 0.11).
+
+### kra49 VISITS 4-5 (GPU, seed 4; 24 Nov 14:48) - THE SELF-CALIBRATED GATE HOLDS PRECISION THROUGH VISIT 5
+- **Step-by-step writes: visit 4 NEW 5 (right 1.00), KEPT 18 (1.00); visit 5 NEW 0, KEPT 23 (1.00) - all 23 step-written composites right through visit 5** (kra47 visit 5: new writes 0.40 right). The price is coverage: at visit 5 the gate answers no held-back and 8% of pure never-seen composites (planted 0.55 answered, 1.00 right).
+- Real-text self-writes with the REM gate: visit 4 NEW 15 (as recorded 1.00, valid 1.00; gold-labelled 4: true 0.75), KEPT 7, RETRACTED 2; visit 5 NEW 1 (1.00), KEPT 12, RETRACTED 4 (they were right) -> 24 taught. Valid every time; re-derivation sometimes drops right ones.
+- Contradiction with the gate: visit 4 false 0.97 / true 0.00 / never-read unknown 0.96; **visit 5 false only 0.42** (unknown 0.99, true 0.00) - at visit 5 route J's seeds agree less, and route J RE-DERIVE retracted 13 writes that were 0.92 right (as kra47-48 at visits 4-5): **route J becomes unstable when the fifth domain arrives** (open; the codes it is fitted on drift as the trunk learns the new domain).
+- Real text (frozen test): visit 4 bridge 0.87, C 0.27, step by step 0.67, gated 0.64 / 0.71; visit 5 C 0.34, step by step 0.65, gated 0.23 / 0.54 (kra45 visit 4, same seed: 0.41, 0.64, 0.36 / 0.98) - a little weaker; gold-labelled conclusions true 0.96-1.00.
+
+### kra51 local check (24 Nov 15:31; seed 4): released
+- No Traceback through two domains; ROUTE J RE-DERIVE prints with 'HELD by hysteresis (first failure) 0' (no failures locally - the path is judged on the GPU at visits 4-5); JEPA MEMORY trains with the warm-up (visit 1 loss 3.89 vs 4.45 without; still no recall at 400 CPU steps a sleep).
+
+### kra49 VISITS 6-8 (GPU, seed 4; 24 Nov 16:15)
+- **Step-by-step writes stay precise as coverage returns: visit 6 NEW 19 (1.00), visit 7 NEW 9 (0.89), visit 8 NEW 73 (0.97); kept ones 0.98-1.00; 121 step-written composites; visit 8: 3 RETRACTED ON CONTRADICTION, all wrong.** Rule-world step by step visit 8: planted gated 0.67 / 0.99, held back C 0.80, gated 0.58 answered / 0.95 right.
+- Real-text self-writes (REM gate): 8 / 4 / 2 new, all as recorded and valid (1.00); 33 taught.
+- **Route J's instability grows:** RE-DERIVE retracted 8 (v6), **100 (v7) and 82 (v8) writes that were 0.91-0.92 right**; contradiction with the gate: false 0.95 (v6) -> 0.70 (v7) -> 0.76 (v8), never-read unknown 0.89-0.94. kra51's anchored codes and two-failure hysteresis target exactly this.
+- Real text (frozen test): visit 6 bridge 0.92, C 0.38, step by step 0.77; **visit 7 bridge 0.93, C 0.53, gold-true chains 0.62**, step by step 0.73.
+
+### THE IN-MODEL JEPA MEMORY NEEDS A WARM-UP (offline; 24 Nov 16:37; tools/jmem_sim.py - platypus/inference/jmem.py on the five-level world, people in 3 domains arriving one per sleep, 1,500 steps a sleep on everything read so far)
+| learning-rate warm-up | after sleep 1: recall D0 / 2 hops | after sleep 2: D0 / D1 / 2 hops | after sleep 3: D0 / D1 / D2 / 2 hops | loss |
+|---|---|---|---|---|
+| none (kra50) | 0.02 / 0.02 | 0.01 / 0.02 / 0.00 | 0.02 / 0.02 / 0.02 / 0.00 | 5.42 -> 5.64 (not learning) |
+| **300 steps (kra51)** | **0.99 / 0.99** | **1.00 / 1.00 / 1.00** | **1.00 / 1.00 / 0.99 / 1.00** | 3.04 -> 2.85 |
+- **Without a warm-up the memory never starts learning (constant learning rate 1e-3 from step 0 on a fresh transformer); with 300 warm-up steps it stores every fact and chains two hops at 0.99-1.00 from the first sleep, and keeps all three domains as they arrive.** kra50's JEPA memory will therefore show nothing; kra51 (warm-up 300, 3,000 steps a sleep) is the real test in the model.
+- **DREAM REPLAY in the in-model memory (24 Nov 17:00; JS_DREAM=1, warm-up 300):** from the second sleep the earlier domains' people are replayed only from the memory's OWN recall (right 0.99), not from the read text: after sleep 2 D0 0.98 / D1 0.99, 2 hops 0.98; **after sleep 3 D0 0.98 / D1 0.99 / D2 1.00, 2 hops 0.98** (data replay: 1.00 / 1.00 / 0.99, 1.00). The jmem.py memory protects itself by its own dreams as the standalone JEPA did.
+
+### kra52 local check (24 Nov 17:45; seed 5; JEPA memory 600 CPU steps a sleep): released with one safeguard added
+- No Traceback. MOVED LEAVES at the normal dose: the reader now records the NEW premise 0.36-0.43 (kra49: 0.04-0.05) and route J's composite starts to follow (NEW 0.07-0.14 at visit 2).
+- **The JEPA memory's dream replay taught its own errors locally:** at 600 CPU steps its visit-1 recall was 0.14, so the visit-2 dreams were 0.15 right and the loss rose (4.29 -> 5.01). On the GPU (3,000 steps, warm-up) visit-1 recall should be ~0.99 (jmem_sim), but the rule is now explicit: **the memory dreams only once its own one-hop recall on what it read is at least 0.9 (inf_jmem_dream_min); otherwise it replays the read text.**
+
+### kra52 GPU, visit 1 (24 Nov 18:30; seed 5; run 20261124T181159Z)
+- No errors. JEPA MEMORY (parallel), first sleep, 3,000 steps with warm-up 300: 126 premise sentences, 147 slots, loss 3.59; one hop on read premises **0.37** (kra50 without warm-up: 0.02, not learning); two hops by its own hops: PLANTED bridge 0.52, C 0.30, gated answered 0.39, right 0.56 | HELD BACK bridge 0.31, C 0.07 | PURE bridge 0.25, C 0.03; never-read vs right margin AUC 0.47 (the margin does not yet separate). **The in-model JEPA memory learns on the GPU once warmed up**, but is far from the 0.9 recall that opens its dreams, so visit 2 should train on read premises only (the guard).
+- Moved leaves, route J contradiction and step writes start at visit 2.
+
+### kra51 GPU (A100), visit 1 (24 Nov 18:32; seed 4; run 20261124T180407Z)
+- No errors. JEPA MEMORY (parallel), first sleep (3,000 steps, warm-up 300): 108 premise sentences, 126 slots, loss 3.31; one hop **0.63**; two hops by its own hops: PLANTED bridge 0.65, C 0.40 (gated answered 0.50, right 0.60) | HELD BACK bridge 0.54, C 0.25 (gated right 0.38) | PURE bridge 0.79, C 0.36 (gated right 0.56); never-read vs right margin AUC 0.64. Second seed agrees with kra52 (0.37 on seed 5): the in-model JEPA memory learns on the GPU with the warm-up, and already chains two hops above chance from its own hops (held-back C 0.25, never taught). Route J's hysteresis is tested at visits 4-8.
+
+### kra51 GPU (A100, seed 4), visits 2-3 (24 Nov 20:41)
+- ROUTE J: contradiction with the gate 0.85 (v2) -> 0.89 (v3), true claims contradicted 0.00, never-read called unknown 0.98-0.99; writes 0.99 precise (104 -> 170); RE-DERIVE kept 89 (0.99) / 151 (0.97), RETRACTED 0, **HELD by hysteresis 4 at v3** (first failures not acted on). The real test is visits 4-8.
+- STEP-BY-STEP WRITES: v2 15 new (right 1.00); v3 4 new (0.75), 15 kept (1.00); 1 step write retracted on route J's contradiction (it was wrong). Real-text self-written chains v3: 11 new, valid 1.00, gold-labelled true 0.80.
+- JEPA MEMORY: one hop 0.63 (v1) -> **0.18 (v2: 781 premises, slots 126 -> 885, loss 4.18)** -> 0.67 (v3); held-back two hops C 0.25 -> 0.03 -> 0.47 (gated right 0.59); planted gated right 0.79. A dip when a large domain arrives, recovered the next sleep (no dreams in kra51).
+- **JEPA MEMORY ON REAL TEXT (frozen test chains, v3, 150): C 0.46 by its own two hops, gated answered 0.33, right 0.76 - vs the trunk's STEP BY STEP C 0.28 (gated answered 0.13, right 0.85) and its written chain C 0.13.** Predicting in representation space chains real-text facts better than the trunk's step-by-step answering, at a little lower gated precision.
+- Moved leaves (no dose fix in kra51): reader recorded the new premise 0.00 / 0.17 (kra52 has the fix).
+
+### kra52 GPU (seed 5), visits 1-7 (24 Nov 20:42)
+- ROUTE J (kra51's anchored codes + hysteresis, here on seed 5): contradiction with the gate 0.90 / 0.88 / 0.88 (v2-4) -> **0.41 (v5)** -> 0.77 (v6); true claims contradicted 0.00 throughout; never-read unknown 0.95-0.97. RE-DERIVE: kept 128 (0.99), 200 (0.97), 269 (0.96), 321 (0.93), 363 (0.91); RETRACTED right writes 0 / 0 / 2 / 7 / 5 (kra47-49 at visits 4-5: 80-100) and REWRITTEN right -> wrong 1 (v5), 3 (v6); HELD by hysteresis 6 / 15 / 38 / 100. **Hysteresis cut the damage about tenfold, but the predictor's instability at visit 5 remains (contradiction dips, held writes pile up).**
+- STEP-BY-STEP WRITES: 19 new at v2 (0.79), 3 of them retracted on contradiction at v2 (all wrong) and 3 on re-derivation at v3; from v3 every new write right (2, 8, 1, 8), all kept (1.00). Real-text self-written chains: 10, 3, 7, 7 new, valid 1.00 every visit, 1 retracted.
+- **MOVED LEAVES: the dose fix did NOT carry to the GPU** - reader recorded the NEW premise 0.00-0.03 at v2-6 (local check: 0.36-0.43), OLD 0.95-1.00; route J's NEW composite contradicted 0.38-0.68 once the move is read. The GPU store's reader keeps the old premise (to diagnose: conflict resolution / support of the older premise).
+- JEPA MEMORY: one hop 0.37 / 0.29 / 0.63 / 0.64 / 0.69 / 0.66 - **plateaus near 0.65, never reaches the 0.9 dream threshold, so it never dreamed (0 DREAMED lines)**: the guard held, but kra52's dream replay was not tested. Rule-world held-back two hops C 0.34-0.50, gated right 0.49-0.67.
+- **REAL TEXT, the frozen test chains (150): JEPA memory C 0.74 / 0.70 / 0.52 / 0.56 (v3-6; gated 0.51 @ 0.94, 0.55 @ 0.88, 0.70 @ 0.65, 0.37 @ 0.84) vs the trunk's STEP BY STEP C 0.37 / 0.85 / 0.64 / 0.88 (gated 0.19 @ 0.90, 0.59 @ 0.94, 0.60 @ 0.81, 0.83 @ 0.89).** The JEPA memory learns the chains FAST (v3: twice the trunk) and the trunk overtakes once it has consolidated (v4-6) - a fast and a slow learner, as complementary learning systems: the case for the combined answer (kra53).
+- kra52 visit 7 (21:09): ROUTE J contradiction 0.53 (true contradicted 0.00), RE-DERIVE kept 399 (0.90), **RETRACTED 40 (were right 0.82)**, held by hysteresis 129 in all - the instability returns past visit 6 once held writes fail a second time; moved leaves: new premise 0.00-0.04 (unchanged). Step writes: 4 new (1.00), 4 retracted on re-derivation (were right). JEPA MEMORY: one hop 0.73; held-back two hops C 0.54, gated answered 0.48 right 0.79; REAL TEXT test chains C 0.72 (gated 0.64 @ 0.85) vs the trunk's step by step C 0.77 (gated 0.60 @ 0.88) - level. Real-text self-written chains: 6 new, valid 1.00.

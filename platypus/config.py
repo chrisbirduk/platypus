@@ -793,9 +793,33 @@ class Config:
     inf_kmc_rulej_cmpobj=0          #   23 Nov kra44 READOUT: route J refitted with the other objective (nce <-> cos) on the same targets
     inf_kmc_rulej_ens=0             #   23 Nov kra44 READOUT: route J refitted with this many seeds; ENSEMBLE CONTRADICTION (false vs unknown claims)
     inf_kmc_rulej_ens_bag=0         #   23 Nov kra45: the ensemble's seeds each fitted on a BOOTSTRAP resample of the recorded facts
+    inf_rchain_selfwrite=0          #   24 Nov kra48 MODEL CHANGE: gated step-by-step answers on up to N untaught real-text chains written and taught as chains, re-derived each sleep
+    inf_rchain_selfwrite_verify=0   #   24 Nov kra49: a self-written real-text chain only if both its links are recorded (the REM gate)
     inf_rchain_testfix=0            #   23 Nov kra45: the real-text TEST chain set frozen once it is full
     inf_rule_steps=0                #   23 Nov kra45 READOUT: STEP BY STEP on the rule world (learned rule plans, trunk answers each hop, gate)
     inf_kmc_rulej_ens_gate=0        #   23 Nov kra46 READOUT: CONTRADICTED = margin gate passes AND seeds agree on another answer; UNKNOWN = gate fails
+    inf_rule_steps_gtype=0          #   23 Nov kra47: the step-by-step gate calibrated per question type
+    inf_rule_steps_oracle=0         #   23 Nov: LOCAL CHECKS ONLY - the oracle rule when none is learned, so the step-by-step code paths run
+    inf_rule_steps_gforce=0         #   23 Nov: LOCAL CHECKS ONLY - the step-by-step gate open
+    inf_rule_steps_selfcal=0        #   24 Nov kra49: the step gate rises above the confidence of every step write retracted on contradiction
+    inf_jmem=0                      #   24 Nov kra50: the keyed-memory JEPA as a PARALLEL memory (readout only; platypus/inference/jmem.py)
+    inf_jmem_steps=1500             #   its training steps per sleep
+    inf_jmem_dim=192
+    inf_jmem_layers=3
+    inf_jmem_lr=0.001
+    inf_kmc_rulej_zema=0.0          #   24 Nov kra51: route J's name codes smoothed with their codes from earlier sleeps (weight of the old code)
+    inf_kmc_rulej_reverify_hyst=0   #   24 Nov kra51: a route J write retracted / rewritten only after failing re-derivation at two successive sleeps
+    inf_jmem_dream=0                #   24 Nov kra52: the JEPA memory replays earlier domains' premises from its own recall (dream replay)
+    inf_jmem_dream_min=0.9          #   24 Nov kra52: dream replay only once the memory's one-hop recall on what it read is at least this (else the read text)
+    inf_jmem_dream_gate=0           #   24 Nov kra53: dream only the recalls above the memory's own one-hop gate (25% quantile of its right recalls' margins), not all-or-nothing at dream_min
+    inf_jmem_answer=0               #   24 Nov kra53: CROSS-CHECK readout - its gated two-hop answers on held-back composites vs route J; COMBINED route J / step / JEPA
+    inf_jmem_write=0                #   24 Nov kra53 MODEL CHANGE: its gated answers WRITTEN where route J and step by step abstain; re-derived each sleep; retracted on contradiction
+    inf_jmem_wprec=0.9              #   24 Nov kra53: its write / answer gate = the lowest margin at which its planted-composite answers are >= this precise (10+); else closed
+    inf_jmem_dprec=0.95             #   24 Nov kra53: its dream gate = the lowest margin at which its recalls of read premises are >= this precise (20+); else the read text
+    inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
+    inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
+    inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
+    inf_kmc_rulej_retract_contra=0  #   23 Nov kra47 MODEL CHANGE: step-by-step writes retracted when route J (gate + seeds) contradicts them
     inf_kmc_rulej_search=0          #   23 Nov kra44 READOUT: LATENT PROGRAM SEARCH over route J's operators from each composite's recorded examples
     inf_rti_tentative=0             #   19 Nov kra12 MODEL CHANGE: real-text inferences written TENTATIVE; taught and in the memory only once a later relational record confirms them
     inf_rti_fade=4                  #   19 Nov kra12: visits after which an unconfirmed tentative inference fades (removed; never taught against)

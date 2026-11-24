@@ -34,6 +34,12 @@ W = {'lives': ["{a} lives in {b}.", "{a} has a home in {b}."], 'city_in': ["{a} 
      'region_of': ["{a} is part of {b}.", "The region {a} belongs to {b}."], 'country_in': ["{a} is in {b}.", "The country {a} lies in {b}."]}
 FACTS = {'lives': [(a, CIT[ci][0]) for a, ci in TRP + HEP], 'city_in': [(c, REG[r][0]) for c, r in CIT], 'region_of': [(r, CTY[k][0]) for r, k in REG],
          'country_in': [(k, CONT[c]) for k, c in CTY]}
+if int(os.environ.get('JS_CITIZEN', 0)):                                       # 23 Nov VERIFIED REPLAY: a second view of each person - the country they are a citizen
+    W['citizen'] = ["{a} is a citizen of {b}.", "{a} holds a passport of {b}."]  #   of (true), read in the person's own domain
+    FACTS['citizen'] = [(a, CTY[cty(ci)][0]) for a, ci in TRP + HEP]
+if int(os.environ.get('JS_REGVIEW', 0)):                                       # 24 Nov a THIRD view: the region a person is registered in (true)
+    W['registered'] = ["{a} is registered in {b}.", "{a} has residency in {b}."]
+    FACTS['registered'] = [(a, REG[CIT[ci][1]][0]) for a, ci in TRP + HEP]
 PRE1 = sorted({t.format(a=a, b=b) for rel, fs in FACTS.items() for a, b in fs for t in W[rel]}); PRE = PRE1 * 3
 L, V, PAD, DW, NL = 64, 256, 0, 192, 3
 class Blk(nn.Module):
@@ -98,9 +104,11 @@ def run(variant, phases=None):
         qs, sp = [], []
         for h in heads:
             s = QW[rel].format(a=h, b='\x01' * 6); a_ = s.index('\x01'); qs.append(s.encode('latin-1')); sp.append((a_, a_ + 6))
-        out = []
+        out = []; mg = []
         for i in range(0, len(qs), 256):
-            v = F.normalize(pred(span_mean(ctx(tens(qs[i:i + 256])), sp[i:i + 256])), dim=-1); out += [NAMES[j] for j in (v @ Z.T).argmax(-1).tolist()]
+            v = F.normalize(pred(span_mean(ctx(tens(qs[i:i + 256])), sp[i:i + 256])), dim=-1); t2 = (v @ Z.T).topk(2, -1)
+            out += [NAMES[j] for j in t2.indices[:, 0].tolist()]; mg += (t2.values[:, 0] - t2.values[:, 1]).tolist()
+        MG['last'] = mg                                                        # margins of the last call (top-1 minus top-2 similarity), for verified replay
         return out
     def evaluate(st):
         ctx.eval(); pred.eval(); Z = codes()
@@ -148,7 +156,7 @@ def run(variant, phases=None):
         if phases is None and (st % 2000 == 0 or st == ST): evaluate(st)
       if phases is not None: evalc(tag)
 P(f"CAN A JEPA STORE KNOWLEDGE? {len(NAMES)} names, {len(PRE1)} premise sentences (x3), {ST} steps each; the next-byte trunk recalls these premises 1.00 by 2k steps")
-GROUPS = []; BAD = {}; BADF = float(os.environ.get('JS_DREAMBAD', 0))
+GROUPS = []; MG = {}; BAD = {}; BADF = float(os.environ.get('JS_DREAMBAD', 0))
 if int(os.environ.get('JS_CONT', 0)):                                          # 23 Nov CONTINUAL: three domains of people learned one after another;
     PEO = TRP + HEP; GROUPS = [PEO[g::3] for g in range(3)]                    # geography in every domain's text; forgetting of earlier domains
     def sents(peo):                                                            #   with and without replay
@@ -170,7 +178,22 @@ if int(os.environ.get('JS_CONT', 0)):                                          #
                         while w_ == got[i]: w_ = cities[rb.randint(len(cities))]
                         BAD[a] = (w_, got[i]); got[i] = w_
                 P(f"      FALSE MEMORY: {len(BAD)} of {len(heads)} dreamed recalls replaced by a wrong city (first dream only)")
-            dw = W['lives'][int(os.environ.get('JS_DREAMW', 0))]; dr = [dw.format(a=a, b=c) for a, c in zip(heads, got)]
+            dw = W['lives'][int(os.environ.get('JS_DREAMW', 0))]; keep = [True] * len(heads); extra = []
+            if 'citizen' in W:                                                 # the citizen view is dreamed too (its own recall), in both arms
+                cz = recall('citizen', heads); extra = [W['citizen'][0].format(a=a, b=c) for a, c in zip(heads, cz)]
+                if int(os.environ.get('JS_VERIFY', 0)):                        # VERIFIED REPLAY: a 'lives' memory is replayed only if its city's own chain
+                    m_cz = list(MG.get('last') or [9.0] * len(heads)); rg_ = recall('city_in', got); m1 = list(MG.get('last')); ct = recall('region_of', rg_); m2 = list(MG.get('last'))
+                    keep = [x == y for x, y in zip(ct, cz)]                    #   (city -> region -> country) reaches the person's recalled citizenship
+                    if int(os.environ.get('JS_VERIFY', 0)) == 3 and 'registered' in W:   # 24 Nov v3: TWO independent corroborations - the city's region = the
+                        rr = recall('registered', heads); extra += [W['registered'][0].format(a=a, b=c) for a, c in zip(heads, rr)]   #   recalled registration,
+                        keep = [k or (r1 == r2) for k, r1, r2 in zip(keep, rg_, rr)]   #   or its country = the recalled citizenship: kept if EITHER corroborates
+                    if int(os.environ.get('JS_VERIFY', 0)) == 2:              # 24 Nov v2: drop a memory only when the check is CONFIDENT (the gate idea: a mismatch
+                        cf = [min(a_, b_, c_) for a_, b_, c_ in zip(m_cz, m1, m2)]   #   whose three reads all clear the median margin of the matching ones is a
+                        okm = [c for c, k in zip(cf, keep) if k]; tq = float(np.median(okm)) if okm else 0.0   #   contradiction; an unsure mismatch is kept)
+                        keep = [k or c < tq for k, c in zip(keep, cf)]
+                    pb = [k for a, k in zip(heads, keep) if a in BAD]; pt = [k for a, k in zip(heads, keep) if a not in BAD]   #   person's recalled citizenship
+                    P(f"      VERIFIED REPLAY: 'lives' memories kept {np.mean(keep):.2f} | PLANTED false memories kept {np.mean(pb) if pb else float('nan'):.2f} (n {len(pb)}) | the others kept {np.mean(pt):.2f}")
+            dr = [dw.format(a=a, b=c) for a, c, k in zip(heads, got, keep) if k] + extra
             ok = np.mean([c == CIT[ci][0] for c, (a, ci) in zip(got, [x for h in range(g) for x in GROUPS[h]])])
             P(f"      domain {g}: {len(dr)} dream sentences in the wording '{dw}' from the model's own recall of earlier domains (correct {ok:.2f})")
             return cur + dr * max(1, int(round(rp * len(cur) / len(dr) / (1 - rp))))
