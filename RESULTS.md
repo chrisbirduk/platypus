@@ -6407,3 +6407,6 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - Real-text self-writes with the REM gate: visit 4 NEW 15 (as recorded 1.00, valid 1.00; gold-labelled 4: true 0.75), KEPT 7, RETRACTED 2; visit 5 NEW 1 (1.00), KEPT 12, RETRACTED 4 (they were right) -> 24 taught. Valid every time; re-derivation sometimes drops right ones.
 - Contradiction with the gate: visit 4 false 0.97 / true 0.00 / never-read unknown 0.96; **visit 5 false only 0.42** (unknown 0.99, true 0.00) - at visit 5 route J's seeds agree less, and route J RE-DERIVE retracted 13 writes that were 0.92 right (as kra47-48 at visits 4-5): **route J becomes unstable when the fifth domain arrives** (open; the codes it is fitted on drift as the trunk learns the new domain).
 - Real text (frozen test): visit 4 bridge 0.87, C 0.27, step by step 0.67, gated 0.64 / 0.71; visit 5 C 0.34, step by step 0.65, gated 0.23 / 0.54 (kra45 visit 4, same seed: 0.41, 0.64, 0.36 / 0.98) - a little weaker; gold-labelled conclusions true 0.96-1.00.
+
+### kra51 local check (24 Nov 15:31; seed 4): released
+- No Traceback through two domains; ROUTE J RE-DERIVE prints with 'HELD by hysteresis (first failure) 0' (no failures locally - the path is judged on the GPU at visits 4-5); JEPA MEMORY trains with the warm-up (visit 1 loss 3.89 vs 4.45 without; still no recall at 400 CPU steps a sleep).
