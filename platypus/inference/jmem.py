@@ -133,7 +133,20 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         if J is None: J = JMem(cfg, dev); model.__dict__['_jmem'] = J
         # what has been read: rule-world premises of the seen domains, and the recorded premises of the real-text chains
         rwp = [(d, s_, k, a, b) for (d, s_, k, a, b) in W.get('planted', []) if k in ('parent', 'mgr') and (not seen or int(d) in seen)]
-        items = _items_from([(f"{a} {rw[k]} {b}.", (a, b)) for (d, s_, k, a, b) in rwp])
+        nd9 = ''
+        if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0:             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
+            cur9 = int(list((model.__dict__.get('_t2s') or {0: 0}).keys())[-1])  #   OWN recall, not the read text (jmem_sim: D0 0.98 / D1 0.99 / D2 1.00 after 3 sleeps)
+            old9 = [x for x in rwp if int(x[0]) != cur9]; new9 = [x for x in rwp if int(x[0]) == cur9]; dr9 = []; ok9 = []
+            for k in ('parent', 'mgr'):
+                Lk = [x for x in old9 if x[2] == k]
+                if Lk:
+                    o9, _ = J.hop([x[3] for x in Lk], rw[k])
+                    for x, c in zip(Lk, o9):
+                        if c and c != x[3]: dr9.append((f"{x[3]} {rw[k]} {c}.", (x[3], c))); ok9.append(c == x[4])
+            items = _items_from(dr9 + [(f"{a} {rw[k]} {b}.", (a, b)) for (d, s_, k, a, b) in new9])
+            nd9 = f", {len(dr9)} of them DREAMED from its own recall of earlier domains (right {np.mean(ok9) if ok9 else float('nan'):.2f})"
+        else:
+            items = _items_from([(f"{a} {rw[k]} {b}.", (a, b)) for (d, s_, k, a, b) in rwp])
         from platypus.inference.realchain import _RC
         trn, tst = _RC.get('train') or [], _RC.get('test') or []
         prem = sorted({(c[0], c[1], c[2]) for c in trn + tst} | {(c[2], c[3], c[4]) for c in trn + tst})
@@ -166,7 +179,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         auc = np.mean([[float(a > b) + 0.5 * (a == b) for b in mn] for a in mr]) if mr and mn else float('nan')
         f = lambda R: (f"{len(R)}: bridge {np.mean([b for b, c, g in R]):.2f}, C {np.mean([c for b, c, g in R]):.2f}, GATED answered {np.mean([g >= th for b, c, g in R]):.2f} "
                        f"right {np.mean([c for b, c, g in R if g >= th]) if any(g >= th for b, c, g in R) else float('nan'):.2f}") if R else "0"
-        print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far "
+        print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far{nd9} "
               f"({len(J.keys)} slots, {J.steps} steps in all, loss {ls:.3f}; readout only) || RULE WORLD: one hop on read premises {np.mean(r1) if r1 else float('nan'):.2f} (n {len(r1)}) | "
               f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)", flush=True)
         # REAL TEXT: the frozen TEST chains by its own two hops (premises read, chains never)

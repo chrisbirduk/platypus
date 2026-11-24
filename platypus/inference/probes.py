@@ -311,7 +311,9 @@ def _inf_plant_probes(raw,cfg,d,p):
             fs_.extend(ss_); nrw_ += len(ss_); continue                        #   step-2 context (synthetic, 150 countries: new-bridge composition 0.49-0.52 -> 0.73-0.81)
         k_ = pk_ if rr_ in ('parent', 'mgr') else 1; fs_.extend([s_] * k_); nrw_ += k_   #   world's second-hop premise is recalled about 0.5-0.7
     for l_, mv_ in (inf_rule_world(cfg).get('moves') or {}).items():          # 19 Nov kra9: the MOVED leaves' new premise, planted in its own domain
-        if mv_['d2'] == int(d): fs_.append(mv_['sent']); nrw_ += 1
+        if mv_['d2'] == int(d):                                                # 24 Nov kra52: the new premise planted as often as an ordinary premise (inf_rule_world_movek;
+            k9_ = pk_ if int(getattr(cfg, 'inf_rule_world_movek', 0)) else 1   #   kra47-49: planted once, the reader recorded it 0.04-0.05 and route J kept the old fact)
+            fs_.extend([mv_['sent']] * k9_); nrw_ += k9_
     if not fs_ and not once_: return raw
     b_=bytes(raw); rs_=np.random.RandomState(9000+97*int(d)+int(p)); cuts=[m_.end() for m_ in _re_inf.finditer(rb'[.!?] (?=[A-Z])',b_)]
     if len(cuts)<2: return raw
