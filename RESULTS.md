@@ -6401,3 +6401,9 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **REAL-TEXT SELF-WRITES WITH THE REM GATE: NEW 14, as recorded 1.00, valid 1.00** (kra48 visit 3 unverified: 41 at 0.51 / 0.49).
 - Contradiction with the gate: false 0.91 / true 0.00 / **never-read unknown 0.99**. Route J re-derive KEPT 149 (0.99), RETRACTED 3 (2 right).
 - Real text (frozen test) visit 3: bridge 0.61, C 0.09 (kra47 visit 3: 0.63 / 0.11).
+
+### kra49 VISITS 4-5 (GPU, seed 4; 24 Nov 14:48) - THE SELF-CALIBRATED GATE HOLDS PRECISION THROUGH VISIT 5
+- **Step-by-step writes: visit 4 NEW 5 (right 1.00), KEPT 18 (1.00); visit 5 NEW 0, KEPT 23 (1.00) - all 23 step-written composites right through visit 5** (kra47 visit 5: new writes 0.40 right). The price is coverage: at visit 5 the gate answers no held-back and 8% of pure never-seen composites (planted 0.55 answered, 1.00 right).
+- Real-text self-writes with the REM gate: visit 4 NEW 15 (as recorded 1.00, valid 1.00; gold-labelled 4: true 0.75), KEPT 7, RETRACTED 2; visit 5 NEW 1 (1.00), KEPT 12, RETRACTED 4 (they were right) -> 24 taught. Valid every time; re-derivation sometimes drops right ones.
+- Contradiction with the gate: visit 4 false 0.97 / true 0.00 / never-read unknown 0.96; **visit 5 false only 0.42** (unknown 0.99, true 0.00) - at visit 5 route J's seeds agree less, and route J RE-DERIVE retracted 13 writes that were 0.92 right (as kra47-48 at visits 4-5): **route J becomes unstable when the fifth domain arrives** (open; the codes it is fitted on drift as the trunk learns the new domain).
+- Real text (frozen test): visit 4 bridge 0.87, C 0.27, step by step 0.67, gated 0.64 / 0.71; visit 5 C 0.34, step by step 0.65, gated 0.23 / 0.54 (kra45 visit 4, same seed: 0.41, 0.64, 0.36 / 0.98) - a little weaker; gold-labelled conclusions true 0.96-1.00.
