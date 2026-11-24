@@ -6435,3 +6435,10 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 
 ### kra51 GPU (A100), visit 1 (24 Nov 18:32; seed 4; run 20261124T180407Z)
 - No errors. JEPA MEMORY (parallel), first sleep (3,000 steps, warm-up 300): 108 premise sentences, 126 slots, loss 3.31; one hop **0.63**; two hops by its own hops: PLANTED bridge 0.65, C 0.40 (gated answered 0.50, right 0.60) | HELD BACK bridge 0.54, C 0.25 (gated right 0.38) | PURE bridge 0.79, C 0.36 (gated right 0.56); never-read vs right margin AUC 0.64. Second seed agrees with kra52 (0.37 on seed 5): the in-model JEPA memory learns on the GPU with the warm-up, and already chains two hops above chance from its own hops (held-back C 0.25, never taught). Route J's hysteresis is tested at visits 4-8.
+
+### kra51 GPU (A100, seed 4), visits 2-3 (24 Nov 20:41)
+- ROUTE J: contradiction with the gate 0.85 (v2) -> 0.89 (v3), true claims contradicted 0.00, never-read called unknown 0.98-0.99; writes 0.99 precise (104 -> 170); RE-DERIVE kept 89 (0.99) / 151 (0.97), RETRACTED 0, **HELD by hysteresis 4 at v3** (first failures not acted on). The real test is visits 4-8.
+- STEP-BY-STEP WRITES: v2 15 new (right 1.00); v3 4 new (0.75), 15 kept (1.00); 1 step write retracted on route J's contradiction (it was wrong). Real-text self-written chains v3: 11 new, valid 1.00, gold-labelled true 0.80.
+- JEPA MEMORY: one hop 0.63 (v1) -> **0.18 (v2: 781 premises, slots 126 -> 885, loss 4.18)** -> 0.67 (v3); held-back two hops C 0.25 -> 0.03 -> 0.47 (gated right 0.59); planted gated right 0.79. A dip when a large domain arrives, recovered the next sleep (no dreams in kra51).
+- **JEPA MEMORY ON REAL TEXT (frozen test chains, v3, 150): C 0.46 by its own two hops, gated answered 0.33, right 0.76 - vs the trunk's STEP BY STEP C 0.28 (gated answered 0.13, right 0.85) and its written chain C 0.13.** Predicting in representation space chains real-text facts better than the trunk's step-by-step answering, at a little lower gated precision.
+- Moved leaves (no dose fix in kra51): reader recorded the new premise 0.00 / 0.17 (kra52 has the fix).
