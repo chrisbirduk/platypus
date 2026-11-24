@@ -6347,3 +6347,6 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **RETRACTION ON CONTRADICTION: 1 step write retracted - and it was wrong (right 0.00).** Route J re-derive kept its own 84 writes (0.99 right); 102 written composites now.
 - CONTRADICTION WITH THE GATE (seed 4 now): false claims contradicted 0.89, true 0.00, never-read called UNKNOWN 0.95 (contradicted 0.05). Moved leaves with the new family read: none yet at visit 2.
 - No Traceback. The trunk's own chain at visit 2: held back 0.18, pure 0.00 (as kra45) - the step writes are taught from visit 3.
+
+### kra48 local check (24 Nov 08:50; seed 5; in progress): released
+- No Traceback through two domains; kra47's rule-world paths as before. The real-text self-write runs (the local 10k distant set gives 14 chains, 1 untaught chain in the pool, nothing written at this size). A direct test of the logic with fixed answers: two untaught chains written (a chain sharing a TEST head excluded), the next sleep KEPT the one whose gated answer repeated and RETRACTED the one whose answer fell below the gate; the written chain enters the chain rows ('A1 is within ' -> 'B1 > C1.') beside the taught chains. PASS.
