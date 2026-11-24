@@ -1360,6 +1360,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         SSW9 = model.__dict__.get('_ss_written') or {}; ctr9 = []
                         for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
                             if r3 not in rules or A not in NI: continue
+                            if (model.__dict__.get('_jw_written') or {}).get((r3, A), (None,))[0] == C: continue   # 24 Nov kra53: a JEPA MEMORY write is re-derived (and retracted on contradiction) by the JEPA memory
                             if SSW9.get((r3, A), (None,))[0] == C:              # 23 Nov kra47: a STEP-BY-STEP write is re-derived by the step-by-step route; here it is
                                 if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) and 'OPS9' in dir():   #   only RETRACTED ON CONTRADICTION: route J confident (gate)
                                     x = comp(A, r3, OP); xs = [comp(A, r3, O_) for O_ in OPS9]; an_ = [y[1] for y in xs if y is not None]   #   and the seeds agree

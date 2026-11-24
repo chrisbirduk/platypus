@@ -811,6 +811,9 @@ class Config:
     inf_kmc_rulej_reverify_hyst=0   #   24 Nov kra51: a route J write retracted / rewritten only after failing re-derivation at two successive sleeps
     inf_jmem_dream=0                #   24 Nov kra52: the JEPA memory replays earlier domains' premises from its own recall (dream replay)
     inf_jmem_dream_min=0.9          #   24 Nov kra52: dream replay only once the memory's one-hop recall on what it read is at least this (else the read text)
+    inf_jmem_dream_gate=0           #   24 Nov kra53: dream only the recalls above the memory's own one-hop gate (25% quantile of its right recalls' margins), not all-or-nothing at dream_min
+    inf_jmem_answer=0               #   24 Nov kra53: CROSS-CHECK readout - its gated two-hop answers on held-back composites vs route J; COMBINED route J / step / JEPA
+    inf_jmem_write=0                #   24 Nov kra53 MODEL CHANGE: its gated answers WRITTEN where route J and step by step abstain; re-derived each sleep; retracted on contradiction
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

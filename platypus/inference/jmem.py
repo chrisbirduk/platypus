@@ -123,6 +123,58 @@ def _items_from(sents):
     return out
 
 
+def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
+    """24 Nov kra53: THE JEPA MEMORY SUPPLIES HOPS. (1) CROSS-CHECK on the held-back composites: its gated two-hop answer against route J's
+    gated composite and the step-by-step writes - agreement, and right when they agree / disagree; COMBINED: route J, else a step write, else the
+    JEPA memory. (2) MODEL CHANGE (inf_jmem_write): where route J and step by step both abstain, its gated answer is WRITTEN as a composite
+    (taught like their writes); every JEPA write is RE-DERIVED each sleep (kept only if its gated answer is the same) and RETRACTED when route
+    J's gated composite contradicts it; contradicted writes raise its gate (self-calibration, as kra49)."""
+    RJ9 = model.__dict__.get('_rj_ans') or {}; SSW = model.__dict__.get('_ss_written') or {}
+    BADJ = model.__dict__.setdefault('_jw_bad_conf', [])
+    if BADJ and int(getattr(cfg, 'inf_rule_steps_selfcal', 0)): th = max(th, max(BADJ) + 1e-3)
+    H = [x for x in W.get('held', []) if x[2] in ('grand', 'skip') and (not seen or int(x[0]) in seen)][:400]
+    ans = {}
+    for k in ('grand', 'skip'):
+        Lk = [x for x in H if x[2] == k]
+        if not Lk: continue
+        r_ = 'parent' if k == 'grand' else 'mgr'; b1, g1 = J.hop([x[3] for x in Lk], rw[r_]); c2, g2 = J.hop(b1, rw[r_])
+        for x, b, c, a1, a2 in zip(Lk, b1, c2, g1, g2): ans[(rw[k], x[3])] = (c, b, min(a1, a2), x)
+    pr9 = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
+    ag, dj, dr, cb = [], [], [], []
+    for key, (c, b, g, x) in ans.items():
+        jg = g >= th and bool(c) and c not in (x[3], b); rj = RJ9.get((x[3], rw[x[2]])); rjg = bool(rj and rj[1]); sw = SSW.get(key)
+        if jg and rjg: ag.append((c == rj[0], c == x[4], rj[0] == x[4]))
+        if rjg: cb.append(('J', rj[0] == x[4]))
+        elif sw: cb.append(('S', sw[0] == x[4]))
+        elif jg: cb.append(('M', c == x[4]))
+        else: cb.append(('-', None))
+    agr = [a for a, b_, c_ in ag]
+    an = [v for t, v in cb if t != '-']
+    print(f"  [JEPA MEMORY ANSWERS, CROSS-CHECK | visit {vis + 1}] held-back composites ({len(ans)}), its gated two hops (t = {th:.3f}{', self-calibrated on ' + str(len(BADJ)) + ' contradicted writes' if BADJ else ''}) vs route J's gated composite: "
+          f"BOTH answered {len(ag)}: AGREE {pr9(agr)} | when they agree right {pr9([b_ for a, b_, c_ in ag if a])} | when they disagree: JEPA right {pr9([b_ for a, b_, c_ in ag if not a])}, route J right {pr9([c_ for a, b_, c_ in ag if not a])} || "
+          f"COMBINED (route J, else a step write, else the JEPA memory): answered {len(an) / max(1, len(cb)):.2f} (route J {sum(t == 'J' for t, v in cb) / max(1, len(cb)):.2f}, step {sum(t == 'S' for t, v in cb) / max(1, len(cb)):.2f}, "
+          f"JEPA {sum(t == 'M' for t, v in cb) / max(1, len(cb)):.2f}), right {pr9(an)} (JEPA's share right {pr9([v for t, v in cb if t == 'M'])})", flush=True)
+    if not int(getattr(cfg, 'inf_jmem_write', 0)): return
+    RW = model.__dict__.setdefault('_ra_written', {}); BR = model.__dict__.setdefault('_ra_bridge', {}); WRm = model.__dict__.setdefault('_rm_written', {})
+    JW = model.__dict__.setdefault('_jw_written', {}); kp, rt, rc, nw, okn = [], [], [], 0, []
+    for key in list(JW):
+        C0, v0, cf0 = JW[key]; a = ans.get(key); A = key[1]; rj = RJ9.get((A, key[0]))
+        drop = None
+        if rj and rj[1] and rj[0] != C0: drop = 'contra'; BADJ.append(cf0)
+        elif a is None or not (a[2] >= th and a[0] == C0): drop = 'rederive'
+        if drop is None: kp.append(C0 == (a[3][4] if a else None)); continue
+        RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None)
+        tru = a[3][4] if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
+    for key, (c, b, g, x) in ans.items():
+        if key in JW or key in SSW or g < th or not c or c in (x[3], b): continue
+        rj = RJ9.get((x[3], rw[x[2]]))
+        if rj and rj[1]: continue                                              # route J answers this one itself
+        RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); nw += 1; okn.append(c == x[4])
+    print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)}) | "
+          f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
+          f"{len(JW)} JEPA writes now", flush=True)
+
+
 def jmem_sleep(model, cfg, vis, W, seen, rw):
     """train the parallel JEPA memory on everything read so far, then compare its recall and chaining with the trunk's"""
     if not int(getattr(cfg, 'inf_jmem', 0)): return
@@ -134,17 +186,19 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         # what has been read: rule-world premises of the seen domains, and the recorded premises of the real-text chains
         rwp = [(d, s_, k, a, b) for (d, s_, k, a, b) in W.get('planted', []) if k in ('parent', 'mgr') and (not seen or int(d) in seen)]
         nd9 = ''
-        if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
+        DG9 = int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'th1', None) is not None   # 24 Nov kra53: dream only the recalls that pass its own gate
+        if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and (DG9 or getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9))):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
             cur9 = int(list((model.__dict__.get('_t2s') or {0: 0}).keys())[-1])  #   OWN recall, not the read text (jmem_sim: D0 0.98 / D1 0.99 / D2 1.00 after 3 sleeps)
             old9 = [x for x in rwp if int(x[0]) != cur9]; new9 = [x for x in rwp if int(x[0]) == cur9]; dr9 = []; ok9 = []
             for k in ('parent', 'mgr'):
                 Lk = [x for x in old9 if x[2] == k]
                 if Lk:
-                    o9, _ = J.hop([x[3] for x in Lk], rw[k])
-                    for x, c in zip(Lk, o9):
+                    o9, g9 = J.hop([x[3] for x in Lk], rw[k])
+                    for x, c, gg in zip(Lk, o9, g9):
+                        if DG9 and gg < J.th1: continue                        #   (kra53) a recall below its own one-hop gate is not dreamed
                         if c and c != x[3]: dr9.append((f"{x[3]} {rw[k]} {c}.", (x[3], c))); ok9.append(c == x[4])
             items = _items_from(dr9 + [(f"{a} {rw[k]} {b}.", (a, b)) for (d, s_, k, a, b) in new9])
-            nd9 = f", {len(dr9)} of them DREAMED from its own recall of earlier domains (right {np.mean(ok9) if ok9 else float('nan'):.2f})"
+            nd9 = f", {len(dr9)} of them DREAMED from its own recall of earlier domains{' (gated: ' + str(len(old9)) + ' earlier premises, only recalls above its one-hop gate dreamed)' if DG9 else ''} (right {np.mean(ok9) if ok9 else float('nan'):.2f})"
         else:
             items = _items_from([(f"{a} {rw[k]} {b}.", (a, b)) for (d, s_, k, a, b) in rwp])
         from platypus.inference.realchain import _RC
@@ -155,11 +209,12 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         # RULE WORLD: one hop on read premises, two hops on planted / held-back / pure composites, the gate on never-read families
         par, mgr = W.get('parent', {}), W.get('mgr', {}); up = {'grand': (par, 'parent'), 'skip': (mgr, 'mgr')}
         s1 = rwp[:300]
-        r1 = []
+        r1 = []; m1 = []
         for k in ('parent', 'mgr'):
             L = [x for x in s1 if x[2] == k]
-            if L: o, _ = J.hop([x[3] for x in L], rw[k]); r1 += [y == x[4] for y, x in zip(o, L)]
-        J.last_r1 = float(np.mean(r1)) if r1 else 0.0                          # kra52: the memory's own one-hop recall on what it read (a self-test on stored text)
+            if L: o, g1_ = J.hop([x[3] for x in L], rw[k]); r1 += [y == x[4] for y, x in zip(o, L)]; m1 += [g for y, x, g in zip(o, L, g1_) if y == x[4]]
+        J.last_r1 = float(np.mean(r1)) if r1 else 0.0
+        J.th1 = float(np.quantile(m1, 0.25)) if len(m1) >= 8 else None          # kra53: its one-hop gate (keeps 75% of its right recalls of what it read)                          # kra52: the memory's own one-hop recall on what it read (a self-test on stored text)
         pure = W.get('pure') or set()
         def two(L):
             res = []
@@ -183,6 +238,8 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far{nd9} "
               f"({len(J.keys)} slots, {J.steps} steps in all, loss {ls:.3f}; readout only) || RULE WORLD: one hop on read premises {np.mean(r1) if r1 else float('nan'):.2f} (n {len(r1)}) | "
               f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)", flush=True)
+        if int(getattr(cfg, 'inf_jmem_answer', 0)) or int(getattr(cfg, 'inf_jmem_write', 0)):
+            _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure)
         # REAL TEXT: the frozen TEST chains by its own two hops (premises read, chains never)
         if tst:
             T = tst[:150]
