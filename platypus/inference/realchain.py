@@ -55,7 +55,7 @@ def rchain_build(cfg, vis):
         fx = _RC.get('tfix')                                                   #   chains found one visit before, premises taught one visit only - visits did not compare)
         if fx: tst = [c for c in fx if c[2] not in {x[2] for x in trn}]
         elif len(tst) >= (int(getattr(cfg, 'inf_rchain_testfix', 0)) if int(getattr(cfg, 'inf_rchain_testfix', 0)) > 1 else int(getattr(cfg, 'inf_rchain_test', 150))): _RC['tfix'] = list(tst); print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] TEST set FROZEN at {len(tst)} chains", flush=True)
-    _RC.update(vis=vis, train=trn, test=tst, pairs={(a, t) for a, c in HT.items() for (w, t) in c})   # every recorded containment link (any wording)
+    _RC.update(vis=vis, train=trn, test=tst, allc=CL, pairs={(a, t) for a, c in HT.items() for (w, t) in c})   # every recorded containment link (any wording)
     gl = [bool((PRD.get((c[0], c[2])) or set()) & {'P131', 'P17', 'P30', 'P361', 'P276', 'P150'}) and bool((PRD.get((c[2], c[4])) or set()) & {'P131', 'P17', 'P30', 'P361', 'P276', 'P150'}) for c in tst]
     print(f"  [REAL-TEXT CHAINS | visit {vis + 1}] {ndv} distant documents read: {len(CL)} containment chains{' (oracle ' + ','.join(sorted(orc)) + ')' if orc else ''} "
           f"-> TAUGHT {len(trn)} (arrow form) | TEST {len(tst)} (bridge never in a taught chain; premises taught, chain never) "
@@ -95,6 +95,8 @@ def rchain_rows(cfg, vis, sl):
             P.extend([(f"{h} > ".encode('latin-1', 'replace'), (t + '.').encode('latin-1', 'replace'), sl)] * int(getattr(cfg, 'inf_rchain_arrowprem', 0)))   # 22 Nov arrow premise frame
             for pw in [x for x in _PARAW if x != _crel(cfg).strip()][:int(getattr(cfg, 'inf_rchain_paraw', 0))]:   # 22 Nov kra38 PARAPHRASED CONTAINMENT WORDINGS
                 P.append((f"{h} {pw} ".encode('latin-1', 'replace'), (t + '.').encode('latin-1', 'replace'), sl))   #   (the rule world's premw: 1 wording 0.15-0.19, 4 -> 0.55-0.67)
+    for A_, (B_, C_, v_) in (_RC.get('selfw') or {}).items():                  # 24 Nov kra48 SELF-WRITTEN CHAINS: the trunk's own GATED step-by-step conclusions on
+        C.append((f"{A_} {_crel(cfg)} ".encode('latin-1', 'replace'), f"{B_} > {C_}.".encode('latin-1', 'replace'), sl))   #   untaught chains, taught as chains
     for (A_, w1, B_, w2, C_) in trn:                                           # 22 Nov kra32 visits 4-5: with the chain asked as 'A in ' - the SAME prompt as a first premise
         r1 = _crel(cfg)                                                        #   worded 'in' - test heads answer their premise ('A in B.', format 0.20) and never chain;
                                                                                #   the composite gets its own relation (inf_rchain_crel, e.g. 'is within'), as the rule world's
@@ -227,5 +229,35 @@ def rchain_readout(model, cfg, vis, sl, D=None):
               + (f" || rows this visit: loss {np.mean(cel[:max(1, len(cel) // 10)]):.3f} -> {np.mean(cel[-max(1, len(cel) // 10):]):.3f} ({len(cel)} steps)" if cel else "")
               + (f", JEPA alignment 1 - cos {np.mean(all_[:max(1, len(all_) // 10)]):.3f} -> {np.mean(all_[-max(1, len(all_) // 10):]):.3f}" if all_ else ""), flush=True)
         print(f"      TEST e.g. {ex}", flush=True)
+        if int(getattr(cfg, 'inf_rchain_selfwrite', 0)):
+            try: _selfwrite(model, cfg, vis, sl)
+            except Exception as e_: print(f"  [REAL-TEXT SELF-WRITTEN CHAINS | visit {vis + 1}] unavailable ({type(e_).__name__}: {str(e_)[:120]})", flush=True)
     finally:
         model.train(was)
+
+
+def _selfwrite(model, cfg, vis, sl):
+    """24 Nov kra48 MODEL CHANGE: on UNTAUGHT real-text chains that share no head or bridge with the frozen TEST set, the trunk's GATED step-by-step
+    answer (hop 1 alone, hop 2 on its own hop-1 answer; the gate calibrated on the taught chains) is written as a chain and taught like the taught
+    chains ('A in B > C.'); every earlier self-written chain is RE-DERIVED each sleep and kept only if the same gated answer comes back (else retracted).
+    The TEST chains stay unwritten, so their score measures what self-teaching adds."""
+    from platypus.inference.premises import _PM as _PM9
+    PRD9 = _PM9.get('PRD') or {}; GC9 = {'P131', 'P17', 'P30', 'P361', 'P276', 'P150', 'P706'}; PRS = _RC.get('pairs') or set()
+    tst = _RC.get('test') or []; trn = set(_RC.get('train') or []); th = {c[0] for c in tst}; tb = {c[2] for c in tst}
+    pool = sorted([c for c in (_RC.get('allc') or []) if c not in trn and c[0] not in th and c[2] not in tb and c[0] not in tb], key=lambda c: _hash(c[0], 'rcw'))[:int(getattr(cfg, 'inf_rchain_selfwrite', 0))]
+    t_ = -1e9 if int(getattr(cfg, 'inf_rule_steps_gforce', 0)) else _RC.get('rd_t')   # local checks only: the gate open
+    if not pool or t_ is None: print(f"  [REAL-TEXT SELF-WRITTEN CHAINS | visit {vis + 1}] none yet (pool {len(pool)}, gate {'set' if t_ is not None else 'not calibrated'})", flush=True); return
+    d1, l1 = _greedy_batch(model, [f"{c[0]} {c[1]} ".encode('latin-1', 'replace') for c in pool], sl, 40, lp=True); b1 = [x.split(' > ')[0].strip() for x in d1]
+    d2, l2 = _greedy_batch(model, [f"{b or '?'} {c[3]} ".encode('latin-1', 'replace') for b, c in zip(b1, pool)], sl, 40, lp=True); c2 = [x.split(' > ')[0].strip() for x in d2]
+    cf = np.minimum(l1, l2); SW = _RC.setdefault('selfw', {}); kp, rt, nw = [], [], []
+    for c, b, y, f_ in zip(pool, b1, c2, cf):
+        ok = f_ >= t_ and b and y and y not in (c[0], b)
+        if c[0] in SW:
+            if ok and SW[c[0]][:2] == (b, y): kp.append(c)
+            else: rt.append((c, SW.pop(c[0])))
+        elif ok: SW[c[0]] = (b, y, vis); nw.append((c, b, y))
+    sc = lambda L: (f"C as recorded {np.mean([y == c[4] for c, b, y in L]):.2f}, valid (both links recorded) {np.mean([(c[0], b) in PRS and (b, y) in PRS for c, b, y in L]):.2f}" if L else "n/a")
+    gl = [bool((PRD9.get((c[0], y)) or set()) & GC9) for c, b, y in nw if PRD9.get((c[0], y)) or (c[0], y) in PRD9]
+    print(f"  [REAL-TEXT SELF-WRITTEN CHAINS | visit {vis + 1}] MODEL CHANGE: gated step-by-step answers on {len(pool)} untaught chains (no test head or bridge) -> NEW {len(nw)} ({sc(nw)}; "
+          f"gold-labelled {len(gl)}: true {np.mean(gl) if gl else float('nan'):.2f}) | earlier ones re-derived: KEPT {len(kp)}, RETRACTED {len(rt)} "
+          f"(were as recorded {np.mean([w[1] == c[4] for c, w in rt]) if rt else float('nan'):.2f}) | {len(SW)} self-written chains taught", flush=True)

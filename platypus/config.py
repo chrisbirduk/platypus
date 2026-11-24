@@ -793,6 +793,7 @@ class Config:
     inf_kmc_rulej_cmpobj=0          #   23 Nov kra44 READOUT: route J refitted with the other objective (nce <-> cos) on the same targets
     inf_kmc_rulej_ens=0             #   23 Nov kra44 READOUT: route J refitted with this many seeds; ENSEMBLE CONTRADICTION (false vs unknown claims)
     inf_kmc_rulej_ens_bag=0         #   23 Nov kra45: the ensemble's seeds each fitted on a BOOTSTRAP resample of the recorded facts
+    inf_rchain_selfwrite=0          #   24 Nov kra48 MODEL CHANGE: gated step-by-step answers on up to N untaught real-text chains written and taught as chains, re-derived each sleep
     inf_rchain_testfix=0            #   23 Nov kra45: the real-text TEST chain set frozen once it is full
     inf_rule_steps=0                #   23 Nov kra45 READOUT: STEP BY STEP on the rule world (learned rule plans, trunk answers each hop, gate)
     inf_kmc_rulej_ens_gate=0        #   23 Nov kra46 READOUT: CONTRADICTED = margin gate passes AND seeds agree on another answer; UNKNOWN = gate fails
