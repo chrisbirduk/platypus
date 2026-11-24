@@ -252,6 +252,8 @@ def _selfwrite(model, cfg, vis, sl):
     cf = np.minimum(l1, l2); SW = _RC.setdefault('selfw', {}); kp, rt, nw = [], [], []
     for c, b, y, f_ in zip(pool, b1, c2, cf):
         ok = f_ >= t_ and b and y and y not in (c[0], b)
+        if ok and int(getattr(cfg, 'inf_rchain_selfwrite_verify', 0)): ok = (c[0], b) in PRS and (b, y) in PRS   # 24 Nov kra49: written only if BOTH links are on the
+                                                                               #   model's own record (the REM gate; kra48: unverified self-writes 0.05-0.51 as recorded)
         if c[0] in SW:
             if ok and SW[c[0]][:2] == (b, y): kp.append(c)
             else: rt.append((c, SW.pop(c[0])))
