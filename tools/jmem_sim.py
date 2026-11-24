@@ -15,7 +15,12 @@ J = JMem(cfg, torch.device('cpu')); SLP = int(os.environ.get('JS_SLEEP', 1500))
 geo = [(t.format(a=a, b=b), (a, b)) for rel in ('city_in', 'region_of', 'country_in') for a, b in FACTS[rel] for t in W[rel][:1]]
 GR = [PEO[k::3] for k in range(3)]; read = list(geo)
 P(f"JEPA MEMORY SIMULATION: {len(PEO)} people in 3 domains, {len(geo)} geography sentences; {SLP} steps a sleep, warm-up {cfg.inf_jmem_warm}")
+DRM = int(os.environ.get('JS_DREAM', 0))                                       # 1: earlier domains' people replayed from the memory's OWN recall (not the read text)
 for dom in range(3):
+    if DRM and dom:
+        old = [a for k in range(dom) for a, ci in GR[k]]; rc, _ = J.hop(old, 'lives in')
+        read = list(geo) + [(W['lives'][0].format(a=a, b=c), (a, c)) for a, c in zip(old, rc) if c]
+        P(f"      DREAM: {len(old)} earlier people replayed from the memory's own recall (right {np.mean([c == CIT[ci][0] for c, (a, ci) in zip(rc, [x for k in range(dom) for x in GR[k]])]):.2f})")
     read += [(W['lives'][0].format(a=a, b=CIT[ci][0]), (a, CIT[ci][0])) for a, ci in GR[dom]]
     ls = J.train(_items_from(read), SLP)
     rec = []
