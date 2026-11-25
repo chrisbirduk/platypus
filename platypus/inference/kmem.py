@@ -1188,13 +1188,24 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                     app = lambda O_, v: O_(v)
                 else: app = lambda O_, v: v @ O_
                 OP = {r: fit(p) for r, p in rel9.items() if len(p) >= 5}; ON = {r: fit(p, True) for r, p in rel9.items() if len(p) >= 5}
+                H1R = int(getattr(cfg, 'inf_kmc_rulej_hop1_rec', 0)); REC9 = {(e['A'], str(e['r']).strip()): e['ans'] for e in fsJ}   # 25 Nov kra61
+                def ovr_block(r3, A, bridge, C):                               # kra57-58 EDIT OVERRIDE / ABSTENTION; kra61: an abstaining subject (override None) may take route J's
+                    ov = (model.__dict__.get('_jw_override') or {}).get((r3, A), C)   #   composite when its bridge is the edited premise the JEPA memory READ (the reader's record
+                    if ov == C: return False                                   #   now agrees with the edit)
+                    if ov is None and H1R:
+                        rd9 = (model.__dict__.get('_jm_read') or {}).get(('parent' if r3 == ph['grand'] else 'mgr', A))
+                        return not (rd9 is not None and rd9 == bridge)
+                    return True
                 def comp(A, r3, O):
                     r1, r2 = rules[r3]
                     if r1 not in O or r2 not in O: return None
                     with torch.no_grad():
-                        v1 = app(O[r1], Z[NI[A]]); s1 = (F.normalize(v1, dim=-1) @ Z[DI].t()).sort(descending=True); b1 = DN[int(s1.indices[0])]
-                        v2 = app(O[r2], Z[NI[b1]] if SNAP else v1); s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
-                    m2 = float(s2.values[0] - s2.values[1]); m1 = float(s1.values[0] - s1.values[1])
+                        if H1R and REC9.get((A, r1)) in NI:                    # 25 Nov kra61 FIRST HOP FROM THE RECORD: where the reader recorded (A, r1) (the most recent reading,
+                            b1 = REC9[(A, r1)]; v1 = Z[NI[b1]]; m1 = float('inf')   #   inf_kmc_rulej_recent), the bridge is that record, not the operator's guess (kra58-59 GPU: the
+                        else:                                                  #   reader recorded the new premise 0.40-0.50 after an edit, route J's composite NEW 0.00)
+                            v1 = app(O[r1], Z[NI[A]]); s1 = (F.normalize(v1, dim=-1) @ Z[DI].t()).sort(descending=True); b1 = DN[int(s1.indices[0])]; m1 = float(s1.values[0] - s1.values[1])
+                        v2 = app(O[r2], Z[NI[b1]] if (SNAP or (H1R and m1 == float('inf'))) else v1); s2 = (F.normalize(v2, dim=-1) @ Z[DI].t()).sort(descending=True)
+                    m2 = float(s2.values[0] - s2.values[1])
                     return b1, DN[int(s2.indices[0])], (min(m1, m2) if HJ else m2)
                 if HJ:                                                         # 19 Nov DIAGNOSTICS for the MLP predictor: memorisation of the recorded facts it was fitted on,
                     try:                                                       #   the targets' first hops split by whether that fact was RECORDED, and the linear operator
@@ -1343,7 +1354,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if x[2] < thr9: why['margin'] += 1; continue
                             if len({e['A'], x[0], x[1]}) < 3: why['same name'] += 1; continue
                             if (x[0], r2) not in hasr: why['B has no recorded r2 fact'] += 1; continue
-                            if (model.__dict__.get('_jw_override') or {}).get((r3, e['A']), x[1]) != x[1]: why.setdefault('edited premise (kra57 override)', 0); why['edited premise (kra57 override)'] += 1; continue
+                            if ovr_block(r3, e['A'], x[0], x[1]): why.setdefault('edited premise (kra57 override)', 0); why['edited premise (kra57 override)'] += 1; continue
                             if (r3, e['A'], x[1]) not in RW: RW[(r3, e['A'], x[1])] = vis; nw += 1
                             model.__dict__.setdefault('_ra_bridge', {})[(r3, e['A'], x[1])] = x[0]
                             m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
@@ -1361,7 +1372,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         SSW9 = model.__dict__.get('_ss_written') or {}; ctr9 = []
                         for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
                             if r3 not in rules or A not in NI: continue
-                            if (model.__dict__.get('_jw_override') or {}).get((r3, A), C) != C:   # 25 Nov kra57: a route J write contradicting an EDIT OVERRIDE is retracted
+                            if ovr_block(r3, A, (comp(A, r3, OP) or (None,))[0] if (model.__dict__.get('_jw_override') or {}).get((r3, A), C) is None else None, C):   # 25 Nov kra57: a route J write contradicting an EDIT OVERRIDE is retracted
                                 RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None); rt9.append(tru9(A, r3, C)); continue
                             if (model.__dict__.get('_jw_written') or {}).get((r3, A), (None,))[0] == C: continue   # 24 Nov kra53: a JEPA MEMORY write is re-derived (and retracted on contradiction) by the JEPA memory
                             if SSW9.get((r3, A), (None,))[0] == C:              # 23 Nov kra47: a STEP-BY-STEP write is re-derived by the step-by-step route; here it is
@@ -1400,14 +1411,14 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']; r1 = ph[mv9['r1']]
                             if int(mv9['d']) not in seen or l not in NI or r3 not in rules: continue
                             x = comp(l, r3, OP); rec = hasp.get((l, r1), set()); wr = [c for (q, a, c) in RW if q == r3 and a == l]
-                            if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: g9['readok'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'],
-                                x is not None and x[1] == mv9['C_old'], x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))   # 19 Nov: the new parent's own family read too
-                            g9['read' if mv9['d2'] in seen else 'ctl'].append((mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'], x is not None and x[1] == mv9['C_old'],
-                                                                               x is not None and x[2] >= thr9, mv9['C_new'] in wr, mv9['C_old'] in wr))
+                            rw9 = (mv9['new'] in rec, mv9['old'] in rec, x is not None and x[1] == mv9['C_new'], x is not None and x[1] == mv9['C_old'], x is not None and x[2] >= thr9,
+                                   mv9['C_new'] in wr, mv9['C_old'] in wr, x is not None and x[0] == mv9['new'], x is not None and x[0] == mv9['old'], REC9.get((l, r1)) == mv9['new'])   # 25 Nov: route J's first hop, the record it uses
+                            if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: g9['readok'].append(rw9)   # 19 Nov: the new parent's own family read too
+                            g9['read' if mv9['d2'] in seen else 'ctl'].append(rw9)
                         def mm9(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
                         print(f"  [ROUTE J, PREMISE CHANGE | visit {vis + 1}] MOVED leaves (a new parent planted in another domain; truth after the move = the new family's root) || "
                               + " || ".join(f"{nm} (n {len(L)}): reader recorded NEW premise {mm9(L, 0)}, OLD {mm9(L, 1)} | route J composite NEW {mm9(L, 2)}, OLD {mm9(L, 3)}, passes gate {mm9(L, 4)} | "
-                                            f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE READ AND THE NEW PARENT\'S FAMILY READ', g9['readok']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
+                                            f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)} | route J FIRST HOP NEW {mm9(L, 7)}, OLD {mm9(L, 8)}, most recent record NEW {mm9(L, 9)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE READ AND THE NEW PARENT\'S FAMILY READ', g9['readok']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
                     if MV and int(getattr(cfg, 'inf_mquake_readout', 0)):            # 25 Nov kra55 READOUTS (readout only): MQuAKE-STYLE EDIT PROPAGATION - after a premise
                         try:                                                    #   is edited (the moved leaf's new parent read), does EVERY route's two-hop answer
                             SSWq = model.__dict__.get('_ss_written') or {}; JWq = model.__dict__.get('_jw_written') or {}; JAq = model.__dict__.get('_jm_ans') or {}   #   follow it?
