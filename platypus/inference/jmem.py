@@ -190,7 +190,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None); OVR.pop(key, None)
         tru = a[3][4] if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
     for key, (c, b, g, x) in ans.items():                                     # kra57 EDIT OVERRIDE: where the memory REPLACED the subject's first-hop premise (an edit
-        if key not in EDJ or g < th or not c or c in (x[3], b): continue      #   was read), its gated two-hop answer is written WITHOUT the trunk's agreement (the trunk
+        if key not in EDJ or g < thp or not c or c in (x[3], b): continue     #   was read; gate = the looser quantile gate thp, as the readout and hysteresis use - kra57 local v3: at th only 1 of ~10 NEW passed), its gated two-hop answer is written WITHOUT the trunk's agreement (the trunk
         if JW.get(key, (None,))[0] == c: OVR[key] = c; continue               #   still follows the old premise) and RETRACTS contradicting route J / step writes
         for (q_, a_, c_) in [t for t in list(RW) if t[0] == key[0] and t[1] == key[1] and t[2] != c]:   #   (kra56 GPU visit 4: combined NEW 0.00, stale 0.38 from route J;
             RW.pop((q_, a_, c_), None); WRm.pop((q_, a_, c_), None); BR.pop((q_, a_, c_), None)          #   the memory's gated answers NEW 0.19 / 0.60, stale 0.00)
@@ -207,7 +207,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); nw += 1; okn.append(c == x[4])
     print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)}) | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
-          f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
+          f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57, gate t = {thp:.3f}): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
                                                                   f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {len(OVR)} override writes now" if EO else ""), flush=True)
 
 
