@@ -6570,3 +6570,21 @@ Visits 1-3 in full, no Traceback. Edited premises used 20 / 38 / 54.
 - The stale answers stay gone on both seeds. NEW is lower on seed 4 at visit 3 (0.17), with small n.
 - On seed 4 a few NEW composites reach the combined answer even with the weak local trunk.
 - JEPA two hops gated right 0.79-0.81 (visit 2) and 0.61-0.82 (visit 3), higher than seed 1. Facts known per fact read 1.11 / 1.10; composites held right 1.00 / 0.94.
+
+## kra56 GPU (seed 5, visits 1-4 of a run in progress, 25 Nov): the JEPA memory follows edits; route J's stale writes still win
+
+No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
+
+- **Edits, after the edit was read (visit 4, n 16; with the new family read n 5):**
+  - JEPA memory gated: NEW 0.19 / 0.60, OLD (stale) 0.00.
+  - COMBINED: NEW 0.00, OLD (stale) 0.38 / 0.20, all from route J writes (visit 2: stale 1.00, n 2; visit 3: 0.50, n 8).
+  - Route J's stale writes are exactly the cases where the reader still records the old premise (reader NEW 0.50, OLD 0.38). Where it records the new one, route J abstains (composite NEW 0.00). The JEPA memory's NEW answers are not written because the trunk's step by step still follows the old premise (`inf_jmem_write_agree`).
+  - Route J never contradicted its stale composite (0.00, n 5). PROTECTED 0 at every visit, so `jprotect` has not kept any stale write.
+- **kra54 safeguards:**
+  - JEPA writes: visit 3 NEW 3 (right 1.00); visit 4 NEW 5 (1.00), KEPT 3 (1.00). kra53: 0.69.
+  - JEPA memory vs step by step agree 0.35; right when they agree 1.00.
+  - Route J re-derive: KEPT 107 / 158 / 211 (right 0.99 / 0.98 / 0.98), RETRACTED 0. The drift after visit 6 is not reached yet.
+  - Step-by-step writes 20 / 24 / 36 (right 0.90-1.00), held by hysteresis 2.
+- **JEPA memory:** two hops gated right 0.93 / 0.88 / 0.88 (visit 4); one hop on read premises 0.88. Frozen real-text test chains: gated answered 0.57, right 0.99.
+- **Facts known per fact read:** 1.25 / 1.26 / 1.23 (visits 2-4); composites held right 0.97-0.98.
+- **Next: kra57** (`inf_jmem_edit_override`). Where the JEPA memory replaced a subject's first-hop premise, its gated answer is written without the trunk's agreement and retracts contradicting route J or step writes.
