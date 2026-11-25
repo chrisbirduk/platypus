@@ -1405,6 +1405,37 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         print(f"  [ROUTE J, PREMISE CHANGE | visit {vis + 1}] MOVED leaves (a new parent planted in another domain; truth after the move = the new family's root) || "
                               + " || ".join(f"{nm} (n {len(L)}): reader recorded NEW premise {mm9(L, 0)}, OLD {mm9(L, 1)} | route J composite NEW {mm9(L, 2)}, OLD {mm9(L, 3)}, passes gate {mm9(L, 4)} | "
                                             f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE READ AND THE NEW PARENT\'S FAMILY READ', g9['readok']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
+                    if MV and int(getattr(cfg, 'inf_mquake_readout', 0)):            # 25 Nov kra55 READOUTS (readout only): MQuAKE-STYLE EDIT PROPAGATION - after a premise
+                        try:                                                    #   is edited (the moved leaf's new parent read), does EVERY route's two-hop answer
+                            SSWq = model.__dict__.get('_ss_written') or {}; JWq = model.__dict__.get('_jw_written') or {}; JAq = model.__dict__.get('_jm_ans') or {}   #   follow it?
+                            def ans_q(r3, A):                                   # combined: route J write, else a step write, else a JEPA write
+                                rj = [c for (q, a, c) in RW if q == r3 and a == A]
+                                if rj: return rj[0], 'J'
+                                if (r3, A) in SSWq: return SSWq[(r3, A)][0], 'S'
+                                if (r3, A) in JWq: return JWq[(r3, A)][0], 'M'
+                                return None, None
+                            gq = {'read': [], 'readok': [], 'ctl': []}
+                            for l, mv9 in MV.items():
+                                r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']
+                                if int(mv9['d']) not in seen: continue
+                                c_, src_ = ans_q(r3, l); ja_ = JAq.get((r3, l)); row = (c_ == mv9['C_new'], c_ == mv9['C_old'], c_ is None, src_,
+                                    ja_ is not None and ja_[1] and ja_[0] == mv9['C_new'], ja_ is not None and ja_[1] and ja_[0] == mv9['C_old'])
+                                gq['read' if mv9['d2'] in seen else 'ctl'].append(row)
+                                if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: gq['readok'].append(row)
+                            def fq(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
+                            def sq(L): c9 = collections.Counter(t[3] for t in L if t[3]); return ', '.join(f"{ {'J': 'route J', 'S': 'step', 'M': 'JEPA'}[k]} {v}" for k, v in sorted(c9.items())) or 'none'
+                            print(f"  [MQuAKE-STYLE EDIT PROPAGATION | visit {vis + 1}] two-hop answers through an EDITED premise (moved leaf; after the edit is read the truth is the NEW "
+                                  f"composite); COMBINED = route J write, else step write, else JEPA write || "
+                                  + " || ".join(f"{nm} (n {len(L)}): COMBINED NEW {fq(L, 0)}, OLD (stale) {fq(L, 1)}, none {fq(L, 2)} (answered by {sq(L)}) | JEPA memory gated NEW {fq(L, 4)}, OLD {fq(L, 5)}"
+                                                for nm, L in (('EDIT READ', gq['read']), ('EDIT READ AND THE NEW FAMILY READ', gq['readok']), ('EDIT NOT YET READ (control: OLD is right)', gq['ctl']))), flush=True)
+                            nr = sum(1 for v_ in hasp.values() if v_)           # FACTS KNOWN PER FACT READ: premises read and recorded (each (subject, relation) once)
+                                                                                #   vs composites the model now holds (route J, step and JEPA writes), right by the rule world's truth
+                            cs9 = {(q, a): c for (q, a, c) in RW}; cs9.update({k: v[0] for k, v in SSWq.items() if k not in cs9}); cs9.update({k: v[0] for k, v in JWq.items() if k not in cs9})
+                            tv9 = [tru9(a, q, c) for (q, a), c in cs9.items()]; tv9 = [t for t in tv9 if t is not None]
+                            print(f"  [FACTS KNOWN PER FACT READ | visit {vis + 1}] (subject, relation) premises recorded {nr} | composites held {len(cs9)} (with truth {len(tv9)}, right "
+                                  f"{np.mean(tv9) if tv9 else float('nan'):.2f}) -> right composites {sum(tv9)} | facts known per fact read {(nr + sum(tv9)) / max(1, nr):.2f} "
+                                  f"(premises counted as known when recorded; composites only when right)", flush=True)
+                        except Exception as eq: print(f"  [MQuAKE-STYLE EDIT PROPAGATION | visit {vis + 1}] unavailable ({type(eq).__name__}: {str(eq)[:120]})", flush=True)
             finally: K['tcode'] = old9 if old9 is not None else {}
         except Exception as e7: print(f"  [ROUTE J | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:120]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
