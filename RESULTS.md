@@ -6619,6 +6619,7 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 
 **kra58 = kra57 v3 + RETRACT ON EDIT (`inf_jmem_edit_retract`):** every written composite of a subject whose first-hop premise the JEPA memory replaced is retracted, and the subject abstains until a grounded override answer.
 - **GPU (seed 5, run 20261125T192016Z, visits 1-3, in progress):** no Traceback. Visit 1: 13 subjects abstaining; visit 2: 25. **Visit 3: 3 written composites of edited subjects retracted (were right 0.00, i.e. all stale), 36 abstaining.** MQuAKE, edit read: visit 2 (n 2) and **visit 3 (n 8): COMBINED NEW 0.00, stale 0.00, none 1.00** (kra57 v3 visit 3: stale 0.50). Control (edit not read): OLD 0.83 / 0.88 (kra57 v3: 0.83 / 0.96; n 18-25). Combined answered 0.85 / right 0.94; route J KEPT 164 (1.00).
+- **GPU visit 4: 6 composites of edited subjects retracted (all stale), 3 override answers (right 1.00), 39 abstaining. MQuAKE, edit read (n 16): COMBINED NEW 0.19, stale 0.00, none 0.81; edit and the new family read (n 5): NEW 0.60, stale 0.00** (kra57 v3 visit 4: NEW 0.19 / 0.60, stale 0.44 / 0.20). **Stale removed, new answers kept.** Control: OLD 0.93 (kra57 0.97). Combined answered 0.92 / right 0.93 (JEPA share 0.24, right 0.82); route J KEPT 219 (1.00), retracted 0. JEPA writes NEW 3 (1.00), 8 in all (kra57: NEW 8, 16 in all - abstaining edited subjects are not written).
 - Local (seed 1, visit 2): edit read (n 14) stale 0.00 (kra57 v2: 0.07). Visit 3 pending.
 
 **kra59 = kra58 + GROUNDED JEPA WRITES (`inf_jmem_write_grounded`):** a JEPA memory answer whose two hops match premises the memory read is written at its looser gate without the trunk's step-by-step agreement; ungrounded answers keep the agreement rule (kra57 v3 GPU visit 5: the memory's precision gate fell to 0.003 and its share of the combined answer to 0.74 right, 0.71 at visit 6). Built, not yet run.
@@ -6639,7 +6640,7 @@ Every figure is in the entries above, with its conditions; GPU runs are pass 1, 
 **Edits reach the final answer (kra55-kra58).**
 - The MQuAKE-style readout: after a moved leaf's new parent is read, the true two-hop answer changes. kra56: the JEPA memory follows edits (gated NEW 0.19-0.60, stale 0.00) but the final answer did not (NEW 0.00, stale 0.38) - route J's composites came from the reader's old premise.
 - kra57 v3 (grounded edit override): **13 of 13 override answers right on the GPU; COMBINED NEW 0.19 / 0.30 / 0.35 at visits 4-6, 0.52-0.62 where the new parent's family was read** (stale 0.37-0.44). Locally (seed 1) NEW 0.32 / 0.50 at visit 3.
-- kra58 (retract on edit): stale 0.00 at visits 2-3 on the GPU; visits 4-5 decide whether new answers come through as in kra57.
+- **kra58 (retract on edit): stale 0.00 at visits 2-4 on the GPU while the new answers stay as in kra57 (visit 4: NEW 0.19, 0.60 with the family read, stale 0.00 against 0.44 / 0.20).**
 - Edits are mostly read before the new parent's family, so the readout splits by whether the family is read; ungrounded overrides guessed and were all wrong (kra57 v2 GPU visit 3: 4 of 4).
 
 **Real text (kra43-kra48).** On frozen test sets of never-composed real-text chains, both seeds reach written-chain C 0.41 at visit 4 (baseline 0.07); **step by step 0.64-0.77, 0.95-0.98 right when gated (seed 5 answers 58% at 0.95)**.
