@@ -1,8 +1,11 @@
 """run(cfg): the whole continual-learning run."""
 from platypus.common import _fail
 import numpy as np
+import os
+import sys
 import time
 import torch
+from platypus import checkpoint as _ckpt
 from platypus.common import (
     DEVICE,
 )
@@ -98,6 +101,12 @@ from platypus.losses import (
     recon_fidelity,
     replay_diag,
 )
+
+# CHECKPOINTS (PLATYPUS_CKPT, see checkpoint.py): the run() locals that carry from one visit to the next. A new local
+#   that a later visit (or the end of the run) reads must be added here, or a resumed run will not see it.
+CK_LOCALS=('opt','meta','meta_opt','kl_log','dream_log','fd_log','fd_snaps','battr_log','topic_log','prior_buffer','fz_tok','bpc_m','post',
+           'last_visit','post_hist','pre_visit','pass_log','locality_log','prior_imp','orth_log','alt_m','pre_lock','post_lock','zeroshot',
+           '_pend','_seen_true','_init_sd','post_w')
 
 def run(cfg):
     for k in ('theta_low','theta_high','theta_dist','theta_sigma','theta_reserve','drive_ema','drive_slow','peak_decay','route_width','hebb_rate'): setattr(Config,k,getattr(cfg,k))  # buffers read class attrs
@@ -213,7 +222,29 @@ def run(cfg):
     pre_lock=post_lock=None
     zeroshot=[None]*len(PILE_DOMAINS)
     _src=(None); _pend=None; _seen_true=set()   # NO VISIT BOUNDARIES
+    _ck_from=-1; _ck_id=_ckpt.ck_build_id(cfg) if _ckpt.ck_folder() else None   # CHECKPOINTS: resume after the last saved visit
+    if _ck_id is not None:
+        _ckp=_ckpt.ck_load(cfg,model,_ck_id)
+        if _ckp is not None:
+            _ckpt.ck_restore(_ckp,cfg,model)
+            for k_ in _ckp['loaders'].get('trp',{}): train_of(*k_)   # rebuild the saved loaders' text
+            _ckpt.ck_restore(_ckp,cfg,model)                   # again: rebuilding a loader may draw random numbers or touch module state
+            L_=_ckp['locals']
+            opt=L_['opt']; meta=L_['meta']; meta_opt=L_['meta_opt']; kl_log=L_['kl_log']; dream_log=L_['dream_log']; fd_log=L_['fd_log']
+            fd_snaps=L_['fd_snaps']; battr_log=L_['battr_log']; prior_buffer=L_['prior_buffer']; fz_tok=L_['fz_tok']; bpc_m=L_['bpc_m']
+            post=L_['post']; last_visit=L_['last_visit']; post_hist=L_['post_hist']; pre_visit=L_['pre_visit']; pass_log=L_['pass_log']
+            locality_log=L_['locality_log']; prior_imp=L_['prior_imp']; orth_log=L_['orth_log']; alt_m=L_['alt_m']; pre_lock=L_['pre_lock']
+            post_lock=L_['post_lock']; zeroshot=L_['zeroshot']; _pend=L_['_pend']; _seen_true=L_['_seen_true']; _init_sd=L_['_init_sd']; post_w=L_['post_w']
+            if 'topic_log' in L_: topic_log=L_['topic_log']
+            LS_=_ckp['loaders']
+            for f_,s_ in zip(vals,LS_['vals']): _ckpt.ck_set_loader_state(f_,s_)
+            for k_,s_ in LS_.get('trp',{}).items(): _ckpt.ck_set_loader_state(trp_[k_],s_)
+            for f_,s_ in zip(trains or [],LS_.get('trains',[])): _ckpt.ck_set_loader_state(f_,s_)
+            _t2s=model.__dict__.setdefault('_t2s',{}); _t_run=time.perf_counter()-_ckp['wall_run']; _ck_from=_ckp['visit']
+            print(f"  [checkpoint] resumed after visit {_ck_from} of {len(schedule)} from {_ckp['path']} ({_ckp.get('ids_remapped',0)} containers with id() keys remapped)",flush=True)
+            del _ckp,L_,LS_
     for vi,t in enumerate(schedule):                     # v = visit (position in the stream), t = domain (head) being trained
+        if vi<=_ck_from: continue                         # CHECKPOINTS: visits done before the resume
         pass_i=vi//NDOM; seen_d=sorted(set(schedule[:vi+1]))
         _eo=False
         ts,_b0=infer_slot(model,cfg,train_of(t,pass_i),t,vi) if cfg.infer_ctx else (t,[])
@@ -470,6 +501,20 @@ def run(cfg):
                       +(f" (pass {pass_i}: {post_hist[pass_i-1][d]:.3f}, {po_[d]-post_hist[pass_i-1][d]:+.3f})" if (pass_i>0 and d in post_hist.get(pass_i-1,{})) else "")
                       +(f" | before relearning {pv:.3f} (forgotten since last visit {pv-post_hist[pass_i-1][d]:+.3f})" if (pv is not None and d in post_hist.get(pass_i-1,{})) else "")
                       +f" | forgetting {fin_[d]-po_[d]:+.3f}")
+        if _ck_id is not None and ((vi+1)%_ckpt.ck_every()==0 or vi==len(schedule)-1):   # CHECKPOINTS: the state after this visit
+            _lv=locals(); ldr_={'vals':[_ckpt.ck_loader_state(f_) for f_ in vals]}
+            if trains is None: ldr_['trp']={k_:_ckpt.ck_loader_state(f_) for k_,f_ in trp_.items()}
+            else:
+                ldr_['trains']=[_ckpt.ck_loader_state(f_) for f_ in trains]
+            try:
+                sz_,sec_=_ckpt.ck_save(vi,len(schedule),cfg,model,{k_:_lv[k_] for k_ in CK_LOCALS if k_ in _lv},ldr_,time.perf_counter()-_t_run,_ck_id)
+                print(f"  [checkpoint] saved after visit {vi} of {len(schedule)}: {sz_/2**20:.0f} MB in {sec_:.1f}s",flush=True)
+            except Exception as e_:
+                if os.environ.get('PLATYPUS_CKPT_STRICT','0')=='1': raise
+                print(f"  [checkpoint] NOT saved after visit {vi} ({repr(e_)[:300]}); the run goes on without a new checkpoint",flush=True)
+            del _lv,ldr_
+            if _ckpt.ck_stop_after(vi):
+                print(f"  [checkpoint] PLATYPUS_CKPT_STOP_AFTER={vi}: stopping here (exit 75)",flush=True); sys.stdout.flush(); os._exit(75)
     alt={}
     for mode,M in alt_m.items():
         L_=len(PILE_DOMAINS)-1; VL=len(schedule)-1; lastd=schedule[-1]

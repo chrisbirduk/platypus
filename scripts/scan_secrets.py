@@ -25,7 +25,7 @@ PATTERNS = [
     ("Key assigned in code", r"(?i)\b(?:api[_-]?key|secret|token|password)\b\s*[:=]\s*['\"][A-Za-z0-9_\-\.]{24,}['\"]"),
 ]
 RX = [(n, re.compile(p)) for n, p in PATTERNS]
-SKIP_DIRS = {".git", "__pycache__", "pile_cache", ".ipynb_checkpoints"}
+SKIP_DIRS = {".git", "__pycache__", "pile_cache", ".ipynb_checkpoints", "ckpt"}   # ckpt: run checkpoints (model state, no text)
 MAX_BYTES = 50 * 2**20
 
 
