@@ -60,8 +60,10 @@ docker run --gpus all -v $PWD/runs:/work/runs -v $PWD/pile_cache:/work/pile_cach
 
 ## Checkpoints and resume
 
-`scripts/run_gpu.sh` writes a checkpoint to `<run folder>/ckpt/` after every
-visit (`platypus/checkpoint.py`). If a run stops (a Colab session ends, a spot
+Checkpoints are **off by default**. With `PLATYPUS_CKPT=1`, `scripts/run_gpu.sh`
+writes a checkpoint to `<run folder>/ckpt/` after every visit
+(`platypus/checkpoint.py`); `PLATYPUS_CKPT=<folder>` writes it elsewhere. In the
+Colab notebooks set `CKPT = True` in the first cell. If a run stops (a Colab session ends, a spot
 machine is taken back), continue it with
 
 ```
@@ -76,14 +78,15 @@ CPU run after visits 3 and 6, resumes it, and compares the logs line for line.
 - A checkpoint is refused if the code, the options, Python or torch differ
   from the run that wrote it.
 - The checkpoints are deleted when the run finishes cleanly
-  (`PLATYPUS_CKPT_KEEP=1` keeps them). `PLATYPUS_CKPT=0` turns them off.
+  (`PLATYPUS_CKPT_KEEP=1` keeps them). `run_gpu.sh --resume` keeps writing
+  them for the resumed run.
 - Two checkpoints are kept (`ckpt.pt` and `ckpt.prev.pt`); each line
   `[checkpoint] saved after visit N` in the log gives the size and the time.
   A checkpoint holds the whole run state (weights, optimiser, the initial
   weights, the stores and inference state), so with the run folder on Google
-  Drive expect two copies of several GB; `PLATYPUS_CKPT_EVERY=2` halves the
-  writes. Not yet run on a GPU (25 Nov): check the first run's save lines
-  (`saved`, not `NOT saved`) and sizes.
+  Drive expect two copies of about 9 GB each (kra57 on the GPU, 25 Nov:
+  8,977-9,099 MB, 76 s a save); `PLATYPUS_CKPT_EVERY=2` halves the writes.
+  Saving works on the GPU with CUDA graphs on; resuming is not yet tried there.
 - `tools/ckpt/equiv.py` runs the build's defaults plus the preset's
   `LAB_OVR_FILE` (before 25 Nov `tools/ckpt/tiny_run.py` replaced the defaults
   with the tiny sizes alone, so earlier equivalence checks ran without the

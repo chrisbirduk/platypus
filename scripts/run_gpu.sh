@@ -12,9 +12,11 @@
 #   manifest.json  build SHA-256, preset and control files, every switch,
 #                  the merged LAB_OVR, GPU, git commit, start and end times
 #   readouts.md    the summary from extract_readouts.py
-#   ckpt/          a checkpoint after every visit (platypus/checkpoint.py), deleted
-#                  when the run finishes cleanly (PLATYPUS_CKPT_KEEP=1 keeps it;
-#                  PLATYPUS_CKPT=0 turns checkpoints off)
+#   ckpt/          only with PLATYPUS_CKPT=1 (off by default: about 9 GB a save on
+#                  the GPU, two kept): a checkpoint after every visit
+#                  (platypus/checkpoint.py), deleted when the run finishes cleanly
+#                  (PLATYPUS_CKPT_KEEP=1 keeps it). PLATYPUS_CKPT=<folder> puts it
+#                  elsewhere. --resume turns them on for the resumed run.
 # and finishes with a secret scan of the run folder.
 #
 # --resume reads the build, preset, seed and controls from RUN_DIR/manifest.json,
@@ -70,7 +72,15 @@ for c in ${CONTROLS[@]+"${CONTROLS[@]}"}; do tag="${tag}_$(basename "$c" .env)";
 if [ -n "$RESUME" ]; then RUN_DIR="$RESUME"; else RUN_DIR="${RUNS_DIR:-runs}/${tag}_s${SEED}_$(date -u +%Y%m%dT%H%M%SZ)"; fi
 mkdir -p "$RUN_DIR"
 # Checkpoints after every visit, inside the run folder, so a stopped run can be resumed.
-if [ "${PLATYPUS_CKPT:-}" != "0" ]; then export PLATYPUS_CKPT="${PLATYPUS_CKPT:-$RUN_DIR/ckpt}"; fi
+# Checkpoints are OFF unless PLATYPUS_CKPT=1 (the run folder) or a folder is given; a resumed run keeps writing them.
+case "${PLATYPUS_CKPT:-0}" in
+  0|"") if [ -n "$RESUME" ]; then   # the folder the run wrote its checkpoints to (manifest), else the run folder's
+          ck_m="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("checkpoints") or "")' "$RUN_DIR/manifest.json" 2>/dev/null || true)"
+          export PLATYPUS_CKPT="${ck_m:-$RUN_DIR/ckpt}"
+        else unset PLATYPUS_CKPT; fi ;;
+  1)    export PLATYPUS_CKPT="$RUN_DIR/ckpt" ;;
+  *)    export PLATYPUS_CKPT ;;
+esac
 
 if [ -n "$RESUME" ]; then
 python3 - "$RUN_DIR/manifest.json" "${PLATYPUS_CKPT:-}" <<'PY'
