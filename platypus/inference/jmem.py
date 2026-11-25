@@ -153,6 +153,12 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
     pr9 = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
     thp = float(getattr(J, 'thq', th)) if np.isfinite(getattr(J, 'thq', float('inf'))) else th
     model.__dict__['_jm_ans'] = {key: (c, bool(c) and g >= thp and c not in (x[3], b)) for key, (c, b, g, x) in ans.items()}   # kra54: for route J's protection
+    th_rj = float('inf'); n_rj = 0
+    if int(getattr(cfg, 'inf_jmem_gate_rj', 0)) and np.isfinite(th):          # 25 Nov kra60: the write / answer gate also calibrated on held-back composites that ROUTE J
+        pj = [(g, c == RJ9[(x[3], rw[x[2]])][0]) for key, (c, b, g, x) in ans.items()   #   answers above its own gate (0.96-1.00 right), as a label-free reference: the
+              if c and RJ9.get((x[3], rw[x[2]])) and RJ9[(x[3], rw[x[2]])][1]]     #   planted-only gate fell to t = 0.003 by visit 5 and the memory's share of the
+        n_rj = len(pj); th_rj = _pcal(pj, float(getattr(cfg, 'inf_jmem_wprec', 0.9)), 20)   #   combined answer to 0.71 right by visit 6 (kra57 v3 GPU)
+        if np.isfinite(th_rj): th = max(th, th_rj)
     SSL = model.__dict__.get('_ss_last') or {}
     sa = [(c == SSL[key], c == x[4]) for key, (c, b, g, x) in ans.items() if key in SSL and g >= th and c]
     print(f"  [JEPA MEMORY vs STEP BY STEP | visit {vis + 1}] its gated answers where the trunk's step-by-step (ungated) also answered: {len(sa)} | AGREE {pr9([a for a, r in sa])} | "
@@ -167,7 +173,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         else: cb.append(('-', None))
     agr = [a for a, b_, c_ in ag]
     an = [v for t, v in cb if t != '-']
-    print(f"  [JEPA MEMORY ANSWERS, CROSS-CHECK | visit {vis + 1}] held-back composites ({len(ans)}), its gated two hops (t = {th:.3f}{', self-calibrated on ' + str(len(BADJ)) + ' contradicted writes' if BADJ else ''}) vs route J's gated composite: "
+    print(f"  [JEPA MEMORY ANSWERS, CROSS-CHECK | visit {vis + 1}] held-back composites ({len(ans)}), its gated two hops (t = {th:.3f}{f', route-J-calibrated t = {th_rj:.3f} on {n_rj} composites route J answers (kra60)' if int(getattr(cfg, 'inf_jmem_gate_rj', 0)) else ''}{', self-calibrated on ' + str(len(BADJ)) + ' contradicted writes' if BADJ else ''}) vs route J's gated composite: "
           f"BOTH answered {len(ag)}: AGREE {pr9(agr)} | when they agree right {pr9([b_ for a, b_, c_ in ag if a])} | when they disagree: JEPA right {pr9([b_ for a, b_, c_ in ag if not a])}, route J right {pr9([c_ for a, b_, c_ in ag if not a])} || "
           f"COMBINED (route J, else a step write, else the JEPA memory): answered {len(an) / max(1, len(cb)):.2f} (route J {sum(t == 'J' for t, v in cb) / max(1, len(cb)):.2f}, step {sum(t == 'S' for t, v in cb) / max(1, len(cb)):.2f}, "
           f"JEPA {sum(t == 'M' for t, v in cb) / max(1, len(cb)):.2f}), right {pr9(an)} (JEPA's share right {pr9([v for t, v in cb if t == 'M'])})", flush=True)
@@ -189,15 +195,17 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         if drop is None: kp.append(C0 == (tr7(a[3]) if a else None)); continue   # 25 Nov: judged against the truth after an edit read (kra57 v3 GPU visit 5: KEPT right 0.81 = the 3 right overrides judged against the OLD truth)
         RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None); OVR.pop(key, None)
         tru = tr7(a[3]) if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
-    RD = model.__dict__.get('_jm_read') or {}; eo_blk = collections.Counter()
+    RD = model.__dict__.get('_jm_read') or {}; eo_blk = collections.Counter(); eo_ngc = [0]
     for key, (c, b, g, x) in ans.items():                                     # kra57 EDIT OVERRIDE: where the memory REPLACED the subject's first-hop premise (an edit
         if key not in EDJ: continue                                           #   was read; gate = the looser quantile gate thp (at th only 1 of ~10 NEW passed)
         r9 = 'parent' if x[2] == 'grand' else 'mgr'
         if not np.isfinite(th): eo_blk['precision gate closed'] += 1; continue  # 25 Nov GPU v2, local v2: before th opens thp is ~0.01; the untrained memory wrote 1 and 6 overrides, all wrong
-        if g < thp or not c or c in (x[3], b): eo_blk['below the gate'] += 1; continue
+        if not c or c in (x[3], b): eo_blk['no answer'] += 1; continue
+        if g < thp and not int(getattr(cfg, 'inf_jmem_edit_nogate', 0)): eo_blk['below the gate'] += 1; continue   # kra60: grounded answers need no gate (both hops
         if RD.get((r9, x[3])) != b: eo_blk['first hop is not the edited premise it read'] += 1; continue   # kra57 v3 GROUNDING (25 Nov GPU visit 3: 4 overrides, all wrong;
         if (r9, b) not in RD: eo_blk["new bridge's own premise not read yet"] += 1; continue              #   most edits are read before the new parent's family): both hops
         if RD[(r9, b)] != c: eo_blk["second hop disagrees with the bridge's read premise"] += 1; continue  #   must match premises the memory READ
+        if g < thp: eo_ngc[0] += 1                                                                 #   kra58 GPU visit 4: 8 grounded-but-below-gate subjects abstained)
                                                                                #   precision gate th is open (25 Nov GPU v2, local v2: before that thp is ~0.01 and the untrained memory wrote 1 and 6 overrides, all wrong), its gated two-hop answer is written WITHOUT the trunk's agreement (the trunk
         if JW.get(key, (None,))[0] == c: OVR[key] = c; continue               #   still follows the old premise) and RETRACTS contradicting route J / step writes
         for (q_, a_, c_) in [t for t in list(RW) if t[0] == key[0] and t[1] == key[1] and t[2] != c]:   #   (kra56 GPU visit 4: combined NEW 0.00, stale 0.38 from route J;
@@ -232,7 +240,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
     print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)})" + (f", of them GROUNDED in premises it read, without the trunk's agreement (kra59) {len(gw_ok)} (right {pr9(gw_ok)})" if GW else "") + " | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
           f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57, gate t = {thp if np.isfinite(th) else float('inf'):.3f}): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
-                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {sum(v_ is not None for v_ in OVR.values())} override writes now"
+                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {sum(v_ is not None for v_ in OVR.values())} override writes now" + (f", {eo_ngc[0]} of the new ones below the gate, grounded (kra60)" if int(getattr(cfg, 'inf_jmem_edit_nogate', 0)) else "")
                                                                   + (" | not written: " + ', '.join(f"{k_} {v_}" for k_, v_ in eo_blk.most_common()) if eo_blk else "")
                                                                   + (f" || RETRACT ON EDIT (kra58): {len(er_rt)} written composites of edited subjects RETRACTED (were right {pr9(er_rt)}), {er_ab} newly abstaining, {sum(v_ is None for v_ in OVR.values())} abstaining now" if ER else "") if EO else ""), flush=True)
 
