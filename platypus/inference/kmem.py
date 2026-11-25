@@ -1343,6 +1343,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if x[2] < thr9: why['margin'] += 1; continue
                             if len({e['A'], x[0], x[1]}) < 3: why['same name'] += 1; continue
                             if (x[0], r2) not in hasr: why['B has no recorded r2 fact'] += 1; continue
+                            if (model.__dict__.get('_jw_override') or {}).get((r3, e['A']), x[1]) != x[1]: why.setdefault('edited premise (kra57 override)', 0); why['edited premise (kra57 override)'] += 1; continue
                             if (r3, e['A'], x[1]) not in RW: RW[(r3, e['A'], x[1])] = vis; nw += 1
                             model.__dict__.setdefault('_ra_bridge', {})[(r3, e['A'], x[1])] = x[0]
                             m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
@@ -1360,6 +1361,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         SSW9 = model.__dict__.get('_ss_written') or {}; ctr9 = []
                         for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
                             if r3 not in rules or A not in NI: continue
+                            if (model.__dict__.get('_jw_override') or {}).get((r3, A), C) != C:   # 25 Nov kra57: a route J write contradicting an EDIT OVERRIDE is retracted
+                                RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None); rt9.append(tru9(A, r3, C)); continue
                             if (model.__dict__.get('_jw_written') or {}).get((r3, A), (None,))[0] == C: continue   # 24 Nov kra53: a JEPA MEMORY write is re-derived (and retracted on contradiction) by the JEPA memory
                             if SSW9.get((r3, A), (None,))[0] == C:              # 23 Nov kra47: a STEP-BY-STEP write is re-derived by the step-by-step route; here it is
                                 if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) and 'OPS9' in dir():   #   only RETRACTED ON CONTRADICTION: route J confident (gate)
@@ -1409,7 +1412,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         try:                                                    #   is edited (the moved leaf's new parent read), does EVERY route's two-hop answer
                             SSWq = model.__dict__.get('_ss_written') or {}; JWq = model.__dict__.get('_jw_written') or {}; JAq = model.__dict__.get('_jm_ans') or {}   #   follow it?
                             def ans_q(r3, A):                                   # combined: route J write, else a step write, else a JEPA write
-                                rj = [c for (q, a, c) in RW if q == r3 and a == A]
+                                rj = [c for (q, a, c) in RW if q == r3 and a == A and SSWq.get((r3, A), (None,))[0] != c and JWq.get((r3, A), (None,))[0] != c]   # 25 Nov: step / JEPA writes attributed to their own route
                                 if rj: return rj[0], 'J'
                                 if (r3, A) in SSWq: return SSWq[(r3, A)][0], 'S'
                                 if (r3, A) in JWq: return JWq[(r3, A)][0], 'M'

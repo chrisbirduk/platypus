@@ -174,18 +174,31 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
     if not int(getattr(cfg, 'inf_jmem_write', 0)): return
     RW = model.__dict__.setdefault('_ra_written', {}); BR = model.__dict__.setdefault('_ra_bridge', {}); WRm = model.__dict__.setdefault('_rm_written', {})
     JW = model.__dict__.setdefault('_jw_written', {}); kp, rt, rc, nw, okn = [], [], [], 0, []
+    EO = int(getattr(cfg, 'inf_jmem_edit_override', 0)); EDJ = (model.__dict__.get('_jm_edited') or {}) if EO else {}   # 25 Nov kra57 EDIT OVERRIDE
+    OVR = model.__dict__.setdefault('_jw_override', {}); eo_new, eo_rj, eo_ss = [], [], []
+    MVt = W.get('moves') or {}; tr7 = lambda x: (MVt[x[3]]['C_new'] if x[3] in MVt and MVt[x[3]]['d2'] in seen else x[4])   # truth after an edit read (readout only)
     for key in list(JW):
         C0, v0, cf0 = JW[key]; a = ans.get(key); A = key[1]; rj = RJ9.get((A, key[0]))
         drop = None
-        if rj and rj[1] and rj[0] != C0: drop = 'contra'; BADJ.append(cf0)
+        if rj and rj[1] and rj[0] != C0 and key not in EDJ: drop = 'contra'; BADJ.append(cf0)   # kra57: on an edited premise route J is the stale one
         elif a is None or not (a[2] >= (min(th, thp) if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else th) and a[0] == C0): drop = 'rederive'   # kra54: re-derived at the looser quantile gate (kra53 v5: the precision gate closed and all 19 right JEPA writes were dropped)
         if drop == 'rederive' and int(getattr(cfg, 'inf_jmem_write_hyst', 0)):   # kra54 HYSTERESIS: dropped only after failing at two successive sleeps (kra53: right writes churned)
             PJ = model.__dict__.setdefault('_jw_pend', {})
             if PJ.get(key) != vis - 1: PJ[key] = vis; hj = model.__dict__.setdefault('_jw_held', [0]); hj[0] += 1; drop = None
             else: PJ.pop(key, None)
         if drop is None: kp.append(C0 == (a[3][4] if a else None)); continue
-        RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None)
+        RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None); OVR.pop(key, None)
         tru = a[3][4] if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
+    for key, (c, b, g, x) in ans.items():                                     # kra57 EDIT OVERRIDE: where the memory REPLACED the subject's first-hop premise (an edit
+        if key not in EDJ or g < th or not c or c in (x[3], b): continue      #   was read), its gated two-hop answer is written WITHOUT the trunk's agreement (the trunk
+        if JW.get(key, (None,))[0] == c: OVR[key] = c; continue               #   still follows the old premise) and RETRACTS contradicting route J / step writes
+        for (q_, a_, c_) in [t for t in list(RW) if t[0] == key[0] and t[1] == key[1] and t[2] != c]:   #   (kra56 GPU visit 4: combined NEW 0.00, stale 0.38 from route J;
+            RW.pop((q_, a_, c_), None); WRm.pop((q_, a_, c_), None); BR.pop((q_, a_, c_), None)          #   the memory's gated answers NEW 0.19 / 0.60, stale 0.00)
+            if SSW.get(key, (None,))[0] == c_: SSW.pop(key, None); eo_ss.append(c_ == tr7(x))
+            else: eo_rj.append(c_ == tr7(x))
+        SSW.pop(key, None) if SSW.get(key, (c,))[0] != c else None
+        if key in JW: RW.pop((key[0], key[1], JW[key][0]), None)
+        RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); OVR[key] = c; eo_new.append(c == tr7(x))
     for key, (c, b, g, x) in ans.items():
         if key in JW or key in SSW or g < th or not c or c in (x[3], b): continue
         if int(getattr(cfg, 'inf_jmem_write_agree', 0)) and SSL.get(key) != c: continue   # kra54: written only when the trunk's step-by-step answer is the same (two routes)
@@ -194,7 +207,8 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); nw += 1; okn.append(c == x[4])
     print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)}) | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
-          f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else ""), flush=True)
+          f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
+                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {len(OVR)} override writes now" if EO else ""), flush=True)
 
 
 def jmem_sleep(model, cfg, vis, W, seen, rw):
@@ -212,6 +226,8 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             mvr = {(mv['kind'], l): mv for l, mv in MVj.items() if mv['d2'] in seen}   #   saw an edit - gated answers through edited premises NEW 0.00, stale 0.39-0.57)
             rwp = [x for x in rwp if (x[2], x[3]) not in mvr] + [(mv['d2'], mv['sent'], mv['kind'], l, mv['new']) for (k, l), mv in mvr.items()]
             model.__dict__['_jm_moves_used'] = len(mvr)
+            EDJ = model.__dict__.setdefault('_jm_edited', {})                   # 25 Nov kra57: (composite, subject) whose first-hop premise the memory replaced
+            for (k_, l_), mv_ in mvr.items(): EDJ.setdefault((rw['grand' if k_ == 'parent' else 'skip'], l_), vis)
         nd9 = ''
         DG9 = int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'th1', None) is not None and np.isfinite(J.th1)   # 24 Nov kra53: dream only the recalls that pass its own precision gate
         if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and (DG9 or (not int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)))):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
