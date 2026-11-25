@@ -7,7 +7,7 @@ world: the planted parent / manager facts; real text: the recorded containment p
 for comparison with the trunk. Readouts only: nothing it predicts is written or taught.
 Own small byte encoder (context + EMA target), predictor, slot table; kept in model.__dict__ (not a submodule: never in the trunk's optimizer or
 checkpoint)."""
-import time
+import collections, time
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 
 L_, V_, PAD_ = 64, 256, 0
@@ -189,8 +189,15 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         if drop is None: kp.append(C0 == (a[3][4] if a else None)); continue
         RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None); OVR.pop(key, None)
         tru = a[3][4] if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
+    RD = model.__dict__.get('_jm_read') or {}; eo_blk = collections.Counter()
     for key, (c, b, g, x) in ans.items():                                     # kra57 EDIT OVERRIDE: where the memory REPLACED the subject's first-hop premise (an edit
-        if key not in EDJ or not np.isfinite(th) or g < thp or not c or c in (x[3], b): continue   #   was read; gate = the looser quantile gate thp (at th only 1 of ~10 NEW passed), and only once the
+        if key not in EDJ: continue                                           #   was read; gate = the looser quantile gate thp (at th only 1 of ~10 NEW passed)
+        r9 = 'parent' if x[2] == 'grand' else 'mgr'
+        if not np.isfinite(th): eo_blk['precision gate closed'] += 1; continue  # 25 Nov GPU v2, local v2: before th opens thp is ~0.01; the untrained memory wrote 1 and 6 overrides, all wrong
+        if g < thp or not c or c in (x[3], b): eo_blk['below the gate'] += 1; continue
+        if RD.get((r9, x[3])) != b: eo_blk['first hop is not the edited premise it read'] += 1; continue   # kra57 v3 GROUNDING (25 Nov GPU visit 3: 4 overrides, all wrong;
+        if (r9, b) not in RD: eo_blk["new bridge's own premise not read yet"] += 1; continue              #   most edits are read before the new parent's family): both hops
+        if RD[(r9, b)] != c: eo_blk["second hop disagrees with the bridge's read premise"] += 1; continue  #   must match premises the memory READ
                                                                                #   precision gate th is open (25 Nov GPU v2, local v2: before that thp is ~0.01 and the untrained memory wrote 1 and 6 overrides, all wrong), its gated two-hop answer is written WITHOUT the trunk's agreement (the trunk
         if JW.get(key, (None,))[0] == c: OVR[key] = c; continue               #   still follows the old premise) and RETRACTS contradicting route J / step writes
         for (q_, a_, c_) in [t for t in list(RW) if t[0] == key[0] and t[1] == key[1] and t[2] != c]:   #   (kra56 GPU visit 4: combined NEW 0.00, stale 0.38 from route J;
@@ -209,7 +216,8 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
     print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)}) | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
           f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57, gate t = {thp if np.isfinite(th) else float('inf'):.3f}): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
-                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {len(OVR)} override writes now" if EO else ""), flush=True)
+                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {len(OVR)} override writes now"
+                                                                  + (" | not written: " + ', '.join(f"{k_} {v_}" for k_, v_ in eo_blk.most_common()) if eo_blk else "") if EO else ""), flush=True)
 
 
 def jmem_sleep(model, cfg, vis, W, seen, rw):
@@ -229,6 +237,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             model.__dict__['_jm_moves_used'] = len(mvr)
             EDJ = model.__dict__.setdefault('_jm_edited', {})                   # 25 Nov kra57: (composite, subject) whose first-hop premise the memory replaced
             for (k_, l_), mv_ in mvr.items(): EDJ.setdefault((rw['grand' if k_ == 'parent' else 'skip'], l_), vis)
+        model.__dict__['_jm_read'] = {(k, a): b for (d, s_, k, a, b) in rwp}     # 25 Nov kra57 v3: the premises the memory READ (after edits), for the override's grounding
         nd9 = ''
         DG9 = int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'th1', None) is not None and np.isfinite(J.th1)   # 24 Nov kra53: dream only the recalls that pass its own precision gate
         if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and (DG9 or (not int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)))):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
