@@ -6549,3 +6549,7 @@ kra56 = kra55 + `inf_jmem_moves 1`. Correction to the kra55 diagnosis: the edite
 - **COMBINED answer unchanged** (NEW 0.00, OLD 0.03-0.08, none 0.91-0.97). JEPA writes need the trunk's step-by-step agreement (kra54), and the local trunk is near chance (hop 1 right 0.01-0.02), so nothing new is written locally. Judge this on the GPU.
 - **Other readouts as kra55:** JEPA two hops gated right 0.64-0.71 at visit 3; facts known per fact read 1.12 / 1.10; route J writes and step writes behave as before.
 - **Reading.** kra56 fixes the stale-edit gap in the JEPA memory and removes the risk that `jprotect` keeps stale route J writes. It is the next GPU candidate (kra54 + MQuAKE readouts + edited premises).
+
+### Local runner seed bug (found 25 Nov)
+
+`tools/local_run.py` set `PRESET_SEED` from `LR_SEED`, but nothing reads `PRESET_SEED`, so **every local check ran on seed 1** whatever `LR_SEED` said. A kra56 "seed 4" rerun reproduced the seed 5 log exactly. GPU runs are unaffected (`run_gpu.sh` puts the seed into the overrides). Local results labelled "seed 4" or "seed 5" before this date are all seed 1, and no local result so far measures seed-to-seed noise. Fixed: `local_run.py` now puts `LR_SEED` into the overrides as `seed`.
