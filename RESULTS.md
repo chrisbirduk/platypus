@@ -6517,3 +6517,16 @@ Ran visits 1-3 in full and stopped on the time limit in visit 4. No Traceback. T
   - The world is small (about 880 facts) and synthetic.
   - The Hebbian rate must sit below a stability edge that depends on the data. At scale it needs an adaptive or normalised step.
 - **Next (if pursued).** Train a JEPA memory predictor by predictive coding inside a local run (kra build option), and give the sleep correction an adaptive step size.
+
+## kra55 local check (seed 5, 150 steps per visit, 25 Nov 06:05-07:58): new readouts work; edits do not propagate locally
+
+Visits 1-3 ran in full; the run hit the time limit in visit 4. No Traceback.
+
+- **`[MQuAKE-STYLE EDIT PROPAGATION]`** (two-hop answers through an edited premise, the moved leaf). n is 14 at visit 2 and 31 at visit 3; those with the new family read too are 7 and 20.
+  - COMBINED answer (route J write, else step write, else JEPA write): NEW 0.00, OLD (stale) 0.03-0.07, none 0.93-0.97. Locally almost nothing is written through edited premises.
+  - **The JEPA memory's gated answers: NEW 0.00, OLD (stale) 0.39-0.57 after the edit was read** (control, edit not yet read: OLD 0.26-0.44).
+  - The memory confidently keeps the pre-edit composite. The cause is upstream. The reader recorded the NEW premise only 0.05-0.10 against OLD 0.23-0.43. The JEPA memory trains on every premise sentence read so far, and the old premise has been read in more visits than the new one.
+- **`[FACTS KNOWN PER FACT READ]`:** visit 2 has 100 premises recorded and 19 composites held (0.63 right), giving **1.12 facts known per fact read**. Visit 3 has 135 and 20 (0.65 right), giving **1.10**.
+- **Risk for kra54 on the GPU.** `inf_kmc_rulej_jprotect` keeps a route J write while the JEPA memory agrees with it. If the JEPA memory holds stale composites, it could protect stale writes.
+  - On the GPU, check the moved-leaf line: "WRITTEN composite OLD (stale)" should not rise.
+  - Likely fix (kra56): the JEPA memory should train only on the NEWEST premise for each (subject, relation) once the grounding audit has superseded the old one (`inf_audit_rule 'recent'`). Dreams and replay of a superseded premise should stop.
