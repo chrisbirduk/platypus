@@ -6606,3 +6606,9 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 **Reading:** the override works where the new answer can be known (the new family read: 0.50 new) and guesses where it cannot. Edits are mostly read before the new parent's family, so a test of edit propagation must split by whether the new family is read.
 
 **Fixes:** ca09dd1, overrides only once the precision gate is open. 27b9914 (v3), overrides grounded in premises the memory read: the first hop is the edited premise, the new bridge's own premise is read, and the second hop matches it. The log counts what blocked the rest. v3 local check (seed 1) runs next.
+
+**v3, GPU (seed 5, run 20261125T174908Z, visits 1-4; checkpoints on):**
+- No Traceback. Overrides: visits 1-2 none (precision gate closed, 2 blocked); **visit 3 none (4 waiting for the new bridge's premise, 4 below the gate: v2 wrote 4 wrong here); visit 4: 3 written, right 1.00** (blocked: below the gate 8, bridge premise not read 4, first hop not the read edit 1).
+- **MQuAKE visit 4, edit read (n 16): COMBINED NEW 0.19, stale 0.44, none 0.38; edit and the new family read (n 5): COMBINED NEW 0.60, stale 0.20** (kra56 GPU visit 4: COMBINED NEW 0.00, stale 0.38). Control: NEW 0.00, OLD 0.97. **First time edits reach the final answer on the GPU.** Stale stays (route J): kra58 retracts it.
+- Rest unchanged: combined answered 0.93 / right 0.94 (JEPA share 0.23, right 0.83); route J KEPT 224 (0.97), retracted 0.
+- Checkpoints: 8,977 / 9,099 / 9,610 / 10,455 MB after visits 0-3 (76 s a save); now off by default.
