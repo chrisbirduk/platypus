@@ -207,6 +207,11 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         if J is None: J = JMem(cfg, dev); model.__dict__['_jmem'] = J
         # what has been read: rule-world premises of the seen domains, and the recorded premises of the real-text chains
         rwp = [(d, s_, k, a, b) for (d, s_, k, a, b) in W.get('planted', []) if k in ('parent', 'mgr') and (not seen or int(d) in seen)]
+        if int(getattr(cfg, 'inf_jmem_moves', 0)):                              # 25 Nov kra56: an EDITED premise (moved leaf) once its domain is read REPLACES the old one
+            MVj = W.get('moves') or {}                                          #   (kra55 local: the moves live in W['moves'], not W['planted'], so the JEPA memory never
+            mvr = {(mv['kind'], l): mv for l, mv in MVj.items() if mv['d2'] in seen}   #   saw an edit - gated answers through edited premises NEW 0.00, stale 0.39-0.57)
+            rwp = [x for x in rwp if (x[2], x[3]) not in mvr] + [(mv['d2'], mv['sent'], mv['kind'], l, mv['new']) for (k, l), mv in mvr.items()]
+            model.__dict__['_jm_moves_used'] = len(mvr)
         nd9 = ''
         DG9 = int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'th1', None) is not None and np.isfinite(J.th1)   # 24 Nov kra53: dream only the recalls that pass its own precision gate
         if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and (DG9 or (not int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)))):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
@@ -258,7 +263,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         auc = np.mean([[float(a > b) + 0.5 * (a == b) for b in mn] for a in mr]) if mr and mn else float('nan')
         f = lambda R: (f"{len(R)}: bridge {np.mean([b for b, c, g in R]):.2f}, C {np.mean([c for b, c, g in R]):.2f}, GATED answered {np.mean([g >= th for b, c, g in R]):.2f} "
                        f"right {np.mean([c for b, c, g in R if g >= th]) if any(g >= th for b, c, g in R) else float('nan'):.2f}") if R else "0"
-        print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far{nd9} "
+        print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far{nd9}" + (f" (EDITED premises read and used in place of the old: {model.__dict__.get('_jm_moves_used', 0)})" if int(getattr(cfg, 'inf_jmem_moves', 0)) else "") + f" "
               f"({len(J.keys)} slots, {J.steps} steps in all, loss {ls:.3f}; readout only) || RULE WORLD: one hop on read premises {np.mean(r1) if r1 else float('nan'):.2f} (n {len(r1)}) | "
               f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)", flush=True)
         if int(getattr(cfg, 'inf_jmem_answer', 0)) or int(getattr(cfg, 'inf_jmem_write', 0)):

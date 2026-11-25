@@ -822,6 +822,7 @@ class Config:
     inf_kmc_rulej_jprotect=0        #   24 Nov kra54 MODEL CHANGE: a route J write that fails re-derivation is KEPT while the JEPA memory still answers the same (kra52: drift retracted right writes)
     inf_rule_steps_write_hyst=0     #   24 Nov kra54: a step-by-step write dropped on re-derivation only after failing at two successive sleeps (kra52 v10: all 96 dropped at once)
     inf_mquake_readout=0            #   25 Nov kra55 READOUTS: MQuAKE-style edit propagation (two-hop answers of every route through an EDITED premise: NEW vs stale) and facts known per fact read
+    inf_jmem_moves=0                #   25 Nov kra56 MODEL CHANGE: the JEPA memory trains on an EDITED premise (moved leaf) once read, in place of the old one (kra55 local: it never saw edits)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
