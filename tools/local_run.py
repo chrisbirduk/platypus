@@ -22,7 +22,7 @@ ovr.update(dict(d_model=64, d_state=64, n_layers=2, seq_len=64, batch_size=16, s
                 extra_domains=(), amp='', adam_fused=False))   # the five local domains only; CPU: no bf16 autocast, no fused Adam
 if os.environ.get('LR_DISTANT'): ovr['inf_premises_path'] = os.environ['LR_DISTANT']
 ovr.update(json.loads(os.environ.get('LR_OVR', '{}')))
-ovr.setdefault('seed', int(os.environ.get('LR_SEED', '4')))   # as run_gpu.sh does; before 25 Nov local runs ignored LR_SEED and ran on seed 1
+ovr['seed'] = int(json.loads(os.environ.get('LR_OVR', '{}')).get('seed', os.environ.get('LR_SEED', '4')))   # as run_gpu.sh does; before 25 Nov local runs ignored LR_SEED and ran on seed 1
 os.environ['LAB_OVR'] = json.dumps(ovr)
 for k, v in dict(PLATYPUS_CLEAN='1', PLATYPUS_HINTS='1', PLATYPUS_CF='1', PLATYPUS_SLEEP='adaptive', PLATYPUS_DREAMS='jepa', PLATYPUS_RULEFREE='1',
                  PLATYPUS_ROUTEFIX='1', PLATYPUS_PASSES='1', PLATYPUS_FNTIME='0').items(): os.environ.setdefault(k, v)
