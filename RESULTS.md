@@ -6588,3 +6588,21 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 - **JEPA memory:** two hops gated right 0.93 / 0.88 / 0.88 (visit 4); one hop on read premises 0.88. Frozen real-text test chains: gated answered 0.57, right 0.99.
 - **Facts known per fact read:** 1.25 / 1.26 / 1.23 (visits 2-4); composites held right 0.97-0.98.
 - **Next: kra57** (`inf_jmem_edit_override`). Where the JEPA memory replaced a subject's first-hop premise, its gated answer is written without the trunk's agreement and retracts contradicting route J or step writes.
+
+## kra57 (25 Nov): the edit override, three versions
+
+**v1, local (seed 1, to visit 3; gated at the precision gate th):** 1 override written by visit 3 (right). The readout's gated JEPA answers (quantile gate thp) gave NEW 0.32, but only 1 of about 10 passed th.
+
+**v2 (gate thp), local (seed 1, visits 1-3; stopped at the time limit in visit 4):**
+- Visit 2: 6 overrides, all wrong (the precision gate is still closed; thp about 0.02).
+- **Visit 3: 13 overrides, right 0.77; 2 stale route J writes retracted.**
+- **MQuAKE, edit read (n 31): COMBINED NEW 0.32, stale 0.13, none 0.35, wrong-other about 0.20** (kra56 seed 1 visit 3: NEW 0.00, stale 0.03, none 0.97). **Edit and the new family read (n 20): COMBINED NEW 0.50, stale 0.05.** Control (edit not read): NEW 0.00. **First time edits reach the final answer.**
+
+**v2, GPU (seed 5, run 20261125T163615Z, visits 1-3; stopped):**
+- No Traceback. Overrides: visit 2: 1 (wrong); visit 3: 4, all wrong; 3 stale route J writes retracted.
+- MQuAKE, edit read: n 2 / 8; COMBINED NEW 0.00 / 0.00, stale 0.50 / 0.12. Only 1 of 8 edits read at visit 3 had the new parent's family read (locally 20 of 31): the memory guessed the second hop.
+- Rest of the build unchanged against kra56 (same seed): route J KEPT 169 (0.99) vs 158 (0.98), combined answered 0.86 / right 0.94 vs 0.85 / 0.95; step writes NEW 7 (0.86), KEPT 9 (1.00).
+
+**Reading:** the override works where the new answer can be known (the new family read: 0.50 new) and guesses where it cannot. Edits are mostly read before the new parent's family, so a test of edit propagation must split by whether the new family is read.
+
+**Fixes:** ca09dd1, overrides only once the precision gate is open. 27b9914 (v3), overrides grounded in premises the memory read: the first hop is the edited premise, the new bridge's own premise is read, and the second hop matches it. The log counts what blocked the rest. v3 local check (seed 1) runs next.
