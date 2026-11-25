@@ -6553,3 +6553,20 @@ kra56 = kra55 + `inf_jmem_moves 1`. Correction to the kra55 diagnosis: the edite
 ### Local runner seed bug (found 25 Nov)
 
 `tools/local_run.py` set `PRESET_SEED` from `LR_SEED`, but nothing reads `PRESET_SEED`, so **every local check ran on seed 1** whatever `LR_SEED` said. A kra56 "seed 4" rerun reproduced the seed 5 log exactly. GPU runs are unaffected (`run_gpu.sh` puts the seed into the overrides). Local results labelled "seed 4" or "seed 5" before this date are all seed 1, and no local result so far measures seed-to-seed noise. Fixed: `local_run.py` now puts `LR_SEED` into the overrides as `seed`.
+
+### kra56 second seed (a real seed 4, 25 Nov 12:10-14:05): confirmed, and the first new composites in the combined answer
+
+Visits 1-3 in full, no Traceback. Edited premises used 20 / 38 / 54.
+
+| After the edit was read | seed 1 visit 3 | seed 4 visit 2 | seed 4 visit 3 |
+|---|---|---|---|
+| JEPA memory gated NEW | 0.32 (n 31) | 0.27 (n 11) | 0.17 (n 30) |
+| JEPA memory gated OLD (stale) | 0.03 | 0.00 | 0.00 |
+| ... and the new family read: NEW | 0.50 (n 20) | 0.60 (n 5) | 0.33 (n 15) |
+| COMBINED NEW | 0.00 | **0.09** | **0.03** |
+| COMBINED NEW, new family read | 0.00 | **0.20** | **0.07** |
+| Control (edit not yet read): JEPA OLD | 0.30 | 0.57 | 0.42 |
+
+- The stale answers stay gone on both seeds. NEW is lower on seed 4 at visit 3 (0.17), with small n.
+- On seed 4 a few NEW composites reach the combined answer even with the weak local trunk.
+- JEPA two hops gated right 0.79-0.81 (visit 2) and 0.61-0.82 (visit 3), higher than seed 1. Facts known per fact read 1.11 / 1.10; composites held right 1.00 / 0.94.
