@@ -207,8 +207,19 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         SSW.pop(key, None) if SSW.get(key, (c,))[0] != c else None
         if key in JW: RW.pop((key[0], key[1], JW[key][0]), None)
         RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); OVR[key] = c; eo_new.append(c == tr7(x))
+    ER = int(getattr(cfg, 'inf_jmem_edit_retract', 0)) and EO; er_rt, er_ab = [], 0
+    if ER:                                                                     # 25 Nov kra58 RETRACT ON EDIT: a subject whose first-hop premise the memory REPLACED has no
+        tv9 = lambda A: (MVt[A]['C_new'] if A in MVt and MVt[A]['d2'] in seen else None)   #   grounded composite until the override writes one: every written composite of it
+        for key in list(EDJ):                                                  #   (route J, step, JEPA) is RETRACTED and the key ABSTAINS (route J's write and re-derive
+            if OVR.get(key) is not None: continue                              #   loops skip it); kra57 v3 GPU visit 3: the override blocked its guesses, but route J's
+            for t in [t for t in list(RW) if t[0] == key[0] and t[1] == key[1]]:   #   stale composites stayed (stale 0.50)
+                RW.pop(t, None); WRm.pop(t, None); BR.pop(t, None); er_rt.append(t[2] == tv9(key[1]))
+            SSW.pop(key, None); JW.pop(key, None)
+            if key not in OVR: er_ab += 1
+            OVR[key] = None
     for key, (c, b, g, x) in ans.items():
         if key in JW or key in SSW or g < th or not c or c in (x[3], b): continue
+        if ER and key in OVR and OVR[key] is None: continue                   # kra58: abstaining until a grounded override
         if int(getattr(cfg, 'inf_jmem_write_agree', 0)) and SSL.get(key) != c: continue   # kra54: written only when the trunk's step-by-step answer is the same (two routes)
         rj = RJ9.get((x[3], rw[x[2]]))
         if rj and rj[1]: continue                                              # route J answers this one itself
@@ -217,7 +228,8 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
           f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57, gate t = {thp if np.isfinite(th) else float('inf'):.3f}): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
                                                                   f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {len(OVR)} override writes now"
-                                                                  + (" | not written: " + ', '.join(f"{k_} {v_}" for k_, v_ in eo_blk.most_common()) if eo_blk else "") if EO else ""), flush=True)
+                                                                  + (" | not written: " + ', '.join(f"{k_} {v_}" for k_, v_ in eo_blk.most_common()) if eo_blk else "")
+                                                                  + (f" || RETRACT ON EDIT (kra58): {len(er_rt)} written composites of edited subjects RETRACTED (were right {pr9(er_rt)}), {er_ab} newly abstaining, {sum(v_ is None for v_ in OVR.values())} abstaining now" if ER else "") if EO else ""), flush=True)
 
 
 def jmem_sleep(model, cfg, vis, W, seen, rw):

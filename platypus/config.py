@@ -824,6 +824,7 @@ class Config:
     inf_mquake_readout=0            #   25 Nov kra55 READOUTS: MQuAKE-style edit propagation (two-hop answers of every route through an EDITED premise: NEW vs stale) and facts known per fact read
     inf_jmem_moves=0                #   25 Nov kra56 MODEL CHANGE: the JEPA memory trains on an EDITED premise (moved leaf) once read, in place of the old one (kra55 local: it never saw edits)
     inf_jmem_edit_override=0        #   25 Nov kra57 MODEL CHANGE: where the JEPA memory replaced a subject's first-hop premise (an edit read), its gated two-hop answer is written without the trunk's agreement and retracts contradicting route J / step writes (kra56 GPU visit 4: combined NEW 0.00, stale 0.38 from route J; memory NEW 0.19 / 0.60, stale 0.00)
+    inf_jmem_edit_retract=0         #   25 Nov kra58 MODEL CHANGE (with inf_jmem_edit_override): every written composite of a subject whose first-hop premise the JEPA memory replaced is RETRACTED and the subject abstains until a grounded override answer (kra57 v3 GPU visit 3: guesses blocked, route J's stale composites 0.50)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep
