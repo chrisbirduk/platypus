@@ -217,14 +217,19 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
             SSW.pop(key, None); JW.pop(key, None)
             if key not in OVR: er_ab += 1
             OVR[key] = None
+    GW = int(getattr(cfg, 'inf_jmem_write_grounded', 0)); gw_ok = []
     for key, (c, b, g, x) in ans.items():
-        if key in JW or key in SSW or g < th or not c or c in (x[3], b): continue
+        if key in JW or key in SSW or not c or c in (x[3], b): continue
         if ER and key in OVR and OVR[key] is None: continue                   # kra58: abstaining until a grounded override
-        if int(getattr(cfg, 'inf_jmem_write_agree', 0)) and SSL.get(key) != c: continue   # kra54: written only when the trunk's step-by-step answer is the same (two routes)
+        r9 = 'parent' if x[2] == 'grand' else 'mgr'                          # 25 Nov kra59 GROUNDED WRITES: an answer whose two hops match premises the memory READ is
+        grd = bool(GW) and np.isfinite(th) and RD.get((r9, x[3])) == b and RD.get((r9, b)) == c   #   written at the looser gate thp WITHOUT the trunk's agreement (kra56 GPU: the
+        if g < (thp if grd else th): continue                                  #   agreement rule kept JEPA at ~3% of writes while it answers ~25% at 0.82-0.86; kra57 v3 GPU
+        if not grd and int(getattr(cfg, 'inf_jmem_write_agree', 0)) and SSL.get(key) != c: continue   #   visit 5: the precision gate fell to 0.003 and its share fell to 0.74 right)
         rj = RJ9.get((x[3], rw[x[2]]))
         if rj and rj[1]: continue                                              # route J answers this one itself
-        RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); nw += 1; okn.append(c == x[4])
-    print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)}) | "
+        RW[(key[0], key[1], c)] = vis; BR[(key[0], key[1], c)] = b; JW[key] = (c, vis, float(g)); nw += 1; okn.append(c == tr7(x))
+        if grd: gw_ok.append(c == tr7(x))
+    print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)})" + (f", of them GROUNDED in premises it read, without the trunk's agreement (kra59) {len(gw_ok)} (right {pr9(gw_ok)})" if GW else "") + " | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
           f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57, gate t = {thp if np.isfinite(th) else float('inf'):.3f}): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
                                                                   f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {sum(v_ is not None for v_ in OVR.values())} override writes now"
