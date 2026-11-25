@@ -58,6 +58,40 @@ docker run --gpus all -v $PWD/runs:/work/runs -v $PWD/pile_cache:/work/pile_cach
     platypus:cg26p platypus configs/presets/cg26p.env 1
 ```
 
+## Checkpoints and resume
+
+`scripts/run_gpu.sh` writes a checkpoint to `<run folder>/ckpt/` after every
+visit (`platypus/checkpoint.py`). If a run stops (a Colab session ends, a spot
+machine is taken back), continue it with
+
+```
+scripts/run_gpu.sh --resume runs/<run>
+```
+
+The run goes on after the last saved visit and appends to the same `run.log`;
+the manifest records each resume. A resumed run computes what the
+uninterrupted run computes: `python tools/ckpt/equiv.py OUT 3 6` stops a small
+CPU run after visits 3 and 6, resumes it, and compares the logs line for line.
+
+- A checkpoint is refused if the code, the options, Python or torch differ
+  from the run that wrote it.
+- The checkpoints are deleted when the run finishes cleanly
+  (`PLATYPUS_CKPT_KEEP=1` keeps them). `PLATYPUS_CKPT=0` turns them off.
+- Two checkpoints are kept (`ckpt.pt` and `ckpt.prev.pt`); each line
+  `[checkpoint] saved after visit N` in the log gives the size and the time.
+  A checkpoint holds the whole run state (weights, optimiser, the initial
+  weights, the stores and inference state), so with the run folder on Google
+  Drive expect two copies of several GB; `PLATYPUS_CKPT_EVERY=2` halves the
+  writes. Not yet run on a GPU (25 Nov): check the first run's save lines
+  (`saved`, not `NOT saved`) and sizes.
+- `tools/ckpt/equiv.py` runs the build's defaults plus the preset's
+  `LAB_OVR_FILE` (before 25 Nov `tools/ckpt/tiny_run.py` replaced the defaults
+  with the tiny sizes alone, so earlier equivalence checks ran without the
+  default options or the preset's overrides).
+- A new local in `run()` that a later visit reads must be added to
+  `CK_LOCALS` in `platypus/runner.py`; run `tools/ckpt/equiv.py` after changes
+  to the run loop.
+
 Summarise a log (the readouts that decide whether a build is kept):
 
 ```

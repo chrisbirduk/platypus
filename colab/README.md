@@ -12,7 +12,9 @@
 
 A full three-pass run takes four to five hours on one large GPU (95 GB
 class). Colab sessions can end before that; the run folder on Drive keeps
-everything printed up to that point.
+everything printed up to that point, and a checkpoint after every visit.
+To continue, open a new session, set `RESUME` in the first cell to the run
+folder and run all.
 
 Secrets: keys stay in Colab Secrets. The notebook reads them with
 `google.colab.userdata.get` and never prints them.
