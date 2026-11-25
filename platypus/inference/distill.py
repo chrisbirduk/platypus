@@ -1752,6 +1752,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                     out += [(x, b, g.split('.')[0].strip(), min(a_, b_), up[x[2]].get(x[3])) for (x, p_), b, g, a_, b_ in zip(qq, b1, g2, c1, c2)]
                 return out
             sp, sh, su = steps([x for x in W['planted'] if x[2] in ('grand', 'skip')]), steps(hn), steps(hp)
+            model.__dict__['_ss_last'] = {(rw[o[0][2]], o[0][3]): o[2] for o in sh + su if o[1] is not None and o[2]}   # 24 Nov kra54: the step-by-step answers (ungated) for the JEPA memory's agreement gate
             ok = [o[3] for o in sp if o[1] is not None and o[2] == o[0][4]]; th = float(np.quantile(ok, 0.25)) if ok else float('inf')
             TH9 = {}                                                           # 23 Nov kra47: the gate calibrated PER QUESTION TYPE (kra45 visit 5: one threshold from
             if int(getattr(cfg, 'inf_rule_steps_gtype', 0)):                   #   all planted composites answered none of the never-seen ones)
@@ -1796,6 +1797,10 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                     for o in steps(old):
                         x = o[0]; k = (rw[x[2]], x[3]); C0 = SSW[k][0]
                         if gt(o) and o[2] == C0: kp.append(C0 == x[4]); continue
+                        if int(getattr(cfg, 'inf_rule_steps_write_hyst', 0)):    # 24 Nov kra54 HYSTERESIS: a step write is dropped only after failing re-derivation at two
+                            PS9 = model.__dict__.setdefault('_ss_pend', {})      #   successive sleeps (kra52 visit 10: the self-calibrated gate rose and all 96 step
+                            if PS9.get(k) != vis - 1: PS9[k] = vis; kp.append(C0 == x[4]); hs9 = model.__dict__.setdefault('_ss_held', [0]); hs9[0] += 1; continue   #   writes, 0.97 right, were retracted at once)
+                            PS9.pop(k, None)
                         RW.pop((k[0], k[1], C0), None); WRm.pop((k[0], k[1], C0), None); BR.pop((k[0], k[1], C0), None); SSW.pop(k, None); rt.append(C0 == x[4])
                 for o in sh + su:
                     x = o[0]; k = (rw[x[2]], x[3])
@@ -1803,7 +1808,7 @@ def _dw_rule_chain(model, cfg, S_slot, vis):
                     RW[(k[0], k[1], o[2])] = vis; BR[(k[0], k[1], o[2])] = o[1]; SSW[k] = (o[2], vis, float(o[3])); nw += 1; okn.append(o[2] == x[4])
                 pr9 = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
                 print(f"  [RULE WORLD, STEP-BY-STEP WRITES | visit {vis + 1}] MODEL CHANGE: gated step-by-step answers written where route J abstained: NEW {nw} (right {pr9(okn)}) | "
-                      f"earlier step writes re-derived: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED {len(rt)} (were right {pr9(rt)}) | {len(SSW)} step writes now", flush=True)
+                      f"earlier step writes re-derived: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED {len(rt)} (were right {pr9(rt)}) | {len(SSW)} step writes now" + (f" | held by hysteresis {model.__dict__.get('_ss_held', [0])[0]} in all" if int(getattr(cfg, 'inf_rule_steps_write_hyst', 0)) else ""), flush=True)
         except Exception as e9: print(f"  [RULE WORLD, STEP BY STEP | visit {vis + 1}] unavailable ({type(e9).__name__}: {str(e9)[:120]})", flush=True)
         finally: model.train(was)
     if int(getattr(cfg, 'inf_jmem', 0)):                                       # 24 Nov kra50: the keyed-memory JEPA beside the trunk (readout only)

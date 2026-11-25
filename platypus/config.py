@@ -816,6 +816,16 @@ class Config:
     inf_jmem_write=0                #   24 Nov kra53 MODEL CHANGE: its gated answers WRITTEN where route J and step by step abstain; re-derived each sleep; retracted on contradiction
     inf_jmem_wprec=0.9              #   24 Nov kra53: its write / answer gate = the lowest margin at which its planted-composite answers are >= this precise (10+); else closed
     inf_jmem_dprec=0.95             #   24 Nov kra53: its dream gate = the lowest margin at which its recalls of read premises are >= this precise (20+); else the read text
+    inf_jmem_write_agree=0          #   24 Nov kra54: a JEPA write only where the trunk's (ungated) step-by-step answer is the same (kra53 GPU visit 4: JEPA writes alone 0.69 right)
+    inf_jmem_write_hyst=0           #   24 Nov kra54: a JEPA write dropped on re-derivation only after failing at two successive sleeps
+    inf_jmem_heldmax=400            #   24 Nov kra54: held-back composites the JEPA memory answers each sleep (cross-check, writes, route J protection)
+    inf_kmc_rulej_jprotect=0        #   24 Nov kra54 MODEL CHANGE: a route J write that fails re-derivation is KEPT while the JEPA memory still answers the same (kra52: drift retracted right writes)
+    inf_rule_steps_write_hyst=0     #   24 Nov kra54: a step-by-step write dropped on re-derivation only after failing at two successive sleeps (kra52 v10: all 96 dropped at once)
+    inf_mquake_readout=0            #   25 Nov kra55 READOUTS: MQuAKE-style edit propagation (two-hop answers of every route through an EDITED premise: NEW vs stale) and facts known per fact read
+    inf_jmem_moves=0                #   25 Nov kra56 MODEL CHANGE: the JEPA memory trains on an EDITED premise (moved leaf) once read, in place of the old one (kra55 local: it never saw edits)
+    inf_jmem_edit_override=0        #   25 Nov kra57 MODEL CHANGE: where the JEPA memory replaced a subject's first-hop premise (an edit read), its gated two-hop answer is written without the trunk's agreement and retracts contradicting route J / step writes (kra56 GPU visit 4: combined NEW 0.00, stale 0.38 from route J; memory NEW 0.19 / 0.60, stale 0.00)
+    inf_jmem_edit_retract=0         #   25 Nov kra58 MODEL CHANGE (with inf_jmem_edit_override): every written composite of a subject whose first-hop premise the JEPA memory replaced is RETRACTED and the subject abstains until a grounded override answer (kra57 v3 GPU visit 3: guesses blocked, route J's stale composites 0.50)
+    inf_jmem_write_grounded=0       #   25 Nov kra59 MODEL CHANGE: a JEPA memory two-hop answer whose two hops match premises the memory READ is written at its looser gate without the trunk's step-by-step agreement (kra56 GPU: the agreement rule kept JEPA at ~3% of writes while it answers ~25% at 0.82-0.86)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

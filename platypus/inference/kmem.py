@@ -1343,6 +1343,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             if x[2] < thr9: why['margin'] += 1; continue
                             if len({e['A'], x[0], x[1]}) < 3: why['same name'] += 1; continue
                             if (x[0], r2) not in hasr: why['B has no recorded r2 fact'] += 1; continue
+                            if (model.__dict__.get('_jw_override') or {}).get((r3, e['A']), x[1]) != x[1]: why.setdefault('edited premise (kra57 override)', 0); why['edited premise (kra57 override)'] += 1; continue
                             if (r3, e['A'], x[1]) not in RW: RW[(r3, e['A'], x[1])] = vis; nw += 1
                             model.__dict__.setdefault('_ra_bridge', {})[(r3, e['A'], x[1])] = x[0]
                             m_ = {ph['grand']: W.get('parent', {}), ph['skip']: W.get('mgr', {})}.get(r3)
@@ -1360,6 +1361,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         SSW9 = model.__dict__.get('_ss_written') or {}; ctr9 = []
                         for (r3, A, C) in list(RW):                             #   re-derive, and write back EVERY checked composite: moved people 0.76-0.90 asked directly)
                             if r3 not in rules or A not in NI: continue
+                            if (model.__dict__.get('_jw_override') or {}).get((r3, A), C) != C:   # 25 Nov kra57: a route J write contradicting an EDIT OVERRIDE is retracted
+                                RW.pop((r3, A, C), None); WRm.pop((r3, A, C), None); BR.pop((r3, A, C), None); rt9.append(tru9(A, r3, C)); continue
                             if (model.__dict__.get('_jw_written') or {}).get((r3, A), (None,))[0] == C: continue   # 24 Nov kra53: a JEPA MEMORY write is re-derived (and retracted on contradiction) by the JEPA memory
                             if SSW9.get((r3, A), (None,))[0] == C:              # 23 Nov kra47: a STEP-BY-STEP write is re-derived by the step-by-step route; here it is
                                 if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) and 'OPS9' in dir():   #   only RETRACTED ON CONTRADICTION: route J confident (gate)
@@ -1371,6 +1374,11 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                             ok9 = x is not None and x[2] >= thr9 and len({A, x[0], x[1]}) == 3 and (x[0], r2) in hasr
                             PD9 = model.__dict__.setdefault('_rj_pend', {})
                             if ok9 and x[1] == C: BR[(r3, A, C)] = x[0]; kp9.append(tru9(A, r3, C)); PD9.pop((r3, A, C), None); continue
+                            if int(getattr(cfg, 'inf_kmc_rulej_jprotect', 0)):  # 24 Nov kra54: a write route J no longer re-derives is KEPT while the JEPA memory (its last sleep)
+                                ja9 = (model.__dict__.get('_jm_ans') or {}).get((r3, A))   #   still answers the same C above its gate (kra53 cross-check: when the two
+                                if ja9 and ja9[0] == C and ja9[1]:                         #   agree, right 1.00; kra52 visits 7-9: 23-40 right writes retracted by drift)
+                                    kp9.append(tru9(A, r3, C)); PD9.pop((r3, A, C), None); pt9 = model.__dict__.setdefault('_rj_prot', {}); pt9[vis] = pt9.get(vis, 0) + 1
+                                    model.__dict__.setdefault('_rj_prot_ok', {}).setdefault(vis, []).append(tru9(A, r3, C)); continue
                             if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)):    # 24 Nov kra51 HYSTERESIS: a write is retracted / rewritten only when it fails
                                 nx9 = x[1] if ok9 else None                            #   re-derivation at TWO successive sleeps the same way (kra47-49 visit 5: 6-15
                                 pd9 = PD9.get((r3, A, C))                              #   right writes retracted)
@@ -1383,7 +1391,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         pr9 = lambda L: f"{np.mean([v for v in L if v is not None]):.2f}" if any(v is not None for v in L) else 'n/a'
                         print(f"  [ROUTE J RE-DERIVE | visit {vis + 1}] MODEL CHANGE: every earlier route J write re-derived with today's predictor and gate: KEPT {len(kp9)} (right {pr9(kp9)}) | "
                               f"REWRITTEN {len(rw9)} (old right {pr9([a for a, b in rw9])} -> new right {pr9([b for a, b in rw9])}) | RETRACTED {len(rt9)} (were right {pr9(rt9)}) | "
-                              f"{len(RW)} written composites now" + (f" | HELD by hysteresis (first failure) {model.__dict__.get('_rj_held', [0])[0]} in all" if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)) else "") + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
+                              f"{len(RW)} written composites now" + (f" | PROTECTED by the JEPA memory's agreement {(model.__dict__.get('_rj_prot') or {}).get(vis, 0)} (right {pr9((model.__dict__.get('_rj_prot_ok') or {}).get(vis, []))})" if int(getattr(cfg, 'inf_kmc_rulej_jprotect', 0)) else "") + (f" | HELD by hysteresis (first failure) {model.__dict__.get('_rj_held', [0])[0]} in all" if int(getattr(cfg, 'inf_kmc_rulej_reverify_hyst', 0)) else "") + (f" | STEP-BY-STEP writes RETRACTED ON CONTRADICTION {len(ctr9)} (were right {pr9(ctr9)})" if int(getattr(cfg, 'inf_kmc_rulej_retract_contra', 0)) else ""), flush=True)
                     if MV:                                                      # 19 Nov kra9 READOUT: the MOVED leaves (premise changed in a domain read later)
                         hasp = collections.defaultdict(set)
                         for e in fs0: hasp[(e['A'], str(e['r']).strip())].add(e['ans'])
@@ -1400,6 +1408,37 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                         print(f"  [ROUTE J, PREMISE CHANGE | visit {vis + 1}] MOVED leaves (a new parent planted in another domain; truth after the move = the new family's root) || "
                               + " || ".join(f"{nm} (n {len(L)}): reader recorded NEW premise {mm9(L, 0)}, OLD {mm9(L, 1)} | route J composite NEW {mm9(L, 2)}, OLD {mm9(L, 3)}, passes gate {mm9(L, 4)} | "
                                             f"WRITTEN composite NEW {mm9(L, 5)}, OLD (stale) {mm9(L, 6)}" for nm, L in (('MOVE READ', g9['read']), ('MOVE READ AND THE NEW PARENT\'S FAMILY READ', g9['readok']), ('MOVE NOT YET READ (control)', g9['ctl']))), flush=True)
+                    if MV and int(getattr(cfg, 'inf_mquake_readout', 0)):            # 25 Nov kra55 READOUTS (readout only): MQuAKE-STYLE EDIT PROPAGATION - after a premise
+                        try:                                                    #   is edited (the moved leaf's new parent read), does EVERY route's two-hop answer
+                            SSWq = model.__dict__.get('_ss_written') or {}; JWq = model.__dict__.get('_jw_written') or {}; JAq = model.__dict__.get('_jm_ans') or {}   #   follow it?
+                            def ans_q(r3, A):                                   # combined: route J write, else a step write, else a JEPA write
+                                rj = [c for (q, a, c) in RW if q == r3 and a == A and SSWq.get((r3, A), (None,))[0] != c and JWq.get((r3, A), (None,))[0] != c]   # 25 Nov: step / JEPA writes attributed to their own route
+                                if rj: return rj[0], 'J'
+                                if (r3, A) in SSWq: return SSWq[(r3, A)][0], 'S'
+                                if (r3, A) in JWq: return JWq[(r3, A)][0], 'M'
+                                return None, None
+                            gq = {'read': [], 'readok': [], 'ctl': []}
+                            for l, mv9 in MV.items():
+                                r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']
+                                if int(mv9['d']) not in seen: continue
+                                c_, src_ = ans_q(r3, l); ja_ = JAq.get((r3, l)); row = (c_ == mv9['C_new'], c_ == mv9['C_old'], c_ is None, src_,
+                                    ja_ is not None and ja_[1] and ja_[0] == mv9['C_new'], ja_ is not None and ja_[1] and ja_[0] == mv9['C_old'])
+                                gq['read' if mv9['d2'] in seen else 'ctl'].append(row)
+                                if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: gq['readok'].append(row)
+                            def fq(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
+                            def sq(L): c9 = collections.Counter(t[3] for t in L if t[3]); return ', '.join(f"{ {'J': 'route J', 'S': 'step', 'M': 'JEPA'}[k]} {v}" for k, v in sorted(c9.items())) or 'none'
+                            print(f"  [MQuAKE-STYLE EDIT PROPAGATION | visit {vis + 1}] two-hop answers through an EDITED premise (moved leaf; after the edit is read the truth is the NEW "
+                                  f"composite); COMBINED = route J write, else step write, else JEPA write || "
+                                  + " || ".join(f"{nm} (n {len(L)}): COMBINED NEW {fq(L, 0)}, OLD (stale) {fq(L, 1)}, none {fq(L, 2)} (answered by {sq(L)}) | JEPA memory gated NEW {fq(L, 4)}, OLD {fq(L, 5)}"
+                                                for nm, L in (('EDIT READ', gq['read']), ('EDIT READ AND THE NEW FAMILY READ', gq['readok']), ('EDIT NOT YET READ (control: OLD is right)', gq['ctl']))), flush=True)
+                            nr = sum(1 for v_ in hasp.values() if v_)           # FACTS KNOWN PER FACT READ: premises read and recorded (each (subject, relation) once)
+                                                                                #   vs composites the model now holds (route J, step and JEPA writes), right by the rule world's truth
+                            cs9 = {(q, a): c for (q, a, c) in RW}; cs9.update({k: v[0] for k, v in SSWq.items() if k not in cs9}); cs9.update({k: v[0] for k, v in JWq.items() if k not in cs9})
+                            tv9 = [tru9(a, q, c) for (q, a), c in cs9.items()]; tv9 = [t for t in tv9 if t is not None]
+                            print(f"  [FACTS KNOWN PER FACT READ | visit {vis + 1}] (subject, relation) premises recorded {nr} | composites held {len(cs9)} (with truth {len(tv9)}, right "
+                                  f"{np.mean(tv9) if tv9 else float('nan'):.2f}) -> right composites {sum(tv9)} | facts known per fact read {(nr + sum(tv9)) / max(1, nr):.2f} "
+                                  f"(premises counted as known when recorded; composites only when right)", flush=True)
+                        except Exception as eq: print(f"  [MQuAKE-STYLE EDIT PROPAGATION | visit {vis + 1}] unavailable ({type(eq).__name__}: {str(eq)[:120]})", flush=True)
             finally: K['tcode'] = old9 if old9 is not None else {}
         except Exception as e7: print(f"  [ROUTE J | visit {vis + 1}] unavailable ({type(e7).__name__}: {str(e7)[:120]})", flush=True)
     tu = [(d, l, r3, C) for (d, sent, k, l, C) in W['held'] if int(d) not in seen and ph.get(k) in rules for r3 in [ph.get(k)]][:200]
