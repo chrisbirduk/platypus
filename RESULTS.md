@@ -6476,3 +6476,18 @@ Every figure below is in the entries above, with its conditions; GPU runs are pa
 - **HEADLINE weights only: FORGETTING +0.012 | FINAL BPC 1.791** (fast store on: the same). Earlier full passes: kra17 +0.005 / 1.793 (seed 4, before the inference writes), cg27a_replay +0.026 / 1.767, cg27a_rtxt +0.077 / 1.807. **The whole inference loop (route J, step-by-step and real-text writes, the JEPA memory) costs no language modelling: forgetting and final BPC in the range of the best earlier runs.** Per domain: Gutenberg -0.036, Wikipedia -0.028, ArXiv -0.012, Github -0.028 (BACKWARD TRANSFER: better after nine more domains), PubMed +0.031, FreeLaw +0.006, StackExchange +0.081, USPTO +0.064, DM Mathematics +0.030. Post-train BPC 1.700.
 - End of run, from the weights: probe one-hop 0.94, two-hop 0.79 (kra17: one-hop 0.78). **TEMPORAL GRADIENT: two-hop recall of OLDER conclusions 0.96 vs RECENT 0.73 - the CLS prediction (older = consolidated) holds.**
 - Visit 10: JEPA memory one hop 0.86, held-back two hops C 0.63 (gated right 0.87); real text C 0.63 (gated 0.71 @ 0.73). Route J: contradiction 0.60, retracted 50 (were right 0.78), rewritten 5 right -> wrong, held 345 in all. **Step-by-step writes: all 96 retracted at once (were right 0.97)** - the self-calibrated gate rose and every re-derivation failed: kra54 adds hysteresis for step writes (inf_rule_steps_write_hyst). Real-text self-written chains: 3 new, valid 1.00 (30 taught).
+
+## kra54 local check (seed 5, 150 steps per visit, 25 Nov 00:55) - released
+
+Ran visits 1-3 in full and stopped on the time limit in visit 4. No Traceback. The step-write hysteresis was added after this run started, so it was only compile-checked here.
+
+- **New readout `[JEPA MEMORY vs STEP BY STEP]` works.** Overlap was 33 at visit 2 and 47 at visit 3, with agreement 0.00 and 0.02. Locally the trunk's step by step is near chance (hop 1 right 0.02), so it almost never agrees with the JEPA memory. When they disagreed, the JEPA memory was right 0.79-0.83.
+- **The agreement gate is doing what it should, but it can't help at local scale.** JEPA writes were NEW 0, 0 and 1 (the one was wrong, matching a wrong trunk). Before kra54, the JEPA memory wrote freely. Whether agreement makes JEPA writes precise can only be judged on the GPU, where the trunk's step by step is useful.
+- **JEPA memory gated two hops:** right 0.89-0.92 on held-back composites (visits 2-3). Margin AUC 0.77-0.82.
+- **Combined answer:** answered 0.47-0.52, right 0.85-0.86.
+- **Route J re-derivation:** KEPT 13-14 (right 0.92-0.93), RETRACTED 0. "PROTECTED by the JEPA memory's agreement" printed 0 (nothing was due for retraction). Hysteresis held 0.
+- **What to look for on the GPU (kra54, seed 5):**
+  - JEPA writes right ≥ 0.9, now that writing requires step-by-step agreement (kra53 visit 4 was 0.69).
+  - No mass drop of right JEPA writes when the gate tightens (kra53 visit 5 lost 19 right ones).
+  - Route J writes retracted per visit after visit 6 falls from 23-50, with PROTECTED > 0.
+  - Step writes are not wiped when the gate rises (kra52 visit 10 lost 96).
