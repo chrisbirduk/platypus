@@ -186,9 +186,9 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
             PJ = model.__dict__.setdefault('_jw_pend', {})
             if PJ.get(key) != vis - 1: PJ[key] = vis; hj = model.__dict__.setdefault('_jw_held', [0]); hj[0] += 1; drop = None
             else: PJ.pop(key, None)
-        if drop is None: kp.append(C0 == (a[3][4] if a else None)); continue
+        if drop is None: kp.append(C0 == (tr7(a[3]) if a else None)); continue   # 25 Nov: judged against the truth after an edit read (kra57 v3 GPU visit 5: KEPT right 0.81 = the 3 right overrides judged against the OLD truth)
         RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None); OVR.pop(key, None)
-        tru = a[3][4] if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
+        tru = tr7(a[3]) if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
     RD = model.__dict__.get('_jm_read') or {}; eo_blk = collections.Counter()
     for key, (c, b, g, x) in ans.items():                                     # kra57 EDIT OVERRIDE: where the memory REPLACED the subject's first-hop premise (an edit
         if key not in EDJ: continue                                           #   was read; gate = the looser quantile gate thp (at th only 1 of ~10 NEW passed)
