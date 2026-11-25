@@ -4,7 +4,7 @@ Results go here as they come, with the conditions that limit them; negatives sta
 without an explicit seed are seed 0; local recall differences under about 0.15 are seed noise). GPU = Colab, 130 probes, pass 1 (10 visits).
 "Shadow" = a readout that fits a variant on one sleep's conclusions alone, applies it to the pre-edit weights, measures and removes it.
 
-**Latest summary:** "Summary, 20-22 November" at the end of this file (earlier: "Summary, 18-19 November"). The log below is in date order.
+**Latest summary:** "Summary, 23-25 November" at the end of this file (earlier: "Summary, 20-22 November", "Summary, 18-19 November"). The log below is in date order.
 
 ## Words used carefully
 
@@ -6614,3 +6614,36 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 - Checkpoints: 8,977 / 9,099 / 9,610 / 10,455 MB after visits 0-3 (76 s a save); now off by default.
 - **v3 GPU visit 5:** overrides NEW 5 (right 1.00), 8 in all, every one right; 1 stale route J write retracted. **MQuAKE, edit read (n 27): COMBINED NEW 0.30, stale 0.37, none 0.33; edit and the new family read (n 13): NEW 0.62, stale 0.15.** Control: OLD 0.96. Combined answered 0.99 / right 0.93 (JEPA share 0.24, right 0.74; its gate fell to t = 0.003). Route J KEPT 247 (0.97), retracted 1 (stale). JEPA writes NEW 21 (1.00), KEPT 16 ("right 0.81": the 3 visit-4 overrides judged against the old truth; readout fixed to use the truth after an edit read). Facts known per fact read 1.24. Checkpoint 11.5 GB.
 - **v3 GPU visit 6 (run stopped here):** overrides NEW 5 (right 1.00), **13 in all, every one right**; 4 stale route J writes retracted. **MQuAKE, edit read (n 37): COMBINED NEW 0.35, stale 0.38, none 0.27; edit and the new family read (n 25): NEW 0.52, stale 0.28.** Control: OLD 0.91. Combined answered 0.94 / right 0.94 (JEPA share 0.20, right 0.71). **Route J at visit 6: KEPT 274 (0.96), RETRACTED 2 (were right 1.00), held by hysteresis 12 in all (visit 5: 5), protected by the JEPA memory 5 (right 1.00)**; false claims contradicted 0.82 (visit 5: 0.84). The late drift starts small (kra52 visit 7: 40 retracted). JEPA writes NEW 20 (1.00). Facts known per fact read 1.23.
+
+## kra58 and kra59 (25 Nov)
+
+**kra58 = kra57 v3 + RETRACT ON EDIT (`inf_jmem_edit_retract`):** every written composite of a subject whose first-hop premise the JEPA memory replaced is retracted, and the subject abstains until a grounded override answer.
+- **GPU (seed 5, run 20261125T192016Z, visits 1-3, in progress):** no Traceback. Visit 1: 13 subjects abstaining; visit 2: 25. **Visit 3: 3 written composites of edited subjects retracted (were right 0.00, i.e. all stale), 36 abstaining.** MQuAKE, edit read: visit 2 (n 2) and **visit 3 (n 8): COMBINED NEW 0.00, stale 0.00, none 1.00** (kra57 v3 visit 3: stale 0.50). Control (edit not read): OLD 0.83 / 0.88 (kra57 v3: 0.83 / 0.96; n 18-25). Combined answered 0.85 / right 0.94; route J KEPT 164 (1.00).
+- Local (seed 1, visit 2): edit read (n 14) stale 0.00 (kra57 v2: 0.07). Visit 3 pending.
+
+**kra59 = kra58 + GROUNDED JEPA WRITES (`inf_jmem_write_grounded`):** a JEPA memory answer whose two hops match premises the memory read is written at its looser gate without the trunk's step-by-step agreement; ungrounded answers keep the agreement rule (kra57 v3 GPU visit 5: the memory's precision gate fell to 0.003 and its share of the combined answer to 0.74 right, 0.71 at visit 6). Built, not yet run.
+
+**Other changes on 25 Nov:** checkpoint and resume at visit boundaries merged (PR #66; off by default since the kra57 GPU run measured 9-11.5 GB a save, two kept; `CKPT = True` in the notebooks); tiny runs for the checkpoint equivalence check now use the build defaults and the preset's overrides (PR #72, open). Readouts: kept and retracted JEPA writes judged against the truth after an edit; "override writes now" counts written answers only.
+
+## Summary, 23-25 November
+
+Every figure is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named.
+
+**A keyed-memory JEPA as a second memory (kra50-kra56).**
+- Offline first (23-24 Nov): a JEPA that predicts the slot of a masked name stores facts (one-hop 0.98-1.00, two and three hops by its own hops 0.99-1.00) and, replaying its own recall, learns domains one after another.
+- In the model it trains each sleep on the premises read and answers two-hop questions by its own hops. **On the GPU its stored two-hop answers are 1.00 right** (kra56: 3 then 8; kra57 v3: 20-21 a visit), and the **combined answer** (route J, else a step-by-step write, else the JEPA memory) answers 0.85-0.99 of held-back composites at 0.93-0.95 right, the JEPA memory supplying about a quarter.
+- Weak point: outside the grounded paths its gate loosens late in a run (share right 0.86 -> 0.71 by visit 6, kra57 v3).
+
+**Self-written conclusions stay right (kra46-kra56).** The margin gate separates unknown from contradicted (false claims contradicted 0.82-0.97, true 0.00, never-read unknown 0.96-0.97). Step-by-step writes 0.92-1.00 right. Route J re-derivation with hysteresis and JEPA protection keeps 0.96-0.99 right; **the late drift is small on kra57 v3: 2 right writes retracted at visit 6** (kra52, before hysteresis for step writes and JEPA protection: 40 at visit 7). Facts known per fact read 1.23-1.26 (GPU, seed 5).
+
+**Edits reach the final answer (kra55-kra58).**
+- The MQuAKE-style readout: after a moved leaf's new parent is read, the true two-hop answer changes. kra56: the JEPA memory follows edits (gated NEW 0.19-0.60, stale 0.00) but the final answer did not (NEW 0.00, stale 0.38) - route J's composites came from the reader's old premise.
+- kra57 v3 (grounded edit override): **13 of 13 override answers right on the GPU; COMBINED NEW 0.19 / 0.30 / 0.35 at visits 4-6, 0.52-0.62 where the new parent's family was read** (stale 0.37-0.44). Locally (seed 1) NEW 0.32 / 0.50 at visit 3.
+- kra58 (retract on edit): stale 0.00 at visits 2-3 on the GPU; visits 4-5 decide whether new answers come through as in kra57.
+- Edits are mostly read before the new parent's family, so the readout splits by whether the family is read; ungrounded overrides guessed and were all wrong (kra57 v2 GPU visit 3: 4 of 4).
+
+**Real text (kra43-kra48).** On frozen test sets of never-composed real-text chains, both seeds reach written-chain C 0.41 at visit 4 (baseline 0.07); **step by step 0.64-0.77, 0.95-0.98 right when gated (seed 5 answers 58% at 0.95)**.
+
+**Negatives.** The accelerated-learning toy (inference on vs off, 4-32 readings) showed no acceleration: imprecise writes displace true facts. Learning speed as a truth signal stays at chance. A local runner bug ran every local check before 25 Nov on seed 1 regardless of LR_SEED.
+
+**Next.** kra58 visits 4-10 (edits, route J to visit 10); kra59 local check; kra60 (the reader's old premise marked replaced, the JEPA gate late in a run); a validation build on two seeds with the test aids off.
