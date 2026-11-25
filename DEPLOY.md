@@ -79,6 +79,15 @@ CPU run after visits 3 and 6, resumes it, and compares the logs line for line.
   (`PLATYPUS_CKPT_KEEP=1` keeps them). `PLATYPUS_CKPT=0` turns them off.
 - Two checkpoints are kept (`ckpt.pt` and `ckpt.prev.pt`); each line
   `[checkpoint] saved after visit N` in the log gives the size and the time.
+  A checkpoint holds the whole run state (weights, optimiser, the initial
+  weights, the stores and inference state), so with the run folder on Google
+  Drive expect two copies of several GB; `PLATYPUS_CKPT_EVERY=2` halves the
+  writes. Not yet run on a GPU (25 Nov): check the first run's save lines
+  (`saved`, not `NOT saved`) and sizes.
+- `tools/ckpt/equiv.py` runs the build's defaults plus the preset's
+  `LAB_OVR_FILE` (before 25 Nov `tools/ckpt/tiny_run.py` replaced the defaults
+  with the tiny sizes alone, so earlier equivalence checks ran without the
+  default options or the preset's overrides).
 - A new local in `run()` that a later visit reads must be added to
   `CK_LOCALS` in `platypus/runner.py`; run `tools/ckpt/equiv.py` after changes
   to the run loop.
