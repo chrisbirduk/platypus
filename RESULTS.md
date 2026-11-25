@@ -6530,3 +6530,22 @@ Visits 1-3 ran in full; the run hit the time limit in visit 4. No Traceback.
 - **Risk for kra54 on the GPU.** `inf_kmc_rulej_jprotect` keeps a route J write while the JEPA memory agrees with it. If the JEPA memory holds stale composites, it could protect stale writes.
   - On the GPU, check the moved-leaf line: "WRITTEN composite OLD (stale)" should not rise.
   - Likely fix (kra56): the JEPA memory should train only on the NEWEST premise for each (subject, relation) once the grounding audit has superseded the old one (`inf_audit_rule 'recent'`). Dreams and replay of a superseded premise should stop.
+
+## kra56 local check (seed 5, 150 steps per visit, 25 Nov 08:00-09:55): the JEPA memory now follows edits
+
+kra56 = kra55 + `inf_jmem_moves 1`. Correction to the kra55 diagnosis: the edited premises (moved leaves) live in `W['moves']`, not `W['planted']`, so the JEPA memory never trained on them at all. kra56 swaps the edited premise in for the old one once it has been read. Visits 1-3 ran in full; the run hit the time limit in visit 4. No Traceback.
+
+- **Edited premises used:** 22 / 45 / 63 at visits 1 / 2 / 3.
+- **`[MQuAKE-STYLE EDIT PROPAGATION]`, JEPA memory gated answers after the edit was read:**
+
+  | | kra55 (visits 2-3) | kra56 visit 2 | kra56 visit 3 |
+  |---|---|---|---|
+  | EDIT READ: NEW | 0.00 | 0.00 (n 14) | **0.32** (n 31) |
+  | EDIT READ: OLD (stale) | 0.39-0.57 | 0.00 | **0.03** |
+  | Edit and new family read: NEW | 0.00 | 0.00 (n 7) | **0.50** (n 20) |
+  | Edit not yet read (control): OLD | 0.26-0.44 | 0.20 | 0.30 |
+
+  Stale answers are gone and NEW appears once the memory has had a sleep with the new family. The control still gives OLD before the edit is read, as it should.
+- **COMBINED answer unchanged** (NEW 0.00, OLD 0.03-0.08, none 0.91-0.97). JEPA writes need the trunk's step-by-step agreement (kra54), and the local trunk is near chance (hop 1 right 0.01-0.02), so nothing new is written locally. Judge this on the GPU.
+- **Other readouts as kra55:** JEPA two hops gated right 0.64-0.71 at visit 3; facts known per fact read 1.12 / 1.10; route J writes and step writes behave as before.
+- **Reading.** kra56 fixes the stale-edit gap in the JEPA memory and removes the risk that `jprotect` keeps stale route J writes. It is the next GPU candidate (kra54 + MQuAKE readouts + edited premises).
