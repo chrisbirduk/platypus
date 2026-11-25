@@ -11,7 +11,8 @@ nearest name code. Facts are read in wording 0; PARAPHRASE recall asks wording 1
            only where the recall is wrong (local error-driven correction, the sleep loop's 'contradicted' signal), no gradients anywhere.
 Readouts per arm: one-hop recall on read facts, PARAPHRASE recall (wording 1), TWO HOPS by its own hops (lives -> city_in), THREE HOPS,
 NEVER-READ names: margin AUC (does its confidence separate read from never-read heads), and wall time.
-Usage: python3 tools/bpfree_sim.py  (env AL_EPOCHS 30, BF_SEEDS 0,1, BF_DIM 2048, BF_HID 1024)"""
+Usage: python3 tools/bpfree_sim.py  (env AL_EPOCHS 30, BF_SEEDS 0,1, BF_DIM 2048, BF_HID 1024; PC rates BF_PCLR 5 (tuned; 0.05 fails), BF_PCETA 0.1,
+BF_PCTI 20; sleep correction BF_HLR 0.005 (tuned; 0.01 diverges), BF_HNORM 1 divides it by the number of wrong recalls)"""
 import os, sys, time, zlib
 import numpy as np, torch, torch.nn.functional as F
 
@@ -73,7 +74,7 @@ def run(seed):
             y = torch.tanh(Xt[b] @ W1.T) @ W2.T; l = ((y - Yt[b]) ** 2).sum(-1).mean(); opt.zero_grad(); l.backward(); opt.step()
     with torch.no_grad(): out['BP'] = evaluate(lambda X: torch.tanh(X @ W1.T) @ W2.T); out['BP']['sec'] = time.time() - t
     # PC: the same network, predictive coding (local updates, no backward pass)
-    torch.manual_seed(seed); V1 = torch.randn(H, DF) / DF ** 0.5; V2 = torch.randn(DC, H) / H ** 0.5; lr, eta, TI = 0.05, 0.1, 20; t = time.time()
+    torch.manual_seed(seed); V1 = torch.randn(H, DF) / DF ** 0.5; V2 = torch.randn(DC, H) / H ** 0.5; lr, eta, TI = float(os.environ.get('BF_PCLR', 5.0)), float(os.environ.get('BF_PCETA', 0.1)), int(os.environ.get('BF_PCTI', 20)); t = time.time()
     for ep in range(EP):
         for b in torch.randperm(len(tr)).split(64):
             x0 = Xt[b]; mu1 = x0 @ V1.T; x1 = mu1.clone(); x2 = Yt[b]
@@ -97,7 +98,7 @@ def run(seed):
             ix = [i for i, x in enumerate(tr) if x[2] == rel]; o, _ = decode(Y[ix], rel); wrong += [i for o_, i in zip(o, ix) if o_ != tr[i][1]]
         fixed.append(len(wrong))
         if not wrong: break
-        w = torch.tensor(wrong); Mh += 0.5 * (Yt[w] - Y[w]).T @ Xt[w]        #   the sleep's 'contradicted' signal: correct only what it recalls wrongly
+        w = torch.tensor(wrong); Mh += float(os.environ.get('BF_HLR', 0.005)) * (Yt[w] - Y[w]).T @ Xt[w] / (len(wrong) if int(os.environ.get('BF_HNORM', 0)) else 1)        #   the sleep's 'contradicted' signal: correct only what it recalls wrongly
     out['HEBB'] = evaluate(lambda X: X @ Mh.T); out['HEBB']['sec'] = time.time() - t; out['HEBB']['wrong per sleep'] = fixed[:6]
     return out
 

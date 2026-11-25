@@ -6491,3 +6491,29 @@ Ran visits 1-3 in full and stopped on the time limit in visit 4. No Traceback. T
   - No mass drop of right JEPA writes when the gate tightens (kra53 visit 5 lost 19 right ones).
   - Route J writes retracted per visit after visit 6 falls from 23-50, with PROTECTED > 0.
   - Step writes are not wiped when the gate rises (kra52 visit 10 lost 96).
+
+## Can feedback replace backpropagation for the memory's predictor? (tools/bpfree_sim.py, 25 Nov 03:35-03:45, offline synthetic, 2 seeds, 30 passes)
+
+**Setup.** The five-level world of tools/jepa_store.py. Questions are encoded by FIXED hashed character trigrams (2048 dims, no learning). The predictor maps them to an answer code (256 dims), decoded to the nearest name. Facts are read in wording 0. Paraphrase asks wording 1, which was never read. Two and three hops chain the arm's own one-hop answers.
+
+**Results.** Means over seeds 0 and 1, with tuned rates.
+
+| arm | learning rule | one-hop | paraphrase | two hops | three hops | never-read AUC | sec |
+|---|---|---|---|---|---|---|---|
+| BP | two-layer, backpropagation (Adam) | 1.00 | 0.91 | 1.00 | 1.00 | 0.99 | 4.1 |
+| **PC** | **same network, predictive coding: local updates, no backward pass** | **1.00** | **0.94** | **0.99** | **1.00** | **1.00** | 5.9 |
+| ELM | fixed random hidden layer + local delta rule | 0.82 | 0.78 | 0.69 | 0.15 | 0.96 | 0.9 |
+| **HEBB** | **one-shot Hebbian, then SLEEP FEEDBACK correcting only wrong recalls** | **0.97** | **0.82** | **0.91** | **0.90** | **0.92** | **0.24** |
+
+- **Untuned first run.** PC at lr 0.05 and HEBB at correction 0.5 both failed (0.02-0.06). Both were step-size problems, not limits of the methods.
+  - PC needs a large local rate (0.5: 0.83; 2: 0.99; 5: 1.00).
+  - Hebbian sleep correction has a sharp stability edge: 0.005 converges (wrong recalls per sleep 833 → 237 by sleep 6) and 0.01 diverges. That is the classic unnormalised delta-rule limit (rate < 2/λmax). Normalising by the number of wrong recalls is stable but far too slow at 30 sleeps (0.06-0.44).
+- **Reading.** On this memory task, **backpropagation is not needed**:
+  - Predictive coding, where every weight learns only from its own layer's error after the network settles, matches backprop on every readout, including paraphrase and three-hop chains, at about 1.4× the time.
+  - The closest analogue to Platypus's own loop is a one-shot write followed by sleeps that re-ask every fact and correct only the wrong recalls. It reaches 0.97 one-hop and 0.90 three hops in a quarter of a second, with no gradients anywhere.
+  - A fixed random layer with only the readout learned (ELM) is clearly weaker on chaining (three hops 0.15), so the learned hidden layer matters.
+- **Caveats.**
+  - The features are fixed and hand-made (trigrams). The question is only whether the PREDICTOR can be trained without backprop. The encoder/trunk still uses backprop.
+  - The world is small (about 880 facts) and synthetic.
+  - The Hebbian rate must sit below a stability edge that depends on the data. At scale it needs an adaptive or normalised step.
+- **Next (if pursued).** Train a JEPA memory predictor by predictive coding inside a local run (kra build option), and give the sleep correction an adaptive step size.
