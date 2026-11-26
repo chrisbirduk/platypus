@@ -12,7 +12,7 @@ Two questions, both about platypus/inference/jmem.py's memory (same encoders, sl
     (AUC against a random wrong C and against a NEAR MISS - another region of the same country).
     Also the two together on a one-to-many chain: '<country> includes ______' twice (country -> regions -> cities, about 15 right answers).
 Memory strength varies: readouts after 500, 1500 and 3000 training steps (the GPU memory is mid-way: one hop 0.65-0.86).
-Usage: LS_SEED=0 python3 tools/jepa_ebm_sim.py   (env EB_STEPS '500,1500,3000', EB_K '1,8', EB_THREADS 2)"""
+Usage: LS_SEED=0 python3 tools/jepa_ebm_sim.py   (env EB_STEPS '500,1500,3000', EB_K '1,8', EB_THREADS 2) - EB_WARM 300 (learning-rate warm-up steps, as production inf_jmem_warm; 0 = the 25 Nov runs)"""
 import os, sys, types, time
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
@@ -46,7 +46,9 @@ class LVJMem(JMem):
                     Xs.append((t[:a_] + '\x01' * (b_ - a_) + t[b_:]).encode('latin-1', 'replace')); sp.append((a_, b_)); ix.append(s.ki[k]); full.append(t.encode('latin-1', 'replace'))
                 with torch.no_grad(): z = F.normalize(_span_mean(s.tgt(_tens(full, s.dev)), sp), dim=-1)
                 p = s._P(_span_mean(s.ctx(_tens(Xs, s.dev)), sp)); it = torch.tensor(ix, device=s.dev)
-                lg = torch.einsum('bkd,sd->bks', p, s.SL.clone()) / 0.1
+                if s.warm:                                                     # 26 Nov: production's warm-up (JMem.train; 25 Nov seeds 0-1 ran without it and never learned)
+                    for g_ in s.opt.param_groups: g_['lr'] = s.lr0 * min(1.0, (s.steps + 1) / s.warm)
+                lg =torch.einsum('bkd,sd->bks', p, s.SL.clone()) / 0.1
                 ce = F.cross_entropy(lg.reshape(-1, lg.shape[-1]), it.repeat_interleave(s.K), reduction='none').view(-1, s.K)
                 l = ((1 - eps) * ce.min(1).values + eps * ce.mean(1)).mean() if s.K > 1 else ce[:, 0].mean()
                 s.opt.zero_grad(); l.backward(); s.opt.step(); ls.append(float(l.detach()))
@@ -106,7 +108,7 @@ P(f"JEPA ENERGY-INFERENCE TEST (world seed {os.environ.get('LS_SEED', 0)}): {len
   f"{len(SENT)} sentences ({len(SENT) - sum(len(FACTS[r]) for r in ('lives', 'city_in', 'region_of', 'country_in'))} one-to-many 'includes'); latent K {KS}; steps {STEPS}")
 items = _items_from(SENT); rs9 = np.random.RandomState(3)
 for K in KS:
-    cfg = types.SimpleNamespace(inf_jmem_dim=192, inf_jmem_layers=3, inf_jmem_lr=1e-3, inf_jmem_warm=0)
+    cfg = types.SimpleNamespace(inf_jmem_dim=192, inf_jmem_layers=3, inf_jmem_lr=1e-3, inf_jmem_warm=int(os.environ.get('EB_WARM', 300)))
     J = LVJMem(cfg, torch.device('cpu'), K); done = 0
     for st in STEPS:
         ls = J.train(items, st - done); done = st; ki = J.ki; keys = J.keys

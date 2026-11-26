@@ -6619,11 +6619,120 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 
 **kra58 = kra57 v3 + RETRACT ON EDIT (`inf_jmem_edit_retract`):** every written composite of a subject whose first-hop premise the JEPA memory replaced is retracted, and the subject abstains until a grounded override answer.
 - **GPU (seed 5, run 20261125T192016Z, visits 1-3, in progress):** no Traceback. Visit 1: 13 subjects abstaining; visit 2: 25. **Visit 3: 3 written composites of edited subjects retracted (were right 0.00, i.e. all stale), 36 abstaining.** MQuAKE, edit read: visit 2 (n 2) and **visit 3 (n 8): COMBINED NEW 0.00, stale 0.00, none 1.00** (kra57 v3 visit 3: stale 0.50). Control (edit not read): OLD 0.83 / 0.88 (kra57 v3: 0.83 / 0.96; n 18-25). Combined answered 0.85 / right 0.94; route J KEPT 164 (1.00).
-- Local (seed 1, visit 2): edit read (n 14) stale 0.00 (kra57 v2: 0.07). Visit 3 pending.
+- **GPU visit 4: 6 composites of edited subjects retracted (all stale), 3 override answers (right 1.00), 39 abstaining. MQuAKE, edit read (n 16): COMBINED NEW 0.19, stale 0.00, none 0.81; edit and the new family read (n 5): NEW 0.60, stale 0.00** (kra57 v3 visit 4: NEW 0.19 / 0.60, stale 0.44 / 0.20). **Stale removed, new answers kept.** Control: OLD 0.93 (kra57 0.97). Combined answered 0.92 / right 0.93 (JEPA share 0.24, right 0.82); route J KEPT 219 (1.00), retracted 0. JEPA writes NEW 3 (1.00), 8 in all (kra57: NEW 8, 16 in all - abstaining edited subjects are not written).
+- **Local (seed 1): visit 2 edit read (n 14) stale 0.00 (kra57 v2: 0.07). Visit 3: overrides NEW 10 (right 1.00; kra57 v2: 13 at 0.77); MQuAKE edit read (n 31): COMBINED NEW 0.32, stale 0.00, none 0.68, no wrong answers (kra57 v2: NEW 0.32, stale 0.13, wrong-other 0.20); edit and the new family read (n 20): NEW 0.50, stale 0.00.** Control: NEW 0.00.
 
-**kra59 = kra58 + GROUNDED JEPA WRITES (`inf_jmem_write_grounded`):** a JEPA memory answer whose two hops match premises the memory read is written at its looser gate without the trunk's step-by-step agreement; ungrounded answers keep the agreement rule (kra57 v3 GPU visit 5: the memory's precision gate fell to 0.003 and its share of the combined answer to 0.74 right, 0.71 at visit 6). Built, not yet run.
+**kra59 = kra58 + GROUNDED JEPA WRITES (`inf_jmem_write_grounded`):** a JEPA memory answer whose two hops match premises the memory read is written at its looser gate without the trunk's step-by-step agreement; ungrounded answers keep the agreement rule (kra57 v3 GPU visit 5: the memory's precision gate fell to 0.003 and its share of the combined answer to 0.74 right, 0.71 at visit 6).
+- **GPU (seed 5, run 20261125T203757Z, visits 1-3):** no Traceback. **Visit 3: JEPA writes NEW 38 (right 1.00), all grounded** (kra58 visit 3: NEW 2). Composites held 193, right 1.00; **facts known per fact read 1.28** (kra58: 182, 1.27). Combined answered 0.86 / right 0.95 (JEPA share 0.27, right 0.86); route J KEPT 142 (1.00). Edits as kra58: stale 0.00 (n 8), 3 stale composites retracted; control OLD 0.92.
+- **GPU visit 4 (run stopped here, compute): JEPA writes NEW 39 (right 1.00), all grounded; KEPT 38 (right 1.00) - 80 JEPA writes, every one right** (kra58 visit 4: 8). Composites held 257, right 1.00; facts known per fact read 1.24 (kra58: 1.24-1.27). Combined answered 0.92 / **right 0.95** (JEPA share 0.25, right 0.84; kra58: 0.92 / 0.93, 0.82). Route J KEPT 163 (1.00), RETRACTED 1 (was right), 12 held by hysteresis. Edits identical to kra58: edit read (n 16) NEW 0.19, stale 0.00; new family read (n 5) NEW 0.60, stale 0.00; 3 overrides (1.00), 6 stale composites retracted; control OLD 0.97.
 
 **Other changes on 25 Nov:** checkpoint and resume at visit boundaries merged (PR #66; off by default since the kra57 GPU run measured 9-11.5 GB a save, two kept; `CKPT = True` in the notebooks); tiny runs for the checkpoint equivalence check now use the build defaults and the preset's overrides (PR #72, open). Readouts: kept and retracted JEPA writes judged against the truth after an edit; "override writes now" counts written answers only.
+
+## kra60 and kra61 local check (seed 1, preset cg27a_kra61, 25 Nov 22:16 - 26 Nov 00:11; stopped in visit 4 by its 6,900 s limit)
+
+**kra60 = kra59 + `inf_jmem_edit_nogate` (a grounded override is written below the memory's gate) + `inf_jmem_gate_rj` (the memory's gate also calibrated on the composites route J answers). kra61 = kra60 + `inf_kmc_rulej_hop1_rec`:** route J's first hop is the reader's most recent record of the subject's premise (so an edited premise read replaces the old one in route J too), and a route J composite whose first hop matches the edit as read is KEPT instead of retracted.
+- No errors through visit 3; every new readout prints.
+- **Visit 3: overrides NEW 13 (right 1.00), 3 of them below the gate and grounded (kra60)** (kra58 local: 10). Not written: new bridge's own premise not read yet 10, first hop is not the edited premise read 5, second hop disagrees 3. **Retract on edit: 2 stale composites retracted (were right 0.00), route J composites through the read edit KEPT 2 (right 1.00)**, 48 subjects abstaining.
+- **MQuAKE, edit read (n 31): COMBINED NEW 0.42, stale 0.00, none 0.58** (kra58 local visit 3: NEW 0.32, stale 0.00). **Edit and the new family read (n 20): NEW 0.65, stale 0.00** (kra58: 0.50). Control, edit not read (n 23): NEW 0.00, OLD 0.39.
+- Route J's first hop now follows the reader: FIRST HOP NEW 0.26 = the reader's most recent record NEW 0.26 (OLD 0.45). **The rest of the gap is the reader**, which records the edited premise for a quarter of the moved leaves.
+- Unchanged elsewhere: JEPA writes NEW 83 (right 1.00), all grounded; route J writes precision 0.94, re-derivation KEPT 75 (1.00); the route-J-calibrated gate stayed closed at visit 3 (54 composites, too few right-and-wrong pairs to calibrate); combined answered 0.23 / right 0.88 at this local scale.
+
+## Energy inference for the JEPA memory, first runs (tools/jepa_ebm_sim.py, seeds 0 and 1, 26 Nov 02:57-03:56) - UNINFORMATIVE, rerun queued
+
+These offline runs ask two questions of the keyed-memory JEPA on the five-level synthetic world. First, can K latent points (K 8) answer one-to-many queries better than one point (K 1)? Second, can a beam with minimum-energy or marginal chain search beat greedy chaining, and can the path energy verify a claimed answer?
+
+- **The memory never learned the world, so neither question could be answered.** At 500, 1,500 and 3,000 steps, for both K values and both seeds, the readouts stayed at chance:
+
+  | Readout | Range |
+  |---|---|
+  | One hop | 0.00-0.08 |
+  | One-to-many recall@m | 0.01-0.07 |
+  | Two and three hops | 0.00-0.07 for every search |
+  | Verification AUC | 0.43-0.57 |
+
+  The loss stayed at 4.9-6.1.
+- **Cause:** the tool's training loop had no learning-rate warm-up, which production has (inf_jmem_warm 300, added in kra51 for this reason). It is fixed in 4cc3b1f (EB_WARM, default 300).
+- **Short check with the warm-up** (seed 0, K 1): the memory now learns.
+
+  | Steps | Loss | One-to-many, region to cities | One hop |
+  |---|---|---|---|
+  | 400 | 5.77 | 0.06 | up to 0.12 |
+  | 900 | 5.37 | 0.24 | up to 0.13 |
+
+  Both seeds are queued again with warm-up 300 at 1,000, 3,000 and 5,000 steps.
+
+### Rerun with the warm-up, seeds 0 and 1 (26 Nov 09:04-10:42) - one-to-many and verification work; beam search does not
+
+Seed 1 at 5,000 steps (K 1 / K 8) reproduces seed 0's pattern:
+
+| Readout (seed 1) | K 1 | K 8 |
+|---|---|---|
+| One-to-many, region to cities / country to regions | 0.55 / 0.55 | 0.81 / 0.84 |
+| One hop (lives / lies in / part of) | 1.00 / 0.99 / 0.98 | 0.88 / 0.77 / 0.77 |
+| 2 hops, greedy / best beam | 0.99 / 0.97 | 0.70 / 0.60 |
+| 3 hops, greedy / best beam | 0.97 / 0.90 | 0.51 / 0.41 |
+| One-to-many chain, greedy / marginal | 0.33 / 0.36 | 0.38 / 0.63 |
+| Verify, greedy / min path energy (AUC against random wrong) | 0.99 / 0.99 | 0.84 / 0.97 |
+
+Seed 0's figures follow.
+
+The memory now learns the world. Figures are at 5,000 steps unless stated.
+
+| Readout | K 1 | K 8 |
+|---|---|---|
+| Loss | 2.437 | 2.067 |
+| One hop (lives / lies in / part of) | 1.00 / 1.00 / 1.00 | 0.86 / 0.80 / 0.65 |
+| **One-to-many recall@m**, region to cities | 0.62 | **0.83** |
+| **One-to-many recall@m**, country to regions | 0.51 | **0.80** |
+| 2 hops, greedy / best beam | 0.99 / 0.98 | 0.71 / 0.62 |
+| 3 hops, greedy / best beam | 0.99 / 0.94 | 0.49 / 0.35 |
+| One-to-many chain, country to regions to cities: greedy / marginal over 8 regions | 0.32 / 0.35 | 0.43 / **0.61** |
+| Verify a claimed 2-hop answer, AUC against random wrong / near miss: greedy | 0.99 / 1.00 | 0.85 / 0.86 |
+| Same, min path energy | 0.99 / 1.00 | **0.97 / 0.96** |
+
+- **Several latent points do answer one-to-many queries better:** recall@m rises by 0.21-0.29, and the one-to-many chain rises from 0.35 to 0.61 with marginal search.
+- **The cost is single-answer accuracy.** K 8 is slower to learn: it is at chance at 1,000 steps and still improving at 5,000, with lower loss than K 1. Its one-hop and chain accuracy are below K 1's.
+- **Beam search with minimum path energy never beats greedy chaining** on single-answer chains, at either K. Marginal search helps only for the one-to-many chain.
+- **Path energy is a good verifier where greedy is not:** at K 8 its AUC is 0.97, against greedy's 0.85, and it is as good against near misses (same country) as against random wrong answers.
+- **Not yet shown:** whether K 8 catches up on single answers with more steps.
+
+## kra61 validation, seed 5 (GPU, preset cg27a_kra61_pass1, test aids off, 10 visits; 26 Nov 17:29-22:20) - PASSES; seed 4 next
+
+Recall (route J, the JEPA memory, step-by-step writes) and consolidation (the weights with the store off, the temporal gradient) are reported separately.
+
+**End of run (weights only): FORGETTING +0.010, FINAL BPC 1.779** (store on: the same). Earlier full passes: kra17 +0.005 / 1.793 (seed 4), +0.012 / 1.791, cg27a_replay +0.026 / 1.767. Routing correct at every visit printed (9 of 9).
+
+| Visit | Weights 1 / 2 / 3 hops | Store 1 / 2 / 3 hops | Edit read: COMBINED NEW / stale (n) | Written composites right | Facts known per fact read |
+|---|---|---|---|---|---|
+| 4 | 0.37 / 0.05 / 0.05 | 0.40 / 0.15 / 0.05 | 0.25 / 0.00 (16) | 260 / 260 | 1.24 |
+| 6 | 0.57 / 0.19 / 0.09 | 0.61 / 0.34 / 0.14 | 0.46 / 0.00 (37) | 359 / 360 | 1.23 |
+| 8 | 0.76 / 0.37 / 0.16 | 0.78 / 0.58 / 0.19 | 0.64 / 0.00 (59) | 466 / 469 | 1.24 |
+| 9 | 0.84 / 0.48 / 0.16 | 0.86 / 0.78 / 0.23 | 0.74 / 0.01 (77) | 545 / 552 | 1.28 |
+| 10 | 0.89 / 0.58 / 0.23 | 0.98 / 0.95 / 0.37 | **0.76 / 0.00 (98)** | **588 / 593** | **1.31** |
+
+- **Edits propagate and stay propagated (recall):** after an edit is read the combined two-hop answer is the NEW one 0.25 -> 0.76 over visits 4-10, stale 0.00 at every visit but one case at visit 9 (kra58: NEW 0.19, stale 0.00 at visit 4; kra57 v3: stale 0.37-0.44). With the new parent's family read: 0.80 / 0.69 / 0.68 / 0.76 / 0.78 / 0.79 / 0.76 (visits 4-10).
+- **Gated answers:** combined 0.94-0.99 right on 0.70-0.94 of held-back composites. The JEPA memory's own share dipped at visit 6 (0.74 right; its route-J calibration was undefined that sleep and the gate fell back to t 0.015) and recovered at visit 7 (0.94, t 0.093); late in the run it is 0.64-0.73 right but only 2-4% of answers.
+- **Consolidation (weights, store off):** the TEMPORAL GRADIENT at visit 10, two-hop on its own conclusions by age (n 12 each): this visit 0.75, 1 back 0.67, 2-3 back 0.92, 4+ back 0.92 (all 1.00 with the store; store dependence +0.25 / +0.33 / +0.08 / +0.08). Older conclusions depend less on the store. CLS half-life 46 / 67 / 78 visits at visits 7 / 8 / 9. Route D (the trunk decodes two steps with learned rules, nothing looked up) at visit 10: first step 0.83, two-step C 0.82 on composites never planted.
+- **Small late effects to watch on seed 4:** the control (edit not yet read, OLD right) eases 1.00 -> 0.79 by visit 9 as n falls (30 -> 14; 2 of 14 answer neither old nor new); written composites wrong 0-3 a visit until visit 8, 7 at visit 9, 5 at visit 10.
+- One seed. kra61 seed 4 (same code, branch cg27a-distill unchanged since 26 Nov 11:19) decides the validation.
+
+## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
+
+The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
+
+- **The checkpoint restores the training state exactly.** After each resume, the training, routing, Fisher, replay and state lines match the straight run until a hash-order line differs.
+- **Every difference starts from Python's per-process set order (PYTHONHASHSEED), not from the checkpoint.**
+  - *Resume after visit 1:* 11 of 264 lines differ through visit 4. These are real-text recall readouts (the distractor set at distill.py lines 181/190 and 231/240) and the visit-4 consolidation. Chain form kept 201 of 600 new inferences against 204 in the straight run: at premises.py line 817 the candidates come from a set, so argsort ties break differently.
+  - *Chained resume from visit 3:* it carries the first resumed run's 350 inferences with premises against the straight run's 353. Phase 5 training therefore sees slightly different rows. Gradient norms move in the third decimal, and visit-5 BPC moves by +0.001 (FreeLaw 5.776 against 5.777). Prequential bits move by 0.0001 and graduation rise by 0.0001.
+  - Forgetting per domain is identical where both logs have it.
+- **The straight run's last 18 lines are missing.** It was stopped by the background limit during the end-of-run diagnostics, so the final headline is compared only through the per-domain table. The resumed run finished with forgetting +0.407 and final BPC 6.685 (label-free -0.670 / 5.809).
+- **Consequence:** with the current code, two runs from the same seed in different processes are not byte-identical: the inference writes, and so the training data, depend on the hash seed.
+- **Fix, not yet made:**
+  1. Iterate in sorted order (`sorted(inD)` in distill.py; `CAND` ordered by `tuple(sorted(c))` in premises.py).
+  2. Set PYTHONHASHSEED in equiv.py and the GPU scripts.
+  3. Rerun the check.
+
+  PR #72 stays open until then.
 
 ## Summary, 23-25 November
 
@@ -6639,7 +6748,7 @@ Every figure is in the entries above, with its conditions; GPU runs are pass 1, 
 **Edits reach the final answer (kra55-kra58).**
 - The MQuAKE-style readout: after a moved leaf's new parent is read, the true two-hop answer changes. kra56: the JEPA memory follows edits (gated NEW 0.19-0.60, stale 0.00) but the final answer did not (NEW 0.00, stale 0.38) - route J's composites came from the reader's old premise.
 - kra57 v3 (grounded edit override): **13 of 13 override answers right on the GPU; COMBINED NEW 0.19 / 0.30 / 0.35 at visits 4-6, 0.52-0.62 where the new parent's family was read** (stale 0.37-0.44). Locally (seed 1) NEW 0.32 / 0.50 at visit 3.
-- kra58 (retract on edit): stale 0.00 at visits 2-3 on the GPU; visits 4-5 decide whether new answers come through as in kra57.
+- **kra58 (retract on edit): stale 0.00 at visits 2-4 on the GPU while the new answers stay as in kra57 (visit 4: NEW 0.19, 0.60 with the family read, stale 0.00 against 0.44 / 0.20).**
 - Edits are mostly read before the new parent's family, so the readout splits by whether the family is read; ungrounded overrides guessed and were all wrong (kra57 v2 GPU visit 3: 4 of 4).
 
 **Real text (kra43-kra48).** On frozen test sets of never-composed real-text chains, both seeds reach written-chain C 0.41 at visit 4 (baseline 0.07); **step by step 0.64-0.77, 0.95-0.98 right when gated (seed 5 answers 58% at 0.95)**.
