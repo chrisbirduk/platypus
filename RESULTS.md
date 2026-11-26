@@ -6696,6 +6696,26 @@ The memory now learns the world. Figures are at 5,000 steps unless stated.
 - **Path energy is a good verifier where greedy is not:** at K 8 its AUC is 0.97, against greedy's 0.85, and it is as good against near misses (same country) as against random wrong answers.
 - **Not yet shown:** whether K 8 catches up on single answers with more steps.
 
+## kra61 validation, seed 5 (GPU, preset cg27a_kra61_pass1, test aids off, 10 visits; 26 Nov 17:29-22:20) - PASSES; seed 4 next
+
+Recall (route J, the JEPA memory, step-by-step writes) and consolidation (the weights with the store off, the temporal gradient) are reported separately.
+
+**End of run (weights only): FORGETTING +0.010, FINAL BPC 1.779** (store on: the same). Earlier full passes: kra17 +0.005 / 1.793 (seed 4), +0.012 / 1.791, cg27a_replay +0.026 / 1.767. Routing correct at every visit printed (9 of 9).
+
+| Visit | Weights 1 / 2 / 3 hops | Store 1 / 2 / 3 hops | Edit read: COMBINED NEW / stale (n) | Written composites right | Facts known per fact read |
+|---|---|---|---|---|---|
+| 4 | 0.37 / 0.05 / 0.05 | 0.40 / 0.15 / 0.05 | 0.25 / 0.00 (16) | 260 / 260 | 1.24 |
+| 6 | 0.57 / 0.19 / 0.09 | 0.61 / 0.34 / 0.14 | 0.46 / 0.00 (37) | 359 / 360 | 1.23 |
+| 8 | 0.76 / 0.37 / 0.16 | 0.78 / 0.58 / 0.19 | 0.64 / 0.00 (59) | 466 / 469 | 1.24 |
+| 9 | 0.84 / 0.48 / 0.16 | 0.86 / 0.78 / 0.23 | 0.74 / 0.01 (77) | 545 / 552 | 1.28 |
+| 10 | 0.89 / 0.58 / 0.23 | 0.98 / 0.95 / 0.37 | **0.76 / 0.00 (98)** | **588 / 593** | **1.31** |
+
+- **Edits propagate and stay propagated (recall):** after an edit is read the combined two-hop answer is the NEW one 0.25 -> 0.76 over visits 4-10, stale 0.00 at every visit but one case at visit 9 (kra58: NEW 0.19, stale 0.00 at visit 4; kra57 v3: stale 0.37-0.44). With the new parent's family read: 0.80 / 0.69 / 0.68 / 0.76 / 0.78 / 0.79 / 0.76 (visits 4-10).
+- **Gated answers:** combined 0.94-0.99 right on 0.70-0.94 of held-back composites. The JEPA memory's own share dipped at visit 6 (0.74 right; its route-J calibration was undefined that sleep and the gate fell back to t 0.015) and recovered at visit 7 (0.94, t 0.093); late in the run it is 0.64-0.73 right but only 2-4% of answers.
+- **Consolidation (weights, store off):** the TEMPORAL GRADIENT at visit 10, two-hop on its own conclusions by age (n 12 each): this visit 0.75, 1 back 0.67, 2-3 back 0.92, 4+ back 0.92 (all 1.00 with the store; store dependence +0.25 / +0.33 / +0.08 / +0.08). Older conclusions depend less on the store. CLS half-life 46 / 67 / 78 visits at visits 7 / 8 / 9. Route D (the trunk decodes two steps with learned rules, nothing looked up) at visit 10: first step 0.83, two-step C 0.82 on composites never planted.
+- **Small late effects to watch on seed 4:** the control (edit not yet read, OLD right) eases 1.00 -> 0.79 by visit 9 as n falls (30 -> 14; 2 of 14 answer neither old nor new); written composites wrong 0-3 a visit until visit 8, 7 at visit 9, 5 at visit 10.
+- One seed. kra61 seed 4 (same code, branch cg27a-distill unchanged since 26 Nov 11:19) decides the validation.
+
 ## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
 
 The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
