@@ -6637,6 +6637,30 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 - Route J's first hop now follows the reader: FIRST HOP NEW 0.26 = the reader's most recent record NEW 0.26 (OLD 0.45). **The rest of the gap is the reader**, which records the edited premise for a quarter of the moved leaves.
 - Unchanged elsewhere: JEPA writes NEW 83 (right 1.00), all grounded; route J writes precision 0.94, re-derivation KEPT 75 (1.00); the route-J-calibrated gate stayed closed at visit 3 (54 composites, too few right-and-wrong pairs to calibrate); combined answered 0.23 / right 0.88 at this local scale.
 
+## Energy inference for the JEPA memory, first runs (tools/jepa_ebm_sim.py, seeds 0 and 1, 26 Nov 02:57-03:56) - UNINFORMATIVE, rerun queued
+
+These offline runs ask two questions of the keyed-memory JEPA on the five-level synthetic world. First, can K latent points (K 8) answer one-to-many queries better than one point (K 1)? Second, can a beam with minimum-energy or marginal chain search beat greedy chaining, and can the path energy verify a claimed answer?
+
+- **The memory never learned the world, so neither question could be answered.** At 500, 1,500 and 3,000 steps, for both K values and both seeds, the readouts stayed at chance:
+
+  | Readout | Range |
+  |---|---|
+  | One hop | 0.00-0.08 |
+  | One-to-many recall@m | 0.01-0.07 |
+  | Two and three hops | 0.00-0.07 for every search |
+  | Verification AUC | 0.43-0.57 |
+
+  The loss stayed at 4.9-6.1.
+- **Cause:** the tool's training loop had no learning-rate warm-up, which production has (inf_jmem_warm 300, added in kra51 for this reason). It is fixed in 4cc3b1f (EB_WARM, default 300).
+- **Short check with the warm-up** (seed 0, K 1): the memory now learns.
+
+  | Steps | Loss | One-to-many, region to cities | One hop |
+  |---|---|---|---|
+  | 400 | 5.77 | 0.06 | up to 0.12 |
+  | 900 | 5.37 | 0.24 | up to 0.13 |
+
+  Both seeds are queued again with warm-up 300 at 1,000, 3,000 and 5,000 steps.
+
 ## Summary, 23-25 November
 
 Every figure is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named.
