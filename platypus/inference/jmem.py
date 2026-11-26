@@ -288,6 +288,9 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         trn, tst = _RC.get('train') or [], _RC.get('test') or []
         prem = sorted({(c[0], c[1], c[2]) for c in trn + tst} | {(c[2], c[3], c[4]) for c in trn + tst})
         items += _items_from([(f"{h} {w} {t}.", (h, t)) for h, w, t in prem])
+        if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the facts read (edits in place of the old values once read)
+            from platypus.inference.mquake import mq_jmem_items
+            items += _items_from(mq_jmem_items(cfg, seen))
         ls = J.train(items, int(getattr(cfg, 'inf_jmem_steps', 1500)))
         # RULE WORLD: one hop on read premises, two hops on planted / held-back / pure composites, the gate on never-read families
         par, mgr = W.get('parent', {}), W.get('mgr', {}); up = {'grand': (par, 'parent'), 'skip': (mgr, 'mgr')}
@@ -336,5 +339,8 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             print(f"  [JEPA MEMORY (parallel), REAL TEXT | visit {vis + 1}] the frozen TEST chains ({len(T)}) by its own two hops: hop 1 (bridge) {rb:.2f}, C {rc:.2f}, valid (both links recorded) {vd:.2f} | "
                   f"GATED (calibrated on taught chains) answered {gt.mean():.2f}, right {np.mean([y == c[4] for y, c, g in zip(cc, T, gt) if g]) if gt.any() else float('nan'):.2f} | "
                   f"taught chains C {np.mean([ok for ok, g in tb]) if tb else float('nan'):.2f}  (compare: the trunk's STEP BY STEP on the same chains above)", flush=True)
+        if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the memory's own hops on the cases read
+            from platypus.inference.mquake import mq_jmem_readout
+            mq_jmem_readout(J, cfg, vis, seen)
     except Exception as e:
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] unavailable ({type(e).__name__}: {str(e)[:160]})", flush=True)
