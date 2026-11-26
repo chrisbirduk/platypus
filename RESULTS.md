@@ -6661,7 +6661,20 @@ These offline runs ask two questions of the keyed-memory JEPA on the five-level 
 
   Both seeds are queued again with warm-up 300 at 1,000, 3,000 and 5,000 steps.
 
-### Rerun with the warm-up, seed 0 (26 Nov 09:04-09:53; seed 1 running)
+### Rerun with the warm-up, seeds 0 and 1 (26 Nov 09:04-10:42) - one-to-many and verification work; beam search does not
+
+Seed 1 at 5,000 steps (K 1 / K 8) reproduces seed 0's pattern:
+
+| Readout (seed 1) | K 1 | K 8 |
+|---|---|---|
+| One-to-many, region to cities / country to regions | 0.55 / 0.55 | 0.81 / 0.84 |
+| One hop (lives / lies in / part of) | 1.00 / 0.99 / 0.98 | 0.88 / 0.77 / 0.77 |
+| 2 hops, greedy / best beam | 0.99 / 0.97 | 0.70 / 0.60 |
+| 3 hops, greedy / best beam | 0.97 / 0.90 | 0.51 / 0.41 |
+| One-to-many chain, greedy / marginal | 0.33 / 0.36 | 0.38 / 0.63 |
+| Verify, greedy / min path energy (AUC against random wrong) | 0.99 / 0.99 | 0.84 / 0.97 |
+
+Seed 0's figures follow.
 
 The memory now learns the world. Figures are at 5,000 steps unless stated.
 
