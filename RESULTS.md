@@ -6661,6 +6661,28 @@ These offline runs ask two questions of the keyed-memory JEPA on the five-level 
 
   Both seeds are queued again with warm-up 300 at 1,000, 3,000 and 5,000 steps.
 
+### Rerun with the warm-up, seed 0 (26 Nov 09:04-09:53; seed 1 running)
+
+The memory now learns the world. Figures are at 5,000 steps unless stated.
+
+| Readout | K 1 | K 8 |
+|---|---|---|
+| Loss | 2.437 | 2.067 |
+| One hop (lives / lies in / part of) | 1.00 / 1.00 / 1.00 | 0.86 / 0.80 / 0.65 |
+| **One-to-many recall@m**, region to cities | 0.62 | **0.83** |
+| **One-to-many recall@m**, country to regions | 0.51 | **0.80** |
+| 2 hops, greedy / best beam | 0.99 / 0.98 | 0.71 / 0.62 |
+| 3 hops, greedy / best beam | 0.99 / 0.94 | 0.49 / 0.35 |
+| One-to-many chain, country to regions to cities: greedy / marginal over 8 regions | 0.32 / 0.35 | 0.43 / **0.61** |
+| Verify a claimed 2-hop answer, AUC against random wrong / near miss: greedy | 0.99 / 1.00 | 0.85 / 0.86 |
+| Same, min path energy | 0.99 / 1.00 | **0.97 / 0.96** |
+
+- **Several latent points do answer one-to-many queries better:** recall@m rises by 0.21-0.29, and the one-to-many chain rises from 0.35 to 0.61 with marginal search.
+- **The cost is single-answer accuracy.** K 8 is slower to learn: it is at chance at 1,000 steps and still improving at 5,000, with lower loss than K 1. Its one-hop and chain accuracy are below K 1's.
+- **Beam search with minimum path energy never beats greedy chaining** on single-answer chains, at either K. Marginal search helps only for the one-to-many chain.
+- **Path energy is a good verifier where greedy is not:** at K 8 its AUC is 0.97, against greedy's 0.85, and it is as good against near misses (same country) as against random wrong answers.
+- **Not yet shown:** whether K 8 catches up on single answers with more steps.
+
 ## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
 
 The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
