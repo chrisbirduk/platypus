@@ -6,12 +6,21 @@ usage: python tools/ckpt/equiv.py OUT_DIR [K ...]
   Each resumed log, from its "[checkpoint] resumed after visit K" line on, is compared with the uninterrupted log
   from its "[checkpoint] saved after visit K" line on, with times and checkpoint sizes masked.
 Exit 0 when every comparison matches.
+
+One run at a time (each fits a 2-hour job limit), for the REPEATABILITY check (26 Nov):
+  python tools/ckpt/equiv.py run OUT_DIR NAME [K]     one run; with K it stops after visit K (exit 75)
+  python tools/ckpt/equiv.py resume OUT_DIR NAME      continue NAME from its checkpoint (NAME.ckpt) to the end
+  python tools/ckpt/equiv.py same OUT_DIR A B         compare the whole logs of A and B (each A.log, plus Ar.log after a resume)
+Every run sets PYTHONHASHSEED (EQ_HASHSEED, default 0). Two runs with different EQ_HASHSEED must print the same lines:
+the training must not depend on Python's per-process set order.
 """
 import os, re, subprocess, sys, shutil
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
-OUT = os.path.abspath(sys.argv[1]); KS = [int(k) for k in sys.argv[2:]] or [3]
+SUB = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ('run', 'resume', 'same') else None
+ARGS = sys.argv[2:] if SUB else sys.argv[1:]
+OUT = os.path.abspath(ARGS[0]); KS = ([int(k) for k in ARGS[1:]] or [3]) if not SUB else []
 os.makedirs(OUT, exist_ok=True)
 
 
@@ -21,7 +30,7 @@ def env_for(ckpt, stop=None):
         line = line.strip()
         if line and not line.startswith('#') and '=' in line:
             k, v = line.split('=', 1); e.setdefault(k, v)
-    e['PLATYPUS_PASSES'] = os.environ.get('PLATYPUS_PASSES', '2'); e['PLATYPUS_CKPT'] = ckpt; e['PLATYPUS_CKPT_STRICT'] = '1'
+    e['PYTHONHASHSEED'] = os.environ.get('EQ_HASHSEED', '0'); e['PLATYPUS_PASSES'] = os.environ.get('PLATYPUS_PASSES', '2'); e['PLATYPUS_CKPT'] = ckpt; e['PLATYPUS_CKPT_STRICT'] = '1'
     e.pop('PLATYPUS_CKPT_STOP_AFTER', None)
     if stop is not None: e['PLATYPUS_CKPT_STOP_AFTER'] = str(stop)
     return e
@@ -81,5 +90,32 @@ def main():
     sys.exit(1 if bad else 0)
 
 
+def whole(name):
+    """the log of run NAME; after a resume, the stopped part up to its last save, then the resumed part after the resume line"""
+    a = open(os.path.join(OUT, name + '.log'), encoding='utf-8', errors='replace').read().split('\n')
+    rp = os.path.join(OUT, name + 'r.log')
+    if os.path.exists(rp):
+        b = open(rp, encoding='utf-8', errors='replace').read().split('\n')
+        j = next((i for i, l in enumerate(b) if '[checkpoint] resumed after visit' in l), None)
+        i = max((i for i, l in enumerate(a) if '[checkpoint] saved after visit' in l), default=None)
+        if i is None or j is None: raise SystemExit(f'{name}: no save line in {name}.log or no resume line in {name}r.log')
+        a = a[:i + 1] + b[j + 1:]
+    return [norm(CK.sub(r'\1', l)) for l in a]
+
+
+def sub_main():
+    if SUB == 'run':
+        k = int(ARGS[2]) if len(ARGS) > 2 else None; rc = run(ARGS[1], stop=k)
+        print(f'{ARGS[1]}: exit {rc} (want {75 if k is not None else 0})'); sys.exit(0 if rc == (75 if k is not None else 0) else 1)
+    if SUB == 'resume':
+        rc = run(ARGS[1] + 'r', ckpt=os.path.join(OUT, ARGS[1] + '.ckpt'), fresh=False); print(f'{ARGS[1]} resumed: exit {rc}'); sys.exit(0 if rc == 0 else 1)
+    a, b = whole(ARGS[1]), whole(ARGS[2]); n = max(len(a), len(b))
+    d = [i for i in range(n) if (a[i] if i < len(a) else None) != (b[i] if i < len(b) else None)]
+    print(f'{ARGS[1]} vs {ARGS[2]}: {n} lines, {len(d)} differ')
+    for i in d[:8]:
+        print(f'  line {i+1}\n    {ARGS[1]}: {a[i][:220] if i < len(a) else "<missing>"}\n    {ARGS[2]}: {b[i][:220] if i < len(b) else "<missing>"}')
+    sys.exit(1 if d else 0)
+
+
 if __name__ == '__main__':
-    main()
+    sub_main() if SUB else main()

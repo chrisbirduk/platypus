@@ -178,7 +178,7 @@ def _dw_bench_recall(model, cfg, S_slot, vis):
     for d in sorted(seen):
         dl = G['docs'].get(str(d), [])
         if not dl: continue
-        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        inD = sorted(set(e for e, n in nm.items() if any(n in t for t in dl)))   # 26 Nov: sorted, so the distractor order does not depend on the hash seed
         for di, doc in enumerate(dl):
             sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
             for h, t, fl, ps in G['rel']:
@@ -228,7 +228,7 @@ def _dw_bench_diag(model, cfg, S_slot, vis):
     PR = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ')
     for d in sorted(seen):
         dl = G['docs'].get(str(d), [])
-        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        inD = sorted(set(e for e, n in nm.items() if any(n in t for t in dl)))   # 26 Nov: sorted, so the distractor order does not depend on the hash seed
         for di, doc in enumerate(dl):
             sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
             for h, t, fl, ps in G['rel']:
