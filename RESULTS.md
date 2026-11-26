@@ -6628,6 +6628,15 @@ No Traceback. Edited premises used by the JEPA memory 13 / 25 / 36 / 42.
 
 **Other changes on 25 Nov:** checkpoint and resume at visit boundaries merged (PR #66; off by default since the kra57 GPU run measured 9-11.5 GB a save, two kept; `CKPT = True` in the notebooks); tiny runs for the checkpoint equivalence check now use the build defaults and the preset's overrides (PR #72, open). Readouts: kept and retracted JEPA writes judged against the truth after an edit; "override writes now" counts written answers only.
 
+## kra60 and kra61 local check (seed 1, preset cg27a_kra61, 25 Nov 22:16 - 26 Nov 00:11; stopped in visit 4 by its 6,900 s limit)
+
+**kra60 = kra59 + `inf_jmem_edit_nogate` (a grounded override is written below the memory's gate) + `inf_jmem_gate_rj` (the memory's gate also calibrated on the composites route J answers). kra61 = kra60 + `inf_kmc_rulej_hop1_rec`:** route J's first hop is the reader's most recent record of the subject's premise (so an edited premise read replaces the old one in route J too), and a route J composite whose first hop matches the edit as read is KEPT instead of retracted.
+- No errors through visit 3; every new readout prints.
+- **Visit 3: overrides NEW 13 (right 1.00), 3 of them below the gate and grounded (kra60)** (kra58 local: 10). Not written: new bridge's own premise not read yet 10, first hop is not the edited premise read 5, second hop disagrees 3. **Retract on edit: 2 stale composites retracted (were right 0.00), route J composites through the read edit KEPT 2 (right 1.00)**, 48 subjects abstaining.
+- **MQuAKE, edit read (n 31): COMBINED NEW 0.42, stale 0.00, none 0.58** (kra58 local visit 3: NEW 0.32, stale 0.00). **Edit and the new family read (n 20): NEW 0.65, stale 0.00** (kra58: 0.50). Control, edit not read (n 23): NEW 0.00, OLD 0.39.
+- Route J's first hop now follows the reader: FIRST HOP NEW 0.26 = the reader's most recent record NEW 0.26 (OLD 0.45). **The rest of the gap is the reader**, which records the edited premise for a quarter of the moved leaves.
+- Unchanged elsewhere: JEPA writes NEW 83 (right 1.00), all grounded; route J writes precision 0.94, re-derivation KEPT 75 (1.00); the route-J-calibrated gate stayed closed at visit 3 (54 composites, too few right-and-wrong pairs to calibrate); combined answered 0.23 / right 0.88 at this local scale.
+
 ## Summary, 23-25 November
 
 Every figure is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named.
