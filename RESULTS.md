@@ -6661,6 +6661,24 @@ These offline runs ask two questions of the keyed-memory JEPA on the five-level 
 
   Both seeds are queued again with warm-up 300 at 1,000, 3,000 and 5,000 steps.
 
+## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
+
+The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
+
+- **The checkpoint restores the training state exactly.** After each resume, the training, routing, Fisher, replay and state lines match the straight run until a hash-order line differs.
+- **Every difference starts from Python's per-process set order (PYTHONHASHSEED), not from the checkpoint.**
+  - *Resume after visit 1:* 11 of 264 lines differ through visit 4. These are real-text recall readouts (the distractor set at distill.py lines 181/190 and 231/240) and the visit-4 consolidation. Chain form kept 201 of 600 new inferences against 204 in the straight run: at premises.py line 817 the candidates come from a set, so argsort ties break differently.
+  - *Chained resume from visit 3:* it carries the first resumed run's 350 inferences with premises against the straight run's 353. Phase 5 training therefore sees slightly different rows. Gradient norms move in the third decimal, and visit-5 BPC moves by +0.001 (FreeLaw 5.776 against 5.777). Prequential bits move by 0.0001 and graduation rise by 0.0001.
+  - Forgetting per domain is identical where both logs have it.
+- **The straight run's last 18 lines are missing.** It was stopped by the background limit during the end-of-run diagnostics, so the final headline is compared only through the per-domain table. The resumed run finished with forgetting +0.407 and final BPC 6.685 (label-free -0.670 / 5.809).
+- **Consequence:** with the current code, two runs from the same seed in different processes are not byte-identical: the inference writes, and so the training data, depend on the hash seed.
+- **Fix, not yet made:**
+  1. Iterate in sorted order (`sorted(inD)` in distill.py; `CAND` ordered by `tuple(sorted(c))` in premises.py).
+  2. Set PYTHONHASHSEED in equiv.py and the GPU scripts.
+  3. Rerun the check.
+
+  PR #72 stays open until then.
+
 ## Summary, 23-25 November
 
 Every figure is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named.
