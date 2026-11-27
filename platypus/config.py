@@ -835,6 +835,8 @@ class Config:
     inf_mquake_k=3                  #     frames each fact is planted in (its cloze alone, 'Records show that ...', ...)
     inf_mquake_rep=1                #     copies of each frame
     inf_mquake_eval=200             #     cases read out at most
+    inf_mquake_jsep=0               #   27 Nov kra62c: the MQuAKE facts in their own JEPA memory instance (not the rule-world one); its readout gated by its own one-hop recall
+    inf_mquake_jsteps=0             #     that memory's steps a sleep (0 = inf_jmem_steps)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

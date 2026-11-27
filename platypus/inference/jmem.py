@@ -288,9 +288,17 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         trn, tst = _RC.get('train') or [], _RC.get('test') or []
         prem = sorted({(c[0], c[1], c[2]) for c in trn + tst} | {(c[2], c[3], c[4]) for c in trn + tst})
         items += _items_from([(f"{h} {w} {t}.", (h, t)) for h, w, t in prem])
+        JQ = None
         if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the facts read (edits in place of the old values once read)
             from platypus.inference.mquake import mq_jmem_items
-            items += _items_from(mq_jmem_items(cfg, seen))
+            if int(getattr(cfg, 'inf_mquake_jsep', 0)):                         # 27 Nov kra62c: the MQuAKE facts in their OWN JEPA memory instance (kra62 / kra62b: in the
+                JQ = model.__dict__.get('_jmem_mq')                             #   shared memory they diluted the rule world: one hop on read premises 0.92 -> 0.51,
+                if JQ is None: JQ = JMem(cfg, dev); model.__dict__['_jmem_mq'] = JQ   #   gated edit coverage 0.76 -> 0.05); the rule-world memory is then kra61's
+                iq = _items_from(mq_jmem_items(cfg, seen))
+                lq = JQ.train(iq, int(getattr(cfg, 'inf_mquake_jsteps', 0)) or int(getattr(cfg, 'inf_jmem_steps', 1500))) if iq else float('nan')
+                print(f"  [MQuAKE PORT, OWN JEPA MEMORY | visit {vis + 1}] {len(iq)} MQuAKE fact sentences read so far, in a separate keyed-memory JEPA ({len(JQ.keys)} slots, {JQ.steps} steps in all, loss {lq:.3f}); the rule-world memory does not see them", flush=True)
+            else:
+                items += _items_from(mq_jmem_items(cfg, seen))
         ls = J.train(items, int(getattr(cfg, 'inf_jmem_steps', 1500)))
         # RULE WORLD: one hop on read premises, two hops on planted / held-back / pure composites, the gate on never-read families
         par, mgr = W.get('parent', {}), W.get('mgr', {}); up = {'grand': (par, 'parent'), 'skip': (mgr, 'mgr')}
@@ -342,6 +350,6 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                   f"taught chains C {np.mean([ok for ok, g in tb]) if tb else float('nan'):.2f}  (compare: the trunk's STEP BY STEP on the same chains above)", flush=True)
         if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the memory's own hops on the cases read
             from platypus.inference.mquake import mq_jmem_readout
-            mq_jmem_readout(J, cfg, vis, seen, {'taught real-text chains': t2, 'planted composites (write gate)': thw})
+            mq_jmem_readout(JQ if JQ is not None else J, cfg, vis, seen, {} if JQ is not None else {'taught real-text chains': t2, 'planted composites (write gate)': thw})   # kra62c: its own memory's gates are its own
     except Exception as e:
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] unavailable ({type(e).__name__}: {str(e)[:160]})", flush=True)
