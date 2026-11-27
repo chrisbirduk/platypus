@@ -6734,6 +6734,33 @@ The check compares one straight run with runs stopped and resumed at visit bound
 
   PR #72 stays open until then.
 
+## Repeatable runs: the fix checked (tiny run, preset cg27a_kra61_pass1, 2 threads, hash seeds 1 and 2, 27 Nov 02:17-06:24) - TRAINING REPEATABLE; two readouts still order-dependent
+
+The fix above (branch `repeatable`, in kra62): sorted iteration at distill.py's two distractor sets and premises.py's candidate list, and `PYTHONHASHSEED` (default 0) in `run_gpu.sh` and `run_local.sh`. The check runs the same build twice with DIFFERENT hash seeds (1 and 2): a harder test than the GPU needs, since the scripts now fix the seed. Each run was also stopped after visit 2 and resumed from its checkpoint (`tools/ckpt/equiv.py run`, `resume`, `same`).
+
+- **Every training line is identical:** losses, BPC, routing, replay, Fisher, the inference writes, conclusions, edits, the JEPA memory and the gate. Before the fix, 11 of 264 lines differed through visit 4, and the inference writes (201 against 204 kept) changed the training data.
+- **The headline is identical:** forgetting +0.408, final BPC 6.685 with the slot given; label-free -0.665 / 5.813, in both runs.
+- **7 of 541 stitched lines differ, and none of them feeds training.**
+  - Three OPERATOR ALGEBRA readouts (visits 3-5) and one RELATION TYPES FROM THE TRUNK readout (visit 4; 792 against 797 rules, purity 0.446 against 0.445). These analyses still iterate a set; they are measurement only.
+  - Two values differ in the fourth decimal (a routing table's mixture BPC 5.7747 against 5.7746; label-free mean -0.8719 against -0.8718).
+  - One timing line lists an extra phase name.
+- **Resume stays faithful** in both runs (exit 75 at the stop, 0 after the resume).
+- **Consequence:** with the scripts' fixed hash seed, the same build and seed give the same training on any machine of the same kind; the remaining readout differences matter only if the hash seed is changed. Sorting those two readouts is a small follow-up. PR #72 can close.
+
+## MQuAKE port, local check (100 cases, seed 5, preset cg27a_kra62 with inf_mquake 100, 5 visits; 26 Nov 18:40 - 27 Nov 02:16, four parts with checkpoints)
+
+MQuAKE-CF-3k-v2 cases planted as a consistent world: world facts and old values read in the case's domain, the edit in a later one. Readouts: the JEPA memory's own hops `<entity> <relation id> ?` (an edit, once read, replaces the old value) and the trunk's own step-by-step greedy answers on MQuAKE's clozes (store and memory off).
+
+| Visit | Memory, edit read: NEW / stale (n) | By hops: 2 / 3 / 4 | Memory, control (edit not read): OLD / NEW (n) | Trunk, edit read: NEW / stale |
+|---|---|---|---|---|
+| 3 | 0.73 / 0.18 (11) | 1.00 / 0.25 / 1.00 (n 6 / 4 / 1) | 0.56 / 0.01 (68) | 0.00 / 0.00 |
+| 4 | 0.60 / 0.02 (42) | 0.67 / 0.57 / 0.43 | 0.59 / 0.05 (58) | 0.00 / 0.02 |
+| 5 | **0.54 / 0.05 (100)** | **0.54 / 0.55 / 0.53** | n/a (all edits read) | 0.00 / 0.00 |
+
+- **Recall (the memory, ungated):** once read, edits replace the old value along multi-hop chains: stale falls from 0.18 to 0.02-0.05 as n grows, and by visit 5 accuracy no longer falls with chain length. Before an edit is read the memory does not give the new answer (0.01-0.05).
+- **Consolidation (the trunk's own answers): 0.00 locally**, including the edited fact alone and each hop given the true previous entity. This matches the local scale, not a fault of the port: the same run's route D first step on the rule world is also 0.00 locally (0.82-0.83 on the GPU by visit 10, kra61). The trunk's MQuAKE answers are a GPU measurement (kra62, 300 cases).
+- Added to kra62 after this run: gated columns for the memory (gates calibrated on the taught real-text chains, the planted composites, and its own one hop on the MQuAKE facts read) and the share that is neither old nor new.
+
 ## Summary, 23-25 November
 
 Every figure is in the entries above, with its conditions; GPU runs are pass 1, one run per build unless two seeds are named.
