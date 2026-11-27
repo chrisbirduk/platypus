@@ -12,6 +12,7 @@
 # heavy analysis while two runs are going. Long jobs may be stopped by a time
 # limit; running the same command again resumes them.
 set -euo pipefail
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"   # 26 Nov: one set order in every process (repeatable runs)
 
 JOBS="${1:?usage: run_local.sh JOBS.tsv NAME [NAME ...]}"; shift
 DRIVER="${DRIVER:-v97_ckpt.py}"          # the checkpointing harness driver

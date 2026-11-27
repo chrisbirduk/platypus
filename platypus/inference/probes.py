@@ -318,6 +318,9 @@ def _inf_plant_probes(raw,cfg,d,p):
                 b_ = b_.rstrip('.'); ss_ = [T_[j_ % len(T_)].format(a=a_, b=b_) for j_ in range(max(pk_, len(T_)))]   #   3 copies of one wording against the old premise's 8
                 ss_ += [f"{a_} > {b_}."] * int(getattr(cfg, 'inf_rule_world_premarrow', 0)); fs_.extend(ss_); nrw_ += len(ss_); continue   #   varied ones: recorded 0.00-0.03)
             fs_.extend([mv_['sent']] * k9_); nrw_ += k9_
+    if int(getattr(cfg, 'inf_mquake', 0)) > 0:                                # 26 Nov MQuAKE PORT (inference/mquake.py): its world facts, old values and edits
+        from platypus.inference.mquake import mq_sentences
+        mq_ = mq_sentences(cfg, int(d), int(p)); fs_.extend(mq_); nrw_ += len(mq_)
     if not fs_ and not once_: return raw
     b_=bytes(raw); rs_=np.random.RandomState(9000+97*int(d)+int(p)); cuts=[m_.end() for m_ in _re_inf.finditer(rb'[.!?] (?=[A-Z])',b_)]
     if len(cuts)<2: return raw

@@ -829,6 +829,14 @@ class Config:
     inf_jmem_edit_nogate=0          #   25 Nov kra60 MODEL CHANGE (with inf_jmem_edit_override): an edit override answer whose two hops match premises the memory read is written below the memory's gate (kra58 GPU visit 4: 8 of 13 blocked candidates were below the gate)
     inf_jmem_gate_rj=0              #   25 Nov kra60 MODEL CHANGE: the JEPA memory's write / answer gate also calibrated (precision inf_jmem_wprec) on held-back composites route J answers above its gate (kra57 v3 GPU: the planted-only gate fell to 0.003 and the memory's share to 0.71 right by visit 6)
     inf_kmc_rulej_hop1_rec=0        #   25 Nov kra61 MODEL CHANGE: route J's first hop is the reader's recorded (most recent) answer where one exists, the second hop from that bridge's code (kra58-59 GPU: after an edit the reader recorded the new premise 0.40-0.50 but route J's composite was NEW 0.00)
+    inf_mquake=0                    #   26 Nov MQuAKE PORT (inference/mquake.py; MODEL CHANGE when > 0): N real multi-hop edit cases of MQuAKE-CF-3k-v2 planted in the read text (world facts in
+                                    #     the case's domain, its edits in a later one) and READOUTS: the trunk's step-by-step multi-hop answers (NEW vs stale) and the JEPA memory's own hops
+    inf_mquake_path=''              #     the MQuAKE-CF-3k-v2.json file; empty = downloaded once from GitHub into PILE_CACHE
+    inf_mquake_k=3                  #     frames each fact is planted in (its cloze alone, 'Records show that ...', ...)
+    inf_mquake_rep=1                #     copies of each frame
+    inf_mquake_eval=200             #     cases read out at most
+    inf_mquake_jsep=0               #   27 Nov kra62c: the MQuAKE facts in their own JEPA memory instance (not the rule-world one); its readout gated by its own one-hop recall
+    inf_mquake_jsteps=0             #     that memory's steps a sleep (0 = inf_jmem_steps)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

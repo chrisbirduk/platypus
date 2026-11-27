@@ -813,7 +813,7 @@ def _rcode_step(model, cfg, S_slot, seen, RD, vis):
     Pm = csr_matrix((v[mk].astype(np.float32), (Gc.row[mk], Gc.col[mk])), shape=(NN, NN))
     k = int(getattr(cfg, 'inf_rcode_k', 128)); U = TruncatedSVD(k, random_state=int(cfg.seed)).fit_transform(Pm).astype(np.float32)
     U /= (np.linalg.norm(U, axis=1, keepdims=True) + 1e-9); t1 = time.time() - t0
-    ks = [c for c in CAND if all(n in NI and deg[NI[n]] > 0 for n in c)]
+    ks = [c for c in sorted(CAND, key=lambda c: tuple(sorted(c))) if all(n in NI and deg[NI[n]] > 0 for n in c)]   # 26 Nov: sorted, so argsort ties do not depend on the hash seed
     if not ks:
         print(f"  [COMPRESSED FACT TABLE | visit {vis + 1}] no candidates ({len(CAND)} held-out pairs)", flush=True); return
     XA = np.array([NI[sorted(c)[0]] for c in ks]); XB = np.array([NI[sorted(c)[1]] for c in ks]); yy = np.array([c in LAB for c in ks])

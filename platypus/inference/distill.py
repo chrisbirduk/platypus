@@ -178,7 +178,7 @@ def _dw_bench_recall(model, cfg, S_slot, vis):
     for d in sorted(seen):
         dl = G['docs'].get(str(d), [])
         if not dl: continue
-        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        inD = sorted(set(e for e, n in nm.items() if any(n in t for t in dl)))   # 26 Nov: sorted, so the distractor order does not depend on the hash seed
         for di, doc in enumerate(dl):
             sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
             for h, t, fl, ps in G['rel']:
@@ -228,7 +228,7 @@ def _dw_bench_diag(model, cfg, S_slot, vis):
     PR = ('He ', 'She ', 'It ', 'They ', 'His ', 'Her ', 'Its ', 'Their ')
     for d in sorted(seen):
         dl = G['docs'].get(str(d), [])
-        inD = set(e for e, n in nm.items() if any(n in t for t in dl))
+        inD = sorted(set(e for e, n in nm.items() if any(n in t for t in dl)))   # 26 Nov: sorted, so the distractor order does not depend on the hash seed
         for di, doc in enumerate(dl):
             sents = re.split(r'(?<=[.!?])\s+', doc); inX = set(e for e in inD if nm[e] in doc)
             for h, t, fl, ps in G['rel']:
@@ -2256,6 +2256,12 @@ def distill_wake_sleep(model, cfg, S_, S_slot, vslot=None, oslots=()):
                       f"{int(getattr(cfg, 'inf_rchain_rows', 8))} rows a step", flush=True)
             except Exception as e9:
                 _fail('inference.distill:rchain'); print(f"  [REAL-TEXT CHAINS] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True); rch9 = None
+        if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the trunk's step-by-step multi-hop answers (readout only)
+            try:
+                from platypus.inference.mquake import mq_trunk_readout
+                mq_trunk_readout(model, cfg, vis, S_slot, set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()))
+            except Exception as e9:
+                _fail('inference.distill:mquake'); print(f"  [MQuAKE PORT] unavailable ({type(e9).__name__}: {e9})"[:240], flush=True)
         model.__dict__['_dtw'] = dict(rch=rch9, rchl=[], rcha=[], rwal=rwal9, rwa=[], vis9=vis, rret=rret9, rretl=[], rtir=rtir9, rtil=[], rtx=rtx9, rtxw=rtw9, rtxv=rtxv9, rtxl=[], rtxa=[], para=pararows9, al_pa=[], riv=riv9, rpw=rw9, lf=lfrows9, al_lf=[], lfp=lfp9, pcp=pcp9, rpl=rpl9, rl=[], decl=decl9, al=[], pdst=dict(n=0, b=0, t=0, s=0, nos=0), bysl=bysl, w=w, iv=iv, rs=np.random.RandomState(int(cfg.seed) + 9494 + vis), n=0, losses=[], akl=[], probe=probe, hprobe=hprobe,
                                       anc=anc, cache=cache, hpool=hpool, st=dict(proj=0, conf=0, cut=[]))
     finally: _NM['force'] = was

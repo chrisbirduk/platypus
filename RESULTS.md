@@ -6716,6 +6716,139 @@ Recall (route J, the JEPA memory, step-by-step writes) and consolidation (the we
 - **Small late effects to watch on seed 4:** the control (edit not yet read, OLD right) eases 1.00 -> 0.79 by visit 9 as n falls (30 -> 14; 2 of 14 answer neither old nor new); written composites wrong 0-3 a visit until visit 8, 7 at visit 9, 5 at visit 10.
 - One seed. kra61 seed 4 (same code, branch cg27a-distill unchanged since 26 Nov 11:19) decides the validation.
 
+## kra61 validation, seed 4 (GPU, the same preset and code, 10 visits; 27 Nov 07:03 to about 12:00, log ends inside the end-of-run readouts) - AGREES WITH SEED 5
+
+Recall and consolidation are reported separately, as for seed 5.
+
+**End of run (weights only): FORGETTING +0.013, FINAL BPC 1.796** (store on: +0.013 / 1.797). Seed 5: +0.010 / 1.779. The BPC gap (0.017) is one seed-noise unit; kra17 on seed 4 was also higher (1.793). Routing correct at every visit printed.
+
+| Visit | Weights 1 / 2 / 3 hops | Store 1 / 2 / 3 hops | Edit read: COMBINED NEW / stale (n) | Control, OLD right (n) | Written composites right | Facts known per fact read |
+|---|---|---|---|---|---|---|
+| 4 | 0.39 / 0.09 / 0.06 | 0.44 / 0.14 / 0.04 | 0.20 / 0.00 (10) | 1.00 (20) | 220 / 220 | 1.22 |
+| 6 | 0.54 / 0.22 / 0.04 | 0.59 / 0.35 / 0.06 | 0.34 / 0.00 (29) | 1.00 (18) | 330 / 330 | 1.22 |
+| 8 | 0.72 / 0.37 / 0.08 | 0.83 / 0.62 / 0.13 | 0.73 / 0.00 (55) | 0.93 (15) | 468 / 471 | 1.23 |
+| 9 | 0.83 / 0.49 / 0.06 | 0.92 / 0.79 / 0.25 | 0.77 / 0.01 (73) | 1.00 (7) | 532 / 534 | 1.26 |
+| 10 | 0.88 / 0.61 / 0.06 | 0.96 / 0.94 / 0.32 | **0.84 / 0.00 (88)** | - (0) | **570 / 573** | **1.27** |
+
+- **Edits propagate (recall), second seed:** NEW 0.20 -> 0.84 over visits 4-10 (seed 5: 0.25 -> 0.76), stale 0.00 at every visit but one case at visit 9 - the same pattern as seed 5. With the new parent's family read: 1.00 / 0.91 / 0.93 / 0.86 / 0.84 (visits 4, 6, 8, 9, 10; n 2-88).
+- **The seed 5 watch items do not recur:** the control (edit not yet read) stays 0.93-1.00 (seed 5 eased to 0.79 by visit 9); written composites wrong 0-3 a visit throughout (seed 5: 7 at visit 9, 5 at visit 10); route J precision 0.99-1.00.
+- **Gated answers:** combined 0.95-0.99 right on 0.71-0.81 of held-back composites. No gate dip at visit 6 on this seed (the route-J calibration was defined every sleep: t 0.025-0.107); the JEPA memory's own share is 0.59-1.00 right on 2-6% of answers. The trunk's own gate at visit 10: known facts right when answered 1.00 (answered 0.53), never-read facts answered 0.01; confidence separates known-right from never-read with AUC 0.97.
+- **Consolidation (weights, store off):** route D at visit 10 first step 0.80, two-step C 0.71 on composites never planted (pure families 0.67; seed 5: 0.83 / 0.82 / 0.89), after 0.86-0.95 at visits 6-9 - a late dip to watch. CLS half-life 42 / 55 / 35 / 34 visits at visits 7-10 (seed 5: 46 / 67 / 78). The temporal gradient (two-hop on its own conclusions, store off / on, 12 a bin; added 27 Nov from the per-sleep readout): visit 9 this visit 0.67, 1 back 0.83, 2-3 back 1.00, 4+ back 1.00 (store dependence +0.25 / +0.17 / +0.00 / +0.00); visit 10 0.75 / 0.75 / 0.67 / 1.00 (+0.25 / +0.25 / +0.33 / +0.00). Conclusions four or more visits old need no store on both readouts.
+- **Verdict: kra61 validates on two seeds** for forgetting, facts, new inferences, edits through chains and gated answers, and the temporal gradient (above; seed 5's at visit 10 in its own section).
+
+## kra62 GPU (seed 5, preset cg27a_kra62_pass1 = kra61 + repeatable runs + the MQuAKE port, 300 cases; 27 Nov 07:12 to about 12:00, log ends inside the end-of-run readouts) - MQuAKE BAR MET ON THE MEMORY ROUTE; TWO COSTS
+
+300 of 2,924 usable MQuAKE-CF-3k-v2 cases kept as one consistent world (hops 2 / 3 / 4: 154 / 95 / 51; 522 world facts, 300 edited facts; old value read in the case's domain, the edit in a later one). 200 are scored (inf_mquake_eval).
+
+**Recall: the JEPA memory's own hops on MQuAKE's real facts (edits, once read, replace the old value)**
+
+| Visit | Cases read | Edit read: NEW / stale / neither (n) | Edit not yet read (control): OLD / NEW (n) | Gated on taught chains: answered, NEW / OLD | Gated on its one hop: answered, NEW / OLD |
+|---|---|---|---|---|---|
+| 3 | 110 | 0.85 / 0.00 (13) | 0.64 / 0.00 (97) | 0.69, 1.00 / 0.00 | 0.46, 1.00 / 0.00 |
+| 5 | 168 | 0.70 / 0.00 (50) | 0.50 / 0.02 (118) | 0.60, 0.97 / 0.00 | 0.52, 0.96 / 0.00 |
+| 7 | 200 | 0.65 / 0.03 (89) | 0.50 / 0.05 (111) | 0.52, 0.85 / 0.04 | 0.33, 0.97 / 0.00 |
+| 9 | 200 | 0.58 / 0.01 (137) | 0.33 / 0.05 (63) | 0.40, 0.95 / 0.00 | 0.27, 0.97 / 0.00 |
+| 10 | 200 | **0.49 / 0.04 / 0.47 (200)** | - (0) | **0.35, 0.94 / 0.00** | **0.27, 0.96 / 0.00** |
+
+- By hops at visit 10: 2 hops 0.58 (106), 3 hops 0.40 (62), 4 hops 0.38 (32). The local check (100 cases, 5 visits) was 0.54 / 0.05.
+- **The bar is met on the memory route:** NEW about 0.5, stale 0.04 (bar 0.1 or below), and the gated columns are accurate: when the memory answers past its gate it gives the NEW answer 0.94-0.98 of the time and the stale one 0.00-0.04. NEW falls as cases accumulate (0.85 at n 13 -> 0.49 at n 200); the rest is mostly NEITHER, not stale.
+- **Consolidation (the trunk's own hops, store and memory off): not yet.** Visit 10, edit read: multi-hop NEW 0.04, stale 0.07; the edited fact alone NEW 0.32, stale 0.02; each hop given the true previous entity 0.29 (all hops right 0.11). Control (edit not yet read, visit 9): multi-hop OLD 0.30. The trunk is learning MQuAKE's facts one at a time (0.00 -> 0.29 a hop) but does not chain them; the MQuAKE claim is memory-route recall only. The trunk absorbing MQuAKE is the first job after 100%.
+
+**Safety against kra61 (same seed 5)**
+- **FORGETTING +0.007, FINAL BPC 1.799** (store on: +0.007 / 1.800). kra61 seed 5: +0.010 / 1.779; seed 4: +0.013 / 1.796. Forgetting is no worse; BPC is +0.020 on the same seed, just over one seed-noise unit (0.017) and inside the two kra61 seeds' spread. The 822 MQuAKE facts are extra training text.
+- **Rule-world edits through chains fell: COMBINED NEW 0.51 / stale 0.01 at visit 10 (n 98; kra61 seed 5: 0.76 / 0.00).** Correctness is kept (stale 0.00-0.01, written composites 544 / 548 right, route J precision 1.00, combined gated answers 0.95-0.97 right) but coverage fell: 0.48 answer neither (kra61: 0.24). Cause: the JEPA memory now holds the MQuAKE facts too - 2,873 premise sentences and 4,186 slots at visit 10 (kra61: 2,032 / 3,305) with the same 3,000 steps a sleep. Its dreams are less precise (0.81 right against 0.93), its gate threshold is higher (0.141 against 0.126) and its gated NEW on the rule-world edits halves (0.21 against 0.43).
+- Unchanged: weights 1 / 2 / 3 hops 0.93 / 0.55 / 0.14, store 0.98 / 0.95 / 0.35 at visit 10; facts known per fact read 1.27; route D two-step 0.82 (kra61: 0.82); the trunk's gate at visit 10 right when answered 0.88, never-read answered 0.06.
+- **Next: kra62b** = kra62 with the JEPA memory's steps scaled to its larger load (inf_jmem_steps 4200, about kra61's steps per premise), on seed 4: the second seed for MQuAKE, the safety comparison against kra61 seed 4 (1.796) and whether the rule-world edit coverage comes back.
+
+## kra62c GPU (seed 4, preset cg27a_kra62c_pass1 = kra62 + the MQuAKE facts in their OWN JEPA memory instance; 27 Nov 16:43-22:10, full run, clean end) - THE PLAN AT 100%
+
+Against kra61 seed 4 (same seed, no MQuAKE). Every rule-world readout matches kra61 seed 4 visit for visit (the rule-world JEPA memory sees exactly kra61's premises), MQuAKE improves sharply in its own memory, and safety is better than kra61.
+
+**Safety**
+
+| | kra61 s4 | **kra62c s4** |
+|---|---|---|
+| FORGETTING (slot given) | +0.013 | **-0.001** |
+| FINAL BPC (weights only / store on) | 1.796 | **1.786 / 1.786** |
+| Label-free headline (slot inferred): forgetting / BPC | -0 / 1.784 | **-0.012 / 1.775** |
+| Routing correct | 8 of 8 | 9 of 9 |
+| Errors or unavailable readouts | - | none |
+
+**Rule-world edits through chains (COMBINED, edit read)**
+
+| Visit | kra61 s4 NEW / stale (n) | kra62c NEW / stale (n) |
+|---|---|---|
+| 4 | 0.20 / 0.00 (10) | 0.20 / 0.00 (10) |
+| 6 | 0.34 / 0.00 (29) | 0.34 / 0.00 (29) |
+| 7 | 0.70 / 0.00 (43) | 0.70 / 0.00 (43) |
+| 8 | 0.73 / 0.00 (55) | 0.73 / 0.00 (55) |
+| 9 | 0.77 / 0.01 (73) | 0.75 / 0.01 (73) |
+| 10 | 0.84 / 0.00 (88) | **0.82 / 0.00 (88)** |
+
+The JEPA memory's gated answers on the edits: NEW 0.49, stale 0.00 at visit 10 (kra61 s4 0.49 / 0.00). Its own recall of the rule-world premises read 0.81-0.93 at every visit, as kra61 (kra62b, shared memory: fell to 0.51).
+
+**MQuAKE (300 real multi-hop edit cases, 200 scored), the memory route (the MQuAKE facts' own JEPA memory)**
+
+| Visit | Edit read: NEW / stale (n) | kra62 s5 (shared memory) | kra62b s4 (shared, 4,200 steps) |
+|---|---|---|---|
+| 3 | 1.00 / 0.00 (8) | 0.85 / 0.00 (13) | 0.62 / 0.00 (8) |
+| 5 | 0.95 / 0.00 (38) | 0.70 / 0.00 (50) | 0.79 / 0.00 (38) |
+| 7 | 0.91 / 0.00 (76) | 0.65 / 0.03 (89) | 0.76 / 0.04 (76) |
+| 9 | 0.88 / 0.01 (136) | 0.58 / 0.01 (137) | - |
+| 10 | **0.87 / 0.00 (200)** | 0.49 / 0.04 (200) | - |
+
+- By hops at visit 10: 2 hops 0.93 (104), 3 hops 0.86 (58), 4 hops 0.71 (38). Gated on its own one-hop recall: answered 0.56, of them NEW 0.96, stale 0.00.
+- **Consolidation of MQuAKE into the trunk is NOT shown:** the trunk's own step-by-step multi-hop answers NEW 0.07, stale 0.05; the edited fact alone NEW 0.40; each hop given the true previous entity 0.35. The MQuAKE claim is memory-route recall. The trunk absorbing MQuAKE remains open.
+
+**Consolidation: the temporal gradient** (two-hop conclusions from the weights with the fast store OFF / ON, by age; random sample of 12 per bin)
+
+| Age of the conclusion | Visit 9: off / on (store dependence) | Visit 10 |
+|---|---|---|
+| This visit | 0.58 / 1.00 (+0.42) | 0.58 / 1.00 (+0.42) |
+| 1 visit back | 0.75 / 1.00 (+0.25) | 0.75 / 1.00 (+0.25) |
+| 2-3 back | 0.83 / 1.00 (+0.17) | 1.00 / 1.00 (+0.00) |
+| 4+ back | 1.00 / 1.00 (+0.00) | 0.92 / 1.00 (+0.08) |
+
+New conclusions depend on the fast store (+0.42); older ones are held by the weights alone (store dependence 0.00-0.08). With 12 per bin the middle steps are noisy; the endpoints are the result.
+
+**The plan's seven goals, as shown (kra61 seeds 4 and 5, kra62 seed 5, kra62c seed 4)**
+1. **Forgetting**: within noise or better (kra62c -0.001 / 1.786; kra61 +0.010 to +0.013).
+2. **Facts**: recorded facts recalled from the weights and the store (store one / two / three hops 0.96 / 0.94 / 0.32 at visit 10, kra61 s4).
+3. **New inferences**: composites never planted, written by the system's own rules, steps and JEPA memory, re-derived each sleep, 0.96-1.00 right; facts known per fact read 1.27.
+4. **Consolidation**: the temporal gradient above; graduation of private capacity to the shared trunk.
+5. **False memories**: stale answers 0.00-0.01 on edits; ungrounded hypotheses never written; retraction on edit and on contradiction.
+6. **Gated answers**: answers past calibrated gates right 0.88-0.98; abstention on never-read names.
+7. **Generalisation, including edits through chains**: rule-world edits 0.82-0.84 NEW / 0.00 stale at visit 10 on two seeds; real MQuAKE multi-hop edits 0.87 NEW / 0.00 stale through the memory route.
+- Not claimed: MQuAKE consolidated into the trunk; standard-benchmark comparability; scale beyond the 171M-parameter trunk.
+
+## kra62b GPU (seed 4, preset cg27a_kra62b_pass1 = kra62 + the JEPA memory at 4,200 steps a sleep; 27 Nov 12:06 to about 16:10, log ends inside visit 9) - FAILS: MORE STEPS ON THE SHARED MEMORY ERODE THE RULE WORLD
+
+Stopped early on a clear failure. Compared with kra61 seed 4 (same seed, no MQuAKE) and kra62 seed 5 (MQuAKE, 3,000 steps).
+
+**The JEPA memory, rule world (one hop on premises it read)**
+
+| Visit | kra61 s4 | kra62 s5 | kra62b s4 | kra62b: premises / dreamed / dream gate t |
+|---|---|---|---|---|
+| 2 | 0.80 | - | 0.92 | 963 / 115 / 0.000 |
+| 4 | 0.89 | 0.93 | 0.71 | 1,544 / 93 / 0.111 |
+| 6 | 0.91 | 0.94 | 0.62 | 1,974 / 183 / 0.093 |
+| 8 | 0.86 | 0.92 | **0.53** | 2,453 / 52 / 0.181 |
+| 9 | 0.86 | 0.92 | **0.51** | 2,707 / 150 / 0.138 |
+
+**Rule-world edits through chains (COMBINED NEW, edit read)**
+
+| Visit | kra61 s4 | kra62 s5 | kra62b s4 |
+|---|---|---|---|
+| 6 | 0.34 (29) | 0.30 (37) | 0.07 (29) |
+| 7 | 0.70 (43) | 0.39 (49) | 0.07 (43) |
+| 8 | 0.73 (55) | 0.46 (59) | **0.05 (55)** |
+
+- At visit 8 the memory's write / answer gate is closed (t = inf: no planted composite reaches the precision target), so it writes no new composites (kra62: 21) and makes no edit overrides ("precision gate closed 55"); only 37 earlier writes remain (kra62: 184). Answers that are given stay right: stale 0.00, kept writes right 1.00, combined answers right 0.98, route J unchanged.
+- **MQuAKE improved on the memory route:** NEW at visit 3 / 5 / 7 / 8 0.62 / 0.79 / 0.76 / 0.76 (kra62: 0.85 / 0.70 / 0.65 / 0.68), stale 0.00-0.04. Real-text test chains C 0.51 (kra62 0.43).
+- **Safety within noise so far:** held-out BPC, old domains at visit 8 1.835 (kra61 s4 1.837, kra62 1.844). Weights / store hops match kra61 s4 to visit 9.
+- **Reading:** with MQuAKE's real facts in the same memory, more training moves its capacity toward them and away from the made-up rule-world names; its own recall of the rule world falls each visit, the precision gate then rejects its dreams (few dreamed, the rest replayed from text) and its write gate closes. Scaling the steps is not the fix.
+- **Next: kra62c**, the planned fallback: the MQuAKE facts in their OWN JEPA memory instance (inf_mquake_jsep 1, a second instance trained on the MQuAKE facts read, 3,000 steps a sleep; its MQuAKE readout gated by its own one-hop recall), the rule-world memory back to 3,000 steps and exactly kra61's premises. Seed 4, against kra61 seed 4.
+
 ## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
 
 The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
@@ -6733,6 +6866,33 @@ The check compares one straight run with runs stopped and resumed at visit bound
   3. Rerun the check.
 
   PR #72 stays open until then.
+
+## Repeatable runs: the fix checked (tiny run, preset cg27a_kra61_pass1, 2 threads, hash seeds 1 and 2, 27 Nov 02:17-06:24) - TRAINING REPEATABLE; two readouts still order-dependent
+
+The fix above (branch `repeatable`, in kra62): sorted iteration at distill.py's two distractor sets and premises.py's candidate list, and `PYTHONHASHSEED` (default 0) in `run_gpu.sh` and `run_local.sh`. The check runs the same build twice with DIFFERENT hash seeds (1 and 2): a harder test than the GPU needs, since the scripts now fix the seed. Each run was also stopped after visit 2 and resumed from its checkpoint (`tools/ckpt/equiv.py run`, `resume`, `same`).
+
+- **Every training line is identical:** losses, BPC, routing, replay, Fisher, the inference writes, conclusions, edits, the JEPA memory and the gate. Before the fix, 11 of 264 lines differed through visit 4, and the inference writes (201 against 204 kept) changed the training data.
+- **The headline is identical:** forgetting +0.408, final BPC 6.685 with the slot given; label-free -0.665 / 5.813, in both runs.
+- **7 of 541 stitched lines differ, and none of them feeds training.**
+  - Three OPERATOR ALGEBRA readouts (visits 3-5) and one RELATION TYPES FROM THE TRUNK readout (visit 4; 792 against 797 rules, purity 0.446 against 0.445). These analyses still iterate a set; they are measurement only.
+  - Two values differ in the fourth decimal (a routing table's mixture BPC 5.7747 against 5.7746; label-free mean -0.8719 against -0.8718).
+  - One timing line lists an extra phase name.
+- **Resume stays faithful** in both runs (exit 75 at the stop, 0 after the resume).
+- **Consequence:** with the scripts' fixed hash seed, the same build and seed give the same training on any machine of the same kind; the remaining readout differences matter only if the hash seed is changed. Sorting those two readouts is a small follow-up. PR #72 can close.
+
+## MQuAKE port, local check (100 cases, seed 5, preset cg27a_kra62 with inf_mquake 100, 5 visits; 26 Nov 18:40 - 27 Nov 02:16, four parts with checkpoints)
+
+MQuAKE-CF-3k-v2 cases planted as a consistent world: world facts and old values read in the case's domain, the edit in a later one. Readouts: the JEPA memory's own hops `<entity> <relation id> ?` (an edit, once read, replaces the old value) and the trunk's own step-by-step greedy answers on MQuAKE's clozes (store and memory off).
+
+| Visit | Memory, edit read: NEW / stale (n) | By hops: 2 / 3 / 4 | Memory, control (edit not read): OLD / NEW (n) | Trunk, edit read: NEW / stale |
+|---|---|---|---|---|
+| 3 | 0.73 / 0.18 (11) | 1.00 / 0.25 / 1.00 (n 6 / 4 / 1) | 0.56 / 0.01 (68) | 0.00 / 0.00 |
+| 4 | 0.60 / 0.02 (42) | 0.67 / 0.57 / 0.43 | 0.59 / 0.05 (58) | 0.00 / 0.02 |
+| 5 | **0.54 / 0.05 (100)** | **0.54 / 0.55 / 0.53** | n/a (all edits read) | 0.00 / 0.00 |
+
+- **Recall (the memory, ungated):** once read, edits replace the old value along multi-hop chains: stale falls from 0.18 to 0.02-0.05 as n grows, and by visit 5 accuracy no longer falls with chain length. Before an edit is read the memory does not give the new answer (0.01-0.05).
+- **Consolidation (the trunk's own answers): 0.00 locally**, including the edited fact alone and each hop given the true previous entity. This matches the local scale, not a fault of the port: the same run's route D first step on the rule world is also 0.00 locally (0.82-0.83 on the GPU by visit 10, kra61). The trunk's MQuAKE answers are a GPU measurement (kra62, 300 cases).
+- Added to kra62 after this run: gated columns for the memory (gates calibrated on the taught real-text chains, the planted composites, and its own one hop on the MQuAKE facts read) and the share that is neither old nor new.
 
 ## Summary, 23-25 November
 

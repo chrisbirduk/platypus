@@ -25,6 +25,7 @@
 # checkpoint written by different code or options.
 #
 set -euo pipefail
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"   # 26 Nov: one set order in every process, so a run is repeatable (tools/ckpt/equiv.py)
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESUME=""
