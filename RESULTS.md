@@ -6760,6 +6760,34 @@ Recall and consolidation are reported separately, as for seed 5.
 - Unchanged: weights 1 / 2 / 3 hops 0.93 / 0.55 / 0.14, store 0.98 / 0.95 / 0.35 at visit 10; facts known per fact read 1.27; route D two-step 0.82 (kra61: 0.82); the trunk's gate at visit 10 right when answered 0.88, never-read answered 0.06.
 - **Next: kra62b** = kra62 with the JEPA memory's steps scaled to its larger load (inf_jmem_steps 4200, about kra61's steps per premise), on seed 4: the second seed for MQuAKE, the safety comparison against kra61 seed 4 (1.796) and whether the rule-world edit coverage comes back.
 
+## kra62b GPU (seed 4, preset cg27a_kra62b_pass1 = kra62 + the JEPA memory at 4,200 steps a sleep; 27 Nov 12:06 to about 16:10, log ends inside visit 9) - FAILS: MORE STEPS ON THE SHARED MEMORY ERODE THE RULE WORLD
+
+Stopped early on a clear failure. Compared with kra61 seed 4 (same seed, no MQuAKE) and kra62 seed 5 (MQuAKE, 3,000 steps).
+
+**The JEPA memory, rule world (one hop on premises it read)**
+
+| Visit | kra61 s4 | kra62 s5 | kra62b s4 | kra62b: premises / dreamed / dream gate t |
+|---|---|---|---|---|
+| 2 | 0.80 | - | 0.92 | 963 / 115 / 0.000 |
+| 4 | 0.89 | 0.93 | 0.71 | 1,544 / 93 / 0.111 |
+| 6 | 0.91 | 0.94 | 0.62 | 1,974 / 183 / 0.093 |
+| 8 | 0.86 | 0.92 | **0.53** | 2,453 / 52 / 0.181 |
+| 9 | 0.86 | 0.92 | **0.51** | 2,707 / 150 / 0.138 |
+
+**Rule-world edits through chains (COMBINED NEW, edit read)**
+
+| Visit | kra61 s4 | kra62 s5 | kra62b s4 |
+|---|---|---|---|
+| 6 | 0.34 (29) | 0.30 (37) | 0.07 (29) |
+| 7 | 0.70 (43) | 0.39 (49) | 0.07 (43) |
+| 8 | 0.73 (55) | 0.46 (59) | **0.05 (55)** |
+
+- At visit 8 the memory's write / answer gate is closed (t = inf: no planted composite reaches the precision target), so it writes no new composites (kra62: 21) and makes no edit overrides ("precision gate closed 55"); only 37 earlier writes remain (kra62: 184). Answers that are given stay right: stale 0.00, kept writes right 1.00, combined answers right 0.98, route J unchanged.
+- **MQuAKE improved on the memory route:** NEW at visit 3 / 5 / 7 / 8 0.62 / 0.79 / 0.76 / 0.76 (kra62: 0.85 / 0.70 / 0.65 / 0.68), stale 0.00-0.04. Real-text test chains C 0.51 (kra62 0.43).
+- **Safety within noise so far:** held-out BPC, old domains at visit 8 1.835 (kra61 s4 1.837, kra62 1.844). Weights / store hops match kra61 s4 to visit 9.
+- **Reading:** with MQuAKE's real facts in the same memory, more training moves its capacity toward them and away from the made-up rule-world names; its own recall of the rule world falls each visit, the precision gate then rejects its dreams (few dreamed, the rest replayed from text) and its write gate closes. Scaling the steps is not the fix.
+- **Next: kra62c**, the planned fallback: the MQuAKE facts in their OWN JEPA memory instance (inf_mquake_jsep 1, a second instance trained on the MQuAKE facts read, 3,000 steps a sleep; its MQuAKE readout gated by its own one-hop recall), the rule-world memory back to 3,000 steps and exactly kra61's premises. Seed 4, against kra61 seed 4.
+
 ## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
 
 The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
