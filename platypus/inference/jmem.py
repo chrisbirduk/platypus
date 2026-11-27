@@ -260,7 +260,21 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         if J is None: J = JMem(cfg, dev); model.__dict__['_jmem'] = J
         # what has been read: rule-world premises of the seen domains, and the recorded premises of the real-text chains
         rwp = [(d, s_, k, a, b) for (d, s_, k, a, b) in W.get('planted', []) if k in ('parent', 'mgr') and (not seen or int(d) in seen)]
-        if int(getattr(cfg, 'inf_jmem_moves', 0)):                              # 25 Nov kra56: an EDITED premise (moved leaf) once its domain is read REPLACES the old one
+        SRC9 = str(getattr(cfg, 'inf_jmem_src', 'planted') or 'planted'); srcl9 = ''
+        if SRC9 in ('reader', 'reader_recent'):                                 # 27 Nov kra62d: the memory learns from what the READER RECORDED (the last sleep's record of the
+            ph9 = {str(rw['parent']).strip(): 'parent', str(rw['mgr']).strip(): 'mgr'}   #   rule world's parent / manager facts), not the harness's planted table; 'reader_recent'
+            R9 = [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]   #   keeps, per subject
+            if SRC9 == 'reader_recent':                                         #   and relation, the record from the most recently visited domain (route J's recency rule);
+                vo9 = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}; lt9 = {}   #   'reader' keeps every record (old and new values)
+                for e in R9:
+                    k9 = (e['A'], str(e['r']).strip()); o9 = vo9.get(int(e['d']), -1)
+                    if k9 not in lt9 or o9 > lt9[k9][0]: lt9[k9] = (o9, e)
+                R9 = [v_[1] for v_ in lt9.values()]
+            rwp = [(int(e['d']), '', ph9[str(e['r']).strip()], e['A'], e['ans']) for e in R9]
+            par9, mgr9 = W.get('parent', {}), W.get('mgr', {}); MV9 = {l_: mv_ for l_, mv_ in (W.get('moves') or {}).items() if mv_['d2'] in seen}
+            tru9 = lambda k_, a_: (MV9[a_]['new'] if a_ in MV9 and MV9[a_]['kind'] == k_ else (par9 if k_ == 'parent' else mgr9).get(a_))
+            srcl9 = f" | SOURCE: the READER's records ({SRC9}): {len(rwp)} premises, right by the rule world's current truth {np.mean([tru9(k_, a_) == b_ for (_, _, k_, a_, b_) in rwp]) if rwp else float('nan'):.2f}, planted premises of the domains seen {sum(1 for x in W.get('planted', []) if x[2] in ('parent', 'mgr') and (not seen or int(x[0]) in seen))}"
+        if int(getattr(cfg, 'inf_jmem_moves', 0)) and SRC9 == 'planted':        # 25 Nov kra56: an EDITED premise (moved leaf) once its domain is read REPLACES the old one (kra62d: never with the reader's records)
             MVj = W.get('moves') or {}                                          #   (kra55 local: the moves live in W['moves'], not W['planted'], so the JEPA memory never
             mvr = {(mv['kind'], l): mv for l, mv in MVj.items() if mv['d2'] in seen}   #   saw an edit - gated answers through edited premises NEW 0.00, stale 0.39-0.57)
             rwp = [x for x in rwp if (x[2], x[3]) not in mvr] + [(mv['d2'], mv['sent'], mv['kind'], l, mv['new']) for (k, l), mv in mvr.items()]
@@ -332,7 +346,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                        f"right {np.mean([c for b, c, g in R if g >= th]) if any(g >= th for b, c, g in R) else float('nan'):.2f}") if R else "0"
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far{nd9}" + (f" (EDITED premises read and used in place of the old: {model.__dict__.get('_jm_moves_used', 0)})" if int(getattr(cfg, 'inf_jmem_moves', 0)) else "") + f" "
               f"({len(J.keys)} slots, {J.steps} steps in all, loss {ls:.3f}; readout only) || RULE WORLD: one hop on read premises {np.mean(r1) if r1 else float('nan'):.2f} (n {len(r1)}) | "
-              f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)", flush=True)
+              f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)" + srcl9, flush=True)
         if int(getattr(cfg, 'inf_jmem_answer', 0)) or int(getattr(cfg, 'inf_jmem_write', 0)):
             _jmem_answer(model, cfg, vis, W, seen, rw, J, thw, up, pure)
         # REAL TEXT: the frozen TEST chains by its own two hops (premises read, chains never)

@@ -910,6 +910,7 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
     if not rules: rules = {ph['grand']: (ph['parent'], ph['parent']), ph['skip']: (ph['mgr'], ph['mgr'])}
     te = lambda A, r: f"It is on record that {A} {r} ".encode('latin-1', 'replace')
     by_d = {}; seen = set(int(k) for k in (model.__dict__.get('_t2s') or {}).keys()); fs = [e for e in fs if 'chain' not in e]; fs0 = list(fs)   # 19 Nov: chain-form written composites are not recorded facts
+    model.__dict__['_rec_fs'] = list(fs0)                                    # 27 Nov kra62d: the facts the READER recorded, for the JEPA memory's inf_jmem_src
     if int(getattr(cfg, 'inf_kmc_rulecomp', 0)) >= 2:                         # mode 2: the pointer table also covers every rule-world PREMISE the model has READ
         fs += [{'d': d_, 'A': a_, 'r': ph[k_], 'ans': b_} for (d_, s_, k_, a_, b_) in W['planted'] if int(d_) in seen and k_ in ('parent', 'mgr')]   # (the memory is written on every byte of read text; only the decoding table is extended)
     for e in fs: by_d.setdefault(int(S_slot(e['d'])), []).append(e)
