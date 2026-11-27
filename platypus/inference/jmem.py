@@ -328,6 +328,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         if int(getattr(cfg, 'inf_jmem_answer', 0)) or int(getattr(cfg, 'inf_jmem_write', 0)):
             _jmem_answer(model, cfg, vis, W, seen, rw, J, thw, up, pure)
         # REAL TEXT: the frozen TEST chains by its own two hops (premises read, chains never)
+        t2 = None
         if tst:
             T = tst[:150]
             bb, gb = J.hopw([c[0] for c in T], [c[1] for c in T]); cc, gc = J.hopw(bb, [c[3] for c in T])
@@ -341,6 +342,6 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                   f"taught chains C {np.mean([ok for ok, g in tb]) if tb else float('nan'):.2f}  (compare: the trunk's STEP BY STEP on the same chains above)", flush=True)
         if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the memory's own hops on the cases read
             from platypus.inference.mquake import mq_jmem_readout
-            mq_jmem_readout(J, cfg, vis, seen)
+            mq_jmem_readout(J, cfg, vis, seen, {'taught real-text chains': t2, 'planted composites (write gate)': thw})
     except Exception as e:
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] unavailable ({type(e).__name__}: {str(e)[:160]})", flush=True)

@@ -180,8 +180,9 @@ def mq_jmem_items(cfg, seen):
     mq_build(cfg); return [(f"{s} {r} {ob}.", (s, ob)) for (s, r), (ob, _) in sorted(_read(seen).items())]
 
 
-def mq_jmem_readout(J, cfg, vis, seen):
-    """the JEPA memory's own hops on the cases read"""
+def mq_jmem_readout(J, cfg, vis, seen, gates=None):
+    """the JEPA memory's own hops on the cases read; GATED columns: answered only when the weakest hop's margin clears a gate
+    (27 Nov kra62: gates calibrated on the taught real-text chains, the planted composites, and the MQuAKE facts it read, one hop)"""
     if int(getattr(cfg, 'inf_mquake', 0)) <= 0 or J is None: return
     M = mq_build(cfg); CS = [c for c in M['cases'] if c['d'] in seen][:int(getattr(cfg, 'inf_mquake_eval', 200))]
     if not CS: return
@@ -191,10 +192,23 @@ def mq_jmem_readout(J, cfg, vis, seen):
         if not L: break
         a, g = J.hopw([cur[i] for i in L], [CS[i]['rid'][h] for i in L])
         for i, x, y in zip(L, a, g): cur[i] = x; mg[i] = min(mg[i], y)
-    rows = [(c, _hit(a, c['new']), _hit(a, c['old'])) for c, a in zip(CS, cur)]
+    rows = [(c, _hit(a, c['new']), _hit(a, c['old']), not (_hit(a, c['new']) or _hit(a, c['old'])), m, a) for c, a, m in zip(CS, cur, mg)]
     rd = [r for r in rows if r[0]['d2'] in seen]; ct = [r for r in rows if r[0]['d2'] not in seen]
     f = lambda L, j: f"{np.mean([r[j] for r in L]):.2f}" if L else 'n/a'
     byh = ' | '.join(f"{h} hops (n {len(L)}): NEW {f(L, 1)}" for h in (2, 3, 4) for L in [[r for r in rd if len(r[0]['T']) == h]] if L)
+    R = _read(seen); fk = sorted(R)[:300]                                       # its one hop on the MQuAKE facts read: a gate calibrated on its own recall
+    G = dict(gates or {})
+    if fk:
+        o1, g1 = J.hopw([s for s, r in fk], [r for s, r in fk]); ok1 = [g for y, (s, r), g in zip(o1, fk, g1) if _hit(y, {R[(s, r)][0].lower()})]
+        G['its one hop on the MQuAKE facts read'] = float(np.quantile(ok1, 0.25)) if ok1 else float('inf')
+    def gated(L, nm, t):
+        if t is None or not np.isfinite(t) or not L: return f"{nm} (t n/a): n/a"
+        A = [r for r in L if r[4] >= t]
+        return (f"{nm} (t {t:.3f}): answered {len(A) / len(L):.2f}, of them NEW {np.mean([r[1] for r in A]):.2f} OLD {np.mean([r[2] for r in A]):.2f}" if A
+                else f"{nm} (t {t:.3f}): answered 0.00")
+    gs = ' | '.join(gated(rd, k, v) for k, v in G.items())
+    cx = next((r for r in ct if r[3]), None)
     print(f"  [MQuAKE PORT, JEPA MEMORY | visit {vis + 1}] {len(CS)} cases read; the keyed-memory JEPA's own hops '<entity> <relation id> ?' on the facts read "
-          f"(an edit, once read, replaces the old value) || EDIT READ (n {len(rd)}): MULTI-HOP NEW {f(rd, 1)}, OLD (stale) {f(rd, 2)} || {byh or 'no hops'} || "
-          f"EDIT NOT YET READ (control; n {len(ct)}): OLD {f(ct, 2)}, NEW {f(ct, 1)}", flush=True)
+          f"(an edit, once read, replaces the old value) || EDIT READ (n {len(rd)}): MULTI-HOP NEW {f(rd, 1)}, OLD (stale) {f(rd, 2)}, NEITHER {f(rd, 3)} || {byh or 'no hops'} || "
+          f"EDIT NOT YET READ (control; n {len(ct)}): OLD {f(ct, 2)}, NEW {f(ct, 1)}, NEITHER {f(ct, 3)}"
+          + (f" (e.g. {cx[0]['q']!r} -> {cx[5]!r}, old {sorted(cx[0]['old'])[0]!r})" if cx else '') + (f" || GATED, EDIT READ: {gs}" if gs else ''), flush=True)
