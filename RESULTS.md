@@ -6716,6 +6716,26 @@ Recall (route J, the JEPA memory, step-by-step writes) and consolidation (the we
 - **Small late effects to watch on seed 4:** the control (edit not yet read, OLD right) eases 1.00 -> 0.79 by visit 9 as n falls (30 -> 14; 2 of 14 answer neither old nor new); written composites wrong 0-3 a visit until visit 8, 7 at visit 9, 5 at visit 10.
 - One seed. kra61 seed 4 (same code, branch cg27a-distill unchanged since 26 Nov 11:19) decides the validation.
 
+## kra61 validation, seed 4 (GPU, the same preset and code, 10 visits; 27 Nov 07:03 to about 12:00, log ends inside the end-of-run readouts) - AGREES WITH SEED 5
+
+Recall and consolidation are reported separately, as for seed 5.
+
+**End of run (weights only): FORGETTING +0.013, FINAL BPC 1.796** (store on: +0.013 / 1.797). Seed 5: +0.010 / 1.779. The BPC gap (0.017) is one seed-noise unit; kra17 on seed 4 was also higher (1.793). Routing correct at every visit printed.
+
+| Visit | Weights 1 / 2 / 3 hops | Store 1 / 2 / 3 hops | Edit read: COMBINED NEW / stale (n) | Control, OLD right (n) | Written composites right | Facts known per fact read |
+|---|---|---|---|---|---|---|
+| 4 | 0.39 / 0.09 / 0.06 | 0.44 / 0.14 / 0.04 | 0.20 / 0.00 (10) | 1.00 (20) | 220 / 220 | 1.22 |
+| 6 | 0.54 / 0.22 / 0.04 | 0.59 / 0.35 / 0.06 | 0.34 / 0.00 (29) | 1.00 (18) | 330 / 330 | 1.22 |
+| 8 | 0.72 / 0.37 / 0.08 | 0.83 / 0.62 / 0.13 | 0.73 / 0.00 (55) | 0.93 (15) | 468 / 471 | 1.23 |
+| 9 | 0.83 / 0.49 / 0.06 | 0.92 / 0.79 / 0.25 | 0.77 / 0.01 (73) | 1.00 (7) | 532 / 534 | 1.26 |
+| 10 | 0.88 / 0.61 / 0.06 | 0.96 / 0.94 / 0.32 | **0.84 / 0.00 (88)** | - (0) | **570 / 573** | **1.27** |
+
+- **Edits propagate (recall), second seed:** NEW 0.20 -> 0.84 over visits 4-10 (seed 5: 0.25 -> 0.76), stale 0.00 at every visit but one case at visit 9 - the same pattern as seed 5. With the new parent's family read: 1.00 / 0.91 / 0.93 / 0.86 / 0.84 (visits 4, 6, 8, 9, 10; n 2-88).
+- **The seed 5 watch items do not recur:** the control (edit not yet read) stays 0.93-1.00 (seed 5 eased to 0.79 by visit 9); written composites wrong 0-3 a visit throughout (seed 5: 7 at visit 9, 5 at visit 10); route J precision 0.99-1.00.
+- **Gated answers:** combined 0.95-0.99 right on 0.71-0.81 of held-back composites. No gate dip at visit 6 on this seed (the route-J calibration was defined every sleep: t 0.025-0.107); the JEPA memory's own share is 0.59-1.00 right on 2-6% of answers. The trunk's own gate at visit 10: known facts right when answered 1.00 (answered 0.53), never-read facts answered 0.01; confidence separates known-right from never-read with AUC 0.97.
+- **Consolidation (weights, store off):** route D at visit 10 first step 0.80, two-step C 0.71 on composites never planted (pure families 0.67; seed 5: 0.83 / 0.82 / 0.89), after 0.86-0.95 at visits 6-9 - a late dip to watch. CLS half-life 42 / 55 / 35 / 34 visits at visits 7-10 (seed 5: 46 / 67 / 78). The temporal gradient is an end-of-run readout and the log ends before it; to be added when the rest of the log arrives.
+- **Verdict: kra61 validates on two seeds** for forgetting, facts, new inferences, edits through chains and gated answers. Open on this seed: the temporal gradient.
+
 ## Checkpoint equivalence for PR #72 (tiny run, preset cg27a_kra57_pass1, 1 thread, 26 Nov 04:40-09:02) - RESUME IS FAITHFUL; the run itself is not repeatable
 
 The check compares one straight run with runs stopped and resumed at visit boundaries (tools/ckpt/equiv.py, run by hand because the parallel version did not fit the 2-hour limit). Two resumes were tested: once after visit 1, and a chained resume from the checkpoint that the first resumed run saved after visit 3.
