@@ -281,8 +281,11 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                     HI8 = model.__dict__.setdefault('_rec_hist', {})              #   evidence leaves the rolling store before the new value arrives): a HISTORY of the reader's
                     for e in [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]:   #   own record across
                         L8 = HI8.setdefault((ph9[str(e['r']).strip()], e['A']), [])                                                                           #   sleeps; a change of the
-                        if not L8 or L8[-1][1] != e['ans']: L8.append((len(L8) + 1000 * vis, e['ans']))                                                       #   recorded value = an edit read
-                    byk8 = {k_: list(v_) for k_, v_ in HI8.items()}               #   (the last value recorded is current)
+                        if not L8 or (L8[-1][1] != e['ans'] and not (int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 4 and any(x[1] == e['ans'] for x in L8))):   #   recorded value = an edit
+                            L8.append((len(L8) + 1000 * vis, e['ans']))           #   read (kra62i: a value already superseded in the history is not newer - no flip-flop)
+                    if int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 4:         # 28 Nov kra62i (kra62h GPU visit 4: of 8 true edits the reader's record had switched to the new
+                        _store_newer(model, cfg, ph9, seen, HI8, vis)             #   value for 1 - it counts a value only once seen twice): a NEWER object the store holds for
+                    byk8 = {k_: list(v_) for k_, v_ in HI8.items()}               #   the subject (first seen after the recorded value, once is enough) joins the history
                 elif int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 2:           # 28 Nov kra62g FIX (kra62f GPU visit 3: 0 of 28 moves detected): the reader's record list
                     byk8 = _store_records(model, cfg, ph9, seen)                  #   keeps ONE object per subject and relation (inf_nm_update_first); read the store's evidence record
                 else:
@@ -517,3 +520,28 @@ def _store_records(model, cfg, ph9, seen):
             if seen and d8 not in seen: continue
             out.setdefault((ph9[r8s], A8), []).append((ix8[0], o8.decode('latin-1', 'replace')))
     return out
+
+
+def _store_newer(model, cfg, ph9, seen, HI8, vis):
+    """28 Nov kra62i: for every (relation, subject) in the reader's record history, an object the store's evidence record holds that differs from
+    the current recorded value and was FIRST seen after it (in store order; if the recorded value is no longer in the store, first seen at a later
+    visit than the one that recorded it) is appended to the history as the newer value - seen once is enough. The reader keeps its own
+    two-sightings rule for everything else."""
+    from platypus.inference.sentences import _inf_store
+    from platypus.inference.namemem import _nm_isname
+    S8 = _inf_store(model); it8 = S8.get('it', []); REL = S8.get('rel', {}); FV = model.__dict__.setdefault('_rec_hist_v', {}); inv = {v_: k_ for k_, v_ in ph9.items()}
+    for (k_, A_), L_ in HI8.items():
+        cur = L_[-1][1]; FV.setdefault((k_, A_, cur), vis)
+        objs = REL.get((A_.encode('latin-1', 'replace'), inv[k_].encode('latin-1', 'replace'))) or {}
+        if not objs: continue
+        fs = {}
+        for o, ix in objs.items():
+            ix = [x for x in ix if x < len(it8)]
+            if ix and _nm_isname(bytes(o)): fs[bytes(o).decode('latin-1', 'replace')] = min(ix)
+        best = None
+        for o, i0 in fs.items():
+            if o == cur or (seen and int(it8[i0].get('d', -1)) not in seen): continue
+            newer = (i0 > fs[cur]) if cur in fs else (int(it8[i0].get('v', 0)) > FV[(k_, A_, cur)])
+            if newer and (best is None or i0 > best[0]): best = (i0, o)
+        if best is not None:
+            L_.append((len(L_) + 1000 * vis + 500, best[1])); FV.setdefault((k_, A_, best[1]), vis)
