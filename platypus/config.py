@@ -841,6 +841,7 @@ class Config:
                                     #     reader recorded, old and new values) or 'reader_recent' (per subject and relation, the record from the most recently visited domain)
     inf_jmem_src_debug=0            #   28 Nov: print a few of the reader-sourced items and the memory's answers on them (readout only)
     inf_jmem_min_items=0            #   28 Nov kra62d: the JEPA memory is not trained in a sleep with fewer premise sentences than this (0 = always trained)
+    inf_jmem_recency=0              #   28 Nov kra62e: with the reader's records, extra replay copies for premises read in later-visited domains (weight 1 + this x visit rank / last rank)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

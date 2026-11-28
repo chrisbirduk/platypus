@@ -302,6 +302,16 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         trn, tst = _RC.get('train') or [], _RC.get('test') or []
         prem = sorted({(c[0], c[1], c[2]) for c in trn + tst} | {(c[2], c[3], c[4]) for c in trn + tst})
         items += _items_from([(f"{h} {w} {t}.", (h, t)) for h, w, t in prem])
+        RECW9 = float(getattr(cfg, 'inf_jmem_recency', 0) or 0)                 # 28 Nov kra62e RECENCY-WEIGHTED REPLAY: with the reader's records (old and new values both kept,
+        if RECW9 > 0 and SRC9 != 'planted' and rwp:                             #   inf_jmem_src 'reader'), a premise read in a later-visited domain is replayed more often:
+            vo9 = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}   #   weight 1 + RECW9 x (visit rank / last rank) - the memory, not the harness,
+            om9 = max(1, max(vo9.values()) if vo9 else 1)                       #   has to come to prefer the newer value (the byte-stream edits tests: old records never
+            sd9 = {f"{a} {rw[k]} {b}.": vo9.get(int(d), 0) for (d, s_, k, a, b) in rwp}   #   withdrawn, new answer 0.92-0.97, stale 0.02-0.08)
+            ext9 = []
+            for it in items:
+                o9 = sd9.get(it[0])
+                if o9 is not None: ext9 += [it] * int(round(RECW9 * o9 / om9))
+            items += ext9
         JQ = None
         if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the facts read (edits in place of the old values once read)
             from platypus.inference.mquake import mq_jmem_items
