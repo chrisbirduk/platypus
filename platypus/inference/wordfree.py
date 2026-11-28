@@ -88,6 +88,7 @@ def wordfree_readout(model, cfg, S_):
         its = [x.get('s') for x in S_.get('it', []) if x.get('s') and not x.get('gone')][-int(getattr(cfg, 'inf_wordfree_n', 6000)):]
         D = []
         for s0 in its:
+            if isinstance(s0, (bytes, bytearray)): s0 = bytes(s0).decode('latin-1', 'replace')   # the store keeps sentences as bytes (kra62e GPU visit 1)
             s0 = s0.encode('ascii', 'replace').decode('ascii'); toks = s0.split()
             if len(toks) < 3: continue
             st, p = [], 0
