@@ -277,7 +277,13 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             if int(getattr(cfg, 'inf_jmem_edit_detect', 0)):                     # 28 Nov kra62f EDIT DETECTION FROM READING: a (subject, relation) the reader recorded with two
                 vo8 = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}   #   different answers in different domains is EDITED, the answer from
                 byk8 = {}                                                         #   the most recently visited domain current; feeds the edit override and retraction
-                if int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 2:             # 28 Nov kra62g FIX (kra62f GPU visit 3: 0 of 28 moves detected): the reader's record list
+                if int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 3:             # 28 Nov kra62h FIX 2 (kra62g GPU visit 3: the store held 325 records for 324 subjects - old
+                    HI8 = model.__dict__.setdefault('_rec_hist', {})              #   evidence leaves the rolling store before the new value arrives): a HISTORY of the reader's
+                    for e in [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]:   #   own record across
+                        L8 = HI8.setdefault((ph9[str(e['r']).strip()], e['A']), [])                                                                           #   sleeps; a change of the
+                        if not L8 or L8[-1][1] != e['ans']: L8.append((len(L8) + 1000 * vis, e['ans']))                                                       #   recorded value = an edit read
+                    byk8 = {k_: list(v_) for k_, v_ in HI8.items()}               #   (the last value recorded is current)
+                elif int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 2:           # 28 Nov kra62g FIX (kra62f GPU visit 3: 0 of 28 moves detected): the reader's record list
                     byk8 = _store_records(model, cfg, ph9, seen)                  #   keeps ONE object per subject and relation (inf_nm_update_first); read the store's evidence record
                 else:
                   for e in [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]:
