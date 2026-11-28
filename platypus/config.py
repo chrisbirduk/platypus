@@ -839,6 +839,7 @@ class Config:
     inf_mquake_jsteps=0             #     that memory's steps a sleep (0 = inf_jmem_steps)
     inf_jmem_src='planted'          #   27 Nov kra62d: what the JEPA memory learns the rule world from: 'planted' (the harness's planted premises, as before), 'reader' (every fact the
                                     #     reader recorded, old and new values) or 'reader_recent' (per subject and relation, the record from the most recently visited domain)
+    inf_jmem_src_debug=0            #   28 Nov: print a few of the reader-sourced items and the memory's answers on them (readout only)
     inf_jmem_warm=0                 #   24 Nov kra51: the JEPA memory's learning-rate warm-up steps
     inf_rule_world_movek=0          #   24 Nov kra52: a moved leaf's new premise planted as often as an ordinary premise (else once)  (2 = kra53: in every premise wording and the arrow frame, exactly as an ordinary premise)
     inf_rule_steps_write=0          #   23 Nov kra47 MODEL CHANGE: gated step-by-step answers written where route J abstained, re-derived each sleep

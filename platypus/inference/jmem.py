@@ -322,6 +322,12 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             L = [x for x in s1 if x[2] == k]
             if L: o, g1_ = J.hop([x[3] for x in L], rw[k]); r1 += [y == x[4] for y, x in zip(o, L)]; p1 += [(g, y == x[4]) for y, x, g in zip(o, L, g1_)]
         J.last_r1 = float(np.mean(r1)) if r1 else 0.0
+        if SRC9 != 'planted' and int(getattr(cfg, 'inf_jmem_src_debug', 0)) and s1:   # 28 Nov kra62d DEBUG (readout only): what the memory trained on and what it answers
+            dbg9 = [x for x in s1 if x[2] == 'parent'][:4] + [x for x in s1 if x[2] == 'mgr'][:2]
+            oo9 = {k_: J.hop([x[3] for x in dbg9 if x[2] == k_], rw[k_])[0] for k_ in ('parent', 'mgr')}
+            it9 = [it for it in items if any(x[3] in it[0] for x in dbg9)][:4]
+            print(f"  [JEPA MEMORY SOURCE DEBUG | visit {vis + 1}] items (sentence, masked spans): {[(t_, sp_) for t_, sp_ in it9]!r}"[:900], flush=True)
+            print(f"  [JEPA MEMORY SOURCE DEBUG | visit {vis + 1}] premises -> answer: " + '; '.join(f"{x[3]!r} {rw[x[2]]!r} -> {o_!r} (read {x[4]!r})" for k_ in ('parent', 'mgr') for x, o_ in zip([y for y in dbg9 if y[2] == k_], oo9[k_]))[:900], flush=True)
         J.th1 = _pcal(p1, float(getattr(cfg, 'inf_jmem_dprec', 0.95)), 20)       # kra53: its DREAM gate, precision-targeted on its recalls of what it read (inf = no dreams)                          # kra52: the memory's own one-hop recall on what it read (a self-test on stored text)
         pure = W.get('pure') or set()
         def two(L):
