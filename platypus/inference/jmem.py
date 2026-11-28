@@ -274,7 +274,10 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             if int(getattr(cfg, 'inf_jmem_edit_detect', 0)):                     # 28 Nov kra62f EDIT DETECTION FROM READING: a (subject, relation) the reader recorded with two
                 vo8 = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}   #   different answers in different domains is EDITED, the answer from
                 byk8 = {}                                                         #   the most recently visited domain current; feeds the edit override and retraction
-                for e in [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]:
+                if int(getattr(cfg, 'inf_jmem_edit_detect', 0)) >= 2:             # 28 Nov kra62g FIX (kra62f GPU visit 3: 0 of 28 moves detected): the reader's record list
+                    byk8 = _store_records(model, cfg, ph9, seen)                  #   keeps ONE object per subject and relation (inf_nm_update_first); read the store's evidence record
+                else:
+                  for e in [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]:
                     byk8.setdefault((ph9[str(e['r']).strip()], e['A']), []).append((vo8.get(int(e['d']), -1), e['ans']))
                 EDJ8 = model.__dict__.setdefault('_jm_edited', {}); new8 = 0; cur8 = {}
                 for (k_, a_), L_ in byk8.items():
@@ -286,6 +289,9 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                 det8 = {a_ for (c_, a_) in EDJ8}
                 srcl9_ed = f" | EDITS DETECTED from the reader's records: {len(EDJ8)} subjects ({new8} new this sleep), of them truly moved {len(det8 & MVt)} (precision {len(det8 & MVt) / max(1, len(det8)):.2f}); truly moved and read {len(MVt)}, detected {len(det8 & MVt) / max(1, len(MVt)):.2f}"
                 model.__dict__['_jm_edl'] = srcl9_ed
+                if int(getattr(cfg, 'inf_jmem_delta', 0)):                        # 28 Nov kra62g DELTA-RULE EDIT MEMORY (readout; local test 11m on a byte stream: edits
+                    try: _delta_edit_readout(model, cfg, vis, W, seen, rw, byk8)  #   new 0.96 / stale 0.03, written once in stream order)
+                    except Exception as e8: print(f"  [DELTA-RULE EDIT MEMORY | visit {vis + 1}] unavailable ({type(e8).__name__}: {str(e8)[:160]})", flush=True)
             par9, mgr9 = W.get('parent', {}), W.get('mgr', {}); MV9 = {l_: mv_ for l_, mv_ in (W.get('moves') or {}).items() if mv_['d2'] in seen}
             tru9 = lambda k_, a_: (MV9[a_]['new'] if a_ in MV9 and MV9[a_]['kind'] == k_ else (par9 if k_ == 'parent' else mgr9).get(a_))
             srcl9 = f" | SOURCE: the READER's records ({SRC9}): {len(rwp)} premises, right by the rule world's current truth {np.mean([tru9(k_, a_) == b_ for (_, _, k_, a_, b_) in rwp]) if rwp else float('nan'):.2f}, planted premises of the domains seen {sum(1 for x in W.get('planted', []) if x[2] in ('parent', 'mgr') and (not seen or int(x[0]) in seen))}"
@@ -423,3 +429,68 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                 mq_jmem_readout(JQ if JQ is not None else J, cfg, vis, seen, {} if JQ is not None else {'taught real-text chains': t2, 'planted composites (write gate)': thw})   # kra62c: its own memory's gates are its own
     except Exception as e:
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] unavailable ({type(e).__name__}: {str(e)[:160]})", flush=True)
+
+
+def _dkey(s, D=8192):
+    """sparse unit key of a string: hashed byte 3- to 5-grams, L2-normalised (strings that share n-grams share features, so writes interfere)"""
+    import zlib
+    b = (' ' + s + ' ').encode('latin-1', 'replace'); ix = {}
+    for n in (3, 4, 5):
+        for i in range(len(b) - n + 1): h = zlib.crc32(b[i:i + n]) % D; ix[h] = ix.get(h, 0.0) + 1.0
+    h = zlib.crc32(b'\x00' + b) % D; ix[h] = ix.get(h, 0.0) + 2.0 * max(1.0, float(np.sqrt(sum(v * v for v in ix.values()))))   # the whole string: dominant, so
+    k = np.array(sorted(ix)); v = np.array([ix[j] for j in k], dtype=np.float32); return k, v / max(1e-9, float(np.linalg.norm(v)))
+
+
+def _delta_edit_readout(model, cfg, vis, W, seen, rw, byk8):
+    """28 Nov kra62g (inf_jmem_delta; READOUT ONLY): a delta-rule associative memory (Widrow-Hoff / DeltaNet: W += beta (v - W k) k^T) written ONCE, in
+    reading order, with every (subject, relation) -> object record of the rule world that the store holds (old and new values both; the order is the
+    first sighting). A later write to the same key overwrites the earlier answer; similar keys interfere. Read: one hop argmax W k, two hops through
+    its own bridge. Scored on the true moves read (edits): NEW vs OLD (stale) composite, and one hop on subjects never moved (control)."""
+    t0 = time.time(); D = 8192
+    wr = sorted((o, k, A, v) for (k, A), L in byk8.items() for (o, v) in L)
+    if not wr: print(f"  [DELTA-RULE EDIT MEMORY | visit {vis + 1}] no rule-world records yet", flush=True); return
+    names = sorted({v for _, _, _, v in wr} | {A for _, _, A, _ in wr}); NI = {n: i for i, n in enumerate(names)}
+    MM = {k: np.zeros((len(names), D), dtype=np.float32) for k in ('parent', 'mgr')}; KC = {}   # one memory per relation, keyed by the subject's bytes
+    def key(A):
+        if A not in KC: KC[A] = _dkey(A, D)
+        return KC[A]
+    for _, k, A, v in wr:
+        M = MM[k]; ix, kv = key(A); pred = M[:, ix] @ kv; tgt = np.zeros(len(names), dtype=np.float32); tgt[NI[v]] = 1.0
+        M[:, ix] += np.outer(tgt - pred, kv)
+    def hop(k, A):
+        if A not in NI and A not in KC and not A: return None
+        ix, kv = key(A); s_ = MM[k][:, ix] @ kv; j = int(np.argmax(s_)); return names[j] if s_[j] > 0.2 else None
+    MV = {l: mv for l, mv in (W.get('moves') or {}).items() if mv['d2'] in seen and l in NI}
+    nw1, st1, nw2, st2 = [], [], [], []
+    for l, mv in MV.items():
+        k = mv['kind']; b = hop(k, l); nw1.append(b == mv['new']); st1.append(b == mv['old'])
+        c = hop(k, b) if b else None; nw2.append(c is not None and c == mv.get('C_new')); st2.append(c is not None and c == mv.get('C_old'))
+    ctl = []; par, mgr = W.get('parent', {}), W.get('mgr', {})
+    for (k, A) in list(byk8)[:2000]:
+        if A in (W.get('moves') or {}): continue
+        t = (par if k == 'parent' else mgr).get(A)
+        if t is not None: ctl.append(hop(k, A) == t)
+    f = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
+    print(f"  [DELTA-RULE EDIT MEMORY | visit {vis + 1}] READOUT: a delta-rule memory (W += (v - W k) k^T, one per relation, keys = the subject's hashed byte n-grams + the whole string, {D} features) written once in reading order "
+          f"with the {len(wr)} rule-world records the store holds ({len(byk8)} subject-relation keys, old and new values both) || EDITS READ (n {len(MV)}): ONE HOP NEW parent {f(nw1)}, "
+          f"OLD (stale) {f(st1)} | TWO HOPS NEW composite {f(nw2)}, OLD (stale) {f(st2)} || NOT MOVED (control) one hop right {f(ctl)} (n {len(ctl)}) ({time.time() - t0:.0f}s)", flush=True)
+
+
+def _store_records(model, cfg, ph9, seen):
+    """28 Nov kra62g: every rule-world (relation, subject) -> [(first sighting, object)] in the store's evidence record (S_['rel']), which keeps every
+    object read, where the reader's record list keeps only the newest introduced (inf_nm_update_first). An object counts once seen inf_nm_min_seen
+    (2) times; its domain is that of its first sighting; the object introduced most recently is current."""
+    from platypus.inference.sentences import _inf_store
+    from platypus.inference.namemem import _nm_isname
+    S8 = _inf_store(model); it8 = S8.get('it', []); mins8 = max(1, int(getattr(cfg, 'inf_nm_min_seen', 2) or 2)); out = {}
+    for (a8, r8), objs8 in S8.get('rel', {}).items():
+        r8s = bytes(r8).decode('latin-1', 'replace').strip()
+        if r8s not in ph9: continue
+        A8 = bytes(a8).decode('latin-1', 'replace')
+        for o8, ix8 in objs8.items():
+            o8 = bytes(o8); ix8 = sorted(set(x for x in ix8 if x < len(it8)))
+            if not _nm_isname(o8) or len(ix8) < mins8: continue
+            d8 = int(it8[ix8[0]].get('d', -1))
+            if seen and d8 not in seen: continue
+            out.setdefault((ph9[r8s], A8), []).append((ix8[0], o8.decode('latin-1', 'replace')))
+    return out
