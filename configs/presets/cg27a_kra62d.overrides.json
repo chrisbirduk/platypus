@@ -395,5 +395,7 @@
  "inf_mquake_jsep": 1,
  "_inf_mquake_jsep": "kra62c: the MQuAKE facts in their own JEPA memory instance, 3000 steps a sleep; the rule-world memory sees exactly kra61's premises (kra62b, 4200 steps shared: rule-world one hop 0.92 -> 0.51, edit coverage 0.73 -> 0.05 at visit 8)",
  "inf_jmem_src": "reader_recent",
- "_inf_jmem_src": "kra62d ABLATION (27 Nov, after an external code read): the JEPA memory learns the rule world from the READER's records (most recent per subject and relation), not the harness's planted table, and no harness edit swap (inf_jmem_moves 0): the honest edits-through-chains number"
+ "_inf_jmem_src": "kra62d ABLATION (27 Nov, after an external code read): the JEPA memory learns the rule world from the READER's records (most recent per subject and relation), not the harness's planted table, and no harness edit swap (inf_jmem_moves 0): the honest edits-through-chains number",
+ "inf_jmem_min_items": 100,
+ "_inf_jmem_min_items": "kra62d: no JEPA-memory training until 100 premise sentences are read (local: 3,000 steps on visit 2's 17 real-text premises left it at 0.07 recall of the reader's 224 at visit 3; fresh on the same items 0.50)"
 }
