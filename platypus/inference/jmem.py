@@ -304,6 +304,10 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
         if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and (DG9 or (not int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)))):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
             cur9 = int(list((model.__dict__.get('_t2s') or {0: 0}).keys())[-1])  #   OWN recall, not the read text (jmem_sim: D0 0.98 / D1 0.99 / D2 1.00 after 3 sleeps)
             old9 = [x for x in rwp if int(x[0]) != cur9]; new9 = [x for x in rwp if int(x[0]) == cur9]; dr9 = []; ok9 = []; kt9 = []
+            if SRC9 != 'planted' and int(getattr(cfg, 'inf_jmem_dream_seen', 0)):   # 28 Nov kra62f: dream only premises the memory has ALREADY trained on; a premise first
+                TR9 = model.__dict__.setdefault('_jm_trained', set())               #   seen now (the reader's records arrive a sleep late, so an edit's new value comes from a domain
+                new9 = new9 + [x for x in old9 if (x[2], x[3], x[4]) not in TR9]    #   no longer current) is trained from its read text, not replaced by a dream of the memory's
+                old9 = [x for x in old9 if (x[2], x[3], x[4]) in TR9]              #   OLD recall (kra62d GPU visits 3-5: the memory's gated answers stale 0.30-0.67)
             for k in ('parent', 'mgr'):
                 Lk = [x for x in old9 if x[2] == k]
                 if Lk:
@@ -355,6 +359,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] {len(items)} premise sentences read so far ({len(rwp)} of the rule world), below inf_jmem_min_items {MIN9} / inf_jmem_min_rule {MINR9}: not trained this sleep", flush=True)
         else:
             ls = J.train(items, int(getattr(cfg, 'inf_jmem_steps', 1500)))
+            if SRC9 != 'planted': model.__dict__.setdefault('_jm_trained', set()).update((x[2], x[3], x[4]) for x in rwp)
         # RULE WORLD: one hop on read premises, two hops on planted / held-back / pure composites, the gate on never-read families
         par, mgr = W.get('parent', {}), W.get('mgr', {}); up = {'grand': (par, 'parent'), 'skip': (mgr, 'mgr')}
         s1 = rwp[:300]

@@ -407,5 +407,7 @@
  "inf_jmem_edit_detect": 1,
  "inf_mquake_nl": 1,
  "inf_tgrad_reps": 1,
- "_kra62f": "kra62f = kra62e + EDIT DETECTION FROM READING (inf_jmem_edit_detect: a subject the reader recorded with two answers is edited, newest current; feeds the edit override and retraction) + MQuAKE WITHOUT THE HARNESS (inf_mquake_nl: cloze sentences, old values kept, hops by cloze wording) + the temporal gradient split by replay count (inf_tgrad_reps, readout)"
+ "_kra62f": "kra62f = kra62e + EDIT DETECTION FROM READING (inf_jmem_edit_detect: a subject the reader recorded with two answers is edited, newest current; feeds the edit override and retraction) + MQuAKE WITHOUT THE HARNESS (inf_mquake_nl: cloze sentences, old values kept, hops by cloze wording) + the temporal gradient split by replay count (inf_tgrad_reps, readout)",
+ "inf_jmem_dream_seen": 1,
+ "_inf_jmem_dream_seen": "kra62f: dream only premises already trained; new reader records (an edit's new value, recorded a sleep late) are trained from their text (kra62d GPU: memory's gated answers stale 0.30-0.67 at visits 3-5)"
 }
