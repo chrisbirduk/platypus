@@ -327,10 +327,11 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             import pickle, os as _os
             _dp = _os.environ.get('PLATYPUS_JMEM_DUMP', '/tmp/jmem_items'); _os.makedirs(_dp, exist_ok=True)
             pickle.dump({'items': items, 'steps': int(getattr(cfg, 'inf_jmem_steps', 1500)), 'J_steps_before': J.steps, 'n_keys_before': len(J.keys), 'cfg': {k_: getattr(cfg, k_) for k_ in dir(cfg) if k_.startswith('inf_jmem')}}, open(f"{_dp}/visit{vis + 1}.pkl", 'wb'))
-        MIN9 = int(getattr(cfg, 'inf_jmem_min_items', 0))                    # 28 Nov kra62d: no training until enough premises are read (local replay: 3,000 steps on the
-        if len(items) < MIN9:                                                 #   17 real-text premises of visit 2, before the reader's first rule-world records, left the
+        MIN9 = int(getattr(cfg, 'inf_jmem_min_items', 0)); MINR9 = int(getattr(cfg, 'inf_jmem_min_rule', 0))   # kra62e: also wait for MINR9 RULE-WORLD premises (kra62d GPU
+        if len(items) < MIN9 or len(rwp) < MINR9:                             #   visit 2: 589 real-text premises and none from the reader yet). 28 Nov kra62d: no training until enough premises are read (local replay: 3,000 steps on the
+                                                                              #   17 real-text premises of visit 2, before the reader's first rule-world records, left the
             ls = float('nan')                                                 #   memory recalling 0.07 of 224 premises at visit 3; the same items fresh: 0.50)
-            print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] {len(items)} premise sentences read so far, below inf_jmem_min_items {MIN9}: not trained this sleep", flush=True)
+            print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] {len(items)} premise sentences read so far ({len(rwp)} of the rule world), below inf_jmem_min_items {MIN9} / inf_jmem_min_rule {MINR9}: not trained this sleep", flush=True)
         else:
             ls = J.train(items, int(getattr(cfg, 'inf_jmem_steps', 1500)))
         # RULE WORLD: one hop on read premises, two hops on planted / held-back / pure composites, the gate on never-read families

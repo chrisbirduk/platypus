@@ -401,5 +401,7 @@
  "inf_jmem_recency": 3,
  "_inf_jmem_recency": "kra62e: premises read in later-visited domains get up to 3 extra replay copies (weight 1 + 3 x visit rank / last rank)",
  "inf_wordfree": 1,
- "_inf_wordfree": "kra62e READOUT (un-parked from local tests 12d-12g): units found with no word boundary in the stored real sentences (edge units + MDL lexicon), scored each sleep"
+ "_inf_wordfree": "kra62e READOUT (un-parked from local tests 12d-12g): units found with no word boundary in the stored real sentences (edge units + MDL lexicon), scored each sleep",
+ "inf_jmem_min_rule": 50,
+ "_inf_jmem_min_rule": "kra62e: the memory also waits for 50 rule-world premises from the reader (kra62d GPU visit 2 trained on 589 real-text premises alone, the pattern that crippled the local run)"
 }
