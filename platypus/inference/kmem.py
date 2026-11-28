@@ -1429,7 +1429,8 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                                 if (r3, A) in SSWq: return SSWq[(r3, A)][0], 'S'
                                 if (r3, A) in JWq: return JWq[(r3, A)][0], 'M'
                                 return None, None
-                            gq = {'read': [], 'readok': [], 'ctl': []}
+                            gq = {'read': [], 'readok': [], 'ctl': [], 'of': [], 'nf': []}
+                            voq = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}   # 28 Nov kra62h: the visit order of the domains
                             for l, mv9 in MV.items():
                                 r3 = ph['grand'] if mv9['kind'] == 'parent' else ph['skip']
                                 if int(mv9['d']) not in seen: continue
@@ -1437,12 +1438,15 @@ def kma_rule_compose(model, cfg, K, S_slot, fs, vis):
                                     ja_ is not None and ja_[1] and ja_[0] == mv9['C_new'], ja_ is not None and ja_[1] and ja_[0] == mv9['C_old'])
                                 gq['read' if mv9['d2'] in seen else 'ctl'].append(row)
                                 if mv9['d2'] in seen and fd9.get(mv9['new']) in seen: gq['readok'].append(row)
+                                if mv9['d2'] in seen:                           # 28 Nov kra62h ORDER SPLIT: the new parent is planted in a random other domain, read before
+                                    gq['of' if voq.get(int(mv9['d']), -1) < voq.get(int(mv9['d2']), -1) else 'nf'].append(row)   #   OR after the old (the old fact is never withdrawn): only
                             def fq(L, j): return f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
                             def sq(L): c9 = collections.Counter(t[3] for t in L if t[3]); return ', '.join(f"{ {'J': 'route J', 'S': 'step', 'M': 'JEPA'}[k]} {v}" for k, v in sorted(c9.items())) or 'none'
                             print(f"  [MQuAKE-STYLE EDIT PROPAGATION | visit {vis + 1}] two-hop answers through an EDITED premise (moved leaf; after the edit is read the truth is the NEW "
                                   f"composite); COMBINED = route J write, else step write, else JEPA write || "
                                   + " || ".join(f"{nm} (n {len(L)}): COMBINED NEW {fq(L, 0)}, OLD (stale) {fq(L, 1)}, none {fq(L, 2)} (answered by {sq(L)}) | JEPA memory gated NEW {fq(L, 4)}, OLD {fq(L, 5)}"
-                                                for nm, L in (('EDIT READ', gq['read']), ('EDIT READ AND THE NEW FAMILY READ', gq['readok']), ('EDIT NOT YET READ (control: OLD is right)', gq['ctl']))), flush=True)
+                                                for nm, L in (('EDIT READ', gq['read']), ('EDIT READ AND THE NEW FAMILY READ', gq['readok']), ('EDIT NOT YET READ (control: OLD is right)', gq['ctl']),
+                                                                ('ORDER SPLIT - OLD READ FIRST, THEN THE NEW (a true edit)', gq['of']), ('NEW READ FIRST, THE OLD RESTATED LATER (harness truth NEW; recency says OLD)', gq['nf']))), flush=True)
                             nr = sum(1 for v_ in hasp.values() if v_)           # FACTS KNOWN PER FACT READ: premises read and recorded (each (subject, relation) once)
                                                                                 #   vs composites the model now holds (route J, step and JEPA writes), right by the rule world's truth
                             cs9 = {(q, a): c for (q, a, c) in RW}; cs9.update({k: v[0] for k, v in SSWq.items() if k not in cs9}); cs9.update({k: v[0] for k, v in JWq.items() if k not in cs9})

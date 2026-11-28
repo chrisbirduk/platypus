@@ -196,10 +196,13 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
         RW.pop((key[0], A, C0), None); WRm.pop((key[0], A, C0), None); BR.pop((key[0], A, C0), None); JW.pop(key, None); OVR.pop(key, None)
         tru = tr7(a[3]) if a else None; (rc if drop == 'contra' else rt).append(C0 == tru)
     RD = model.__dict__.get('_jm_read') or {}; eo_blk = collections.Counter(); eo_ngc = [0]
+    DEL9 = int(getattr(cfg, 'inf_jmem_edit_delta', 0)); DA9 = model.__dict__.get('_jm_delta_ans') or {}; eo_del = [0]
     for key, (c, b, g, x) in ans.items():                                     # kra57 EDIT OVERRIDE: where the memory REPLACED the subject's first-hop premise (an edit
         if key not in EDJ: continue                                           #   was read; gate = the looser quantile gate thp (at th only 1 of ~10 NEW passed)
         r9 = 'parent' if x[2] == 'grand' else 'mgr'
-        if not np.isfinite(th): eo_blk['precision gate closed'] += 1; continue  # 25 Nov GPU v2, local v2: before th opens thp is ~0.01; the untrained memory wrote 1 and 6 overrides, all wrong
+        dl9 = bool(DEL9) and key in DA9                                       # 28 Nov kra62h (inf_jmem_edit_delta): for an EDITED subject the two hops come from the
+        if dl9: b, c = DA9[key]; g = float('inf'); eo_del[0] += 1             #   delta-rule memory (it overwrites on each new value; the JEPA memory kept old parents:
+        if not dl9 and not np.isfinite(th): eo_blk['precision gate closed'] += 1; continue   #   kra62f visit 4 gated stale 0.30); still grounded in both read premises below  # 25 Nov GPU v2, local v2: before th opens thp is ~0.01; the untrained memory wrote 1 and 6 overrides, all wrong
         if not c or c in (x[3], b): eo_blk['no answer'] += 1; continue
         if g < thp and not int(getattr(cfg, 'inf_jmem_edit_nogate', 0)): eo_blk['below the gate'] += 1; continue   # kra60: grounded answers need no gate (both hops
         if RD.get((r9, x[3])) != b: eo_blk['first hop is not the edited premise it read'] += 1; continue   # kra57 v3 GROUNDING (25 Nov GPU visit 3: 4 overrides, all wrong;
@@ -245,7 +248,7 @@ def _jmem_answer(model, cfg, vis, W, seen, rw, J, th, up, pure):
     print(f"  [JEPA MEMORY WRITES | visit {vis + 1}] MODEL CHANGE: its gated two-hop answers written where route J and step by step abstained: NEW {nw} (right {pr9(okn)})" + (f", of them GROUNDED in premises it read, without the trunk's agreement (kra59) {len(gw_ok)} (right {pr9(gw_ok)})" if GW else "") + " | "
           f"earlier JEPA writes: KEPT {len(kp)} (right {pr9(kp)}), RETRACTED on re-derivation {len(rt)} (were right {pr9(rt)}), RETRACTED on route J's contradiction {len(rc)} (were right {pr9(rc)}) | "
           f"{len(JW)} JEPA writes now" + (f" | held by hysteresis {model.__dict__.get('_jw_held', [0])[0]} in all" if int(getattr(cfg, 'inf_jmem_write_hyst', 0)) else "") + (" | written only where the trunk's step by step agrees" if int(getattr(cfg, 'inf_jmem_write_agree', 0)) else "") + (f" || EDIT OVERRIDE (kra57, gate t = {thp if np.isfinite(th) else float('inf'):.3f}): {len(EDJ)} (composite, subject) with an edited first-hop premise; written without the trunk's agreement NEW {len(eo_new)} (right {pr9(eo_new)}) | "
-                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {sum(v_ is not None for v_ in OVR.values())} override writes now" + (f", {eo_ngc[0]} of the new ones below the gate, grounded (kra60)" if int(getattr(cfg, 'inf_jmem_edit_nogate', 0)) else "")
+                                                                  f"contradicting route J writes RETRACTED {len(eo_rj)} (were right {pr9(eo_rj)}) | step writes RETRACTED {len(eo_ss)} (were right {pr9(eo_ss)}) | {sum(v_ is not None for v_ in OVR.values())} override writes now" + (f", hops from the delta-rule memory for {eo_del[0]} edited subjects (kra62h)" if DEL9 else "") + (f", {eo_ngc[0]} of the new ones below the gate, grounded (kra60)" if int(getattr(cfg, 'inf_jmem_edit_nogate', 0)) else "")
                                                                   + (" | not written: " + ', '.join(f"{k_} {v_}" for k_, v_ in eo_blk.most_common()) if eo_blk else "")
                                                                   + (f" || RETRACT ON EDIT (kra58): {len(er_rt)} written composites of edited subjects RETRACTED (were right {pr9(er_rt)}), {er_ab} newly abstaining, {sum(v_ is None for v_ in OVR.values())} abstaining now" + (f" | route J composites through the read edit KEPT (kra61) {len(er_kp)} (right {pr9(er_kp)})" if H1R9 else "") if ER else "") if EO else ""), flush=True)
 
@@ -287,7 +290,11 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                 model.__dict__['_jm_cur'] = cur8
                 MVt = {l_ for l_, mv_ in (W.get('moves') or {}).items() if mv_['d2'] in seen}
                 det8 = {a_ for (c_, a_) in EDJ8}
-                srcl9_ed = f" | EDITS DETECTED from the reader's records: {len(EDJ8)} subjects ({new8} new this sleep), of them truly moved {len(det8 & MVt)} (precision {len(det8 & MVt) / max(1, len(det8)):.2f}); truly moved and read {len(MVt)}, detected {len(det8 & MVt) / max(1, len(MVt)):.2f}"
+                MVall8 = W.get('moves') or {}; MVb8 = {l_ for l_ in MVt if int(MVall8[l_]['d']) in seen}   # kra62h: moves whose OLD and NEW facts are both read, by order
+                MVof8 = {l_ for l_ in MVb8 if vo8.get(int(MVall8[l_]['d']), -1) < vo8.get(int(MVall8[l_]['d2']), -1)}; MVnf8 = MVb8 - MVof8
+                cur_ok8 = lambda S_: f"{np.mean([cur8.get((MVall8[l_]['kind'], l_)) == MVall8[l_]['new'] for l_ in S_]):.2f}" if S_ else 'n/a'
+                srcl9_ed = (f" | EDITS DETECTED from the reader's records: {len(EDJ8)} subjects ({new8} new this sleep), of them truly moved {len(det8 & MVt)} (precision {len(det8 & MVt) / max(1, len(det8)):.2f}); truly moved and read {len(MVt)}, detected {len(det8 & MVt) / max(1, len(MVt)):.2f}"
+                            + f" | both facts read {len(MVb8)}: OLD READ FIRST {len(MVof8)} detected {len(det8 & MVof8) / max(1, len(MVof8)):.2f}, current = NEW {cur_ok8(MVof8)} | NEW READ FIRST {len(MVnf8)} detected {len(det8 & MVnf8) / max(1, len(MVnf8)):.2f}, current = NEW {cur_ok8(MVnf8)}")
                 model.__dict__['_jm_edl'] = srcl9_ed
                 if int(getattr(cfg, 'inf_jmem_delta', 0)):                        # 28 Nov kra62g DELTA-RULE EDIT MEMORY (readout; local test 11m on a byte stream: edits
                     try: _delta_edit_readout(model, cfg, vis, W, seen, rw, byk8)  #   new 0.96 / stale 0.03, written once in stream order)
@@ -461,10 +468,20 @@ def _delta_edit_readout(model, cfg, vis, W, seen, rw, byk8):
         if A not in NI and A not in KC and not A: return None
         ix, kv = key(A); s_ = MM[k][:, ix] @ kv; j = int(np.argmax(s_)); return names[j] if s_[j] > 0.2 else None
     MV = {l: mv for l, mv in (W.get('moves') or {}).items() if mv['d2'] in seen and l in NI}
-    nw1, st1, nw2, st2 = [], [], [], []
+    vo = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}
+    nw1, st1, nw2, st2 = [], [], [], []; spl = {'of': [], 'nf': [], 'no': []}
     for l, mv in MV.items():
         k = mv['kind']; b = hop(k, l); nw1.append(b == mv['new']); st1.append(b == mv['old'])
         c = hop(k, b) if b else None; nw2.append(c is not None and c == mv.get('C_new')); st2.append(c is not None and c == mv.get('C_old'))
+        o_ = 'no' if int(mv['d']) not in seen else ('of' if vo.get(int(mv['d']), -1) < vo.get(int(mv['d2']), -1) else 'nf')   # kra62h order split
+        spl[o_].append((b == mv['new'], b == mv['old'], c is not None and c == mv.get('C_new'), c is not None and c == mv.get('C_old')))
+    DA = model.__dict__.setdefault('_jm_delta_ans', {}); DA.clear()             # kra62h (inf_jmem_edit_delta): its two hops for every subject, for the edit override
+    for (k, A) in byk8:
+        b = hop(k, A); c = hop(k, b) if b else None
+        if b and c: DA[(rw['grand' if k == 'parent' else 'skip'], A)] = (b, c)
+    fs_ = lambda L, j: f"{np.mean([t[j] for t in L]):.2f}" if L else 'n/a'
+    spl_t = ' || ORDER SPLIT: ' + ' | '.join(f"{nm} (n {len(L)}): one hop NEW {fs_(L, 0)} / OLD {fs_(L, 1)}, two hops NEW {fs_(L, 2)} / OLD {fs_(L, 3)}" for nm, L in
+                                             (('OLD READ FIRST (a true edit)', spl['of']), ('NEW READ FIRST, old restated later', spl['nf']), ('old not yet read', spl['no'])))
     ctl = []; par, mgr = W.get('parent', {}), W.get('mgr', {})
     for (k, A) in list(byk8)[:2000]:
         if A in (W.get('moves') or {}): continue
@@ -473,7 +490,7 @@ def _delta_edit_readout(model, cfg, vis, W, seen, rw, byk8):
     f = lambda L: f"{np.mean(L):.2f}" if L else 'n/a'
     print(f"  [DELTA-RULE EDIT MEMORY | visit {vis + 1}] READOUT: a delta-rule memory (W += (v - W k) k^T, one per relation, keys = the subject's hashed byte n-grams + the whole string, {D} features) written once in reading order "
           f"with the {len(wr)} rule-world records the store holds ({len(byk8)} subject-relation keys, old and new values both) || EDITS READ (n {len(MV)}): ONE HOP NEW parent {f(nw1)}, "
-          f"OLD (stale) {f(st1)} | TWO HOPS NEW composite {f(nw2)}, OLD (stale) {f(st2)} || NOT MOVED (control) one hop right {f(ctl)} (n {len(ctl)}) ({time.time() - t0:.0f}s)", flush=True)
+          f"OLD (stale) {f(st1)} | TWO HOPS NEW composite {f(nw2)}, OLD (stale) {f(st2)} || NOT MOVED (control) one hop right {f(ctl)} (n {len(ctl)})" + spl_t + f" ({time.time() - t0:.0f}s)", flush=True)
 
 
 def _store_records(model, cfg, ph9, seen):

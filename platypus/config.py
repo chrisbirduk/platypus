@@ -846,6 +846,7 @@ class Config:
     inf_jmem_dream_seen=0           #   28 Nov kra62f: with the reader's records, dream only premises the memory has already trained on (a new record - an edit's new value - is trained from its text)
     inf_jmem_edit_detect=0          #   28 Nov kra62f: edits detected from the reader's records (two answers for one subject and relation; the newest current) feed the edit override and retraction; 2 (kra62g fix) = from the store's evidence record, every object read, the newest introduced current
     inf_jmem_delta=0                #   28 Nov kra62g: a delta-rule edit memory (readout only) written once in reading order with the store's rule-world records
+    inf_jmem_edit_delta=0           #   28 Nov kra62h: for EDITED subjects the edit override takes its two hops from the delta-rule memory (needs inf_jmem_delta), still grounded in the read premises
     inf_mquake_nl=0                 #   28 Nov kra62f: the MQuAKE memory learns the cloze sentences read with old values KEPT (recency-weighted) and is asked hop by hop by cloze wording
     inf_wordfree=0                  #   28 Nov kra62e WORD-FREE READOUT (inference/wordfree.py; readout only): each sleep, units found in the stored sentences with the spaces removed
                                     #     (edge units + an MDL lexicon), scored against the removed spaces and runs of capitalised words
