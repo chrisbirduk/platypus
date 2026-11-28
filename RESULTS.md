@@ -6760,7 +6760,44 @@ Recall and consolidation are reported separately, as for seed 5.
 - Unchanged: weights 1 / 2 / 3 hops 0.93 / 0.55 / 0.14, store 0.98 / 0.95 / 0.35 at visit 10; facts known per fact read 1.27; route D two-step 0.82 (kra61: 0.82); the trunk's gate at visit 10 right when answered 0.88, never-read answered 0.06.
 - **Next: kra62b** = kra62 with the JEPA memory's steps scaled to its larger load (inf_jmem_steps 4200, about kra61's steps per premise), on seed 4: the second seed for MQuAKE, the safety comparison against kra61 seed 4 (1.796) and whether the rule-world edit coverage comes back.
 
-## kra62c GPU (seed 4, preset cg27a_kra62c_pass1 = kra62 + the MQuAKE facts in their OWN JEPA memory instance; 27 Nov 16:43-22:10, full run, clean end) - THE PLAN AT 100%
+## 28 November: the JEPA memory fed by the reader (kra62d, kra62e, kra62f) - GOAL 7 WITHOUT THE HARNESS: STALE; FIXES BUILT
+
+The response to the Known limits under kra62c below. Recall (the memory answering) and consolidation (the trunk answering alone) are reported separately; everything here is recall through the memory route unless stated.
+
+**kra62d GPU** (seed 4, preset cg27a_kra62d_pass1 = kra62c + `inf_jmem_src reader_recent` - the rule-world JEPA memory trained on the reader's recorded parent / manager facts, the newest per subject and relation by visit order, instead of `W['planted']` - + `inf_jmem_moves 0` (no harness edit swap) + `inf_jmem_min_items 100`; 28 Nov from 09:14, log read to visit 7)
+
+| visit | reader's rule-world records (right) | memory trained on | one hop on read premises | edit read: COMBINED new / stale (n) | answered by route J | memory gated new / stale | control, edit not yet read: stale (right) |
+|---|---|---|---|---|---|---|---|
+| 2 | 0 | 589 (real-text chains only) | - | 0.00 / 0.67 (3) | 0 | 0.00 / 0.00 | 0.92 |
+| 3 | 203 (0.98) | 1,023 | 0.97 | 0.00 / 0.83 (6) | 3 | 0.00 / 0.67 | 1.00 |
+| 4 | 323 (0.98) | 1,150, 304 dreamed (right 0.64) | 0.64 | 0.00 / 0.80 (10) | 6 | 0.00 / 0.30 | 1.00 |
+| 5 | 425 (0.97) | 1,263 | 0.93 | 0.06 / 0.76 (17) | 12 | 0.00 / 0.35 | 1.00 |
+| 6 | 500 (0.97) | 1,353, 473 dreamed (right 0.84) | 0.80 | 0.03 / 0.55 (29) | 14 | 0.00 / 0.31 | 1.00 |
+| 7 | 636 (0.96) | 1,491 | 0.89 | 0.05 / 0.56 (43) | 21 | 0.00 / 0.37 | 0.69 |
+
+- With the edit read and the new parent's family read (visit 7, n 32): new 0.06, stale 0.53. kra62c, with the harness swap, gave 0.82 / 0.00 at visit 10.
+- The memory's own two hops at visit 7: planted 153 bridge 0.62, C 0.56, gated right 0.80; held back 159 gated right 0.91; pure families 224 gated right 0.89. It learns the read premises; it does not resolve edits.
+- Two causes, found in the code: (1) with `reader_recent` the newest record wins, but nothing decides between an old and a new value when both are read (no edit detection); (2) the reader's records arrive a sleep late, so an edit's new value comes from a domain that is no longer current and is replayed as a dream of the memory's OWN recall - its old value - instead of from the text.
+- MQuAKE in this run still uses the gold edits (`mq_jmem_items`): 0.91 new / 0.00 stale at visit 7 (n 76); the trunk's own hops 0.04 new / 0.07 stale.
+- Local check (seed 4): memory recall 0.07 at visit 3. An offline replay of the exact items reproduced 0.07; the same items trained fresh gave 0.50: 3,000 steps on 17 real-text premises at visit 2, before any rule-world record, had set the memory badly. Hence `inf_jmem_min_items` and (kra62e) `inf_jmem_min_rule`.
+
+**kra62e GPU** (seed 4, preset cg27a_kra62e_pass1 = kra62d with `inf_jmem_src reader` - every record kept, old and new values - + `inf_jmem_recency 3` - a premise read in a later-visited domain replayed up to 4x - + `inf_jmem_min_rule 50` + the word-free readout `inf_wordfree 1`; stopped by the author after visit 3)
+- The memory waited at visit 2 (589 premises, 0 of the rule world) and trained at visit 3 on 1,195 (203 reader records, right 0.98). No edit result before the stop.
+- The word-free readout failed at visits 1-2 ('bytes' object has no attribute 'encode': the store keeps sentences as bytes). Fixed (decode first) in kra62e and kra62f.
+
+**The word-free readout** (`platypus/inference/wordfree.py`, `inf_wordfree`, readout only; un-parked from the local units tests). Each sleep up to 6,000 stored real sentences are lower-cased and their spaces removed; units are found with no word boundary given: substrings seen 3+ times (up to 14 bytes); edge units (strings seen at the start and at the end of letter runs between non-letter bytes, 2+ times each); a lexicon by minimum description length (unigram costs, Viterbi cuts, a unit kept if it saves more than 4 bits a byte to spell it; 6 rounds). Scored against the removed spaces and, for names, runs of capitalised words (evaluation only), against a random cut at the same rate.
+- Local, 1,500 Wikipedia documents (gold NER names): boundary F1 0.760, names cut exactly as one unit 0.306.
+- On the model's own stored sentences, local five-domain harness (kra62f check, seed 4, about 6,000 sentences): F1 0.587 / 0.629 / 0.613 at visits 1 / 2 / 3; names whole 0.238 / 0.263 / 0.243.
+
+**kra62f** (built; preset cg27a_kra62f_pass1, seed 4 = kra62e + the following, each off by default)
+- `inf_jmem_edit_detect 1`: a subject and relation that the reader recorded with two different answers is EDITED; the answer from the most recently visited domain is current. Detected subjects feed the edit override and retraction (kra57 / kra58) in place of the harness's table; readout `EDITS DETECTED from the reader's records` (count, precision against the true moves, share of true moves detected).
+- `inf_jmem_dream_seen 1`: dreams only of premises the memory has already trained on; a premise first seen now is trained from its text.
+- `inf_mquake_nl 1`: MQuAKE with no harness - the cases' facts as cloze sentences, old and new values both kept (recency-weighted), each hop asked by its cloze wording, no relation IDs; readout `MQuAKE, NO HARNESS`.
+- `inf_tgrad_reps 1`: the temporal gradient split by replay count.
+- Local check (seed 4, 28 Nov 11:21-13:16, stopped by its time limit inside visit 3): no errors. Word-free as above. The reader had recorded 0 rule-world facts by visit 2 at the local scale (17 premises in all), so the memory did not train, no edit was detected (0 of 38 true moves read), and the dream fix did not run: these are first tested on the GPU (where the reader records 203 rule-world facts at visit 3). MQuAKE with no harness, visit 2: edit read new 0.50, stale 0.00 (n 2); control, edit not yet read, old 0.47 (n 49).
+- Next: the kra62f GPU run. What decides it: EDITS DETECTED precision and coverage from visit 3; edit-read new up and stale down against kra62d's 0.05 / 0.56; MQuAKE with no harness. Route J, which gives most stale answers in kra62d, is untouched by kra62f.
+
+## kra62c GPU (seed 4, preset cg27a_kra62c_pass1 = kra62 + the MQuAKE facts in their OWN JEPA memory instance; 27 Nov 16:43-22:10, full run, clean end) - THE PLAN'S READOUTS MET; EDITS AND MQuAKE WITH ORACLE PREMISES (see Known limits)
 
 Against kra61 seed 4 (same seed, no MQuAKE). Every rule-world readout matches kra61 seed 4 visit for visit (the rule-world JEPA memory sees exactly kra61's premises), MQuAKE improves sharply in its own memory, and safety is better than kra61.
 
@@ -6818,8 +6855,15 @@ New conclusions depend on the fast store (+0.42); older ones are held by the wei
 4. **Consolidation**: the temporal gradient above; graduation of private capacity to the shared trunk.
 5. **False memories**: stale answers 0.00-0.01 on edits; ungrounded hypotheses never written; retraction on edit and on contradiction.
 6. **Gated answers**: answers past calibrated gates right 0.88-0.98; abstention on never-read names.
-7. **Generalisation, including edits through chains**: rule-world edits 0.82-0.84 NEW / 0.00 stale at visit 10 on two seeds; real MQuAKE multi-hop edits 0.87 NEW / 0.00 stale through the memory route.
+7. **Generalisation, including edits through chains - QUALIFIED**: rule-world edits 0.82-0.84 NEW / 0.00 stale at visit 10 on two seeds; real MQuAKE multi-hop edits 0.87 NEW / 0.00 stale through the memory route - both with the harness supplying the JEPA memory's premises and current facts (Known limits below).
 - Not claimed: MQuAKE consolidated into the trunk; standard-benchmark comparability; scale beyond the 171M-parameter trunk.
+
+**Known limits (added 27 Nov 23:50, from an external read of the executable code on `kra62`)**
+- **The JEPA memory does not learn from what the system read.** `jmem_sleep` trains it on subject-relation-object sentences built from the harness's table of planted premises (`W['planted']`, parent and manager facts of the domains seen): in effect a perfect reader. The real-text chains it also trains on are the recorded premises of the real-text chain set, and the MQuAKE memory on the cases' facts.
+- **Its edit handling is done by the harness.** With `inf_jmem_moves` (kra56 on) the code removes the old premise and inserts the new one from the ground-truth edit table (`W['moves']`) once the edit's domain is seen; the memory relearns the slot but never decides which fact is current. Without the swap (kra55) it gave NEW 0.00, stale 0.39-0.57. At visit 10 of kra62c the JEPA memory gives 71 of the 74 combined edit answers; route J (the reader's most recent record, kra61) gives 1 and step-by-step writes 2. So the rule-world edit coverage above is mostly a memory handed the current facts.
+- **MQuAKE is not the published task.** The facts it learns are the dataset's, with the gold edits in place once read (`mq_jmem_items`), and each hop is asked by the dataset's relation ID (`hopw` with `rid`), not by the natural-language question.
+- **Other wording corrections:** the headline forgetting with the domain given (-0.001) is printed beside the label-free one (-0.012), which is the stricter figure; the `kra` presets train every weight with 12 question rows a step and an anchor KL (weight 2.0) on up to 96 stored real sentences of every old domain, so the validated build keeps some real text; 'wordings never trained on' share the test prompt's final 'name relation' bytes with the training prompts, and two of the six test paraphrases are also planted (the taught-versus-control gap stands, controls having the same exposure); EWC's Fisher is estimated from squared batch-mean gradients.
+- **Strict reading of the plan:** goals 1-6 met as measured; goal 7 met only with oracle premises and harness-applied edits - about 95% overall. Next: an ablation of kra62c with the swap off and the memory trained on the reader's recorded facts (the honest goal 7 number), then a memory that learns from the text read and resolves edits itself, and MQuAKE by its natural-language questions.
 
 ## kra62b GPU (seed 4, preset cg27a_kra62b_pass1 = kra62 + the JEPA memory at 4,200 steps a sleep; 27 Nov 12:06 to about 16:10, log ends inside visit 9) - FAILS: MORE STEPS ON THE SHARED MEMORY ERODE THE RULE WORLD
 

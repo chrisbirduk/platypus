@@ -139,6 +139,8 @@ def inf_sleep(model,cfg,t,ts,vals,olds_,S_slot):
         if int(getattr(cfg,'inf_cf_apply',0)): _cf_apply(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # cg26l closed-form consolidation (kept under its brake)
         if float(getattr(cfg,'inf_sup',0))>0: _sup_dreams(model,cfg,_inf_store(model),vals,olds_,t,ts,S_slot)   # MERGED-MEMORY DREAMS (inference.supmem, under their own brake)
         if int(getattr(cfg,'inf_jx',0)): _jx_sleep(model,cfg,_inf_store(model))     # cg26s JEPA INDEX (inference.jindex): readouts only, the trunk is not trained
+        if int(getattr(cfg,'inf_wordfree',0)):                                  # 28 Nov kra62e WORD-FREE READOUT (inference.wordfree; readout only): units found in the stored sentences with spaces removed
+            from platypus.inference.wordfree import wordfree_readout; wordfree_readout(model,cfg,_inf_store(model))
         if int(getattr(cfg,'inf_gauss_drift',0)):                               # 11 Nov GAUSSIAN DRIFT READOUT (inference.gaussdrift; readout only)
             try:
                 from platypus.inference.gaussdrift import gauss_drift
