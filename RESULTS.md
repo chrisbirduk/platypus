@@ -6760,7 +6760,7 @@ Recall and consolidation are reported separately, as for seed 5.
 - Unchanged: weights 1 / 2 / 3 hops 0.93 / 0.55 / 0.14, store 0.98 / 0.95 / 0.35 at visit 10; facts known per fact read 1.27; route D two-step 0.82 (kra61: 0.82); the trunk's gate at visit 10 right when answered 0.88, never-read answered 0.06.
 - **Next: kra62b** = kra62 with the JEPA memory's steps scaled to its larger load (inf_jmem_steps 4200, about kra61's steps per premise), on seed 4: the second seed for MQuAKE, the safety comparison against kra61 seed 4 (1.796) and whether the rule-world edit coverage comes back.
 
-## kra62c GPU (seed 4, preset cg27a_kra62c_pass1 = kra62 + the MQuAKE facts in their OWN JEPA memory instance; 27 Nov 16:43-22:10, full run, clean end) - THE PLAN AT 100%
+## kra62c GPU (seed 4, preset cg27a_kra62c_pass1 = kra62 + the MQuAKE facts in their OWN JEPA memory instance; 27 Nov 16:43-22:10, full run, clean end) - THE PLAN'S READOUTS MET; EDITS AND MQuAKE WITH ORACLE PREMISES (see Known limits)
 
 Against kra61 seed 4 (same seed, no MQuAKE). Every rule-world readout matches kra61 seed 4 visit for visit (the rule-world JEPA memory sees exactly kra61's premises), MQuAKE improves sharply in its own memory, and safety is better than kra61.
 
@@ -6818,8 +6818,15 @@ New conclusions depend on the fast store (+0.42); older ones are held by the wei
 4. **Consolidation**: the temporal gradient above; graduation of private capacity to the shared trunk.
 5. **False memories**: stale answers 0.00-0.01 on edits; ungrounded hypotheses never written; retraction on edit and on contradiction.
 6. **Gated answers**: answers past calibrated gates right 0.88-0.98; abstention on never-read names.
-7. **Generalisation, including edits through chains**: rule-world edits 0.82-0.84 NEW / 0.00 stale at visit 10 on two seeds; real MQuAKE multi-hop edits 0.87 NEW / 0.00 stale through the memory route.
+7. **Generalisation, including edits through chains - QUALIFIED**: rule-world edits 0.82-0.84 NEW / 0.00 stale at visit 10 on two seeds; real MQuAKE multi-hop edits 0.87 NEW / 0.00 stale through the memory route - both with the harness supplying the JEPA memory's premises and current facts (Known limits below).
 - Not claimed: MQuAKE consolidated into the trunk; standard-benchmark comparability; scale beyond the 171M-parameter trunk.
+
+**Known limits (added 27 Nov 23:50, from an external read of the executable code on `kra62`)**
+- **The JEPA memory does not learn from what the system read.** `jmem_sleep` trains it on subject-relation-object sentences built from the harness's table of planted premises (`W['planted']`, parent and manager facts of the domains seen): in effect a perfect reader. The real-text chains it also trains on are the recorded premises of the real-text chain set, and the MQuAKE memory on the cases' facts.
+- **Its edit handling is done by the harness.** With `inf_jmem_moves` (kra56 on) the code removes the old premise and inserts the new one from the ground-truth edit table (`W['moves']`) once the edit's domain is seen; the memory relearns the slot but never decides which fact is current. Without the swap (kra55) it gave NEW 0.00, stale 0.39-0.57. At visit 10 of kra62c the JEPA memory gives 71 of the 74 combined edit answers; route J (the reader's most recent record, kra61) gives 1 and step-by-step writes 2. So the rule-world edit coverage above is mostly a memory handed the current facts.
+- **MQuAKE is not the published task.** The facts it learns are the dataset's, with the gold edits in place once read (`mq_jmem_items`), and each hop is asked by the dataset's relation ID (`hopw` with `rid`), not by the natural-language question.
+- **Other wording corrections:** the headline forgetting with the domain given (-0.001) is printed beside the label-free one (-0.012), which is the stricter figure; the `kra` presets train every weight with 12 question rows a step and an anchor KL (weight 2.0) on up to 96 stored real sentences of every old domain, so the validated build keeps some real text; 'wordings never trained on' share the test prompt's final 'name relation' bytes with the training prompts, and two of the six test paraphrases are also planted (the taught-versus-control gap stands, controls having the same exposure); EWC's Fisher is estimated from squared batch-mean gradients.
+- **Strict reading of the plan:** goals 1-6 met as measured; goal 7 met only with oracle premises and harness-applied edits - about 95% overall. Next: an ablation of kra62c with the swap off and the memory trained on the reader's recorded facts (the honest goal 7 number), then a memory that learns from the text read and resolves edits itself, and MQuAKE by its natural-language questions.
 
 ## kra62b GPU (seed 4, preset cg27a_kra62b_pass1 = kra62 + the JEPA memory at 4,200 steps a sleep; 27 Nov 12:06 to about 16:10, log ends inside visit 9) - FAILS: MORE STEPS ON THE SHARED MEMORY ERODE THE RULE WORLD
 
