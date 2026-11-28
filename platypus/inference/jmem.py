@@ -313,6 +313,10 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                 print(f"  [MQuAKE PORT, OWN JEPA MEMORY | visit {vis + 1}] {len(iq)} MQuAKE fact sentences read so far, in a separate keyed-memory JEPA ({len(JQ.keys)} slots, {JQ.steps} steps in all, loss {lq:.3f}); the rule-world memory does not see them", flush=True)
             else:
                 items += _items_from(mq_jmem_items(cfg, seen))
+        if int(getattr(cfg, 'inf_jmem_src_debug', 0)) >= 2:                      # 28 Nov kra62d DEBUG 2: the exact training items and steps, for an offline replay
+            import pickle, os as _os
+            _dp = _os.environ.get('PLATYPUS_JMEM_DUMP', '/tmp/jmem_items'); _os.makedirs(_dp, exist_ok=True)
+            pickle.dump({'items': items, 'steps': int(getattr(cfg, 'inf_jmem_steps', 1500)), 'J_steps_before': J.steps, 'n_keys_before': len(J.keys), 'cfg': {k_: getattr(cfg, k_) for k_ in dir(cfg) if k_.startswith('inf_jmem')}}, open(f"{_dp}/visit{vis + 1}.pkl", 'wb'))
         ls = J.train(items, int(getattr(cfg, 'inf_jmem_steps', 1500)))
         # RULE WORLD: one hop on read premises, two hops on planted / held-back / pure composites, the gate on never-read families
         par, mgr = W.get('parent', {}), W.get('mgr', {}); up = {'grand': (par, 'parent'), 'skip': (mgr, 'mgr')}
