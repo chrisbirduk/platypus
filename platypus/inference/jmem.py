@@ -271,6 +271,21 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                     if k9 not in lt9 or o9 > lt9[k9][0]: lt9[k9] = (o9, e)
                 R9 = [v_[1] for v_ in lt9.values()]
             rwp = [(int(e['d']), '', ph9[str(e['r']).strip()], e['A'], e['ans']) for e in R9]
+            if int(getattr(cfg, 'inf_jmem_edit_detect', 0)):                     # 28 Nov kra62f EDIT DETECTION FROM READING: a (subject, relation) the reader recorded with two
+                vo8 = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}   #   different answers in different domains is EDITED, the answer from
+                byk8 = {}                                                         #   the most recently visited domain current; feeds the edit override and retraction
+                for e in [e for e in (model.__dict__.get('_rec_fs') or []) if str(e.get('r', '')).strip() in ph9 and (not seen or int(e['d']) in seen)]:
+                    byk8.setdefault((ph9[str(e['r']).strip()], e['A']), []).append((vo8.get(int(e['d']), -1), e['ans']))
+                EDJ8 = model.__dict__.setdefault('_jm_edited', {}); new8 = 0; cur8 = {}
+                for (k_, a_), L_ in byk8.items():
+                    L_.sort(); cur8[(k_, a_)] = L_[-1][1]
+                    if len({x[1] for x in L_}) > 1 and (rw['grand' if k_ == 'parent' else 'skip'], a_) not in EDJ8:
+                        EDJ8[(rw['grand' if k_ == 'parent' else 'skip'], a_)] = vis; new8 += 1
+                model.__dict__['_jm_cur'] = cur8
+                MVt = {l_ for l_, mv_ in (W.get('moves') or {}).items() if mv_['d2'] in seen}
+                det8 = {a_ for (c_, a_) in EDJ8}
+                srcl9_ed = f" | EDITS DETECTED from the reader's records: {len(EDJ8)} subjects ({new8} new this sleep), of them truly moved {len(det8 & MVt)} (precision {len(det8 & MVt) / max(1, len(det8)):.2f}); truly moved and read {len(MVt)}, detected {len(det8 & MVt) / max(1, len(MVt)):.2f}"
+                model.__dict__['_jm_edl'] = srcl9_ed
             par9, mgr9 = W.get('parent', {}), W.get('mgr', {}); MV9 = {l_: mv_ for l_, mv_ in (W.get('moves') or {}).items() if mv_['d2'] in seen}
             tru9 = lambda k_, a_: (MV9[a_]['new'] if a_ in MV9 and MV9[a_]['kind'] == k_ else (par9 if k_ == 'parent' else mgr9).get(a_))
             srcl9 = f" | SOURCE: the READER's records ({SRC9}): {len(rwp)} premises, right by the rule world's current truth {np.mean([tru9(k_, a_) == b_ for (_, _, k_, a_, b_) in rwp]) if rwp else float('nan'):.2f}, planted premises of the domains seen {sum(1 for x in W.get('planted', []) if x[2] in ('parent', 'mgr') and (not seen or int(x[0]) in seen))}"
@@ -281,7 +296,9 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             model.__dict__['_jm_moves_used'] = len(mvr)
             EDJ = model.__dict__.setdefault('_jm_edited', {})                   # 25 Nov kra57: (composite, subject) whose first-hop premise the memory replaced
             for (k_, l_), mv_ in mvr.items(): EDJ.setdefault((rw['grand' if k_ == 'parent' else 'skip'], l_), vis)
-        model.__dict__['_jm_read'] = {(k, a): b for (d, s_, k, a, b) in rwp}     # 25 Nov kra57 v3: the premises the memory READ (after edits), for the override's grounding
+        model.__dict__['_jm_read'] = {(k, a): b for (d, s_, k, a, b) in rwp}
+        if SRC9 != 'planted' and model.__dict__.get('_jm_cur'): model.__dict__['_jm_read'].update(model.__dict__['_jm_cur'])   # kra62f: the newest value read
+        _ = 0  # 25 Nov kra57 v3: the premises the memory READ (after edits), for the override's grounding
         nd9 = ''
         DG9 = int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'th1', None) is not None and np.isfinite(J.th1)   # 24 Nov kra53: dream only the recalls that pass its own precision gate
         if int(getattr(cfg, 'inf_jmem_dream', 0)) and J.steps > 0 and (DG9 or (not int(getattr(cfg, 'inf_jmem_dream_gate', 0)) and getattr(J, 'last_r1', 0.0) >= float(getattr(cfg, 'inf_jmem_dream_min', 0.9)))):   # dreams only once its own recall is reliable             # 24 Nov kra52 DREAM REPLAY: premises of EARLIER domains are replayed from the memory's
@@ -318,7 +335,11 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
             if int(getattr(cfg, 'inf_mquake_jsep', 0)):                         # 27 Nov kra62c: the MQuAKE facts in their OWN JEPA memory instance (kra62 / kra62b: in the
                 JQ = model.__dict__.get('_jmem_mq')                             #   shared memory they diluted the rule world: one hop on read premises 0.92 -> 0.51,
                 if JQ is None: JQ = JMem(cfg, dev); model.__dict__['_jmem_mq'] = JQ   #   gated edit coverage 0.76 -> 0.05); the rule-world memory is then kra61's
-                iq = _items_from(mq_jmem_items(cfg, seen))
+                if int(getattr(cfg, 'inf_mquake_nl', 0)):                       # 28 Nov kra62f: cloze sentences, old values kept, recency-weighted (no gold replacement)
+                    from platypus.inference.mquake import mq_jmem_items_nl
+                    voq = {int(k_): i_ for i_, k_ in enumerate((model.__dict__.get('_t2s') or {}).keys())}
+                    iq = mq_jmem_items_nl(cfg, seen, voq, float(getattr(cfg, 'inf_jmem_recency', 0) or 0))
+                else: iq = _items_from(mq_jmem_items(cfg, seen))
                 lq = JQ.train(iq, int(getattr(cfg, 'inf_mquake_jsteps', 0)) or int(getattr(cfg, 'inf_jmem_steps', 1500))) if iq else float('nan')
                 print(f"  [MQuAKE PORT, OWN JEPA MEMORY | visit {vis + 1}] {len(iq)} MQuAKE fact sentences read so far, in a separate keyed-memory JEPA ({len(JQ.keys)} slots, {JQ.steps} steps in all, loss {lq:.3f}); the rule-world memory does not see them", flush=True)
             else:
@@ -372,7 +393,7 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                        f"right {np.mean([c for b, c, g in R if g >= th]) if any(g >= th for b, c, g in R) else float('nan'):.2f}") if R else "0"
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] keyed-memory JEPA beside the trunk, trained this sleep on {len(items)} premise sentences read so far{nd9}" + (f" (EDITED premises read and used in place of the old: {model.__dict__.get('_jm_moves_used', 0)})" if int(getattr(cfg, 'inf_jmem_moves', 0)) else "") + f" "
               f"({len(J.keys)} slots, {J.steps} steps in all, loss {ls:.3f}; readout only) || RULE WORLD: one hop on read premises {np.mean(r1) if r1 else float('nan'):.2f} (n {len(r1)}) | "
-              f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)" + srcl9, flush=True)
+              f"TWO HOPS by its own hops: PLANTED {f(pl)} || HELD BACK {f(hb)} || PURE FAMILIES {f(hu)} | never-read heads vs right planted, margin AUC {auc:.2f} ({time.time() - t0:.0f}s)" + srcl9 + (model.__dict__.get('_jm_edl', '') if SRC9 != 'planted' else ''), flush=True)
         if int(getattr(cfg, 'inf_jmem_answer', 0)) or int(getattr(cfg, 'inf_jmem_write', 0)):
             _jmem_answer(model, cfg, vis, W, seen, rw, J, thw, up, pure)
         # REAL TEXT: the frozen TEST chains by its own two hops (premises read, chains never)
@@ -390,6 +411,10 @@ def jmem_sleep(model, cfg, vis, W, seen, rw):
                   f"taught chains C {np.mean([ok for ok, g in tb]) if tb else float('nan'):.2f}  (compare: the trunk's STEP BY STEP on the same chains above)", flush=True)
         if int(getattr(cfg, 'inf_mquake', 0)) > 0:                            # 26 Nov MQuAKE PORT: the memory's own hops on the cases read
             from platypus.inference.mquake import mq_jmem_readout
-            mq_jmem_readout(JQ if JQ is not None else J, cfg, vis, seen, {} if JQ is not None else {'taught real-text chains': t2, 'planted composites (write gate)': thw})   # kra62c: its own memory's gates are its own
+            if int(getattr(cfg, 'inf_mquake_nl', 0)) and JQ is not None:
+                from platypus.inference.mquake import mq_jmem_readout_nl
+                mq_jmem_readout_nl(JQ, cfg, vis, seen)                              # 28 Nov kra62f: hops by cloze wording, old values kept
+            else:
+                mq_jmem_readout(JQ if JQ is not None else J, cfg, vis, seen, {} if JQ is not None else {'taught real-text chains': t2, 'planted composites (write gate)': thw})   # kra62c: its own memory's gates are its own
     except Exception as e:
         print(f"  [JEPA MEMORY (parallel) | visit {vis + 1}] unavailable ({type(e).__name__}: {str(e)[:160]})", flush=True)

@@ -843,6 +843,8 @@ class Config:
     inf_jmem_min_items=0            #   28 Nov kra62d: the JEPA memory is not trained in a sleep with fewer premise sentences than this (0 = always trained)
     inf_jmem_min_rule=0             #   28 Nov kra62e: nor with fewer RULE-WORLD premises than this (0 = no condition)
     inf_jmem_recency=0              #   28 Nov kra62e: with the reader's records, extra replay copies for premises read in later-visited domains (weight 1 + this x visit rank / last rank)
+    inf_jmem_edit_detect=0          #   28 Nov kra62f: edits detected from the reader's records (two answers for one subject and relation; the newest current) feed the edit override and retraction
+    inf_mquake_nl=0                 #   28 Nov kra62f: the MQuAKE memory learns the cloze sentences read with old values KEPT (recency-weighted) and is asked hop by hop by cloze wording
     inf_wordfree=0                  #   28 Nov kra62e WORD-FREE READOUT (inference/wordfree.py; readout only): each sleep, units found in the stored sentences with the spaces removed
                                     #     (edge units + an MDL lexicon), scored against the removed spaces and runs of capitalised words
     inf_wordfree_n=6000             #     the most recent stored sentences read

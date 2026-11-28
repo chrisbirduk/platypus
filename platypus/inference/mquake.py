@@ -212,3 +212,56 @@ def mq_jmem_readout(J, cfg, vis, seen, gates=None):
           f"(an edit, once read, replaces the old value) || EDIT READ (n {len(rd)}): MULTI-HOP NEW {f(rd, 1)}, OLD (stale) {f(rd, 2)}, NEITHER {f(rd, 3)} || {byh or 'no hops'} || "
           f"EDIT NOT YET READ (control; n {len(ct)}): OLD {f(ct, 2)}, NEW {f(ct, 1)}, NEITHER {f(ct, 3)}"
           + (f" (e.g. {cx[0]['q']!r} -> {cx[5]!r}, old {sorted(cx[0]['old'])[0]!r})" if cx else '') + (f" || GATED, EDIT READ: {gs}" if gs else ''), flush=True)
+
+
+def mq_jmem_items_nl(cfg, seen, vo, recency=0.0):
+    """28 Nov kra62f, MQuAKE WITHOUT THE HARNESS: the facts read as their cloze sentences ('The capital of X is Y.'), the OLD value of an
+    edited fact KEPT beside the new one (nothing replaced), later-read facts replayed more often (weight 1 + recency x visit rank / last)"""
+    if int(getattr(cfg, 'inf_mquake', 0)) <= 0: return []
+    from platypus.inference.jmem import _items_from
+    mq_build(cfg); om = max(1, max(vo.values()) if vo else 1); out = []
+    for (kind, d1, d2, s, r, ob, tpl, rid) in _MQ.get('facts', []):
+        d = d2 if kind == 'edit' else d1
+        if d not in seen: continue
+        it = _items_from([(f"{tpl.format(s)} {ob}.", (s, ob))])
+        out += it * (1 + int(round(recency * vo.get(int(d), 0) / om)))
+    return out
+
+
+def _hop_tpl(J, heads, tpls):
+    """the memory's answer to a cloze with its subject filled and the object masked: '<cloze with head> ______.'"""
+    import torch, torch.nn.functional as F
+    from platypus.inference.jmem import _tens, _span_mean
+    if not J.keys: return [''] * len(heads), [0.0] * len(heads)
+    J.ctx.eval(); J.pred.eval(); out, mg = [], []
+    with torch.no_grad():
+        for i in range(0, len(heads), 256):
+            qs, sp = [], []
+            for h, t in zip(heads[i:i + 256], tpls[i:i + 256]):
+                q = f"{t.format(h)} " + '\x01' * 6 + '.'; a_ = len(q) - 7; qs.append(q.encode('latin-1', 'replace')); sp.append((a_, a_ + 6))
+            v = F.normalize(J.pred(_span_mean(J.ctx(_tens(qs, J.dev)), sp)), dim=-1); t2 = (v @ J.SL.T).topk(min(2, len(J.keys)), -1)
+            out += [J.keys[j] for j in t2.indices[:, 0].tolist()]
+            mg += ((t2.values[:, 0] - t2.values[:, 1]) if t2.values.shape[1] > 1 else t2.values[:, 0]).tolist()
+    return out, mg
+
+
+def mq_jmem_readout_nl(J, cfg, vis, seen):
+    """kra62f: multi-hop answers by the memory's own hops, each hop asked by the hop's cloze WORDING (no relation IDs), the memory holding
+    old and new values of edited facts (no gold replacement); NEW / OLD / NEITHER as the harness readout, plus a gate on its own margin"""
+    if int(getattr(cfg, 'inf_mquake', 0)) <= 0 or J is None: return
+    M = mq_build(cfg); CS = [c for c in M['cases'] if c['d'] in seen][:int(getattr(cfg, 'inf_mquake_eval', 200))]
+    if not CS: return
+    cur = [c['T'][0][0] for c in CS]; mg = [9.0] * len(CS)
+    for h in range(4):
+        L = [i for i, c in enumerate(CS) if h < len(c['T'])]
+        if not L: break
+        a, g = _hop_tpl(J, [cur[i] for i in L], [CS[i]['tpl'][h] for i in L])
+        for i, x, y in zip(L, a, g): cur[i] = x; mg[i] = min(mg[i], y)
+    rows = [(c, _hit(a, c['new']), _hit(a, c['old']), m) for c, a, m in zip(CS, cur, mg)]
+    rd = [r for r in rows if r[0]['d2'] in seen]; ct = [r for r in rows if r[0]['d2'] not in seen]
+    f = lambda L_, j: f"{np.mean([r[j] for r in L_]):.2f}" if L_ else 'n/a'
+    t = float(np.quantile([r[3] for r in rd], 0.5)) if rd else float('inf'); A = [r for r in rd if r[3] >= t]
+    byh = ' | '.join(f"{h} hops (n {len(L_)}): NEW {f(L_, 1)} OLD {f(L_, 2)}" for h in (2, 3, 4) for L_ in [[r for r in rd if len(r[0]['T']) == h]] if L_)
+    print(f"  [MQuAKE, NO HARNESS | visit {vis + 1}] {len(CS)} cases read; the memory holds the OLD and NEW values of edited facts as read (nothing replaced), "
+          f"each hop asked by its cloze wording (no relation IDs) || EDIT READ (n {len(rd)}): MULTI-HOP NEW {f(rd, 1)}, OLD (stale) {f(rd, 2)} || {byh or 'no hops'} || "
+          f"its more confident half (margin >= {t:.3f}): NEW {f(A, 1)}, OLD {f(A, 2)} || EDIT NOT YET READ (control, n {len(ct)}): OLD {f(ct, 2)}, NEW {f(ct, 1)}", flush=True)
